@@ -152,6 +152,38 @@
       }
       .sc-calib-scorer.disabled { opacity: 0.5; pointer-events: none; }
 
+      .sc-calib-opts {
+        display: flex; flex-wrap: wrap; gap: 6px;
+        padding: 8px 12px; border-radius: 8px;
+        background: #1a1f2e; border: 1px solid #2d3b54;
+        font-size: 12px; color: #e8e6f5;
+      }
+      .sc-calib-opts label {
+        display: flex; align-items: center; gap: 5px; cursor: pointer;
+      }
+      .sc-calib-opts label.disabled { opacity: 0.4; cursor: not-allowed; }
+
+      .sc-calib-resume {
+        margin-bottom: 14px; padding: 10px 14px; border-radius: 8px;
+        background: linear-gradient(90deg,
+          rgba(138,43,226,0.15), rgba(77,171,247,0.15));
+        border: 1px solid rgba(138,43,226,0.4);
+        display: flex; align-items: center; gap: 12px; font-size: 13px;
+      }
+      .sc-calib-resume .msg { flex: 1; color: #e8e6f5; }
+      .sc-calib-resume .sc-calib-btn-secondary { border-color:#8a2be2; color:#d4bfff; }
+
+      .sc-calib-badge-inline {
+        display: inline-block; padding: 1px 6px; border-radius: 10px;
+        font-size: 10px; font-weight: 700; margin-left: 4px;
+      }
+      .sc-calib-badge-inline.unstable {
+        background: rgba(255,193,7,0.85); color: #0a0e16;
+      }
+      .sc-calib-badge-inline.sweep {
+        background: rgba(77,171,247,0.85); color: white;
+      }
+
       .sc-calib-skipped {
         margin-bottom: 14px; padding: 10px 12px; border-radius: 8px;
         background: #1a1f2e; border: 1px solid #2d3b54;
@@ -452,21 +484,33 @@
       ? `${state.scorer.model} ready`
       : `scorer unavailable${state.scorer && state.scorer.reason ? ': ' + state.scorer.reason : ''}`;
     body.innerHTML = `
+      <div class="sc-calib-resume" style="display:none"></div>
       <div class="sc-calib-bar">
         <div class="sc-calib-progress"><div></div></div>
         <div class="sc-calib-status"></div>
         <div class="sc-calib-actions">
-          <label style="font-size:12px;color:#8ea0bf;display:flex;align-items:center;gap:4px;">
-            <input type="checkbox" class="sc-calib-network" checked> Civitai
-          </label>
-          <div class="sc-calib-scorer ${scorerOk ? '' : 'disabled'}" title="${scorerLabel}">
-            <label><input type="checkbox" class="sc-calib-score" ${scorerOk ? '' : 'disabled'}> LLM auto-score</label>
-            <span>≥</span>
-            <input type="number" class="sc-calib-thresh" step="0.5" min="0" max="10" value="7.5">
-          </div>
           <button class="sc-calib-btn-secondary sc-calib-confirm-all" disabled>Confirm all visible</button>
           <button class="sc-calib-btn-danger sc-calib-cancel" style="display:none">⏹ Cancel</button>
           <button class="sc-calib-btn-primary sc-calib-start">Start</button>
+        </div>
+      </div>
+      <div class="sc-calib-opts">
+        <label title="Before rendering every LoRA, probe each arch with a base sample. Archs that fail get all their LoRAs skipped with a clear reason instead of streaming red error cards.">
+          <input type="checkbox" class="sc-calib-preflight" checked> Preflight per arch
+        </label>
+        <label title="Use the Civitai knowledge layer for triggers + weight + sampler recommendations.">
+          <input type="checkbox" class="sc-calib-network" checked> Civitai
+        </label>
+        <label class="${scorerOk ? '' : 'disabled'}" title="Render each LoRA with 3 different seeds, flag those with scores that swing by more than 3 points as unstable. Needs the LLM scorer to be meaningful.">
+          <input type="checkbox" class="sc-calib-stability" ${scorerOk ? '' : 'disabled'}> Stability check (3 seeds)
+        </label>
+        <label class="${scorerOk ? '' : 'disabled'}" title="For LoRAs with no Civitai-recommended weight, render at 0.4 / 0.7 / 1.0 and auto-pick the winner by score.">
+          <input type="checkbox" class="sc-calib-sweep" ${scorerOk ? '' : 'disabled'}> Auto-weight sweep
+        </label>
+        <div class="sc-calib-scorer ${scorerOk ? '' : 'disabled'}" title="${scorerLabel}">
+          <label><input type="checkbox" class="sc-calib-score" ${scorerOk ? '' : 'disabled'}> LLM auto-score</label>
+          <span>≥</span>
+          <input type="number" class="sc-calib-thresh" step="0.5" min="0" max="10" value="7.5">
         </div>
       </div>
       <div class="sc-calib-skipped" style="display:none"></div>
@@ -482,8 +526,28 @@
     const networkChk = qs('.sc-calib-network');
     const scoreChk = qs('.sc-calib-score');
     const threshInp = qs('.sc-calib-thresh');
+    const preflightChk = qs('.sc-calib-preflight');
+    const stabilityChk = qs('.sc-calib-stability');
+    const sweepChk = qs('.sc-calib-sweep');
+    const resumeEl = qs('.sc-calib-resume');
     const groupsEl = qs('.sc-calib-groups');
     const skippedEl = qs('.sc-calib-skipped');
+
+    // Stability + sweep both need the scorer to be meaningful, so
+    // turning off the scorer disables both toggles. Keeping the
+    // dependency enforced in the UI rather than the backend so the
+    // user sees immediate feedback.
+    function reflectScorerGating() {
+      const on = scoreChk.checked;
+      for (const chk of [stabilityChk, sweepChk]) {
+        if (!chk || !scorerOk) continue;
+        chk.disabled = !on;
+        chk.parentElement.classList.toggle('disabled', !on);
+        if (!on) chk.checked = false;
+      }
+    }
+    scoreChk.addEventListener('change', reflectScorerGating);
+    reflectScorerGating();
 
     const setStatus = (t) => (statusEl.textContent = t);
     const setProgress = (done, total) => {
@@ -552,6 +616,23 @@
       return `<span class="sc-calib-score-chip ${klass}" title="${title}">${v.toFixed(1)}</span>`;
     }
 
+    function extraBadges(s) {
+      const out = [];
+      if (s.unstable) {
+        const range = typeof s.stability_range === 'number'
+          ? ` (±${s.stability_range.toFixed(1)})` : '';
+        out.push(`<span class="sc-calib-badge-inline unstable" title="Score varied by more than 3 points across seeds${range}">⚠ unstable</span>`);
+      }
+      if (typeof s.sweep_winner === 'number') {
+        const picks = (s.sweep_scores || []).map(r => {
+          const sc = (typeof r.score === 'number') ? r.score.toFixed(1) : '—';
+          return `${Number(r.strength).toFixed(2)}→${sc}`;
+        }).join(' · ');
+        out.push(`<span class="sc-calib-badge-inline sweep" title="Weight sweep picked ${Number(s.sweep_winner).toFixed(2)} from: ${picks}">⚙ sweep</span>`);
+      }
+      return out.join('');
+    }
+
     function renderCard(rec) {
       const id = 'sc-calib-card-' + rec.lora_name.replace(/[^a-z0-9]/gi, '_');
       const block = ensureGroupBlock(rec.arch, rec.purpose_group);
@@ -575,7 +656,7 @@
           ${ok ? `<img src="data:image/png;base64,${rec.image_b64}" alt="${rec.lora_name}">` : `<div class="err">${(rec.error || 'no sample').toString()}</div>`}
           ${scoreChip(rec)}
         </div>
-        <div class="sc-calib-name">${rec.lora_name}${nsfwTag}</div>
+        <div class="sc-calib-name">${rec.lora_name}${nsfwTag}${extraBadges(rec)}</div>
         <div class="sc-calib-chips">${chipsFor(rec)}</div>
         ${trigs ? `<div class="sc-calib-trig">triggers: ${trigs}</div>` : ''}
         <div class="sc-calib-row">
@@ -681,17 +762,22 @@
     async function startJob() {
       startBtn.disabled = true; startBtn.textContent = 'Starting…';
       groupsEl.innerHTML = ''; skippedEl.style.display = 'none';
+      resumeEl.style.display = 'none';
       state.samples = [];
       state.confirmed.clear();
       state.autoConfirmedNames.clear();
+      const payload = {
+        subset: 'unconfirmed',
+        use_network: networkChk.checked,
+        score_with_llm: scoreChk.checked,
+        preflight: preflightChk.checked,
+      };
+      if (stabilityChk.checked) payload.stability_seeds = 3;
+      if (sweepChk.checked) payload.sweep_strengths = [0.4, 0.7, 1.0];
       try {
         const resp = await api('/api/spellcaster/lora/calibrate/auto/start', {
           method: 'POST',
-          body: JSON.stringify({
-            subset: 'unconfirmed',
-            use_network: networkChk.checked,
-            score_with_llm: scoreChk.checked,
-          }),
+          body: JSON.stringify(payload),
         });
         state.jobId = resp.job_id;
         setStatus(`rendering 0/${resp.total}…`);
@@ -760,6 +846,33 @@
       }
     }
 
+    async function maybeShowResumeBanner() {
+      const r = await safeApi('/api/spellcaster/lora/calibrate/resumable');
+      const jobs = (r && r.jobs) || [];
+      if (!jobs.length) { resumeEl.style.display = 'none'; return; }
+      const latest = jobs[0];     // newest first per backend sort
+      const age = latest.finished_at
+        ? Math.round((Date.now() / 1000 - latest.finished_at) / 60)
+        : null;
+      const ageTxt = age != null
+        ? (age < 60 ? `${age} min ago` : `${Math.round(age / 60)} h ago`)
+        : 'a previous session';
+      resumeEl.innerHTML = `
+        <div class="msg">
+          ⏸ Previous run cut short at <strong>${latest.done ?? 0}/${latest.total ?? '?'}</strong>
+          ${ageTxt}. Click Start to pick up where you left off —
+          confirmed LoRAs are skipped automatically.
+        </div>
+        <button class="sc-calib-btn-secondary sc-calib-dismiss-resume">Dismiss</button>
+      `;
+      resumeEl.style.display = 'flex';
+      resumeEl.querySelector('.sc-calib-dismiss-resume').addEventListener('click', async () => {
+        await safeApi('/api/spellcaster/lora/calibrate/resumable/clear',
+                      { method: 'POST', body: '{}' });
+        resumeEl.style.display = 'none';
+      });
+    }
+
     // Initial setup when the tab opens: show summary or an empty hint.
     (async () => {
       const sum = state.summary || await safeApi('/api/spellcaster/lora/calibrate/summary');
@@ -772,6 +885,7 @@
         groupsEl.innerHTML = '<div class="sc-calib-empty">Every LoRA is confirmed. Nothing to calibrate.</div>';
         startBtn.disabled = true;
       }
+      maybeShowResumeBanner();
     })();
   }
 
