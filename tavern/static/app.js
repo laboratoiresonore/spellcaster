@@ -3133,17 +3133,51 @@ function onAnimateAllClick() {
     });
 }
 
+// Wizard types that ship with Spellcaster (mirrors the `core_types`
+// set in tavern/server.py's /api/wizard_info). Shipped wizards already
+// have hand-tuned portraits so regenerating animations for them on
+// every Animate-All click burns user VRAM + minutes for no visible
+// gain. Keep opt-in — the "Include built-in wizards" checkbox next
+// to the button is the explicit override.
+const _CORE_WIZARD_TYPES = new Set(["studio", "model_wizard", "spellcaster_node"]);
+
+function _isCoreWizard(c) {
+    return !!(c && _CORE_WIZARD_TYPES.has(c.type));
+}
+
 async function queueAnimatedAvatars() {
-    // Find characters that have a static avatar but no animated one
+    // Find characters that have a static avatar but no animated one.
+    // Skip shipped Spellcaster wizards unless the user opted in via
+    // the toggle — they ship with canonical portraits and animating
+    // them by default clogs the ComfyUI queue for no user benefit.
     let savedIdentities = JSON.parse(localStorage.getItem('guild_identities') || '{}');
+    const includeCore = !!document.getElementById('animate-all-include-core')?.checked;
+    let coreSkipped = 0;
     const needsAnimation = characters.filter(c => {
         const saved = savedIdentities[c.id];
         const hasStatic = c.avatar_url || saved?.avatar_url;
         const hasAnimated = c.animated_url || saved?.animated_url;
-        return hasStatic && !hasAnimated;
+        if (!hasStatic || hasAnimated) return false;
+        if (!includeCore && _isCoreWizard(c)) {
+            coreSkipped++;
+            return false;
+        }
+        return true;
     });
 
-    if (needsAnimation.length === 0) return;
+    if (coreSkipped > 0) {
+        console.log(`[Guild] Skipped ${coreSkipped} built-in wizard(s) — tick "Include built-in wizards" to animate them too.`);
+    }
+
+    if (needsAnimation.length === 0) {
+        if (coreSkipped > 0) {
+            addSystemMessage(
+                `<strong>Nothing to animate.</strong> ${coreSkipped} built-in ` +
+                `wizard(s) were skipped. Enable <em>Include built-in wizards</em> ` +
+                `under the Animate All button to regenerate their animations.`);
+        }
+        return;
+    }
 
     console.log(`[Guild] Queuing ${needsAnimation.length} animated avatar(s) to ComfyUI...`);
 
@@ -4827,6 +4861,35 @@ function _extractSpellPayload(reply) {
     return { payload, displayText };
 }
 
+// Expand a bare "1" / "3." / "option 2" into "1 (Text-to-Image)" by
+// reading the most recent assistant message and finding the matching
+// numbered-list item. Small LLMs (OpenHermes 7B et al.) can't always
+// correlate a digit with the menu they just emitted; prepending the
+// label removes the guesswork. Returns the original string if no
+// numbered item matches — never more disruptive than a no-op.
+function _expandNumericShortcut(userText) {
+    const m = (userText || '').trim().match(/^(?:option\s*)?(\d+)\.?\)?$/i);
+    if (!m) return userText;
+    const n = parseInt(m[1], 10);
+    if (!n || n > 50) return userText;
+    for (let i = chatHistory.length - 1; i >= 0; i--) {
+        const h = chatHistory[i];
+        if (h.role !== 'assistant') continue;
+        const content = h.content || '';
+        const lineRe = new RegExp(
+            '(?:^|\\n)\\s*' + n +
+            '[.)]\\s+(?:\\*\\*([^*\\n]+)\\*\\*|([^\\n]{3,120}))', 'm');
+        const lm = content.match(lineRe);
+        if (!lm) break;
+        let label = (lm[1] || lm[2] || '').trim();
+        // Strip trailing em-dash descriptions and markdown emphasis
+        label = label.split(/\s+[—–-]\s+/)[0].replace(/[*_]/g, '').trim();
+        if (!label) break;
+        return `${n} (${label})`;
+    }
+    return userText;
+}
+
 async function askKobold(text) {
     sendBtn.disabled = true;
     addTypingIndicator();
@@ -4836,6 +4899,19 @@ async function askKobold(text) {
             addSystemMessage("<strong>Summon Status:</strong> No active wizard selected. Please select one from the sidebar first.");
             return;
         }
+
+        // Rewrite bare-number replies to (1 (Text-to-Image)) so the LLM
+        // has enough context to advance the scaffold — see
+        // _expandNumericShortcut above.
+        text = _expandNumericShortcut(text);
+
+        // Add the current user turn to the in-memory history. This used
+        // to be missing entirely — chatHistory held only assistant
+        // records in-session, so the prompt below built from it ended
+        // with "Assistant: " and the LLM had to hallucinate the user's
+        // message. That's why single-digit replies looped: the model
+        // literally never saw "1".
+        chatHistory.push({ role: 'user', content: text });
 
         // Direct-cast bypass: if the user clearly typed an image-gen prompt,
         // skip the LLM round-trip entirely. The LLM can't be trusted to emit

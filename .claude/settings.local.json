@@ -67,7 +67,8 @@
       "Bash(python -c \"import json; d=json.load\\(open\\('C:/Users/redacted/.spellcaster/antenna_config.json'\\)\\); print\\('port:', d.get\\('port'\\), 'bind:', d.get\\('bind'\\)\\)\")",
       "Bash(curl -sk --max-time 3 https://127.0.0.1:7334/status -o /dev/null -w \"status: %{http_code}\\\\n\")",
       "Bash(taskkill /F /IM \"spellcaster-antenna-windows.exe\")",
-      "Bash(cmd //c \"taskkill /F /IM spellcaster-antenna-windows.exe\")"
+      "Bash(cmd //c \"taskkill /F /IM spellcaster-antenna-windows.exe\")",
+      "Bash(PYTHONIOENCODING=utf-8 python tests/e2e_audit.py --no-llm)"
     ],
     "additionalDirectories": [
       "\\tmp",
