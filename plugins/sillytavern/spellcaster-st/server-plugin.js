@@ -72,9 +72,20 @@ function _safeNameOrNull(name, { maxLen = 96 } = {}) {
 }
 
 /**
- * Resolve ST's characters directory from the working directory.
+ * Resolve ST's characters directory. Tries (in order):
+ *   1. SPELLCASTER_ST_CHARACTERS_DIR env var (absolute path) — override
+ *      for users running ST under Docker / custom data-user / non-
+ *      default deploys. Without this, bespoke installs hit every
+ *      /save-* endpoint's generic "Cannot find characters directory"
+ *      error with nothing actionable.
+ *   2. ST's canonical `data/default-user/characters/` (post-1.11 layout)
+ *   3. ST's legacy `public/characters/` (pre-1.11 layout)
  */
 function resolveCharactersDir() {
+    const envOverride = process.env.SPELLCASTER_ST_CHARACTERS_DIR;
+    if (envOverride && path.isAbsolute(envOverride) && fs.existsSync(envOverride)) {
+        return envOverride;
+    }
     const dir = path.resolve('.');
     for (const c of [
         path.join(dir, 'data', 'default-user', 'characters'),
@@ -87,9 +98,15 @@ function resolveCharactersDir() {
 
 /**
  * Auto-detect and set BG_DIR from ST's data layout (if not already set).
+ * Also honours SPELLCASTER_ST_BACKGROUNDS_DIR as an override.
  */
 function autoDetectBgDir() {
     if (BG_DIR) return;
+    const envOverride = process.env.SPELLCASTER_ST_BACKGROUNDS_DIR;
+    if (envOverride && path.isAbsolute(envOverride) && fs.existsSync(envOverride)) {
+        BG_DIR = envOverride;
+        return;
+    }
     const dir = path.resolve('.');
     for (const c of [
         path.join(dir, 'data', 'default-user', 'backgrounds'),
