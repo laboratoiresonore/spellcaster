@@ -125,6 +125,10 @@
             
             <div class="sidebar-footer">
                 <button id="animate-all-btn" onclick="onAnimateAllClick()" title="Checking for video models..." disabled>✨ Animate All Avatars</button>
+                <label id="animate-all-include-core-wrap" class="animate-all-opt" title="Include the Guild's shipped wizards (Imaginus, Videomancer, Restorix, Spellcaster…). Off by default — their core portraits don't usually need re-animating.">
+                    <input type="checkbox" id="animate-all-include-core">
+                    <span>Include built-in wizards</span>
+                </label>
                 <a href="/static/guild.html" id="scaffold-link" title="Open The Travelling Wizard — scaffolds, workflows, configuration &amp; more">🧙 Travelling Wizard</a>
                 <button id="settings-btn">⚙️ Settings</button>
                 <!-- Graceful exit: calls /api/guild/exit which closes

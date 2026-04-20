@@ -3133,17 +3133,51 @@ function onAnimateAllClick() {
     });
 }
 
+// Wizard types that ship with Spellcaster (mirrors the `core_types`
+// set in tavern/server.py's /api/wizard_info). Shipped wizards already
+// have hand-tuned portraits so regenerating animations for them on
+// every Animate-All click burns user VRAM + minutes for no visible
+// gain. Keep opt-in — the "Include built-in wizards" checkbox next
+// to the button is the explicit override.
+const _CORE_WIZARD_TYPES = new Set(["studio", "model_wizard", "spellcaster_node"]);
+
+function _isCoreWizard(c) {
+    return !!(c && _CORE_WIZARD_TYPES.has(c.type));
+}
+
 async function queueAnimatedAvatars() {
-    // Find characters that have a static avatar but no animated one
+    // Find characters that have a static avatar but no animated one.
+    // Skip shipped Spellcaster wizards unless the user opted in via
+    // the toggle — they ship with canonical portraits and animating
+    // them by default clogs the ComfyUI queue for no user benefit.
     let savedIdentities = JSON.parse(localStorage.getItem('guild_identities') || '{}');
+    const includeCore = !!document.getElementById('animate-all-include-core')?.checked;
+    let coreSkipped = 0;
     const needsAnimation = characters.filter(c => {
         const saved = savedIdentities[c.id];
         const hasStatic = c.avatar_url || saved?.avatar_url;
         const hasAnimated = c.animated_url || saved?.animated_url;
-        return hasStatic && !hasAnimated;
+        if (!hasStatic || hasAnimated) return false;
+        if (!includeCore && _isCoreWizard(c)) {
+            coreSkipped++;
+            return false;
+        }
+        return true;
     });
 
-    if (needsAnimation.length === 0) return;
+    if (coreSkipped > 0) {
+        console.log(`[Guild] Skipped ${coreSkipped} built-in wizard(s) — tick "Include built-in wizards" to animate them too.`);
+    }
+
+    if (needsAnimation.length === 0) {
+        if (coreSkipped > 0) {
+            addSystemMessage(
+                `<strong>Nothing to animate.</strong> ${coreSkipped} built-in ` +
+                `wizard(s) were skipped. Enable <em>Include built-in wizards</em> ` +
+                `under the Animate All button to regenerate their animations.`);
+        }
+        return;
+    }
 
     console.log(`[Guild] Queuing ${needsAnimation.length} animated avatar(s) to ComfyUI...`);
 

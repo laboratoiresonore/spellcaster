@@ -542,6 +542,32 @@ body.is-generating .health-stats .meter-fill {
 #animate-all-btn:hover { background: linear-gradient(135deg, #5f4bd8, #8b83f5); }
 #animate-all-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* Opt-in toggle that sits directly under the Animate All button. Uses
+   muted colours so it doesn't compete with the primary CTA but still
+   reads as actionable on hover. */
+.animate-all-opt {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+    margin-top: -4px;       /* snug under the button */
+    margin-bottom: 4px;
+    letter-spacing: 0.02em;
+    transition: color 0.2s;
+}
+.animate-all-opt:hover { color: #e7d7ff; }
+.animate-all-opt input[type="checkbox"] {
+    accent-color: var(--accent);
+    width: 13px;
+    height: 13px;
+    cursor: pointer;
+    margin: 0;
+}
+
 .search-wrapper { margin-top: 12px; }
 .search-wrapper input {
     width: 100%; padding: 8px 12px; border-radius: 8px;
