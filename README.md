@@ -1,42 +1,37 @@
-<table width="100%">
-<tr>
-<td width="58%" align="center" valign="middle">
-  <img src="assets/wizard_banner.gif" alt="Spellcaster" width="100%"/>
-</td>
-<td width="42%" valign="middle">
-  <h3 align="center">🎨 Image models</h3>
-  <p align="center">
-    <a href="DEEP_DIVE.md#all-69-tools" title="Flux 2 Klein — 4-step, ref-aware, SOTA photoreal"><img src="https://img.shields.io/badge/Flux%202%20Klein-ffd700?style=flat-square&labelColor=1a1422" alt="Flux 2 Klein"/></a>
-    <a href="DEEP_DIVE.md#all-69-tools" title="Flux 1 Dev — 12B rectified-flow, ControlNet Union Pro"><img src="https://img.shields.io/badge/Flux%201%20Dev-58e0ff?style=flat-square&labelColor=1a1422" alt="Flux 1 Dev"/></a>
-    <a href="DEEP_DIVE.md#all-69-tools" title="Flux Kontext — edit-by-instruction"><img src="https://img.shields.io/badge/Flux%20Kontext-7ad7ff?style=flat-square&labelColor=1a1422" alt="Flux Kontext"/></a>
-    <a href="DEEP_DIVE.md#all-69-tools" title="Chroma — 8B open-weights DiT"><img src="https://img.shields.io/badge/Chroma-ff7ad7?style=flat-square&labelColor=1a1422" alt="Chroma"/></a>
-    <br/>
-    <a href="DEEP_DIVE.md#all-69-tools" title="SDXL — the workhorse, every ControlNet works"><img src="https://img.shields.io/badge/SDXL-b470ff?style=flat-square&labelColor=1a1422" alt="SDXL"/></a>
-    <a href="DEEP_DIVE.md#all-69-tools" title="Illustrious — booru-tagged anime/illustration"><img src="https://img.shields.io/badge/Illustrious-ff8fd1?style=flat-square&labelColor=1a1422" alt="Illustrious"/></a>
-    <a href="DEEP_DIVE.md#all-69-tools" title="Pony — score-cascade SDXL finetune"><img src="https://img.shields.io/badge/Pony-ffa8d4?style=flat-square&labelColor=1a1422" alt="Pony"/></a>
-    <a href="DEEP_DIVE.md#all-69-tools" title="Playground — aesthetic SDXL finetune"><img src="https://img.shields.io/badge/Playground-c09bff?style=flat-square&labelColor=1a1422" alt="Playground"/></a>
-    <br/>
-    <a href="DEEP_DIVE.md#all-69-tools" title="SD 1.5 — classic, universal LoRA compatibility"><img src="https://img.shields.io/badge/SD%201.5-8aa9ff?style=flat-square&labelColor=1a1422" alt="SD 1.5"/></a>
-    <a href="DEEP_DIVE.md#all-69-tools" title="SDXL Turbo — 6-step distilled"><img src="https://img.shields.io/badge/SDXL%20Turbo-ffb864?style=flat-square&labelColor=1a1422" alt="SDXL Turbo"/></a>
-    <a href="DEEP_DIVE.md#all-69-tools" title="Z-Image Turbo — 6-step, 2B, sharpest distill"><img src="https://img.shields.io/badge/Z%E2%80%91Image%20Turbo-ffef4a?style=flat-square&labelColor=1a1422" alt="Z-Image Turbo"/></a>
-  </p>
-  <h3 align="center">🎬 Video models</h3>
-  <p align="center">
-    <a href="DEEP_DIVE.md#all-69-tools" title="Wan 2.2 I2V — 14B image-to-video"><img src="https://img.shields.io/badge/Wan%202.2-10b981?style=flat-square&labelColor=1a1422" alt="Wan 2.2"/></a>
-    <a href="DEEP_DIVE.md#all-69-tools" title="LTX 2.3 — 22B cinematic T2V + I2V"><img src="https://img.shields.io/badge/LTX%202.3-5eead4?style=flat-square&labelColor=1a1422" alt="LTX 2.3"/></a>
-    <a href="DEEP_DIVE.md#all-69-tools" title="SeedVR — temporally consistent video upscale"><img src="https://img.shields.io/badge/SeedVR-34d399?style=flat-square&labelColor=1a1422" alt="SeedVR"/></a>
-  </p>
-  <h3 align="center">🧠 Brains & helpers</h3>
-  <p align="center">
-    <a href="DEEP_DIVE.md#all-69-tools" title="SAM 3 — type 'earring' to select the earring"><img src="https://img.shields.io/badge/SAM%203-ff6b9d?style=flat-square&labelColor=1a1422" alt="SAM 3"/></a>
-    <a href="DEEP_DIVE.md#all-69-tools" title="NormalCrafter — 3D normal maps from 2D"><img src="https://img.shields.io/badge/NormalCrafter-9f7aea?style=flat-square&labelColor=1a1422" alt="NormalCrafter"/></a>
-    <a href="DEEP_DIVE.md#all-69-tools" title="IC-Light — surface-aware relighting"><img src="https://img.shields.io/badge/IC%E2%80%91Light-fbbf24?style=flat-square&labelColor=1a1422" alt="IC-Light"/></a>
-    <a href="DEEP_DIVE.md#all-69-tools" title="ReActor + InsightFace — face swap / restore"><img src="https://img.shields.io/badge/ReActor-f472b6?style=flat-square&labelColor=1a1422" alt="ReActor"/></a>
-    <a href="DEEP_DIVE.md#all-69-tools" title="Ollama — local LLM for prompt enhance + scoring"><img src="https://img.shields.io/badge/Ollama-64748b?style=flat-square&labelColor=1a1422&logo=ollama&logoColor=white" alt="Ollama"/></a>
-  </p>
-</td>
-</tr>
-</table>
+<p align="center">
+  <img src="assets/wizard_banner.gif" alt="Spellcaster" width="58%"/>
+</p>
+
+<h3 align="center">🎨 Image models</h3>
+<p align="center">
+  <a href="DEEP_DIVE.md#all-69-tools" title="Flux 2 Klein — 4-step, ref-aware, SOTA photoreal"><img src="https://img.shields.io/badge/Flux%202%20Klein-ffd700?style=flat-square&labelColor=1a1422" alt="Flux 2 Klein"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="Flux 1 Dev — 12B rectified-flow, ControlNet Union Pro"><img src="https://img.shields.io/badge/Flux%201%20Dev-58e0ff?style=flat-square&labelColor=1a1422" alt="Flux 1 Dev"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="Flux Kontext — edit-by-instruction"><img src="https://img.shields.io/badge/Flux%20Kontext-7ad7ff?style=flat-square&labelColor=1a1422" alt="Flux Kontext"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="Chroma — 8B open-weights DiT"><img src="https://img.shields.io/badge/Chroma-ff7ad7?style=flat-square&labelColor=1a1422" alt="Chroma"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="SDXL — the workhorse, every ControlNet works"><img src="https://img.shields.io/badge/SDXL-b470ff?style=flat-square&labelColor=1a1422" alt="SDXL"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="Illustrious — booru-tagged anime/illustration"><img src="https://img.shields.io/badge/Illustrious-ff8fd1?style=flat-square&labelColor=1a1422" alt="Illustrious"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="Pony — score-cascade SDXL finetune"><img src="https://img.shields.io/badge/Pony-ffa8d4?style=flat-square&labelColor=1a1422" alt="Pony"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="Playground — aesthetic SDXL finetune"><img src="https://img.shields.io/badge/Playground-c09bff?style=flat-square&labelColor=1a1422" alt="Playground"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="SD 1.5 — classic, universal LoRA compatibility"><img src="https://img.shields.io/badge/SD%201.5-8aa9ff?style=flat-square&labelColor=1a1422" alt="SD 1.5"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="SDXL Turbo — 6-step distilled"><img src="https://img.shields.io/badge/SDXL%20Turbo-ffb864?style=flat-square&labelColor=1a1422" alt="SDXL Turbo"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="Z-Image Turbo — 6-step, 2B, sharpest distill"><img src="https://img.shields.io/badge/Z%E2%80%91Image%20Turbo-ffef4a?style=flat-square&labelColor=1a1422" alt="Z-Image Turbo"/></a>
+</p>
+
+<h3 align="center">🎬 Video models</h3>
+<p align="center">
+  <a href="DEEP_DIVE.md#all-69-tools" title="Wan 2.2 I2V — 14B image-to-video"><img src="https://img.shields.io/badge/Wan%202.2-10b981?style=flat-square&labelColor=1a1422" alt="Wan 2.2"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="LTX 2.3 — 22B cinematic T2V + I2V"><img src="https://img.shields.io/badge/LTX%202.3-5eead4?style=flat-square&labelColor=1a1422" alt="LTX 2.3"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="SeedVR — temporally consistent video upscale"><img src="https://img.shields.io/badge/SeedVR-34d399?style=flat-square&labelColor=1a1422" alt="SeedVR"/></a>
+</p>
+
+<h3 align="center">🧠 Brains & helpers</h3>
+<p align="center">
+  <a href="DEEP_DIVE.md#all-69-tools" title="SAM 3 — type 'earring' to select the earring"><img src="https://img.shields.io/badge/SAM%203-ff6b9d?style=flat-square&labelColor=1a1422" alt="SAM 3"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="NormalCrafter — 3D normal maps from 2D"><img src="https://img.shields.io/badge/NormalCrafter-9f7aea?style=flat-square&labelColor=1a1422" alt="NormalCrafter"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="IC-Light — surface-aware relighting"><img src="https://img.shields.io/badge/IC%E2%80%91Light-fbbf24?style=flat-square&labelColor=1a1422" alt="IC-Light"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="ReActor + InsightFace — face swap / restore"><img src="https://img.shields.io/badge/ReActor-f472b6?style=flat-square&labelColor=1a1422" alt="ReActor"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="Ollama — local LLM for prompt enhance + scoring"><img src="https://img.shields.io/badge/Ollama-64748b?style=flat-square&labelColor=1a1422&logo=ollama&logoColor=white" alt="Ollama"/></a>
+</p>
 
 <h1 align="center">Spellcaster</h1>
 
