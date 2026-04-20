@@ -745,6 +745,7 @@ _reg("flux_kontext",
      default_denoise=0.55,
      default_sampler="euler",
      default_scheduler="simple",
+     supported_methods=IMAGE_METHODS,
      lora_prefixes=["Flux-1-Dev\\"],  # Compatible with Dev LoRAs
      turbo_config={
          "label": "Hyper-FLUX 8-step",
@@ -777,6 +778,225 @@ _reg("flux_kontext",
          "vae_name": "ae.safetensors",
      },
      )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Stub registrations for "detected but not fully scaffolded"
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# The detector in `model_detect.py` can emit these arch keys when it
+# sees matching filename patterns, but they don't yet have first-class
+# workflow-builder coverage. Registering them as stubs (registered=False)
+# means:
+#
+#   * `get_arch(key)` returns a real ArchConfig instead of silently
+#     falling back to SDXL — so wizards summon with correct default
+#     steps/CFG/resolution for the arch they actually are.
+#   * `supported_methods` tells the UI which methods WILL dispatch (the
+#     specialised video builders for wan/ltx/seedvr, nothing for
+#     DiT-only archs that don't have a builder yet).
+#   * The `registered=False` flag lets callers detect the stub state
+#     and flag it in diagnostics or block dispatch before crashing.
+#
+# When a full builder lands for any of these, promote the entry to a
+# real `_reg(...)` block above and set `registered=True`.
+
+# ── SDXL-compatible stubs (work via the SDXL builder path) ───────────
+
+# SDXL Turbo / Lightning / LCM — SDXL checkpoints distilled for 4-8 steps
+# at CFG 1-2. Falling back to standard SDXL (30 steps / CFG 6.5) wastes
+# compute and often produces burned-out output.
+_reg("sdxl_turbo",
+     loader="checkpoint", sampler="ksampler",
+     clip_mode="bundled", vae_mode="bundled",
+     supports_negative=True,
+     default_resolution=(1024, 1024),
+     default_cfg=1.5, default_steps=6, default_denoise=0.55,
+     default_sampler="euler_ancestral", default_scheduler="sgm_uniform",
+     supported_methods=IMAGE_METHODS,
+     lora_prefixes=["SDXL\\", "Illustrious\\", "Pony\\"],
+     prompt_style="booru_tags",
+     prompt_guidance=(
+         "PROMPT FORMAT: SDXL-style tags, but kept short. Distilled models "
+         "(Turbo / Lightning / LCM) prefer 15-30 tokens max. Skip heavy "
+         "quality stacks; a low CFG (~1.5) already pushes the model toward "
+         "quality. Tag order still matters."
+     ),
+     autoset_prompts=("photorealistic, detailed, sharp focus", "blurry, low quality, bad anatomy"),
+     scene_group="sdxl",
+     registered=True)
+
+# Pony Diffusion — SDXL-based anime model with booru-tag vocabulary
+# PRIMARILY trained on Danbooru-style tags with `source_` prefixes.
+# SDXL fallback works but loses the Pony-specific prompt conventions.
+_reg("pony",
+     loader="checkpoint", sampler="ksampler",
+     clip_mode="bundled", vae_mode="bundled",
+     supports_negative=True,
+     default_resolution=(1024, 1024),
+     default_cfg=7.0, default_steps=30, default_denoise=0.58,
+     default_sampler="euler_ancestral", default_scheduler="normal",
+     supported_methods=IMAGE_METHODS,
+     lora_prefixes=["Pony\\", "Illustrious-Pony\\", "SDXL\\"],
+     prompt_style="booru_tags",
+     prompt_guidance=(
+         "PROMPT FORMAT: Danbooru tags only — Pony was trained purely on "
+         "booru data. Always include the score cascade at the top:\n"
+         "  score_9, score_8_up, score_7_up, score_6_up\n"
+         "Then source tags: source_anime / source_cartoon / source_furry / "
+         "source_pony. Then character + scene tags in booru syntax.\n"
+         "Negative should include: score_4, score_3, score_2, score_1, "
+         "worst quality, low quality, bad anatomy.\n"
+         "Natural-language sentences DO NOT work with Pony."
+     ),
+     autoset_prompts=(
+         "score_9, score_8_up, score_7_up, masterpiece, best quality",
+         "score_4, score_3, score_2, score_1, worst quality, low quality, bad anatomy",
+     ),
+     scene_group="sdxl",
+     registered=True)
+
+# Playground v2/v3 — SDXL-based with their own aesthetic tuning. Shares
+# the SDXL builder path; main differences are defaults + resolution.
+_reg("playground",
+     loader="checkpoint", sampler="ksampler",
+     clip_mode="bundled", vae_mode="bundled",
+     supports_negative=True,
+     default_resolution=(1024, 1024),
+     default_cfg=3.0, default_steps=30, default_denoise=0.60,
+     default_sampler="dpmpp_2m", default_scheduler="karras",
+     supported_methods=IMAGE_METHODS,
+     lora_prefixes=["SDXL\\"],
+     prompt_style="natural",
+     scene_group="sdxl",
+     registered=True)
+
+# ── DiT-based archs (stubs — no matching builder yet) ────────────────
+# These use diffusion transformers + different text encoders (T5 / Qwen
+# / Gemma). The existing CLIP-based builders WON'T dispatch for them —
+# the shape mismatch explodes at sampler time. Until dedicated builders
+# land we flag them with an empty supported_methods so the UI can show
+# "not yet scaffolded" instead of pretending everything works.
+
+_reg("sd3",
+     loader="checkpoint", sampler="ksampler",
+     clip_mode="bundled", vae_mode="bundled",
+     supports_negative=True,
+     default_resolution=(1024, 1024),
+     default_cfg=4.5, default_steps=28, default_denoise=0.60,
+     default_sampler="dpmpp_2m", default_scheduler="sgm_uniform",
+     supported_methods=(),   # no builder wired — summon will still work, gen will explicit-fail
+     scene_group="sd3",
+     registered=False)
+
+_reg("sd3_turbo",
+     loader="checkpoint", sampler="ksampler",
+     clip_mode="bundled", vae_mode="bundled",
+     supports_negative=True,
+     default_resolution=(1024, 1024),
+     default_cfg=1.5, default_steps=4, default_denoise=0.55,
+     default_sampler="euler", default_scheduler="sgm_uniform",
+     supported_methods=(),
+     scene_group="sd3",
+     registered=False)
+
+_reg("hunyuan_dit",
+     loader="checkpoint", sampler="ksampler",
+     clip_mode="bundled", vae_mode="bundled",
+     supports_negative=True,
+     default_resolution=(1024, 1024),
+     default_cfg=6.0, default_steps=30, default_denoise=0.60,
+     default_sampler="dpmpp_2m", default_scheduler="karras",
+     supported_methods=(),
+     scene_group="hunyuan",
+     registered=False)
+
+_reg("pixart",
+     loader="unet_clip_vae", sampler="ksampler",
+     clip_mode="single_chroma",   # T5 XXL, similar loader to Chroma
+     vae_mode="separate",
+     supports_negative=True,
+     default_resolution=(1024, 1024),
+     default_cfg=4.5, default_steps=25, default_denoise=0.60,
+     default_sampler="dpmpp_2m", default_scheduler="karras",
+     supported_methods=(),
+     scene_group="pixart",
+     registered=False)
+
+_reg("auraflow",
+     loader="unet_clip_vae", sampler="ksampler",
+     clip_mode="single_chroma",   # uses T5-based encoding similar to Chroma
+     vae_mode="separate",
+     supports_negative=False,
+     default_resolution=(1024, 1024),
+     default_cfg=3.5, default_steps=25, default_denoise=0.55,
+     default_sampler="euler", default_scheduler="simple",
+     supported_methods=(),
+     scene_group="auraflow",
+     registered=False)
+
+_reg("kolors",
+     loader="checkpoint", sampler="ksampler",
+     clip_mode="bundled", vae_mode="bundled",
+     supports_negative=True,
+     default_resolution=(1024, 1024),
+     default_cfg=5.0, default_steps=30, default_denoise=0.60,
+     default_sampler="dpmpp_2m", default_scheduler="karras",
+     supported_methods=(),
+     scene_group="kolors",
+     registered=False)
+
+# ── Video archs (no image methods; specialised video builders only) ──
+# WAN / LTX / SeedVR / CogVideo already have dedicated builders in
+# workflows.py (build_wan_video, build_ltx_video, etc.). Registering
+# them here with `supported_methods=VIDEO_METHODS` means a wizard
+# built on one of these checkpoints won't advertise image-gen methods
+# that will fail at dispatch.
+
+_reg("wan",
+     loader="unet_clip_vae", sampler="ksampler",
+     clip_mode="dual", vae_mode="separate",
+     supports_negative=True,
+     default_resolution=(832, 480),
+     default_cfg=3.5, default_steps=30, default_denoise=1.0,
+     default_sampler="euler", default_scheduler="simple",
+     supported_methods=VIDEO_METHODS,
+     scene_group="video",
+     registered=True)
+
+_reg("ltx",
+     loader="unet_clip_vae", sampler="ksampler",
+     clip_mode="single_chroma",   # Gemma-3 text encoder via Kijai nodes
+     vae_mode="separate",
+     supports_negative=True,
+     default_resolution=(768, 512),
+     default_cfg=4.0, default_steps=30, default_denoise=1.0,
+     default_sampler="euler", default_scheduler="simple",
+     supported_methods=VIDEO_METHODS,
+     scene_group="video",
+     registered=True)
+
+_reg("seedvr",
+     loader="unet_clip_vae", sampler="ksampler",
+     clip_mode="bundled", vae_mode="separate",
+     supports_negative=False,
+     default_resolution=(1280, 720),
+     default_cfg=1.0, default_steps=15, default_denoise=0.4,
+     default_sampler="euler", default_scheduler="simple",
+     supported_methods=("video_upscale",),   # SeedVR is upscale-only
+     scene_group="video",
+     registered=True)
+
+_reg("cogvideo",
+     loader="unet_clip_vae", sampler="ksampler",
+     clip_mode="dual", vae_mode="separate",
+     supports_negative=True,
+     default_resolution=(720, 480),
+     default_cfg=6.0, default_steps=50, default_denoise=1.0,
+     default_sampler="dpmpp_2m", default_scheduler="simple",
+     supported_methods=VIDEO_METHODS,
+     scene_group="video",
+     registered=False)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
