@@ -2209,6 +2209,29 @@ def _find_normal_layer(image):
     return None
 
 
+# ── Mandatory 3D mode ────────────────────────────────────────────────
+#
+# When the user launches one of the Spellcaster ◆ > 3D submenu
+# entries (Image to Image (3D), Inpaint (3D), Outpaint (3D), IC-Light
+# (3D)), the 3D Normal Map feature is MANDATORY — ControlNet must be
+# wired to a Normal Map CN regardless of the user's other picks. This
+# flag is set by those force-3D callbacks before they dispatch to the
+# regular handler, and read by:
+#   * _add_normal_map_selector  — changes the frame title to
+#                                 "3D Normal Map (MANDATORY)" and
+#                                 force-enables + disables the checkbox
+#   * _collect_normal_map_from_dialog  — bypasses the CN=Off
+#                                        short-circuit so the normal
+#                                        map is always produced
+#   * _maybe_override_cn_with_normal_map  — forces the CN override
+#                                            even when the user's
+#                                            current CN dict says Off
+#
+# Scoped to the lifetime of a single handler invocation via try/finally
+# in the force-3D procedure wrappers.
+_FORCE_3D_MODE: bool = False
+
+
 def _add_normal_map_selector(dialog, box, image):
     """Add a normal map layer dropdown to any dialog.
 
@@ -2232,10 +2255,29 @@ def _add_normal_map_selector(dialog, box, image):
       * _normal_enabled     — CheckButton  (use-it master switch)
       * _normal_auto_gen    — CheckButton  (auto-generate when missing)
     """
-    frame = Gtk.Frame(label="  3D Normal Map (surface-aware, optional)  ")
+    force_3d = bool(globals().get("_FORCE_3D_MODE"))
+    frame_label = ("  🔷 3D NORMAL MAP — MANDATORY for this tool  "
+                   if force_3d
+                   else "  3D Normal Map (surface-aware, optional)  ")
+    frame = Gtk.Frame(label=frame_label)
     fbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
     fbox.set_margin_start(8); fbox.set_margin_end(8)
     fbox.set_margin_top(4); fbox.set_margin_bottom(6)
+
+    # When called from the /3D submenu, add a bold top-of-dialog banner
+    # so the user knows they're in a 3D variant. The underlying handler
+    # + workflow are the same as the non-3D menu entry — this surface
+    # change is the ONLY way the user can tell which path they took.
+    if force_3d:
+        banner = Gtk.Label()
+        banner.set_markup(
+            "<b>3D Mode — ControlNet is locked to Normal Map.</b>\n"
+            "<small>Launched from the 3D submenu. For a CN-free run, "
+            "use the matching entry in the Generate / Enhance / Style "
+            "submenu.</small>")
+        banner.set_xalign(0.0); banner.set_line_wrap(True)
+        banner.set_margin_top(2); banner.set_margin_bottom(6)
+        fbox.pack_start(banner, False, False, 0)
 
     # Headline — set once we know whether a candidate layer exists
     # (below). Stays visible so users who don't care about CN settings
@@ -2246,6 +2288,11 @@ def _add_normal_map_selector(dialog, box, image):
 
     dialog._normal_enabled = Gtk.CheckButton(
         label="Use 3D normal map for surface-aware generation")
+    if force_3d:
+        # In mandatory mode, lock the checkbox on and gray it out so
+        # the user understands they can't turn it off here.
+        dialog._normal_enabled.set_active(True)
+        dialog._normal_enabled.set_sensitive(False)
     dialog._normal_enabled.set_tooltip_text(
         "When enabled, a 3D surface-normal map guides the AI. This\n"
         "dramatically improves:\n"
@@ -2613,7 +2660,8 @@ def _export_normal_map_layer(image, layer_ref):
             pass
 
 
-def _collect_normal_map_from_dialog(dlg, image, server_url):
+def _collect_normal_map_from_dialog(dlg, image, server_url,
+                                      current_cn_mode=None):
     """If the dialog's normal-map picker is enabled, return the name
     of a normal-map PNG that's been uploaded to ComfyUI's input dir.
 
@@ -2626,6 +2674,17 @@ def _collect_normal_map_from_dialog(dlg, image, server_url):
            map is — they just see a 3D-aware result.
         3. Everything off → return None (caller skips normal-map CN).
 
+    ``current_cn_mode`` is the ControlNet mode the user picked in the
+    dialog (``"Off"`` / ``"Canny (edges) — …"`` / etc.). When it's
+    "Off" we short-circuit the whole flow — no auto-generation, no
+    layer export, no upload. The 3D Normal Map feature is purely a
+    helper that injects a CN slot; when the user explicitly picked
+    "no ControlNet" we respect that instead of spending 30 s on
+    auto-gen + hitting a preflight warning for a missing Normal Map
+    CN file. (Bug reported 2026-04-20: SDXL img2img with CN=Off
+    surfaced a confusing "no controlnet-1.0 installed" popup even
+    though the user hadn't asked for CN.)
+
     Silently no-ops when the dialog hasn't had
     `_add_normal_map_selector` called on it — every caller passes
     any dlg, and we check for the attributes before reading.
@@ -2635,6 +2694,21 @@ def _collect_normal_map_from_dialog(dlg, image, server_url):
     auto_cb = getattr(dlg, "_normal_auto_gen", None)
     if cb is None or cmb is None or not cb.get_active():
         return None
+
+    # Short-circuit when the user picked CN = Off. Checked here rather
+    # than inside _maybe_override_cn_with_normal_map so we don't waste
+    # ~30 s on auto-gen + upload for a normal map that the override
+    # would then silently drop.
+    #
+    # EXCEPTION: in the mandatory 3D mode (procedure launched from the
+    # /3D submenu), 3D normal map is the whole point — ignore the
+    # CN=Off pick and run the full flow. _maybe_override_cn_with_normal_map
+    # then forces the CN override regardless of the current dict's mode.
+    if (isinstance(current_cn_mode, str)
+            and current_cn_mode.strip().lower() in ("off", "none", "")
+            and not globals().get("_FORCE_3D_MODE")):
+        return None
+
     idx_id = cmb.get_active_id()
 
     # Reuse-first guard: if the combo doesn't already point at a
@@ -2995,6 +3069,32 @@ def _maybe_override_cn_with_normal_map(controlnet, normal_map_filename,
         if resolved:
             available = _cn_model_available(server_url, resolved)
             if available is False:
+                # Respect the user's explicit "no ControlNet" pick.
+                # When the current CN dict has mode == "Off" (or is
+                # None / empty), the user didn't ask for CN — 3D
+                # Normal Map is default-on in the dialog as a
+                # convenience but does nothing useful without a CN
+                # slot. Silently skip instead of popping a "CN model
+                # missing" dialog at someone who explicitly turned
+                # CN off. Users who DID pick a CN mode still get the
+                # visible warning so they know why 3D guidance was
+                # dropped.
+                cur_mode = ((controlnet or {}).get("mode")
+                            if isinstance(controlnet, dict) else None)
+                user_picked_off = (not cur_mode
+                                    or str(cur_mode).strip().lower()
+                                       in ("off", "none", ""))
+                # Force-3D mode (/3D submenu) still needs to tell the
+                # user the CN is missing — skipping silently would
+                # make the dispatch proceed WITHOUT 3D guidance, which
+                # defeats the whole point of the /3D entry. Fall
+                # through to the loud Gimp.message path below so the
+                # user knows to install the CN file.
+                if user_picked_off and not globals().get("_FORCE_3D_MODE"):
+                    print(f"[Spellcaster] Normal Map skipped "
+                          f"(CN={cur_mode!r}, server missing "
+                          f"{resolved!r}).", file=__import__('sys').stderr)
+                    return controlnet
                 try:
                     bn = resolved.replace("\\", "/").rsplit("/", 1)[-1]
                     Gimp.message(
@@ -9766,57 +9866,123 @@ def _speedcoach_banner_for_dialog(dialog_name: str, job_spec: dict):
 
 
 def _speedcoach_show_minihud() -> None:
-    """Open the floating 120×40 always-on-top HUD window. Idempotent."""
+    """Spellcaster Mini-HUD — a live status dialog that stays open
+    while the user keeps working in GIMP.
+
+    Bug before 2026-04-20: the previous implementation created a
+    Gtk.Window, wired a GLib timer, and returned immediately. GIMP 3
+    plug-ins are single-shot child processes; when the procedure
+    callback returns, the process exits and the window vanishes
+    along with it. Effect: user clicks "Show Mini-HUD", nothing
+    visible happens.
+
+    Fix: non-modal ``Gtk.Dialog`` + nested ``GLib.MainLoop`` that
+    keeps the plug-in alive. GIMP runs in a separate process, so
+    this loop does NOT block GIMP — user can still click around in
+    GIMP while the HUD is on screen. The loop exits when the user
+    closes the HUD, letting the procedure return cleanly.
+    """
     try:
         from gi.repository import Gtk, GLib as _GLib
     except Exception:
         return
-    existing = _SPEEDCOACH_STATE.get("minihud_win")
-    if existing is not None:
-        try:
-            existing.present()
-            return
-        except Exception:
-            pass
-    win = Gtk.Window(title="Spellcaster HUD")
+
+    win = Gtk.Dialog(title="Spellcaster · Mini-HUD")
     try:
-        win.set_decorated(False)
+        win.set_modal(False)
     except Exception:
         pass
-    win.set_default_size(180, 48)
+    win.set_default_size(340, 130)
     try:
         win.set_keep_above(True)
     except Exception:
+        # Removed in GTK4 — window renders as regular top-level.
+        # User can drag it wherever they want.
         pass
-    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-    box.set_margin_top(4); box.set_margin_bottom(4)
-    box.set_margin_start(6); box.set_margin_end(6)
+
+    try:
+        box = win.get_content_area()
+    except Exception:
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+    try:
+        box.set_spacing(6)
+        box.set_margin_top(10); box.set_margin_bottom(10)
+        box.set_margin_start(12); box.set_margin_end(12)
+    except Exception:
+        pass
+
+    header = Gtk.Label()
+    try:
+        header.set_markup(
+            "<small><b>SPELLCASTER LIVE</b></small>")
+        header.set_xalign(0.0)
+        box.append(header) if hasattr(box, "append") \
+            else box.pack_start(header, False, False, 0)
+    except Exception:
+        pass
+
     lbl = Gtk.Label(label="idle")
-    lbl.set_xalign(0.0); lbl.set_wrap(True)
-    box.append(lbl)
-    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-    close_btn = Gtk.Button(label="×")
-    close_btn.connect("clicked", lambda _b: win.close())
-    cancel_btn = Gtk.Button(label="Cancel")
+    lbl.set_xalign(0.0)
+    lbl.set_wrap(True)
+    try:
+        lbl.set_selectable(True)
+    except Exception:
+        pass
+    try:
+        box.append(lbl)
+    except AttributeError:
+        box.pack_start(lbl, True, True, 0)
+
+    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+    cancel_btn = Gtk.Button(label="Cancel All")
+    cancel_btn.set_tooltip_text(
+        "Signal every running Spellcaster job to cancel at its "
+        "next step boundary.")
     cancel_btn.connect("clicked", lambda _b: _JOBS.cancel_all())
-    row.append(cancel_btn); row.append(close_btn)
-    box.append(row)
-    win.set_child(box) if hasattr(win, "set_child") else win.add(box)
+    close_btn = Gtk.Button(label="Close HUD")
+    loop = _GLib.MainLoop()
+    close_btn.connect("clicked",
+                      lambda _b: (loop.quit() if loop.is_running() else None))
+    try:
+        row.append(cancel_btn); row.append(close_btn)
+        box.append(row)
+    except AttributeError:
+        row.pack_start(cancel_btn, False, False, 0)
+        row.pack_start(close_btn, False, False, 0)
+        box.pack_start(row, False, False, 0)
+
+    def _quit(*_args):
+        if loop.is_running():
+            loop.quit()
+        return False
+
+    try:
+        win.connect("response", _quit)
+    except Exception:
+        pass
+    try:
+        win.connect("close-request", _quit)
+    except Exception:
+        try:
+            win.connect("destroy", _quit)
+        except Exception:
+            pass
 
     def _tick():
-        if not win.is_visible():
-            return False
         parts = []
-        with _JOBS._lock:
-            active = list(_JOBS._jobs)
+        try:
+            with _JOBS._lock:
+                active = list(_JOBS._jobs)
+        except Exception:
+            active = []
         if not active:
             parts.append("idle")
         else:
             cur = active[-1]
-            elapsed = int(time.time() - cur["start_ts"])
-            parts.append(cur["phase_text"] or cur["label_text"])
+            elapsed = int(time.time() - cur.get("start_ts", time.time()))
+            parts.append(cur.get("phase_text") or cur.get("label_text") or "\u2026")
             if len(active) > 1:
-                parts.append(f"+{len(active)-1}q")
+                parts.append(f"+{len(active)-1} queued")
             parts.append(f"{elapsed}s")
         r = getattr(_JOBS, "_poll_rich_cached", None) or {}
         pv, pm = r.get("progress_value"), r.get("progress_max")
@@ -9824,22 +9990,48 @@ def _speedcoach_show_minihud() -> None:
             parts.append(f"step {pv}/{pm}")
         if r.get("vram_used_pct"):
             parts.append(f"VRAM {r['vram_used_pct']}%")
-        lbl.set_text("   ·   ".join(parts))
+        # Pull the live ETA from the current job, populated by the
+        # status-bar tick. Same source so the two surfaces stay in
+        # sync with no HTTP double-polling.
+        if active:
+            total = active[-1].get("live_total_est") or 0
+            if total:
+                eta = total - (time.time() - active[-1].get("start_ts", 0))
+                if eta >= 0.5:
+                    try:
+                        from spellcaster_core import estimate as _est
+                        parts.append(f"ETA {_est.format_countdown(eta)}")
+                    except Exception:
+                        parts.append(f"ETA {int(eta)}s")
+        try:
+            lbl.set_text("   \u00b7   ".join(parts))
+        except Exception:
+            pass
         return True
 
     _GLib.timeout_add(500, _tick)
-    _SPEEDCOACH_STATE["minihud_win"] = win
-    def _on_close(*_args):
-        _SPEEDCOACH_STATE["minihud_win"] = None
-        return False
+    _tick()
+
     try:
-        win.connect("close-request", _on_close)
+        win.show()
     except Exception:
-        try:
-            win.connect("destroy", _on_close)
-        except Exception:
-            pass
-    win.show()
+        pass
+    try:
+        win.present()
+    except Exception:
+        pass
+
+    # Nested main loop — the procedure stays here until the user
+    # closes the HUD. The plug-in process stays alive the whole
+    # time; GIMP (a separate process) keeps being usable.
+    try:
+        loop.run()
+    except Exception:
+        pass
+    try:
+        win.destroy()
+    except Exception:
+        pass
 
 
 def _update_spinner_status(text):
@@ -17000,6 +17192,16 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-faceswap-reset":      None,
             "spellcaster-last-warnings":       None,
             "spellcaster-toggle-speedcoach":   None,
+            # Mandatory-3D variants — live exclusively under the /3D
+            # submenu. The callbacks set _FORCE_3D_MODE before
+            # dispatching to the regular handlers so the dialog
+            # shows a clear "MANDATORY" banner + locks the 3D normal
+            # map checkbox on + forces the CN override even when the
+            # user's stored CN mode says Off. See _run_img2img_3d etc.
+            "spellcaster-img2img-3d":          None,
+            "spellcaster-inpaint-3d":          None,
+            "spellcaster-outpaint-3d":         None,
+            "spellcaster-iclight-3d":          None,
         }
 
         # ── Feature-gate logic: denylist + probe-cached allowlist ──
@@ -17222,12 +17424,32 @@ class Spellcaster(Gimp.PlugIn):
                                           "FAIL lines show actionable next steps \u2014 copy the "
                                           "report when asking for help. Also runnable in batch "
                                           "mode via tests/gimp_batch.py."),
-            "spellcaster-sam3-select": ("AI Select by Description...", self._run_sam3_select,
-                                         "Type what to select (person, shirt, hair) — AI creates the selection automatically"),
-            "spellcaster-sam3-extract": ("AI Extract Subject...", self._run_sam3_extract,
-                                          "One-click: detect subject, remove background, auto-crop to transparent PNG"),
-            "spellcaster-anything-but": ("Anything But... (Reverse Select)", self._run_sam3_anything_but,
-                                          "Type what to EXCLUDE — SAM3 detects it and selects everything else"),
+            # Mere-selection variant: produces a GIMP selection on the
+            # active layer — NO new cut-out layer, NO transparency
+            # layer. Same detection, different post-processing. Users
+            # who want a cut-out use the Extract variant below.
+            "spellcaster-sam3-select": (
+                "AI Select — mere selection (no layer)...",
+                self._run_sam3_select,
+                "Type what to select (person, shirt, hair) — SAM3 "
+                "detects it and sets a GIMP selection on the ACTIVE "
+                "LAYER. No new layer, no transparency, nothing cut "
+                "out — just a selection you can use with any GIMP "
+                "tool (fill, edit, mask, etc)."),
+            "spellcaster-sam3-extract": (
+                "AI Select — cut out to new layer...",
+                self._run_sam3_extract,
+                "One-click: detect subject, remove background, drop "
+                "the result into a NEW TRANSPARENT LAYER. Use this "
+                "when you want a usable cutout. For a pure selection, "
+                "use AI Select above."),
+            "spellcaster-anything-but": (
+                "AI Select Inverse — mere selection of everything else...",
+                self._run_sam3_anything_but,
+                "Type what to EXCLUDE — SAM3 detects it, inverts the "
+                "mask, and sets a GIMP selection covering everything "
+                "ELSE on the active layer. Mere selection — no layer "
+                "produced."),
             "spellcaster-magic-eraser": ("Magic Eraser...", self._run_magic_eraser,
                                           "Describe an unwanted object — SAM3 detects it and LaMa seamlessly inpaints over it"),
             # Flux Kontext
@@ -17300,6 +17522,36 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-toggle-speedcoach": ("Toggle Speed Suggestions",
                                                self._run_toggle_speedcoach,
                                                "Enable or disable SpeedCoach banners + status-bar warnings chip globally. Persists across GIMP restarts."),
+            # Mandatory-3D variants — dedicated entries under the 3D
+            # submenu that FORCE the 3D normal map path. Each
+            # dispatches to the canonical handler after setting the
+            # _FORCE_3D_MODE flag.
+            "spellcaster-img2img-3d": (
+                "🔷 3D Image to Image...",
+                self._run_img2img_3d,
+                "Image-to-image WITH mandatory 3D normal map guidance. "
+                "ControlNet is locked to Normal Map — if you don't want "
+                "3D, use the regular Image to Image entry in the Generate "
+                "submenu."),
+            "spellcaster-inpaint-3d": (
+                "🔷 3D Inpaint Selection...",
+                self._run_inpaint_3d,
+                "Inpaint WITH mandatory 3D normal map guidance. "
+                "For a non-3D inpaint, use the entry in the Generate "
+                "submenu."),
+            "spellcaster-outpaint-3d": (
+                "🔷 3D Outpaint / Extend Canvas...",
+                self._run_outpaint_3d,
+                "Outpaint WITH mandatory 3D normal map guidance. "
+                "For a non-3D outpaint, use the entry in the Image "
+                "submenu."),
+            "spellcaster-iclight-3d": (
+                "🔷 3D IC-Light Relighting...",
+                self._run_iclight_3d,
+                "IC-Light relighting WITH mandatory 3D normal map — "
+                "relight accuracy is dramatically better when the model "
+                "knows the surface geometry. For a non-3D variant, use "
+                "the Colors menu entry."),
         }
 
         label, callback, doc = menu_map[name]
@@ -17426,6 +17678,16 @@ class Spellcaster(Gimp.PlugIn):
             # View — toggles + floating overlays.
             "spellcaster-show-minihud":       f"{_S}/View",
             "spellcaster-toggle-speedcoach":  f"{_S}/View",
+            # /3D submenu — mandatory 3D normal map variants. These
+            # are dedicated procedures distinct from their regular
+            # counterparts so the callback can set _FORCE_3D_MODE
+            # before the dialog is built. Having them ONLY here (not
+            # as secondary menu paths on the regular procedures)
+            # means users can tell at a glance which mode they're in.
+            "spellcaster-img2img-3d":         f"{_S}/3D",
+            "spellcaster-inpaint-3d":         f"{_S}/3D",
+            "spellcaster-outpaint-3d":        f"{_S}/3D",
+            "spellcaster-iclight-3d":         f"{_S}/3D",
         }
 
         # ── Native GIMP menu integration ─────────────────────────────
@@ -17465,12 +17727,16 @@ class Spellcaster(Gimp.PlugIn):
         # CN-enabled img-gen dialogs that share
         # _collect_normal_map_from_dialog to override their ControlNet
         # selection with Normal Map mode.
+        # /3D submenu secondary registration. Only the dedicated
+        # Normal Map generator lives here as a secondary entry —
+        # img2img / inpaint / outpaint / iclight each now have their
+        # own ``-3d`` procedure (dedicated callback that sets
+        # _FORCE_3D_MODE) registered primarily at /3D via
+        # _menu_paths. Keeping normal-map as a secondary entry lets
+        # users find the generator itself from the 3D submenu while
+        # its primary home is /Enhance.
         _3d_tools = {
             "spellcaster-normal-map",
-            "spellcaster-iclight",
-            "spellcaster-img2img",
-            "spellcaster-inpaint",
-            "spellcaster-outpaint",
         }
 
         # Wrap every callback with the inbox auto-drain so users see
@@ -17540,7 +17806,9 @@ class Spellcaster(Gimp.PlugIn):
             # Resolve the normal map BEFORE destroying the dialog — the
             # export reads GIMP layers in-process and we need the dialog
             # widgets for the checkbox / combo state.
-            _nm_filename = _collect_normal_map_from_dialog(dlg, image, v["server"])
+            _nm_filename = _collect_normal_map_from_dialog(
+                dlg, image, v["server"],
+                current_cn_mode=(v.get("controlnet") or {}).get("mode"))
             _SESSION["img2img"] = dlg._collect_session()
             _save_session()
             dlg.destroy()
@@ -17675,7 +17943,9 @@ class Spellcaster(Gimp.PlugIn):
                 dlg.destroy()
                 return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
             v = dlg.get_values()
-            _nm_filename = _collect_normal_map_from_dialog(dlg, image, v["server"])
+            _nm_filename = _collect_normal_map_from_dialog(
+                dlg, image, v["server"],
+                current_cn_mode=(v.get("controlnet") or {}).get("mode"))
             _SESSION["inpaint"] = dlg._collect_session()
             _save_session()
             dlg.destroy()
@@ -24859,7 +25129,9 @@ class Spellcaster(Gimp.PlugIn):
                     "start_percent": 0.0, "end_percent": 1.0} if out_cn1_mode != "Off" else None
         # Resolve normal-map state before destroying the dialog (reads
         # widget state + exports GIMP layer). Overrides CN1 when set.
-        _nm_filename = _collect_normal_map_from_dialog(dlg, image, v["server"])
+        _nm_filename = _collect_normal_map_from_dialog(
+                dlg, image, v["server"],
+                current_cn_mode=(v.get("controlnet") or {}).get("mode"))
         dlg.destroy()
         out_cn1 = _maybe_override_cn_with_normal_map(
             out_cn1, _nm_filename,
@@ -30815,6 +31087,58 @@ class Spellcaster(Gimp.PlugIn):
                       f"Setting persists across GIMP restarts.")
         return procedure.new_return_values(
             Gimp.PDBStatusType.SUCCESS, GLib.Error())
+
+    # ══════════════════════════════════════════════════════════════════════
+    #  /3D submenu — force-3D variants
+    #
+    # Each wrapper sets _FORCE_3D_MODE = True for the duration of the
+    # underlying handler, then clears the flag in a finally block so a
+    # crash doesn't leak "mandatory 3D" state into the next dispatch.
+    # Same callback body under the hood; the flag is read by
+    # _add_normal_map_selector (banner + locked checkbox) and by the
+    # _collect_normal_map_from_dialog / _maybe_override_cn_with_normal_map
+    # chain (bypasses the CN=Off short-circuit + forces the CN override).
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _run_img2img_3d(self, procedure, run_mode, image, drawables, config, data):
+        """Image-to-image with MANDATORY 3D normal map guidance."""
+        global _FORCE_3D_MODE
+        _FORCE_3D_MODE = True
+        try:
+            return self._run_img2img(procedure, run_mode, image, drawables,
+                                      config, data)
+        finally:
+            _FORCE_3D_MODE = False
+
+    def _run_inpaint_3d(self, procedure, run_mode, image, drawables, config, data):
+        """Inpaint with MANDATORY 3D normal map guidance."""
+        global _FORCE_3D_MODE
+        _FORCE_3D_MODE = True
+        try:
+            return self._run_inpaint(procedure, run_mode, image, drawables,
+                                      config, data)
+        finally:
+            _FORCE_3D_MODE = False
+
+    def _run_outpaint_3d(self, procedure, run_mode, image, drawables, config, data):
+        """Outpaint with MANDATORY 3D normal map guidance."""
+        global _FORCE_3D_MODE
+        _FORCE_3D_MODE = True
+        try:
+            return self._run_outpaint(procedure, run_mode, image, drawables,
+                                       config, data)
+        finally:
+            _FORCE_3D_MODE = False
+
+    def _run_iclight_3d(self, procedure, run_mode, image, drawables, config, data):
+        """IC-Light relighting with MANDATORY 3D normal map guidance."""
+        global _FORCE_3D_MODE
+        _FORCE_3D_MODE = True
+        try:
+            return self._run_iclight(procedure, run_mode, image, drawables,
+                                      config, data)
+        finally:
+            _FORCE_3D_MODE = False
 
     # ══════════════════════════════════════════════════════════════════════
     #  F2: Re-run Last
