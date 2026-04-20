@@ -11865,6 +11865,12 @@ class LtxVideoDialog(Gtk.Dialog):
         # _collect_user_preset() / _apply_user_preset(p) below).
         _add_preset_ui(self, box, "ltx_video")
 
+        # LTX is always arch=ltx (video). Route through the central
+        # per-arch optimizer so this dialog's neg-prompt / cfg / steps
+        # tooltips + arch hint match every other dialog's behaviour.
+        # Has no model picker, so one call at init is enough.
+        _apply_arch_optimizations(self, "ltx")
+
         self.show_all()
 
     def _on_fetch_ltx_loras(self, _btn):
