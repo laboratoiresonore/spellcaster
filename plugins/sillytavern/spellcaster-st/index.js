@@ -1432,15 +1432,55 @@ function newWizardState() {
     };
 }
 
+// Global handler used when the wizard is open. Lives on window so we
+// can remove it exactly once when the wizard closes — attach/detach
+// symmetrically to avoid duplicate bindings.
+let _wizardKeydownHandler = null;
+let _wizardPrevFocus = null;
+
 function openWizard() {
     _wizardState = newWizardState();
+    // Remember the element that had focus before the wizard took over
+    // so we can restore focus on close (WCAG 2.4.3).
+    _wizardPrevFocus = document.activeElement;
     renderWizard();
+    // Escape-to-close + keep focus inside the modal (basic focus trap).
+    _wizardKeydownHandler = (e) => {
+        if (!_wizardState) return;
+        if (e.key === 'Escape') { e.preventDefault(); closeWizard(); return; }
+        if (e.key === 'Tab') {
+            const root = document.getElementById('spellcaster-wizard-root');
+            if (!root) return;
+            const focusable = root.querySelectorAll(
+                'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+            if (!focusable.length) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (e.shiftKey && document.activeElement === first) {
+                e.preventDefault(); last.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+                e.preventDefault(); first.focus();
+            }
+        }
+    };
+    document.addEventListener('keydown', _wizardKeydownHandler);
 }
 
 function closeWizard() {
     _wizardState = null;
+    if (_wizardKeydownHandler) {
+        document.removeEventListener('keydown', _wizardKeydownHandler);
+        _wizardKeydownHandler = null;
+    }
     const host = document.getElementById('spellcaster-wizard-root');
     if (host && host.parentNode) host.parentNode.removeChild(host);
+    // Restore the caller's focus so keyboard users don't land at <body>.
+    try {
+        if (_wizardPrevFocus && typeof _wizardPrevFocus.focus === 'function') {
+            _wizardPrevFocus.focus();
+        }
+    } catch { /* element may have detached while wizard was open */ }
+    _wizardPrevFocus = null;
 }
 
 function wizardGo(delta) {
@@ -1492,21 +1532,26 @@ function renderWizard() {
     const isLast  = state.step === WIZARD_STEPS.length - 1;
     host.innerHTML = `
     <div class="scw-backdrop" id="scw-backdrop"></div>
-    <div class="scw-modal" role="dialog" aria-label="Spellcaster Wizard">
+    <div class="scw-modal" role="dialog" aria-modal="true"
+         aria-labelledby="scw-title" aria-describedby="scw-body">
         <div class="scw-header">
-            <div class="scw-title">
-                <span class="scw-emoji">🧙‍♂️</span>
+            <div class="scw-title" id="scw-title">
+                <span class="scw-emoji" aria-hidden="true">🧙‍♂️</span>
                 Spellcaster Wizard
                 <span class="scw-step-label">${step.title}</span>
             </div>
-            <button class="scw-close" id="scw-close" aria-label="Close">×</button>
+            <button class="scw-close" id="scw-close" type="button"
+                    aria-label="Close wizard">×</button>
         </div>
-        <div class="scw-progress">${progressDots}</div>
-        <div class="scw-body">${bodyHtml}</div>
+        <div class="scw-progress" role="progressbar"
+             aria-valuemin="1" aria-valuemax="${WIZARD_STEPS.length}"
+             aria-valuenow="${state.step + 1}"
+             aria-label="Step ${state.step + 1} of ${WIZARD_STEPS.length}">${progressDots}</div>
+        <div class="scw-body" id="scw-body">${bodyHtml}</div>
         <div class="scw-footer">
-            <button class="scw-btn scw-secondary" id="scw-back"
+            <button class="scw-btn scw-secondary" id="scw-back" type="button"
                     ${canBack ? '' : 'disabled'}>Back</button>
-            <button class="scw-btn scw-primary" id="scw-next">
+            <button class="scw-btn scw-primary" id="scw-next" type="button">
                 ${isLast ? 'Save & Apply' : 'Next'}
             </button>
         </div>

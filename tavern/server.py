@@ -4775,10 +4775,25 @@ def _spellcaster_lora_knowledge_get(name: str, use_network: bool = True) -> tupl
     return (200, {"knowledge": k.to_dict()})
 
 
+def _spellcaster_lora_scorer_probe() -> tuple[int, dict]:
+    """GET /api/spellcaster/lora/scorer/probe — check whether the
+    local Ollama has the multimodal scorer model installed. The
+    Calibration UI uses the result to gray out "auto-confirm" when
+    scoring can't run."""
+    try:
+        from spellcaster_core.lora_scorer import probe_available
+    except Exception as e:
+        return (500, {"error": f"scorer module unavailable: {e}"})
+    return (200, probe_available())
+
+
 def _spellcaster_lora_calibrate_auto_start(
     targets: list = None,
     subset: str = "",
     use_network: bool = True,
+    score_with_llm: bool = False,
+    ollama_url: str = "",
+    scorer_model: str = "",
 ) -> tuple[int, dict]:
     """POST /api/spellcaster/lora/calibrate/auto/start — render ONE
     auto-recipe sample per target LoRA.
@@ -4851,9 +4866,13 @@ def _spellcaster_lora_calibrate_auto_start(
         lora_path_resolver=_resolve_lora_abs_path,
         user_override_resolver=lambda n: _LORA_REGISTRY.get(n),
         use_network=bool(use_network),
+        score_with_llm=bool(score_with_llm),
+        ollama_url=(ollama_url or None),
+        scorer_model=(scorer_model or None),
     )
     return (200, {"ok": True, "job_id": state.job_id,
-                  "total": state.total, "status": state.status})
+                  "total": state.total, "status": state.status,
+                  "score_with_llm": bool(score_with_llm)})
 
 
 def _spellcaster_lora_calibrate_auto_status(job_id: str) -> tuple[int, dict]:
@@ -9089,6 +9108,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(*_spellcaster_lora_knowledge_get(
                 params.get('name', [''])[0],
                 use_network=(params.get('network', ['1'])[0] != '0')))
+        if self.path == '/api/spellcaster/lora/scorer/probe':
+            return self.end_json(*_spellcaster_lora_scorer_probe())
         if self.path.startswith('/api/spellcaster/lora/suggest'):
             qs = urllib.parse.urlparse(self.path).query
             params = urllib.parse.parse_qs(qs)
@@ -13298,7 +13319,10 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(*_spellcaster_lora_calibrate_auto_start(
                 targets=data.get('targets') or [],
                 subset=data.get('subset') or '',
-                use_network=bool(data.get('use_network', True))))
+                use_network=bool(data.get('use_network', True)),
+                score_with_llm=bool(data.get('score_with_llm', False)),
+                ollama_url=data.get('ollama_url') or '',
+                scorer_model=data.get('scorer_model') or ''))
         if self.path.startswith('/api/spellcaster/lora/shootout/cancel'):
             qs = urllib.parse.urlparse(self.path).query
             params = urllib.parse.parse_qs(qs)
