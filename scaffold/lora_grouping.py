@@ -709,10 +709,12 @@ class ShootoutJobState:
     done: int = 0
     current: str = ""
     result: Optional[ShootoutResult] = None
-    status: str = "running"           # running | complete | error
+    status: str = "running"           # running | complete | error | cancelled
     error: str = ""
     started_at: float = field(default_factory=time.time)
     finished_at: Optional[float] = None
+    cancel_requested: bool = False
+    server: str = ""                   # retained so cancel can call ComfyUI
 
     def to_public_dict(self) -> dict:
         return {
@@ -727,11 +729,47 @@ class ShootoutJobState:
             "started_at":    self.started_at,
             "finished_at":   self.finished_at,
             "result":        self.result.to_dict() if self.result else None,
+            "cancel_requested": self.cancel_requested,
         }
 
 
 _JOBS: dict[str, ShootoutJobState] = {}
 _JOBS_LOCK = threading.Lock()
+
+
+def _comfy_cancel(server: str, timeout: float = 3.0) -> dict:
+    """Interrupt the current ComfyUI render + clear the queue.
+
+    Used by both shootout and calibration cancel paths. Two calls:
+    `POST /interrupt` stops whatever's mid-sampling, and
+    `POST /queue` with `{"clear": true}` drops everything queued.
+    Errors are swallowed (best-effort) and reported in the returned
+    dict so the caller can surface a warning without failing the
+    cancel flow.
+    """
+    import urllib.error
+    import urllib.request
+    results = {"interrupt": False, "queue_clear": False, "errors": []}
+    base = (server or "").rstrip("/")
+    if not base:
+        results["errors"].append("no ComfyUI server configured")
+        return results
+    for endpoint, label, body in (
+        ("/interrupt", "interrupt", b"{}"),
+        ("/queue", "queue_clear", b'{"clear": true}'),
+    ):
+        try:
+            req = urllib.request.Request(
+                base + endpoint,
+                data=body,
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=timeout):
+                results[label] = True
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as e:
+            results["errors"].append(f"{label}: {e!s}"[:120])
+    return results
 
 
 def _pick_representative_model(discover_models_out: list, arch: str) -> Optional[dict]:
@@ -971,7 +1009,7 @@ def start_shootout_job(
     job_id = f"lshoot_{uuid.uuid4().hex[:12]}"
     state = ShootoutJobState(
         job_id=job_id, arch=arch, purpose_group=purpose_group,
-        total=len(candidate_loras),
+        total=len(candidate_loras), server=server,
     )
     with _JOBS_LOCK:
         _JOBS[job_id] = state
@@ -1000,6 +1038,8 @@ def start_shootout_job(
                 seed=seed, model=rep["name"] if rep else "",
             )
             for lora_name in candidate_loras:
+                if state.cancel_requested:
+                    break
                 state.current = lora_name
                 sample = _render_single_sample(
                     server, arch, lora_name, eff_strength,
@@ -1009,7 +1049,7 @@ def start_shootout_job(
                 result.samples.append(sample)
                 state.done += 1
             state.result = result
-            state.status = "complete"
+            state.status = "cancelled" if state.cancel_requested else "complete"
         except Exception as e:
             state.status = "error"
             state.error = f"{e!s}"[:400]
@@ -1138,10 +1178,12 @@ class CalibrationJobState:
     current: str = ""
     samples: list[dict] = field(default_factory=list)
     skipped: list[dict] = field(default_factory=list)
-    status: str = "running"           # running | complete | error
+    status: str = "running"           # running | complete | error | cancelled
     error: str = ""
     started_at: float = field(default_factory=time.time)
     finished_at: Optional[float] = None
+    cancel_requested: bool = False
+    server: str = ""                   # kept so cancel can call ComfyUI
 
     def to_public_dict(self) -> dict:
         return {
@@ -1155,6 +1197,7 @@ class CalibrationJobState:
             "finished_at": self.finished_at,
             "samples":     list(self.samples),
             "skipped":     list(self.skipped),
+            "cancel_requested": self.cancel_requested,
         }
 
 
@@ -1219,7 +1262,9 @@ def start_calibration_job(
                             "purpose_group": group})
 
     job_id = f"lcal_{uuid.uuid4().hex[:12]}"
-    state = CalibrationJobState(job_id=job_id, total=len(renderable))
+    state = CalibrationJobState(
+        job_id=job_id, total=len(renderable), server=server,
+    )
     state.skipped = skipped
     with _CALIB_LOCK:
         _CALIB_JOBS[job_id] = state
@@ -1227,6 +1272,8 @@ def start_calibration_job(
     def _worker():
         try:
             for t in renderable:
+                if state.cancel_requested:
+                    break
                 name = t["name"]
                 arch = t["arch"]
                 group = t["purpose_group"]
@@ -1251,7 +1298,7 @@ def start_calibration_job(
                     }
                 state.samples.append(out)
                 state.done += 1
-            state.status = "complete"
+            state.status = "cancelled" if state.cancel_requested else "complete"
         except Exception as e:
             state.status = "error"
             state.error = f"{e!s}"[:400]
@@ -1267,6 +1314,43 @@ def start_calibration_job(
 def get_calibration_job(job_id: str) -> Optional[CalibrationJobState]:
     with _CALIB_LOCK:
         return _CALIB_JOBS.get(job_id)
+
+
+# ── Cancel paths ────────────────────────────────────────────────────────
+
+def cancel_shootout_job(job_id: str) -> dict:
+    """Request stop of an in-flight shootout job. Flags the worker
+    to break out of its loop AFTER the current render finishes, and
+    tells ComfyUI to interrupt whatever is sampling right now."""
+    with _JOBS_LOCK:
+        state = _JOBS.get(job_id)
+        if not state:
+            return {"ok": False, "error": f"unknown job {job_id!r}"}
+        if state.status in ("complete", "cancelled", "error"):
+            return {"ok": True, "status": state.status,
+                    "note": "job already finished"}
+        state.cancel_requested = True
+        server = state.server
+    comfy = _comfy_cancel(server)
+    return {"ok": True, "status": "cancel_requested",
+            "comfy": comfy}
+
+
+def cancel_calibration_job(job_id: str) -> dict:
+    """Same contract as cancel_shootout_job but for the batch auto-
+    calibrate worker."""
+    with _CALIB_LOCK:
+        state = _CALIB_JOBS.get(job_id)
+        if not state:
+            return {"ok": False, "error": f"unknown job {job_id!r}"}
+        if state.status in ("complete", "cancelled", "error"):
+            return {"ok": True, "status": state.status,
+                    "note": "job already finished"}
+        state.cancel_requested = True
+        server = state.server
+    comfy = _comfy_cancel(server)
+    return {"ok": True, "status": "cancel_requested",
+            "comfy": comfy}
 
 
 __all__ = [
@@ -1286,4 +1370,6 @@ __all__ = [
     "render_calibration_sample",
     "start_calibration_job",
     "get_calibration_job",
+    "cancel_shootout_job",
+    "cancel_calibration_job",
 ]

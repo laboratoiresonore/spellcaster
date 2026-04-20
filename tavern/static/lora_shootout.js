@@ -400,6 +400,12 @@
   async function fetchGroups() {
     return apiFetch('/api/spellcaster/lora/groups');
   }
+  async function cancelShootoutJob(jobId) {
+    return apiFetch(
+      '/api/spellcaster/lora/shootout/cancel?job=' + encodeURIComponent(jobId),
+      { method: 'POST', body: '{}' }
+    );
+  }
   async function startShootout(arch, purpose_group, optsOrStrength) {
     const payload = { arch, purpose_group };
     // Back-compat: the mega-panel still passes a raw strength number
@@ -558,17 +564,43 @@
       }
       if (state.status === 'running') {
         const pct = state.total > 0 ? Math.round(100 * state.done / state.total) : 5;
+        const cancelling = state.cancel_requested ? ' (cancelling…)' : '';
         body.innerHTML = `
           <div class="sc-shootout-progress">
-            <div>${state.done} of ${state.total} rendered${state.current ? ` — ${state.current.split(/[/\\\\]/).pop()}` : ''}</div>
+            <div>${state.done} of ${state.total} rendered${state.current ? ` — ${state.current.split(/[/\\\\]/).pop()}` : ''}${cancelling}</div>
             <div class="sc-bar"><div class="sc-bar-fill" style="width:${pct}%"></div></div>
+            <button class="sc-shootout-cancel-btn" type="button"
+              style="margin-top:14px;background:#b02a37;color:white;border:0;border-radius:6px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer"
+              ${state.cancel_requested ? 'disabled' : ''}>
+              ⏹ Cancel (and clear ComfyUI queue)
+            </button>
           </div>`;
+        const cancelBtn = body.querySelector('.sc-shootout-cancel-btn');
+        if (cancelBtn) cancelBtn.addEventListener('click', async () => {
+          cancelBtn.disabled = true;
+          cancelBtn.textContent = 'Cancelling…';
+          try { await cancelShootoutJob(jobId); }
+          catch (e) {
+            cancelBtn.textContent = 'Cancel failed: ' + e.message;
+            cancelBtn.disabled = false;
+          }
+        });
         pollTimer = setTimeout(poll, 1500);
         return;
       }
       if (state.status === 'error') {
         body.innerHTML = `<div class="sc-shootout-empty" style="color:#ff6b6b">
           Error: ${state.error || 'unknown'}</div>`;
+        return;
+      }
+      if (state.status === 'cancelled') {
+        // Render whatever we got before the cancel landed so the user
+        // can still approve the samples that finished.
+        if (state.result && state.result.samples && state.result.samples.length) {
+          renderGallery(state, arch, purpose_group);
+          return;
+        }
+        body.innerHTML = `<div class="sc-shootout-empty">Cancelled — ComfyUI queue cleared.</div>`;
         return;
       }
       renderGallery(state, arch, purpose_group);
