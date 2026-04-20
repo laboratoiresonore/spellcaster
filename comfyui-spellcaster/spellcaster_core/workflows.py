@@ -4767,6 +4767,19 @@ def build_photobooth(ref_filename, prompt_text, seed,
                      swap_model="reswapper_256.onnx",
                      face_restore_model="codeformer-v0.1.0.pth",
                      face_restore_vis=0.9, codeformer_weight=0.6,
+                     # Final-restore pass tuning — visibility controls
+                     # how much of the restored face blends over the
+                     # swap output (1.0 = full restore, 0.0 = no-op),
+                     # codeformer_weight tunes the CodeFormer network
+                     # at that final pass specifically (the stage-2
+                     # weight is shared with ReActor's FaceBoost).
+                     final_restore_vis=1.0, final_restore_weight=0.5,
+                     # Sampler override (default "euler" — matches the
+                     # Klein reference workflow). Advanced users can
+                     # try "dpmpp_2m" or "heun" for different sampling
+                     # characteristics. Scheduler stays flux2_scheduler
+                     # since that's Klein-specific.
+                     sampler_name="euler",
                      transparent=False,
                      klein_models=None):
     """Photobooth: generate passport-style headshots with extreme character fidelity.
@@ -4834,7 +4847,7 @@ def build_photobooth(ref_filename, prompt_text, seed,
     # Sampling at FIXED portrait dimensions (not derived from reference)
     guider_id = nf.cfg_guider(_pb_model, [ref_pos_id, 0], [ref_neg_id, 0],
                               guidance, node_id="20")
-    sampler_id = nf.ksampler_select("euler", node_id="21")
+    sampler_id = nf.ksampler_select(sampler_name or "euler", node_id="21")
     sched_id = nf.flux2_scheduler(steps, STUDIO_FACE_W, STUDIO_FACE_H,
                                    node_id="22")
     noise_id = nf.random_noise(seed, node_id="23")
@@ -4875,8 +4888,8 @@ def build_photobooth(ref_filename, prompt_text, seed,
         [swap_id, 0],
         model=face_restore_model,
         facedetection="retinaface_resnet50",
-        visibility=1.0,
-        codeformer_weight=0.5,
+        visibility=final_restore_vis,
+        codeformer_weight=final_restore_weight,
         node_id="50",
     )
 
@@ -4974,7 +4987,7 @@ def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
                       scale=None, position_x=0.5, position_y=0.5,
                       klein_model_key="Klein 9B", steps=20, denoise=0.25,
                       guidance=1.0, loras=None, klein_models=None,
-                      enhance=True):
+                      enhance=True, sampler_name="euler"):
     """Klein Blend: composite foreground onto background, then harmonize with Klein.
 
     Pipeline: LoadImage(FG) + LoadImage(BG) → AILab_ImageCombiner → Klein
@@ -5038,7 +5051,7 @@ def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
     # Sampler — BasicScheduler with low denoise
     guider_id = nf.cfg_guider(_bl_model, [ref_pos_id, 0], [ref_neg_id, 0],
                               guidance, node_id="30")
-    sampler_id = nf.ksampler_select("euler", node_id="31")
+    sampler_id = nf.ksampler_select(sampler_name or "euler", node_id="31")
     sched_id = nf.basic_scheduler(_bl_model, steps, denoise,
                                    scheduler="simple", node_id="32")
     noise_id = nf.random_noise(seed, node_id="33")
@@ -5203,7 +5216,8 @@ def build_klein_inpaint(image_filename, mask_filename=None, prompt_text="", seed
                         solid_mask_height=1024, loras=None,
                         klein_models=None, enhance=True,
                         sam3_prompt=None, sam3_invert=False,
-                        sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
+                        sam3_confidence=0.6, sam3_expand=4, sam3_blur=4,
+                        sampler_name="euler"):
     """Klein Inpaint: regenerate masked area using FluxGuidance + SetLatentNoiseMask.
 
     Supports three mask sources (precedence top → bottom):
@@ -5286,7 +5300,7 @@ def build_klein_inpaint(image_filename, mask_filename=None, prompt_text="", seed
     # SetLatentNoiseMask already constrains generation to the masked region.
     guider_id = nf.cfg_guider(model_ref, [guided_id, 0], [neg_id, 0],
                               1.0, node_id="30")
-    sampler_id = nf.ksampler_select("euler", node_id="31")
+    sampler_id = nf.ksampler_select(sampler_name or "euler", node_id="31")
     sched_id = nf.basic_scheduler(model_ref, steps, denoise,
                                    scheduler="simple", node_id="32")
     noise_id = nf.random_noise(seed, node_id="33")
@@ -5456,7 +5470,8 @@ def build_klein_scene_img2img(image_filename, prompt_text, seed,
                                klein_model_key="Klein 9B", steps=20,
                                denoise=0.30, guidance=1.0,
                                klein_models=None,
-                               loras=None, enhance=True):
+                               loras=None, enhance=True,
+                               sampler_name="euler"):
     """Klein scene img2img: harmonize a composited scene.
 
     Unlike build_klein_img2img which uses ReferenceLatent (generates from noise
@@ -5503,7 +5518,7 @@ def build_klein_scene_img2img(image_filename, prompt_text, seed,
     # Sampler — BasicScheduler with denoise
     guider_id = nf.cfg_guider(_sc_model, [guided_id, 0], [neg_id, 0],
                               1.0, node_id="30")
-    sampler_id = nf.ksampler_select("euler", node_id="31")
+    sampler_id = nf.ksampler_select(sampler_name or "euler", node_id="31")
     sched_id = nf.basic_scheduler(_sc_model, steps, denoise,
                                    scheduler="simple", node_id="32")
     noise_id = nf.random_noise(seed, node_id="33")
