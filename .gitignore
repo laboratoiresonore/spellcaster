@@ -86,6 +86,7 @@ tests/*
 !tests/e2e_report.md
 !tests/test_klein_enhancer.py
 !tests/test_quality_boost.py
+!tests/test_model_prompt_profiles.py
 audit_*.py
 
 # Spell icons (user-generated during install, not source)

@@ -36,7 +36,7 @@
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--2.0-7c3aed?style=flat"/></a>
   <a href="https://github.com/laboratoiresonore/spellcaster/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/laboratoiresonore/spellcaster?style=flat&color=7c3aed"/></a>
   <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest"><img alt="Downloads" src="https://img.shields.io/github/downloads/laboratoiresonore/spellcaster/total?color=7c3aed"/></a>
-  <a href="https://www.reddit.com/r/Spellcaster_Studio/"><img alt="Reddit" src="https://img.shields.io/badge/reddit-r%2FSpellcaster__Studio-FF4500?style=flat&logo=reddit&logoColor=white"/></a>
+  <a href="https://patreon.com/LeLaboratoireSonore"><img alt="Support on Patreon" src="https://img.shields.io/badge/Patreon-Tip_the_lab-F96854?style=flat&logo=patreon&logoColor=white"/></a>
 </p>
 
 <p align="center">
@@ -351,38 +351,28 @@ Because every tool is a spell, every workflow is an incantation, your GPU is a f
 
 - [**Full technical reference →** `DEEP_DIVE.md`](DEEP_DIVE.md) — all 69 tools enumerated, the 9-architecture registry, scaffold state machines, antenna endpoints, cross-interface backbone, prompt enhancement chain, privacy + boot safety details, every subsystem explained.
 - [**ComfyUI dependencies** → `DEPENDENCIES.md`](DEPENDENCIES.md) — 24 custom node packs Spellcaster uses, linked to upstream.
-- [**Reddit** → r/Spellcaster_Studio](https://www.reddit.com/r/Spellcaster_Studio/) — support, show-and-tell, bug reports.
 
 ---
 
-<details>
-<summary><strong>Wall of love from r/GIMP</strong></summary>
+## Love it? Share it.
 
-We posted Spellcaster to r/GIMP. They were... *thrilled.*
+Spellcaster is 100% free, 100% open-source, and 0% funded. If it saves you a day of clicking, the best way to pay it forward is to **tell someone**:
 
-> *"No, I use GIMP because I don't want to make AI slop."*
-> — u/Ill_Morning_4282 (130 upvotes, community hero)
+- 🌟 **Star the repo** so more GIMP / Darktable / Resolve users find it
+- 📣 **Post a screenshot** of your first 5-click result with `#Spellcaster` on your favourite network
+- 🧙 **Show a friend** who spends too long on ComfyUI noodle graphs — 30 seconds to install, they'll thank you
+- 🐛 **Open an issue** if it broke, a PR if you fixed it, or a [discussion](https://github.com/laboratoiresonore/spellcaster/discussions) if you just want to show off what you made
+- ☕ **Tip the lab** on [Patreon](https://patreon.com/LeLaboratoireSonore) if Spellcaster earned you an afternoon of sanity — it funds the next GPU and the next 5 a.m. debugging session
 
-> *"No one fucking uses GIMP to make AI slop"*
-> — u/Capable_Basket1661 (50 upvotes, keeper of the sacred flame)
+Word of mouth is the entire marketing budget. Make us famous.
 
-> *"Ew, AI slop... and you didn't even code it yourself? lmao how ridiculous can you get"*
-> — u/FentonTheIIV (correct — 22,000 lines of Python, vibe-coded at 3 AM while arguing with an AI that kept setting Klein's CFG to 3.5. We are not ashamed. We are tired.)
+<p align="center">
+  <a href="https://patreon.com/LeLaboratoireSonore">
+    <img alt="Become a Patron" src="https://img.shields.io/badge/Patreon-Become_a_Patron-F96854?style=for-the-badge&logo=patreon&logoColor=white"/>
+  </a>
+</p>
 
-> *"No. Go away, sloperator!"*
-> — u/chris020891 (coined a new word though, we respect that)
-
-> *"the smugness radiates 'I'm better than everyone' it kills the interest"*
-> — u/kanatakkun (fair point honestly, we were kind of a dick about it)
-
-> *"Everyone with even a minor self respect would hate on this."*
-> — u/chris020891 (our self-respect was already in critical condition, but thanks for checking)
-
-Meanwhile, u/stilgarpl said *"Background removal has been the worst and most tedious task for me for years... I can finally focus on actual creative work"* and got buried by downvotes. u/darkhalfkz said *"thank you"* and survived. Barely.
-
-We love you, r/GIMP. Never change. The tool is still free. The source is still open.
-
-</details>
+---
 
 <details>
 <summary><strong>Credits & acknowledgements</strong></summary>
@@ -419,8 +409,6 @@ Spellcaster doesn't reinvent the wheel — it duct-tapes together the best wheel
 
 **Vibe coding assistant:** [Claude](https://claude.ai/) by Anthropic — wrote most of this while being yelled at
 
-**Moral support:** r/GIMP — for keeping us humble, grounded, and deeply motivated by spite
-
 </details>
 
 ---
@@ -429,6 +417,6 @@ Spellcaster doesn't reinvent the wheel — it duct-tapes together the best wheel
   <sub>
     Made with unhealthy amounts of coffee, mass delusion, and a GPU that sounds like a jet engine.<br/>
     If you've read this far, you're either installing it or writing a hate comment. Either way, we appreciate the engagement.<br/><br/>
-    <strong>Star the repo if you like it. Fork it if you hate it.</strong>
+    <strong>Love it? Share it.</strong> Star the repo. Fork it if you hate it. Either way, pass it on.
   </sub>
 </p>

@@ -237,6 +237,37 @@ async function llmGenerate(params) {
     animateAll();
 })();
 
+// HTML-escape for anything that lands inside an innerHTML template
+// literal. Chat messages, character-card fields (.name / .subtext /
+// .personality), asset titles, and LLM output all flow through
+// template strings that previously injected raw; this escapes the
+// five chars HTML treats as special in element content or quoted
+// attributes. Use `${_esc(x)}` in place of `${x}` at every sink.
+function _esc(s) {
+    if (s == null) return '';
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+// Narrow URL validator for src= attributes derived from untrusted
+// sources (avatar URLs, asset URLs from the Guild's event bus). Only
+// http(s):, data:image/*, or relative /api/ paths pass. Returns a
+// safe placeholder if the input is hostile.
+function _safeSrc(u) {
+    if (typeof u !== 'string' || !u) return '';
+    if (u.startsWith('/') && !u.startsWith('//')) return u;
+    try {
+        const p = new URL(u, window.location.href);
+        if (p.protocol === 'http:' || p.protocol === 'https:') return u;
+        if (p.protocol === 'data:' && /^data:image\//i.test(u)) return u;
+    } catch { /* fall through */ }
+    return '';
+}
+
 // ComfyUI logo as inline SVG for system messages
 const USER_SPARKLE_SVG = `<svg class="user-sparkle" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" fill="white">
   <path d="M16 2 L18 12 L28 14 L18 16 L16 26 L14 16 L4 14 L14 12 Z" opacity="0.9"/>
@@ -2546,6 +2577,10 @@ function _renderNewAvatars(snapshot) {
         // is a 0.9 s one-shot transform translate keyframe.
         const msg = document.createElement('div');
         msg.className = 'message ai-message archivist-arrival';
+        // av.name / av.avatar_url come from Guild event-bus payloads
+        // (an attacker with publish access controls them). Escape + clamp.
+        const _avName = _esc(av.name);
+        const _avSrc = _esc(_safeSrc(av.avatar_url));
         msg.innerHTML = `
             <div class="avatar-small archivist-avatar" style="${_ARCHIVIST_AVATAR_STYLE}">${_ARCHIVIST_AVATAR_HTML}</div>
             <div class="bubble archivist-bubble">
@@ -2555,8 +2590,8 @@ function _renderNewAvatars(snapshot) {
                 <span class="archivist-sparkle"></span>
                 <span class="archivist-sparkle"></span>
                 <span class="archivist-sparkle"></span>
-                <p><strong>${av.name}</strong> has arrived.</p>
-                <img src="${av.avatar_url}" alt="${av.name}" class="archivist-portrait"/>
+                <p><strong>${_avName}</strong> has arrived.</p>
+                <img src="${_avSrc}" alt="${_avName}" class="archivist-portrait"/>
             </div>
         `;
         chatStream.appendChild(msg);
@@ -3674,11 +3709,14 @@ function renderSidebar(filter = "") {
         const gradient = `linear-gradient(135deg, ${char.color1}, ${char.color2})`;
         // Avatar HTML — handles avatar_url, animated_url, and the
         // placeholder/pending fallback in one place.
+        // char.name / char.subtext come from SillyTavern-format cards
+        // which are user-imported from external sources (Chub etc.) —
+        // treat as attacker-controlled.
         card.innerHTML = `
             ${_avatarHtmlForCard(char, gradient)}
             <div class="character-info">
-                <h3>${char.name}</h3>
-                <p>${char.subtext}</p>
+                <h3>${_esc(char.name)}</h3>
+                <p>${_esc(char.subtext)}</p>
             </div>
         `;
 
@@ -3951,17 +3989,21 @@ async function showWizardTooltip(char, cardEl) {
     // Personality
     let personHtml = '';
     if (info.personality) {
-        personHtml = `<div class="wt-section"><div class="wt-section-label">Personality</div><div class="wt-personality">${info.personality}</div></div>`;
+        personHtml = `<div class="wt-section"><div class="wt-section-label">Personality</div><div class="wt-personality">${_esc(info.personality)}</div></div>`;
     }
 
+    // char.name / char.subtext / avatarUrl all come from imported
+    // SillyTavern character cards (attacker-controlled source). Escape
+    // text nodes; clamp avatarUrl to http(s) / data:image / /api/.
+    const safeAvatar = _safeSrc(avatarUrl);
     tooltip.innerHTML = `
         <button class="wt-close" type="button" title="Close (Esc)" aria-label="Close">&times;</button>
         <div class="wt-header" style="background: ${gradient};">
-            <img class="wt-avatar" src="${avatarUrl}" alt="" onerror="this.style.display='none'"/>
+            <img class="wt-avatar" src="${_esc(safeAvatar)}" alt="" onerror="this.style.display='none'"/>
             <div class="wt-header-text" style="position:relative; width:100%;">
-                <div class="wt-name">${char.name} ${char.id === activeCharacterId ? '<span title="Currently active wizard" style="margin-left:8px; font-size:16px;">\u2705</span>' : ''}</div>
-                <div class="wt-subtext">${char.subtext}</div>
-                <span class="wt-badge ${catClass}">${catLabel}</span>
+                <div class="wt-name">${_esc(char.name)} ${char.id === activeCharacterId ? '<span title="Currently active wizard" style="margin-left:8px; font-size:16px;">\u2705</span>' : ''}</div>
+                <div class="wt-subtext">${_esc(char.subtext)}</div>
+                <span class="wt-badge ${catClass}">${_esc(catLabel)}</span>
             </div>
         </div>
         ${personHtml}
@@ -4282,9 +4324,13 @@ function addAIMessage(text, opts = {}) {
 function addUserMessage(text, opts = {}) {
     const msg = document.createElement('div');
     msg.className = 'message user-message';
+    // `text` is raw user chat input — MUST be escaped before landing
+    // in innerHTML. USER_SPARKLE_SVG is a static in-file constant so
+    // it's left as-is. `<br>` translation is applied on the escaped
+    // text so \n still renders as a line break.
     msg.innerHTML = `
         <div class="avatar-small">${USER_SPARKLE_SVG}</div>
-        <div class="bubble"><p>${text}</p></div>
+        <div class="bubble"><p>${_esc(text).replace(/\n/g, '<br>')}</p></div>
     `;
     // Starter chips are only for the cold-start. Any user message kills them.
     const starter = chatStream.querySelector('.starter-chips');
