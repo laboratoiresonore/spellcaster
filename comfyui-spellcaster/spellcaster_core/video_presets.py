@@ -160,8 +160,16 @@ def pick_wan_vae(unet_name: str, vae_list: list[str]) -> Optional[str]:
 def pick_wan_accel_loras(lora_list: list[str]) -> tuple[Optional[str], Optional[str]]:
     """Return (high_accel_lora, low_accel_lora) from the server's LoRA list.
 
-    Matches the LightX2V / Lightning / *accel* I2V family. T2V accel LoRAs
-    are deliberately excluded — they silently distort I2V output.
+    Matches the LightX2V / Lightning / CausVid / *accel* I2V family. T2V
+    accel LoRAs are deliberately excluded — they silently distort I2V
+    output.
+
+    Accel families we detect (2026-04):
+      - LightX2V I2V  : the original 4-step distillation pair
+      - Lightning I2V : alternative 4-step distillation
+      - CausVid       : temporal-stabilisation LoRA (reduces frame-to-frame
+                        flicker, can be stacked with lightx2v/lightning)
+      - Generic *accel* : any filename with "accel" token (future-proof)
     """
     high = low = None
     for l in lora_list:
@@ -171,6 +179,8 @@ def pick_wan_accel_loras(lora_list: list[str]) -> tuple[Optional[str], Optional[
         is_wan_accel = (
             ("lightx2v" in ll and "i2v" in ll) or
             ("lightning" in ll and "i2v" in ll) or
+            ("causvid" in ll and "i2v" in ll) or
+            "causvid" in ll or                  # CausVid filenames don't always include "i2v"
             "accel" in ll
         )
         if not is_wan_accel or "t2v" in ll:
@@ -244,22 +254,62 @@ def detect_wan_preset(comfy_url: str) -> Optional[dict]:
         return None
 
     # ── CLIP (umt5xxl) — prefer GGUF, fall back to fp8/safetensors ─
+    #
+    # GGUF quants are NOT equivalent. Live-test on the user's RTX
+    # 5060 Ti proved that `umt5-xxl-encoder-Q3_K_S.gguf` (3-bit)
+    # produces degenerate text embeddings that cause WAN to silently
+    # decode to pure-black frames — same Kijai or stock UNETs, same
+    # wan_2.1_vae, only the CLIP precision changes. Q8_0 produces
+    # perfect output; Q5/Q6 untested but likely fine; Q3/Q4 are the
+    # "too aggressive" floor. Rank GGUFs by quant quality so we never
+    # pick a black-frame-causing aggressive quant when a higher-
+    # precision variant is installed.
+    def _gguf_quant_rank(name: str) -> int:
+        """Higher = more precision. Picked to match llama.cpp's
+        k-quant ordering; unknowns land below Q4 so they never
+        out-rank a real quant."""
+        n = name.lower()
+        if "fp16" in n or "f16" in n: return 900
+        if "q8" in n:   return 800
+        if "q6" in n:   return 700
+        if "q5_k_m" in n: return 650
+        if "q5" in n:   return 600
+        if "q4_k_m" in n: return 450
+        if "q4" in n:   return 400
+        if "q3" in n:   return 300   # known to break WAN
+        if "q2" in n:   return 200
+        return 100
+
     wan_clip: Optional[str] = None
     wan_clip_is_gguf = False
     gguf_clips = probe_object_info_choices(comfy_url, "CLIPLoaderGGUF", "clip_name")
-    for c in gguf_clips:
-        cl = c.lower()
-        if ("umt5" in cl or "t5xxl" in cl) and c.endswith(".gguf"):
-            wan_clip = c
-            wan_clip_is_gguf = True
-            break
+    gguf_candidates = [c for c in gguf_clips
+                       if c.endswith(".gguf")
+                       and ("umt5" in c.lower() or "t5xxl" in c.lower())]
+    if gguf_candidates:
+        gguf_candidates.sort(key=_gguf_quant_rank, reverse=True)
+        wan_clip = gguf_candidates[0]
+        wan_clip_is_gguf = True
+        print(f"  [video_presets] WAN CLIP picked (GGUF): {wan_clip} "
+              f"(rank={_gguf_quant_rank(wan_clip)}; available: "
+              f"{[c for c in gguf_candidates]})")
     if not wan_clip:
         std_clips = probe_object_info_choices(comfy_url, "CLIPLoader", "clip_name")
-        for c in std_clips:
-            cl = c.lower()
-            if "umt5" in cl or "t5xxl" in cl:
-                wan_clip = c
-                break
+        # fp8/safetensors fallback — prefer umt5 over t5xxl, full-
+        # precision over fp8 when both are present.
+        std_candidates = [c for c in std_clips
+                          if "umt5" in c.lower() or "t5xxl" in c.lower()]
+        def _std_rank(name: str) -> int:
+            n = name.lower()
+            if "umt5" in n and ("fp16" in n or ".safetensors" in n and "fp8" not in n): return 900
+            if "umt5" in n: return 800
+            if "t5xxl" in n and "fp16" in n: return 700
+            if "t5xxl" in n: return 600
+            return 100
+        if std_candidates:
+            std_candidates.sort(key=_std_rank, reverse=True)
+            wan_clip = std_candidates[0]
+            print(f"  [video_presets] WAN CLIP picked (safetensors): {wan_clip}")
 
     # ── VAE — paired by UNET family ──────────────────────────────────
     vae_list = probe_object_info_choices(comfy_url, "VAELoader", "vae_name")
