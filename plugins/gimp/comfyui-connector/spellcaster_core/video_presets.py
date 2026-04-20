@@ -160,8 +160,16 @@ def pick_wan_vae(unet_name: str, vae_list: list[str]) -> Optional[str]:
 def pick_wan_accel_loras(lora_list: list[str]) -> tuple[Optional[str], Optional[str]]:
     """Return (high_accel_lora, low_accel_lora) from the server's LoRA list.
 
-    Matches the LightX2V / Lightning / *accel* I2V family. T2V accel LoRAs
-    are deliberately excluded — they silently distort I2V output.
+    Matches the LightX2V / Lightning / CausVid / *accel* I2V family. T2V
+    accel LoRAs are deliberately excluded — they silently distort I2V
+    output.
+
+    Accel families we detect (2026-04):
+      - LightX2V I2V  : the original 4-step distillation pair
+      - Lightning I2V : alternative 4-step distillation
+      - CausVid       : temporal-stabilisation LoRA (reduces frame-to-frame
+                        flicker, can be stacked with lightx2v/lightning)
+      - Generic *accel* : any filename with "accel" token (future-proof)
     """
     high = low = None
     for l in lora_list:
@@ -171,6 +179,8 @@ def pick_wan_accel_loras(lora_list: list[str]) -> tuple[Optional[str], Optional[
         is_wan_accel = (
             ("lightx2v" in ll and "i2v" in ll) or
             ("lightning" in ll and "i2v" in ll) or
+            ("causvid" in ll and "i2v" in ll) or
+            "causvid" in ll or                  # CausVid filenames don't always include "i2v"
             "accel" in ll
         )
         if not is_wan_accel or "t2v" in ll:
