@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spellcaster — Insights</title>
+  <link rel="stylesheet" href="/static/style.css?v=20260420h">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: "Outfit", -apple-system, sans-serif;
+      background: #0f0f13;
+      color: #e8e5dd;
+      margin: 0;
+      padding: 24px;
+      min-height: 100vh;
+    }
+    h1 {
+      font-weight: 300;
+      font-size: 28px;
+      margin: 0 0 6px 0;
+      color: #f0d89a;
+      letter-spacing: 0.5px;
+    }
+    .tagline {
+      color: #8a8778;
+      margin-bottom: 28px;
+      font-size: 14px;
+    }
+    .insights-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(320px, 1fr));
+      gap: 20px;
+      max-width: 1200px;
+    }
+    .card {
+      background: rgba(24, 22, 30, 0.85);
+      border: 1px solid rgba(150, 130, 80, 0.18);
+      border-radius: 10px;
+      padding: 18px 20px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+    }
+    .card h2 {
+      margin: 0 0 12px 0;
+      font-size: 15px;
+      font-weight: 600;
+      color: #d8cfb1;
+      text-transform: uppercase;
+      letter-spacing: 1.0px;
+    }
+    .card-wide {
+      grid-column: span 2;
+    }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 4px 0;
+      font-size: 14px;
+      border-bottom: 1px dashed rgba(120, 110, 80, 0.12);
+    }
+    .row:last-child { border: 0; }
+    .row .k { color: #c6c0ad; flex: 2; }
+    .row .v { color: #f0d89a; font-variant-numeric: tabular-nums; flex: 1; text-align: right; }
+    .row .n { color: #8a8778; font-size: 12px; flex: 0 0 auto; }
+    .bar-cell {
+      color: #a08c56;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 13px;
+    }
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      background: rgba(180, 140, 60, 0.22);
+      color: #f0d89a;
+      margin-left: 6px;
+    }
+    .pill.red { background: rgba(180, 60, 60, 0.28); color: #f0b0b0; }
+    .pill.amber { background: rgba(180, 140, 60, 0.22); color: #f0d89a; }
+    .pill.green { background: rgba(80, 140, 70, 0.24); color: #b5e0b0; }
+    .hero {
+      padding: 14px 18px;
+      margin-bottom: 22px;
+      border-radius: 10px;
+      display: none;
+      color: #f4c8a2;
+      background: rgba(180, 100, 60, 0.16);
+      border: 1px solid rgba(200, 130, 80, 0.45);
+    }
+    .hero.show { display: block; }
+    .empty {
+      color: #6b6a5e;
+      font-style: italic;
+      font-size: 13px;
+      padding: 8px 0;
+    }
+    a.back {
+      color: #f0d89a;
+      text-decoration: none;
+      font-size: 13px;
+    }
+    .scatter {
+      width: 100%;
+      height: 220px;
+      position: relative;
+    }
+    .scatter svg { width: 100%; height: 100%; }
+    .heatmap-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 11px;
+    }
+    .heatmap-table td {
+      text-align: center;
+      padding: 2px 4px;
+      color: #5f5c52;
+    }
+    .heatmap-table td.has { color: #e8c17a; }
+    .mailbox-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-top: 6px;
+    }
+    .mbox-cell .v {
+      font-size: 20px;
+      color: #f0d89a;
+      font-variant-numeric: tabular-nums;
+    }
+    .mbox-cell .k {
+      font-size: 11px;
+      color: #8a8778;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+    .toolbar {
+      display: flex;
+      gap: 12px;
+      align-items: baseline;
+      margin-bottom: 18px;
+    }
+    .toolbar button {
+      background: rgba(80, 70, 50, 0.3);
+      color: #f0d89a;
+      border: 1px solid rgba(180, 140, 60, 0.35);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-family: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .toolbar button:hover { background: rgba(180, 140, 60, 0.28); }
+  </style>
+</head>
+<body>
+  <h1>Spellcaster — Insights</h1>
+  <p class="tagline">
+    Read-side telemetry aggregated from your Guild's dispatch log, preflight
+    canaries, and ratings store. No data leaves this machine.
+    <a href="/" class="back">← back to Guild</a>
+  </p>
+
+  <div id="drift-hero" class="hero">
+    <strong>⚠ ComfyUI node catalogue changed since last session.</strong>
+    <div id="drift-hero-details" style="margin-top:6px;"></div>
+  </div>
+
+  <div id="mailbox-hero" class="hero"></div>
+
+  <div class="toolbar">
+    <button onclick="window.SpellcasterInsights.refresh()">↻ Refresh</button>
+    <button onclick="window.location.href='/insights'">Re-open</button>
+    <span id="freshness" style="color:#8a8778;font-size:12px;"></span>
+  </div>
+
+  <div class="insights-grid">
+    <div class="card">
+      <h2>Speed leaderboard</h2>
+      <div id="speed-leaderboard"></div>
+    </div>
+
+    <div class="card">
+      <h2>Cost vs. quality</h2>
+      <div id="cost-vs-quality" class="scatter"></div>
+    </div>
+
+    <div class="card">
+      <h2>LoRA impact</h2>
+      <div id="lora-impact"></div>
+    </div>
+
+    <div class="card">
+      <h2>Queue by hour of week</h2>
+      <div id="queue-heatmap"></div>
+    </div>
+
+    <div class="card">
+      <h2>Arch speed chart</h2>
+      <div id="arch-speeds"></div>
+    </div>
+
+    <div class="card">
+      <h2>Faceswap reliability</h2>
+      <div id="faceswap"></div>
+    </div>
+
+    <div class="card card-wide">
+      <h2>Mailbox SLA</h2>
+      <div id="mailbox"></div>
+    </div>
+
+    <div class="card card-wide">
+      <h2>Last-run warnings</h2>
+      <div id="warnings-last"></div>
+    </div>
+  </div>
+
+  <script src="/static/insights.js?v=20260420a"></script>
+</body>
+</html>

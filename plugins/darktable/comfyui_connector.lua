@@ -6157,6 +6157,78 @@ max_res_slider = dt.new_widget("slider") {
 
 status_label = dt.new_widget("label") { label = _("Ready") }
 
+-- ── SpeedCoach strip + last-run footer ────────────────────────────
+-- Minimal surface that matches the design spec: one italic grey line
+-- with predicted elapsed + fastest alternative above the dispatch
+-- button, and a coloured last-run footer below. Both poll the Guild's
+-- /api/speedcoach/* endpoints every 10 s and update in place.
+speedcoach_strip   = dt.new_widget("label") { label = _("") }
+speedcoach_footer  = dt.new_widget("label") { label = _("") }
+
+function speedcoach_raw_get(path)
+  local guild = get_guild_url()
+  if not guild or guild == "" then return nil end
+  local resp = curl_get(guild .. path)
+  if not resp or #resp < 2 then return nil end
+  return resp
+end
+
+function speedcoach_refresh()
+  -- Strip above dispatch: fastest arch on this box from arch_speeds.
+  -- Regex-parse a JSON response shaped like:
+  --   {"archs": [{"arch": "...", "ok": true, "elapsed_ms": 1234, ...}, ...]}
+  -- The DT plugin parses JSON with string.match everywhere, so keep
+  -- the same pattern (no dkjson dep).
+  local resp = speedcoach_raw_get("/api/speedcoach/arch_speeds") or ""
+  local fastest_arch, fastest_ms = nil, nil
+  for arch_name, ms_str in string.gmatch(
+        resp,
+        '"arch"%s*:%s*"([^"]+)"%s*,%s*"ok"%s*:%s*true[^%}]-"elapsed_ms"%s*:%s*(%d+)'
+      ) do
+    local ms = tonumber(ms_str) or 0
+    if ms > 0 and (not fastest_ms or ms < fastest_ms) then
+      fastest_arch, fastest_ms = arch_name, ms
+    end
+  end
+  if fastest_arch and fastest_ms then
+    speedcoach_strip.label = string.format(
+      _("~%.1fs fastest arch on your box (%s)   Speed chart in Guild"),
+      fastest_ms / 1000.0, fastest_arch)
+  else
+    speedcoach_strip.label = _("First run for this config - no estimate yet")
+  end
+  -- Last-run footer: outcome + elapsed from warnings_last endpoint.
+  local wresp = speedcoach_raw_get("/api/speedcoach/warnings_last") or ""
+  local outcome = wresp:match('"outcome"%s*:%s*"([^"]+)"') or "unknown"
+  local elapsed_str = wresp:match('"elapsed"%s*:%s*([%d%.]+)') or "0"
+  local elapsed = tonumber(elapsed_str) or 0
+  local wcount = 0
+  for _w in string.gmatch(wresp:match('"warnings"%s*:%s*%[(.-)%]') or "", '"')
+  do wcount = wcount + 1 end
+  wcount = math.floor(wcount / 2)  -- each string has open+close quote
+  if outcome == "ok" and elapsed > 0 then
+    speedcoach_footer.label = string.format(
+      _("Last run: OK (%ds)"), math.floor(elapsed))
+  elseif outcome == "warnings" then
+    speedcoach_footer.label = string.format(
+      _("Last run: %d warnings (%ds)"), wcount, math.floor(elapsed))
+  elseif outcome == "failed" then
+    speedcoach_footer.label = _("Last run: FAILED")
+  else
+    speedcoach_footer.label = _("")
+  end
+end
+
+-- Refresh once on plugin load. Subsequent refreshes happen when the
+-- user presses the refresh button (explicit) or right after any send.
+pcall(speedcoach_refresh)
+
+speedcoach_refresh_btn = dt.new_widget("button") {
+  label = _("\xE2\x9A\xA1 Refresh speed stats"),
+  tooltip = _("Re-poll the Guild for predicted elapsed + last run outcome."),
+  clicked_callback = function() pcall(speedcoach_refresh) end,
+}
+
 test_btn = dt.new_widget("button") {
   label = _("Test Connection"),
   clicked_callback = function()
@@ -9911,6 +9983,12 @@ module_widget = dt.new_widget("box") {
   server_save_btn,
   status_label,
   test_btn,
+  -- SpeedCoach read-side strip: fastest arch on this box + last-run
+  -- outcome + explicit refresh button. Polls the Guild's
+  -- /api/speedcoach/* endpoints; degrades silently when Guild is down.
+  speedcoach_strip,
+  speedcoach_footer,
+  speedcoach_refresh_btn,
   dt.new_widget("separator") {},
 
   -- R110 + R113 + R118: cross-plugin transfer + capability probe.
