@@ -2301,7 +2301,7 @@ end
 -- WORKFLOW:
 --   Node 1: LoadImage (target image with unwanted objects)
 --   Node 2: LoadImage (mask image: white = remove, black = keep)
---   Node 3: LaMaInpaint (inpainting model removes masked regions)
+--   Node 3: LamaRemover (inpainting model removes masked regions)
 --   Node 4: SaveImage (output)
 --
 -- The mask image should have transparency or separate alpha channel.
@@ -2311,12 +2311,24 @@ end
 -- @param mask_filename : mask image name on ComfyUI (alpha channel = removal area)
 -- @return string : complete workflow JSON
 --
+-- NOTE on class name: ComfyUI-LaMA-Preprocessor registers the remover
+-- as ``LamaRemover`` (single-word, lowercase 'a'). The earlier
+-- ``LaMaInpaint`` reference here was a copy-paste miss — no ComfyUI
+-- install ever registered that class, so this button silently failed
+-- every time it was clicked. The canonical spellcaster_core node
+-- factory uses ``LamaRemover`` too; keep the two in sync.
+--
+-- LamaRemover takes separate IMAGE + MASK inputs (not a LoadImage
+-- alpha channel). An ImageToMask step extracts the mask bitmap from
+-- the mask PNG's red channel — matches the canonical
+-- build_lama_remove workflow.
 local function build_lama_json(image_filename, mask_filename)
   return string.format([[
 {"prompt":{
   "1":{"class_type":"LoadImage","inputs":{"image":"%s"}},
   "2":{"class_type":"LoadImage","inputs":{"image":"%s"}},
-  "3":{"class_type":"LaMaInpaint","inputs":{"image":["1",0],"mask":["2",1]}},
+  "5":{"class_type":"ImageToMask","inputs":{"image":["2",0],"channel":"red"}},
+  "3":{"class_type":"LamaRemover","inputs":{"images":["1",0],"masks":["5",0],"mask_threshold":250,"gaussblur_radius":8,"invert_mask":false}},
   "4":{"class_type":"SaveImage","inputs":{"images":["3",0],"filename_prefix":"darktable_lama"}}
 }}]], shell_esc(image_filename), shell_esc(mask_filename))
 end
@@ -9486,8 +9498,7 @@ local _ARCH_SENTINELS = {
   ["Face: ReActor"]    = {"ReActorFaceSwap"},
   ["Face: PuLID Flux"] = {"PulidFluxModelLoader",
                            "ApplyPulidFlux"},
-  ["Inpaint (LaMa)"]   = {"LaMaInpaint",
-                           "LaMaInpaintingModelLoader"},
+  ["Inpaint (LaMa)"]   = {"LamaRemover"},
   ["BG Remove"]        = {"BiRefNetRMBG", "RMBG"},
   ["Chroma"]           = {"ChromaSampler"},
 }
