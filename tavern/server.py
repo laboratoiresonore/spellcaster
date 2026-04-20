@@ -1899,6 +1899,7 @@ def _server_init(comfy_url=None):
                 info = json.loads(resp.read().decode("utf-8", errors="replace"))
             if not isinstance(info, dict):
                 return
+            # Signature string per node = sorted(required_input_names)
             nodes: dict[str, str] = {}
             for name, meta in info.items():
                 try:
@@ -4995,6 +4996,65 @@ def _spellcaster_lora_knowledge_get(name: str, use_network: bool = True) -> tupl
     return (200, {"knowledge": k.to_dict()})
 
 
+def _spellcaster_lora_migrations_get() -> tuple[int, dict]:
+    """GET /api/spellcaster/lora/migrations — list orphaned registry
+    entries awaiting user resolution (ambiguous candidate set or no
+    candidate found). Auto-migrations have already been applied by
+    ``_build_lora_registry`` and are NOT returned here."""
+    return (200, {"pending": list(_LORA_MIGRATIONS_PENDING)})
+
+
+def _spellcaster_lora_migrations_resolve(old_name: str, new_name: str,
+                                         action: str = "apply") -> tuple[int, dict]:
+    """POST /api/spellcaster/lora/migrations/resolve — the user has
+    chosen a replacement for a pending orphan.
+
+    Body: ``{old_name, new_name, action}`` where ``action`` is one of:
+      - ``apply``  \u2014 rewrite all references from old_name to new_name
+      - ``dismiss`` \u2014 drop the orphan from the pending list without
+                      rewriting anything (the registry entry remains so
+                      the user can still delete it manually)
+      - ``delete``  \u2014 remove the orphan's registry entry outright
+
+    Returns ``{ok, summary}`` on success; ``{error}`` on failure with a
+    400 status so the frontend can show the message verbatim.
+    """
+    global _LORA_MIGRATIONS_PENDING
+    if not old_name:
+        return (400, {"error": "old_name is required"})
+    if action not in ("apply", "dismiss", "delete"):
+        return (400, {"error": f"unknown action: {action!r}"})
+
+    # Drop from pending either way \u2014 the user has made a decision.
+    _LORA_MIGRATIONS_PENDING = [m for m in _LORA_MIGRATIONS_PENDING
+                                if m.get("old_name") != old_name]
+
+    if action == "dismiss":
+        return (200, {"ok": True, "action": "dismiss"})
+    if action == "delete":
+        if old_name in _LORA_REGISTRY:
+            _LORA_REGISTRY.pop(old_name, None)
+            _save_lora_registry()
+        return (200, {"ok": True, "action": "delete"})
+
+    # apply — require new_name, validate it exists among current LoRAs
+    if not new_name:
+        return (400, {"error": "new_name is required for apply"})
+    current = _fetch_all_loras_from_comfyui(COMFYUI_URL) if COMFYUI_URL else []
+    if current and new_name not in current:
+        return (400, {"error": f"{new_name!r} is not on the ComfyUI server"})
+    try:
+        detail = _migrate_lora_references(old_name, new_name)
+    except Exception as e:
+        # Per the user ask: when auto-mapping fails, surface a clear
+        # error so they know to resolve manually.
+        return (400, {"error": f"migration failed: {e}",
+                      "hint": ("Edit the LoRA registry manually, or delete "
+                               "the orphan entry and let the new LoRA "
+                               "register fresh.")})
+    return (200, {"ok": True, "action": "apply", "summary": detail})
+
+
 def _speedcoach_route(path: str, params: dict) -> tuple[int, dict]:
     """Read-side dispatcher for /api/speedcoach/*. All sub-paths are
     pure read-aggregations; SpeedCoach never writes from a GET."""
@@ -5002,6 +5062,7 @@ def _speedcoach_route(path: str, params: dict) -> tuple[int, dict]:
         from spellcaster_core import speedcoach as sc
     except Exception as e:
         return (500, {"error": f"speedcoach unavailable: {e}"})
+    # Normalize querystring values — parse_qs returns list[str].
     def _p(name, default=None):
         v = params.get(name, [None])[0]
         return v if v is not None else default
@@ -5059,6 +5120,7 @@ def _speedcoach_route(path: str, params: dict) -> tuple[int, dict]:
             suggs = sc.suggest_alternatives(spec)
             return (200, {"suggestions": [s.to_dict() for s in suggs]})
         if path == "/api/speedcoach/insights":
+            # Composite bundle for the Insights tab — one round trip.
             try:
                 drift = sc.drift_since_last_session().to_dict()
             except Exception:
@@ -5686,6 +5748,25 @@ def _spellcaster_lora_calibrate_auto_start(
         models = discover_models(COMFYUI_URL)
     except Exception as e:
         return (502, {"error": f"ComfyUI not reachable: {e}"})
+
+    # Pre-calibration metadata top-up. Any target LoRA still missing
+    # Civitai data at this point gets a synchronous lookup so the
+    # calibration recipe has proper trigger words / recommended weight /
+    # example prompts. We run it inline (bounded by the number of
+    # unknown targets) rather than re-using the background worker so
+    # the calibration job starts with full data instead of "maybe in a
+    # minute". Civitai rate-limit is respected via the per-call sleep.
+    if use_network:
+        missing = [t["name"] for t in final_targets
+                   if not _LORA_REGISTRY.get(t["name"], {}).get("civitai_trigger_words")
+                   and not _LORA_REGISTRY.get(t["name"], {}).get("civitai_url")]
+        if missing:
+            print(f"  [LoRA calibrate] prefetching Civitai metadata for "
+                  f"{len(missing)} target(s)...")
+            try:
+                _civitai_metadata_worker(missing)
+            except Exception as e:
+                print(f"  [LoRA calibrate] metadata prefetch failed: {e}")
 
     # Sanitise sweep_strengths: list of floats in (0, 1.5].
     sw: Optional[list[float]] = None
@@ -6315,6 +6396,414 @@ def _save_lora_registry():
             pass
 
 
+# ═══════════════════════════════════════════════════════════════════════
+#  LoRA version migration — auto-detect upgrades, rewrite all references
+# ═══════════════════════════════════════════════════════════════════════
+# When a user replaces MyLora_v1.safetensors with MyLora_v2.safetensors on
+# the ComfyUI server, every piece of state keyed on the old filename must
+# move: the registry entry (with user-confirmed triggers / strengths /
+# failure history), calibration recipes, user presets, wizard toggles,
+# session state. We do this in three stages:
+#   1. `_find_replacement_lora` scores every present LoRA against an
+#      orphaned registry entry and returns the best match + confidence.
+#   2. `_migrate_lora_references` rewrites every state file the app owns,
+#      backing up `lora_registry.json` to a timestamped sidecar first.
+#   3. Orphans that couldn't be mapped surface via
+#      `/api/spellcaster/lora/migrations` so the user can resolve them.
+#
+# Pending user-facing migrations (low-confidence or multiple candidates)
+# live here until the user confirms or dismisses through the LoRA manager
+# UI. Each entry: {old_name, candidates: [{name, confidence, reasons}]}.
+_LORA_MIGRATIONS_PENDING: list[dict] = []
+
+# Regexes used to normalise LoRA filenames into a stable "stem" that
+# survives version / epoch / rank / quantisation bumps.
+_LORA_VERSION_SUFFIXES = [
+    re.compile(r'[._-]?v\d+(?:\.\d+)*[a-z]?$', re.IGNORECASE),
+    re.compile(r'[._-]?version\d+$', re.IGNORECASE),
+    re.compile(r'[._-]?epoch[-_]?\d+$', re.IGNORECASE),
+    re.compile(r'[._-]?e\d{2,}$', re.IGNORECASE),
+    re.compile(r'[._-]?step\d+$', re.IGNORECASE),
+    re.compile(r'[._-]?rank[-_]?\d+$', re.IGNORECASE),
+    re.compile(r'[._-]?r\d{2,}$', re.IGNORECASE),
+    re.compile(r'[._-]?fp\d+(?:_scaled)?$', re.IGNORECASE),
+    re.compile(r'[._-]?bf\d+$', re.IGNORECASE),
+    re.compile(r'[._-]?q\d+(?:_\d*)?(?:_[kKmMsS])?$', re.IGNORECASE),
+    re.compile(r'[._-]?000\d{3}$'),
+    re.compile(r'[._-]?[a-f0-9]{8,40}$', re.IGNORECASE),
+    re.compile(r'[._-]?\d{4,6}$'),
+    re.compile(r'[._-]?final$', re.IGNORECASE),
+    re.compile(r'[._-]?new$', re.IGNORECASE),
+]
+
+
+def _lora_stem(name: str) -> str:
+    """Normalise a LoRA filename down to its canonical 'stem'.
+
+    Strips directory, extension, and trailing version/epoch/rank/
+    quant/hash suffixes until nothing more can come off. Case-
+    insensitive so ``MyLora_V2.safetensors`` and ``mylora_v3.safetensors``
+    yield the same stem ``mylora``.
+    """
+    s = str(name or "").replace("\\", "/").rsplit("/", 1)[-1]
+    if "." in s:
+        s = s.rsplit(".", 1)[0]
+    s = s.strip()
+    # Peel suffixes repeatedly — authors stack e.g. `_fp8_scaled_rank128`.
+    changed = True
+    while changed:
+        changed = False
+        for pat in _LORA_VERSION_SUFFIXES:
+            new = pat.sub("", s).strip("._- ")
+            if new and new != s:
+                s = new
+                changed = True
+    return s.lower()
+
+
+def _score_migration_candidate(old_name: str, old_entry: dict,
+                               new_name: str, new_entry: dict | None) -> tuple[float, list[str]]:
+    """Score how likely `new_name` is an upgrade of `old_name`.
+
+    Returns ``(confidence, reasons)`` where confidence is a float in [0, 1]
+    and reasons is a list of human-readable signals for the UI.
+    Confidence cutoffs:
+      - ``>= 0.9`` auto-apply (e.g. identical stem + identical Civitai model_id)
+      - ``>= 0.5`` present for user confirmation
+      - ``<  0.5`` ignore (too noisy to guess)
+    """
+    reasons: list[str] = []
+    score = 0.0
+
+    old_stem = _lora_stem(old_name)
+    new_stem = _lora_stem(new_name)
+    if old_stem and new_stem and old_stem == new_stem:
+        score += 0.7
+        reasons.append(f"same filename stem '{old_stem}'")
+    elif old_stem and new_stem and (old_stem in new_stem or new_stem in old_stem):
+        # Partial overlap handles cases like `stylev1` → `style_V2_upgraded`.
+        overlap = min(len(old_stem), len(new_stem)) / max(len(old_stem), len(new_stem))
+        if overlap >= 0.6:
+            score += 0.4 * overlap
+            reasons.append(f"partial stem overlap ({int(overlap * 100)}%)")
+
+    # Same Civitai model_id (different version) is the strongest signal
+    # — it's literally "same model, newer checkpoint".
+    old_mid = old_entry.get("civitai_model_id")
+    new_mid = (new_entry or {}).get("civitai_model_id")
+    if old_mid and new_mid and old_mid == new_mid:
+        score += 0.5
+        reasons.append(f"same Civitai model id {old_mid}")
+
+    # Same directory usually means "author's folder" — reinforces the match.
+    old_dir = old_name.replace("\\", "/").rsplit("/", 1)[0] if "/" in old_name.replace("\\", "/") else ""
+    new_dir = new_name.replace("\\", "/").rsplit("/", 1)[0] if "/" in new_name.replace("\\", "/") else ""
+    if old_dir and new_dir and old_dir.lower() == new_dir.lower():
+        score += 0.1
+        reasons.append("same folder")
+
+    # Arch alignment — the migration would make no sense if the new LoRA
+    # is for a different model family.
+    old_archs = set(old_entry.get("archs") or [])
+    new_archs = set((new_entry or {}).get("archs") or [])
+    if old_archs and new_archs and old_archs & new_archs:
+        score += 0.1
+        reasons.append(f"arch overlap {sorted(old_archs & new_archs)}")
+    elif old_archs and new_archs and not (old_archs & new_archs):
+        # Arch mismatch — downweight heavily; users shouldn't see this.
+        score -= 0.5
+        reasons.append("arch mismatch (reduced)")
+
+    return min(score, 1.0), reasons
+
+
+def _find_replacement_lora(old_name: str, old_entry: dict,
+                           present_names: list[str]) -> tuple[str | None, float, list[str], list[dict]]:
+    """Find the best replacement among currently-present LoRAs.
+
+    Returns ``(best_name, best_confidence, best_reasons, all_candidates)``.
+    ``best_name`` is None when no candidate clears the 0.5 threshold.
+    ``all_candidates`` is every candidate with confidence >= 0.5, sorted
+    best-first — used to present ambiguous choices to the user.
+    """
+    if not old_name or not present_names:
+        return None, 0.0, [], []
+    all_c: list[dict] = []
+    for new_name in present_names:
+        if new_name == old_name:
+            continue
+        new_entry = _LORA_REGISTRY.get(new_name) or {}
+        score, reasons = _score_migration_candidate(
+            old_name, old_entry, new_name, new_entry)
+        if score >= 0.5:
+            all_c.append({"name": new_name, "confidence": round(score, 2),
+                          "reasons": reasons})
+    all_c.sort(key=lambda c: c["confidence"], reverse=True)
+    if not all_c:
+        return None, 0.0, [], []
+    top = all_c[0]
+    return top["name"], top["confidence"], top["reasons"], all_c
+
+
+def _backup_lora_registry() -> str | None:
+    """Copy ``lora_registry.json`` to a timestamped sidecar.
+
+    Called before any migration rewrite so the user has a known-good
+    fallback if our heuristic got a match wrong. Returns the backup
+    path (for logging) or None if the source didn't exist.
+    """
+    if not os.path.exists(_LORA_REGISTRY_PATH):
+        return None
+    ts = time.strftime("%Y%m%d-%H%M%S")
+    backup = f"{_LORA_REGISTRY_PATH}.pre-migration-{ts}.bak"
+    try:
+        import shutil
+        shutil.copy2(_LORA_REGISTRY_PATH, backup)
+        return backup
+    except Exception as e:
+        print(f"  [LoRA migrate] backup failed: {e}")
+        return None
+
+
+def _rewrite_json_lora_refs(path: str, old_name: str, new_name: str) -> int:
+    """Rewrite every LoRA filename reference inside a JSON file.
+
+    Walks the file's top-level structure recursively, rewriting:
+      - dict keys that equal ``old_name`` (renames the key)
+      - string values that equal ``old_name``
+      - the ``"name"`` field of dicts inside any ``"loras"`` list
+    Returns the count of replacements. Writes atomically through a
+    temp file so a crash mid-write never corrupts user state.
+    """
+    if not os.path.exists(path):
+        return 0
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception as e:
+        print(f"  [LoRA migrate] cannot read {path}: {e}")
+        return 0
+
+    replacements = 0
+
+    def walk(obj):
+        nonlocal replacements
+        if isinstance(obj, dict):
+            # First, rename a matching key if present.
+            if old_name in obj:
+                obj[new_name] = obj.pop(old_name)
+                replacements += 1
+            for k, v in list(obj.items()):
+                if isinstance(v, str) and v == old_name:
+                    obj[k] = new_name
+                    replacements += 1
+                else:
+                    walk(v)
+        elif isinstance(obj, list):
+            for i, item in enumerate(obj):
+                if isinstance(item, str) and item == old_name:
+                    obj[i] = new_name
+                    replacements += 1
+                elif isinstance(item, list) and item and isinstance(item[0], str) and item[0] == old_name:
+                    # ``[name, model_str, clip_str]`` tuple format.
+                    item[0] = new_name
+                    replacements += 1
+                else:
+                    walk(item)
+
+    walk(data)
+    if replacements == 0:
+        return 0
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except Exception as e:
+        print(f"  [LoRA migrate] write failed for {path}: {e}")
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+        return 0
+    return replacements
+
+
+def _migrate_lora_references(old_name: str, new_name: str,
+                             *, extra_paths: list[str] | None = None) -> dict:
+    """Rewrite every reference from ``old_name`` to ``new_name``.
+
+    Touches (atomically, each file):
+      - ``_LORA_REGISTRY`` (in-memory + ``lora_registry.json``)
+      - every JSON file in ``_STATE_DIR`` (wizard state, scaffold overrides…)
+      - the LoRA calibration SFW/NSFW stores via their canonical API
+      - the GIMP plugin's ``user_presets.json`` and ``session_state.json``
+        if callers pass their paths via ``extra_paths``
+    Returns a summary dict ``{registry, files, total_replacements}``.
+    Raises ``ValueError`` if ``old_name == new_name`` or either is empty.
+    """
+    if not old_name or not new_name:
+        raise ValueError("old_name and new_name are both required")
+    if old_name == new_name:
+        raise ValueError("old_name and new_name are identical")
+
+    backup_path = _backup_lora_registry()
+    summary = {
+        "old_name": old_name,
+        "new_name": new_name,
+        "backup": backup_path,
+        "registry_migrated": False,
+        "files": [],
+        "total_replacements": 0,
+    }
+
+    # 1. The in-memory registry — merge old entry into new entry, keeping
+    #    user-confirmed fields from the old record. The new entry (if any)
+    #    was freshly discovered and carries only bare metadata.
+    if old_name in _LORA_REGISTRY:
+        old_entry = _LORA_REGISTRY.pop(old_name)
+        existing = _LORA_REGISTRY.get(new_name) or {}
+        # User-confirmed fields survive; newly-discovered Civitai fields
+        # on `existing` take precedence for raw metadata.
+        merged = dict(existing)
+        for key in ("archs", "purpose", "tags", "user_desc", "trigger_words",
+                    "default_strength", "approved", "user_keywords",
+                    "user_description", "user_default_strength",
+                    "user_default_subject", "failures", "preferred_for_purpose",
+                    "purpose_group"):
+            if old_entry.get(key) not in (None, "", [], 0, False) and not merged.get(key):
+                merged[key] = old_entry[key]
+        # Never drop the source provenance trail — tag it.
+        merged["migrated_from"] = old_name
+        merged["migrated_at"] = time.time()
+        _LORA_REGISTRY[new_name] = merged
+        summary["registry_migrated"] = True
+        _save_lora_registry()
+
+    # Also rewrite the interrogated flag if it was ever keyed by LoRA
+    # name (it isn't today — it's keyed by wizard_id — but guard future
+    # refactors cheaply).
+    if old_name in _LORA_INTERROGATED:
+        _LORA_INTERROGATED.discard(old_name)
+        _LORA_INTERROGATED.add(new_name)
+
+    # 2. Walk every JSON in _STATE_DIR rewriting string + tuple refs.
+    paths_to_rewrite = []
+    try:
+        for fn in os.listdir(_STATE_DIR):
+            if fn.endswith(".json"):
+                p = os.path.join(_STATE_DIR, fn)
+                if p != _LORA_REGISTRY_PATH:
+                    paths_to_rewrite.append(p)
+    except Exception:
+        pass
+    if extra_paths:
+        paths_to_rewrite.extend(extra_paths)
+
+    for p in paths_to_rewrite:
+        n = _rewrite_json_lora_refs(p, old_name, new_name)
+        if n:
+            summary["files"].append({"path": p, "replacements": n})
+            summary["total_replacements"] += n
+
+    # 3. Calibration store — has its own canonical read/write API.
+    try:
+        from spellcaster_core.lora_calibration_store import (
+            load_merged, write_calibration, sfw_path, nsfw_path)
+        merged = load_merged()
+        if old_name in merged:
+            entry = merged[old_name]
+            write_calibration(new_name, nsfw=bool(entry.get("nsfw")),
+                              payload=entry)
+            # Remove the old key — write_calibration doesn't delete, so
+            # manipulate the store file directly.
+            for store_path in (sfw_path(), nsfw_path()):
+                if not store_path or not os.path.exists(store_path):
+                    continue
+                try:
+                    with open(store_path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    loras_map = data.get("loras") or {}
+                    if old_name in loras_map:
+                        loras_map.pop(old_name)
+                        tmp = store_path + ".tmp"
+                        with open(tmp, 'w', encoding='utf-8') as f:
+                            json.dump(data, f, indent=2)
+                        os.replace(tmp, store_path)
+                        summary["files"].append({"path": store_path,
+                                                 "replacements": 1})
+                        summary["total_replacements"] += 1
+                except Exception as e:
+                    print(f"  [LoRA migrate] calibration store "
+                          f"{store_path}: {e}")
+    except Exception as e:
+        print(f"  [LoRA migrate] calibration-store hook skipped: {e}")
+
+    return summary
+
+
+def _detect_and_apply_lora_upgrades(present_names: list[str]) -> dict:
+    """For every registry entry whose file is no longer present, search
+    for a replacement. High-confidence matches (>= 0.9) auto-migrate;
+    ambiguous or low-confidence matches queue up in ``_LORA_MIGRATIONS_PENDING``
+    for the user to resolve in the LoRA manager.
+
+    Returns a summary dict suitable for the ``/api/spellcaster/lora/migrations``
+    endpoint.
+    """
+    global _LORA_MIGRATIONS_PENDING
+    summary = {"auto_applied": [], "pending": [], "unresolved": []}
+    if not present_names:
+        return summary
+    present_set = {n for n in present_names if n}
+    # Snapshot the registry keys — migration mutates the registry.
+    orphans = [name for name in list(_LORA_REGISTRY.keys())
+               if name not in present_set]
+    if not orphans:
+        _LORA_MIGRATIONS_PENDING = []
+        return summary
+
+    for orphan in orphans:
+        old_entry = _LORA_REGISTRY.get(orphan) or {}
+        best, conf, reasons, all_c = _find_replacement_lora(
+            orphan, old_entry, present_names)
+        if best is None:
+            summary["unresolved"].append({"old_name": orphan})
+            continue
+        if conf >= 0.9 and len(all_c) == 1:
+            # Unambiguous, high-confidence: auto-migrate.
+            try:
+                detail = _migrate_lora_references(orphan, best)
+                summary["auto_applied"].append({
+                    "old_name": orphan, "new_name": best,
+                    "confidence": conf, "reasons": reasons,
+                    "detail": detail,
+                })
+                print(f"  [LoRA migrate] auto: {orphan} -> {best} "
+                      f"(conf {conf:.2f})")
+            except Exception as e:
+                # If migration throws mid-way, surface as an unresolved
+                # error rather than silently continuing.
+                summary["unresolved"].append({
+                    "old_name": orphan,
+                    "error": f"migration failed: {e}",
+                    "proposed": best,
+                })
+        else:
+            summary["pending"].append({
+                "old_name": orphan, "candidates": all_c,
+            })
+
+    _LORA_MIGRATIONS_PENDING = list(summary["pending"]) + [
+        {"old_name": u["old_name"], "candidates": [],
+         "error": u.get("error")}
+        for u in summary["unresolved"]
+    ]
+    return summary
+
+
 _CKPT_LOADER_CLASSES = (
     "CheckpointLoaderSimple", "CheckpointLoader", "CheckpointLoaderNF4",
     "CheckpointLoaderGGUF", "UNETLoader", "UnetLoaderGGUF", "UNetLoader",
@@ -6540,12 +7029,112 @@ def _query_civitai_by_filename(lora_name):
         # Determine purpose from tags + description
         purpose = _infer_lora_purpose(best.get("name", ""), tags, desc_clean)
 
+        # Pick the FIRST model version for rich metadata (trainedWords,
+        # images, baseModel). Civitai sorts versions newest-first; that's
+        # usually the one whose file the user downloaded.
+        version = {}
+        versions_list = best.get("modelVersions") or []
+        if isinstance(versions_list, list) and versions_list:
+            # Prefer the exact version that matched (by filename scan
+            # above) so strengths line up with the actual file on disk.
+            for v in versions_list:
+                for f in v.get("files", []) or []:
+                    fname = (f.get("name") or "").rsplit(".", 1)[0].lower()
+                    if fname == search_lower:
+                        version = v
+                        break
+                if version:
+                    break
+            if not version:
+                version = versions_list[0]
+
+        trained_words = version.get("trainedWords") or []
+        if isinstance(trained_words, list):
+            trigger_words = [str(w).strip() for w in trained_words
+                             if isinstance(w, str) and w.strip()][:10]
+        else:
+            trigger_words = []
+
+        base_model = str(version.get("baseModel") or "").strip()
+
+        # Harvest prompt / sampler / cfg / strength from posted examples.
+        # Civitai stores these on each image's `meta` dict; averaging
+        # across the first few smooths out outlier renders.
+        example_prompts: list[str] = []
+        samplers: list[str] = []
+        cfgs: list[float] = []
+        weights: list[float] = []
+        preview_url = ""
+        nsfw_examples = False
+        for img in (version.get("images") or [])[:6]:
+            if not isinstance(img, dict):
+                continue
+            if not preview_url and img.get("url"):
+                preview_url = str(img["url"])
+            if img.get("nsfw") and img.get("nsfw") != "None":
+                nsfw_examples = True
+            m = img.get("meta") or {}
+            if not isinstance(m, dict):
+                continue
+            p = m.get("prompt")
+            if isinstance(p, str) and p.strip():
+                example_prompts.append(p.strip()[:400])
+            s = m.get("sampler") or m.get("Sampler")
+            if isinstance(s, str) and s:
+                samplers.append(s.strip())
+            c = m.get("cfgScale") or m.get("CFG scale") or m.get("cfg_scale")
+            try:
+                if c is not None:
+                    cfgs.append(float(c))
+            except (TypeError, ValueError):
+                pass
+            # "<lora:Name:0.85>" weight markers inside the prompt.
+            if isinstance(p, str):
+                for wm in re.finditer(r"<lora:[^:>]+:([\d.]+)>", p):
+                    try:
+                        weights.append(float(wm.group(1)))
+                    except ValueError:
+                        pass
+
+        recommended_sampler = ""
+        if samplers:
+            by_count: dict[str, int] = {}
+            for s in samplers:
+                key = s.lower()
+                by_count[key] = by_count.get(key, 0) + 1
+            recommended_sampler = sorted(
+                by_count.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+
+        recommended_cfg = None
+        if cfgs:
+            recommended_cfg = round(sum(cfgs) / len(cfgs), 2)
+
+        recommended_weight = None
+        sane_w = [w for w in weights if 0.1 <= w <= 1.5]
+        if sane_w:
+            recommended_weight = round(sum(sane_w) / len(sane_w), 2)
+
+        model_info = best.get("model") or {}
+        nsfw_flag = bool(
+            best.get("nsfw")
+            or (isinstance(model_info, dict) and model_info.get("nsfw"))
+            or nsfw_examples
+        )
+
         return {
             "purpose": purpose,
             "tags": tags[:10],  # limit tag count
             "civitai_url": f"https://civitai.com/models/{best.get('id', '')}",
             "description": desc_clean,
             "civitai_name": best.get("name", ""),
+            "civitai_trigger_words": trigger_words,
+            "civitai_base_model": base_model,
+            "civitai_recommended_sampler": recommended_sampler,
+            "civitai_recommended_cfg": recommended_cfg,
+            "civitai_recommended_weight": recommended_weight,
+            "civitai_example_prompts": example_prompts[:3],
+            "civitai_preview_url": preview_url,
+            "civitai_nsfw": nsfw_flag,
         }
     except Exception as e:
         print(f"  [LoRA] CivitAI lookup failed for '{search_name}': {e}")
@@ -6593,7 +7182,13 @@ def _infer_lora_purpose(name, tags, description):
 def _build_lora_registry(comfy_url):
     """Discover all LoRAs from ComfyUI, match to architectures, fetch CivitAI metadata.
 
-    Merges with existing registry (preserves user descriptions).
+    Merges with existing registry (preserves user descriptions). Also
+    runs the version-migration detector: any registry entry whose file
+    has disappeared from the ComfyUI server is searched against the
+    current LoRA list. Unambiguous matches auto-migrate (registry +
+    every JSON under ``_STATE_DIR``); ambiguous matches queue up in
+    ``_LORA_MIGRATIONS_PENDING`` for the user to resolve through the
+    LoRA manager UI.
     """
     all_loras = _fetch_all_loras_from_comfyui(comfy_url)
     if not all_loras:
@@ -6601,6 +7196,25 @@ def _build_lora_registry(comfy_url):
         return
 
     print(f"  [LoRA] Discovered {len(all_loras)} LoRAs from ComfyUI")
+
+    # Run version-migration detection BEFORE the "already registered,
+    # skip" loop below. That way auto-migrated orphans keep their user-
+    # confirmed metadata instead of losing it when we skip the new name.
+    try:
+        mig = _detect_and_apply_lora_upgrades(all_loras)
+        if mig["auto_applied"]:
+            print(f"  [LoRA migrate] auto-applied "
+                  f"{len(mig['auto_applied'])} upgrade(s)")
+        if mig["pending"]:
+            print(f"  [LoRA migrate] {len(mig['pending'])} orphan(s) "
+                  f"awaiting user resolution")
+        if mig["unresolved"]:
+            print(f"  [LoRA migrate] {len(mig['unresolved'])} orphan(s) "
+                  f"with no candidate found")
+    except Exception as _migrate_err:
+        import traceback
+        print(f"  [LoRA migrate] detection crashed; skipping: {_migrate_err}")
+        traceback.print_exc()
 
     # Determine which architectures each LoRA is compatible with.
     # Matching is case-INsensitive on both the lora path and the prefix
@@ -6839,6 +7453,35 @@ def _civitai_metadata_worker(lora_names):
             entry["civitai_name"] = meta.get("civitai_name", "")
             entry["description"] = meta.get("description", "")
             entry["source"] = "civitai"
+            # Rich metadata — when the user activates "metadata download"
+            # we cache Civitai's trainedWords, recommended sampling
+            # params, example prompts, a preview URL, and the NSFW flag.
+            # We DO NOT overwrite anything the user has already confirmed
+            # via the F10 interrogation flow (`user_*` / `trigger_words`
+            # set by the approval step are authoritative).
+            civ_triggers = meta.get("civitai_trigger_words") or []
+            if civ_triggers:
+                entry["civitai_trigger_words"] = civ_triggers
+                if not entry.get("trigger_words"):
+                    entry["trigger_words"] = ", ".join(civ_triggers)
+            if meta.get("civitai_base_model"):
+                entry["civitai_base_model"] = meta["civitai_base_model"]
+            if meta.get("civitai_recommended_sampler"):
+                entry["civitai_recommended_sampler"] = meta["civitai_recommended_sampler"]
+            if meta.get("civitai_recommended_cfg") is not None:
+                entry["civitai_recommended_cfg"] = meta["civitai_recommended_cfg"]
+            if meta.get("civitai_recommended_weight") is not None:
+                entry["civitai_recommended_weight"] = meta["civitai_recommended_weight"]
+                # Only seed default_strength from Civitai if the user
+                # hasn't already set one — never overwrite their pick.
+                if "default_strength" not in entry or entry.get("default_strength") in (None, 0.7):
+                    entry["default_strength"] = meta["civitai_recommended_weight"]
+            if meta.get("civitai_example_prompts"):
+                entry["civitai_example_prompts"] = meta["civitai_example_prompts"]
+            if meta.get("civitai_preview_url"):
+                entry["civitai_preview_url"] = meta["civitai_preview_url"]
+            if meta.get("civitai_nsfw"):
+                entry["civitai_nsfw"] = True
             fetched += 1
         else:
             skipped += 1
@@ -6940,6 +7583,18 @@ def _get_loras_for_wizard(char_id):
             # via the F10 LoRA interrogation flow.
             "trigger_words": info.get("trigger_words", ""),
             "default_strength": info.get("default_strength", 0.7),
+            # Rich Civitai metadata (populated when the Metadata Download
+            # setting is on). Trigger words here are the trainer's
+            # canonical list, kept separate from the user-edited
+            # `trigger_words` string so the UI can distinguish origin.
+            "civitai_trigger_words": info.get("civitai_trigger_words", []),
+            "civitai_recommended_weight": info.get("civitai_recommended_weight"),
+            "civitai_recommended_sampler": info.get("civitai_recommended_sampler", ""),
+            "civitai_recommended_cfg": info.get("civitai_recommended_cfg"),
+            "civitai_example_prompts": info.get("civitai_example_prompts", []),
+            "civitai_preview_url": info.get("civitai_preview_url", ""),
+            "civitai_base_model": info.get("civitai_base_model", ""),
+            "civitai_nsfw": bool(info.get("civitai_nsfw")),
             # Multi-approve (Phase 3) fields — surface the user's
             # keyword scaffolding so the Wizard Guild client can auto-
             # suggest an approved LoRA whose keyword matches the prompt
@@ -10098,6 +10753,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 use_network=(params.get('network', ['1'])[0] != '0')))
         if self.path == '/api/spellcaster/lora/scorer/probe':
             return self.end_json(*_spellcaster_lora_scorer_probe())
+        if self.path == '/api/spellcaster/lora/migrations':
+            return self.end_json(*_spellcaster_lora_migrations_get())
         if self.path == '/api/spellcaster/faceswap/health':
             return self.end_json(*_spellcaster_faceswap_health())
         if self.path == '/api/spellcaster/faceswap/reset':
@@ -10891,6 +11548,14 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     "user_desc": info.get("user_desc", ""),
                     "source": info.get("source", "discovered"),
                     "tags": info.get("tags", [])[:5],
+                    # Civitai metadata surfaces (see _get_loras_for_wizard
+                    # for the full set — kept slim here since scaffold
+                    # editor lists hundreds of rows).
+                    "civitai_trigger_words": info.get("civitai_trigger_words", []),
+                    "civitai_recommended_weight": info.get("civitai_recommended_weight"),
+                    "civitai_preview_url": info.get("civitai_preview_url", ""),
+                    "civitai_url": info.get("civitai_url", ""),
+                    "civitai_nsfw": bool(info.get("civitai_nsfw")),
                 }
                 for arch in info.get("archs", []):
                     by_arch.setdefault(arch, []).append(entry)
@@ -14371,6 +15036,11 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 data.get('purpose_group', ''),
                 data.get('winner', ''),
                 demote_losers=bool(data.get('demote_losers', True))))
+        if self.path == '/api/spellcaster/lora/migrations/resolve':
+            return self.end_json(*_spellcaster_lora_migrations_resolve(
+                old_name=data.get('old_name', ''),
+                new_name=data.get('new_name', ''),
+                action=data.get('action', 'apply')))
         if self.path == '/api/spellcaster/lora/approve':
             # Multi-approve: keep every LoRA the user wants, each tagged
             # with their own keywords so the Wizard Guild can auto-
@@ -15274,12 +15944,17 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 from spellcaster_core import speedcoach as _sc
                 _sc.append_dispatch_record(record)
             except Exception:
+                # Back-compat fallback: even if the aggregator import
+                # fails, still write the legacy minimal line so the
+                # pre-SpeedCoach parse_miss/logs-only callers aren't
+                # broken.
                 try:
                     log_path = os.path.join(_STATE_DIR, 'dispatch_log.jsonl')
                     with open(log_path, 'a', encoding='utf-8') as f:
                         f.write(json.dumps(record) + "\n")
                 except Exception as e:
                     print(f"  [Telemetry] dispatch_ok log failed: {e}")
+            # Emit typed event so Insights / subscribers can react.
             try:
                 from spellcaster_core.events import DispatchCompleted, publish_event
                 from spellcaster_core.event_bus import EventBus
@@ -15360,6 +16035,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 )
             except Exception:
                 pass
+            # Also append to a log so Insights can tally historically.
             try:
                 log_path = os.path.join(_STATE_DIR, 'speedcoach_events.jsonl')
                 with open(log_path, 'a', encoding='utf-8') as f:
