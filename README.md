@@ -210,7 +210,7 @@ The **Antenna** is a small always-on bridge that lets Spellcaster on your laptop
 </td>
 <td width="33%" align="center" valign="top">
   <img src="assets/wizardguild.png" alt="Wizard Guild — chat UI" width="100%"/>
-  <img src="assets/wizardguild2.png" alt="Travelling Wizard — visual scaffold editor" width="100%"/>
+  <img src="assets/t1.png" alt="Wizard Guild — second view" width="100%"/>
   <img src="assets/t3.png" alt="Wizard Guild — third view" width="100%"/>
   <br/><br/>
   <strong>🧙 Wizard Guild</strong><br/>
