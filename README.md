@@ -1,6 +1,42 @@
-<p align="center">
-  <img src="assets/wizard_banner.gif" alt="Spellcaster" width="600" />
-</p>
+<table width="100%">
+<tr>
+<td width="58%" align="center" valign="middle">
+  <img src="assets/wizard_banner.gif" alt="Spellcaster" width="100%"/>
+</td>
+<td width="42%" valign="middle">
+  <h3 align="center">🎨 Image models</h3>
+  <p align="center">
+    <a href="DEEP_DIVE.md#all-69-tools" title="Flux 2 Klein — 4-step, ref-aware, SOTA photoreal"><img src="https://img.shields.io/badge/Flux%202%20Klein-ffd700?style=flat-square&labelColor=1a1422" alt="Flux 2 Klein"/></a>
+    <a href="DEEP_DIVE.md#all-69-tools" title="Flux 1 Dev — 12B rectified-flow, ControlNet Union Pro"><img src="https://img.shields.io/badge/Flux%201%20Dev-58e0ff?style=flat-square&labelColor=1a1422" alt="Flux 1 Dev"/></a>
+    <a href="DEEP_DIVE.md#all-69-tools" title="Flux Kontext — edit-by-instruction"><img src="https://img.shields.io/badge/Flux%20Kontext-7ad7ff?style=flat-square&labelColor=1a1422" alt="Flux Kontext"/></a>
+    <a href="DEEP_DIVE.md#all-69-tools" title="Chroma — 8B open-weights DiT"><img src="https://img.shields.io/badge/Chroma-ff7ad7?style=flat-square&labelColor=1a1422" alt="Chroma"/></a>
+    <br/>
+    <a href="DEEP_DIVE.md#all-69-tools" title="SDXL — the workhorse, every ControlNet works"><img src="https://img.shields.io/badge/SDXL-b470ff?style=flat-square&labelColor=1a1422" alt="SDXL"/></a>
+    <a href="DEEP_DIVE.md#all-69-tools" title="Illustrious — booru-tagged anime/illustration"><img src="https://img.shields.io/badge/Illustrious-ff8fd1?style=flat-square&labelColor=1a1422" alt="Illustrious"/></a>
+    <a href="DEEP_DIVE.md#all-69-tools" title="Pony — score-cascade SDXL finetune"><img src="https://img.shields.io/badge/Pony-ffa8d4?style=flat-square&labelColor=1a1422" alt="Pony"/></a>
+    <a href="DEEP_DIVE.md#all-69-tools" title="Playground — aesthetic SDXL finetune"><img src="https://img.shields.io/badge/Playground-c09bff?style=flat-square&labelColor=1a1422" alt="Playground"/></a>
+    <br/>
+    <a href="DEEP_DIVE.md#all-69-tools" title="SD 1.5 — classic, universal LoRA compatibility"><img src="https://img.shields.io/badge/SD%201.5-8aa9ff?style=flat-square&labelColor=1a1422" alt="SD 1.5"/></a>
+    <a href="DEEP_DIVE.md#all-69-tools" title="SDXL Turbo — 6-step distilled"><img src="https://img.shields.io/badge/SDXL%20Turbo-ffb864?style=flat-square&labelColor=1a1422" alt="SDXL Turbo"/></a>
+    <a href="DEEP_DIVE.md#all-69-tools" title="Z-Image Turbo — 6-step, 2B, sharpest distill"><img src="https://img.shields.io/badge/Z%E2%80%91Image%20Turbo-ffef4a?style=flat-square&labelColor=1a1422" alt="Z-Image Turbo"/></a>
+  </p>
+  <h3 align="center">🎬 Video models</h3>
+  <p align="center">
+    <a href="DEEP_DIVE.md#all-69-tools" title="Wan 2.2 I2V — 14B image-to-video"><img src="https://img.shields.io/badge/Wan%202.2-10b981?style=flat-square&labelColor=1a1422" alt="Wan 2.2"/></a>
+    <a href="DEEP_DIVE.md#all-69-tools" title="LTX 2.3 — 22B cinematic T2V + I2V"><img src="https://img.shields.io/badge/LTX%202.3-5eead4?style=flat-square&labelColor=1a1422" alt="LTX 2.3"/></a>
+    <a href="DEEP_DIVE.md#all-69-tools" title="SeedVR — temporally consistent video upscale"><img src="https://img.shields.io/badge/SeedVR-34d399?style=flat-square&labelColor=1a1422" alt="SeedVR"/></a>
+  </p>
+  <h3 align="center">🧠 Brains & helpers</h3>
+  <p align="center">
+    <a href="DEEP_DIVE.md#all-69-tools" title="SAM 3 — type 'earring' to select the earring"><img src="https://img.shields.io/badge/SAM%203-ff6b9d?style=flat-square&labelColor=1a1422" alt="SAM 3"/></a>
+    <a href="DEEP_DIVE.md#all-69-tools" title="NormalCrafter — 3D normal maps from 2D"><img src="https://img.shields.io/badge/NormalCrafter-9f7aea?style=flat-square&labelColor=1a1422" alt="NormalCrafter"/></a>
+    <a href="DEEP_DIVE.md#all-69-tools" title="IC-Light — surface-aware relighting"><img src="https://img.shields.io/badge/IC%E2%80%91Light-fbbf24?style=flat-square&labelColor=1a1422" alt="IC-Light"/></a>
+    <a href="DEEP_DIVE.md#all-69-tools" title="ReActor + InsightFace — face swap / restore"><img src="https://img.shields.io/badge/ReActor-f472b6?style=flat-square&labelColor=1a1422" alt="ReActor"/></a>
+    <a href="DEEP_DIVE.md#all-69-tools" title="Ollama — local LLM for prompt enhance + scoring"><img src="https://img.shields.io/badge/Ollama-64748b?style=flat-square&labelColor=1a1422&logo=ollama&logoColor=white" alt="Ollama"/></a>
+  </p>
+</td>
+</tr>
+</table>
 
 <h1 align="center">Spellcaster</h1>
 
@@ -10,16 +46,6 @@
 </p>
 
 <p align="center">
-  <a href="DEEP_DIVE.md#all-69-tools" title="All supported model families"><img src="https://img.shields.io/badge/Flux%202%20Klein-ffd700?style=flat-square&labelColor=1a1422" alt="Flux 2 Klein"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="All supported model families"><img src="https://img.shields.io/badge/Flux%201%20Dev-58e0ff?style=flat-square&labelColor=1a1422" alt="Flux 1 Dev"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="All supported model families"><img src="https://img.shields.io/badge/Chroma-ff7ad7?style=flat-square&labelColor=1a1422" alt="Chroma"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="All supported model families"><img src="https://img.shields.io/badge/SDXL-b470ff?style=flat-square&labelColor=1a1422" alt="SDXL"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="All supported model families"><img src="https://img.shields.io/badge/Illustrious-ff8fd1?style=flat-square&labelColor=1a1422" alt="Illustrious"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="All supported model families"><img src="https://img.shields.io/badge/SD%201.5-8aa9ff?style=flat-square&labelColor=1a1422" alt="SD 1.5"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="All supported model families"><img src="https://img.shields.io/badge/Z%E2%80%91Image%20Turbo-ffef4a?style=flat-square&labelColor=1a1422" alt="Z-Image Turbo"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="All supported model families"><img src="https://img.shields.io/badge/Wan%202.2-10b981?style=flat-square&labelColor=1a1422" alt="Wan 2.2"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="All supported model families"><img src="https://img.shields.io/badge/LTX%202.3-5eead4?style=flat-square&labelColor=1a1422" alt="LTX 2.3"/></a>
-  <br/>
   <sub><em>Spellcaster auto-detects your installed checkpoints and routes each generation to the right architecture. You never pick a sampler.</em></sub>
 </p>
 
@@ -99,54 +125,72 @@ Three things Spellcaster does in one click that most people spend an afternoon (
 
 ## I want to…
 
-Pick the thing you want. One tool per row. Every one of these lives in the `Filters > Spellcaster` menu in GIMP, or as a chat action in the Wizard Guild, or as a script in DaVinci Resolve.
+Pick the thing you want. One tool per row. The **Best in** column tells you the fastest interface to launch it from — 🖌️ **GIMP** for pixel-accurate work, 📷 **Darktable** for RAW-first batching, 🧙 **Wizard Guild** for conversational prompts, 🎬 **Resolve** for timeline-aware video, 🎭 **SillyTavern** for in-chat renders.
 
 <table>
 <tr>
-<td width="20%" align="center"><img src="assets/showcase_lama_remove.png" alt="AI Eraser" width="100%"/></td>
-<td><strong>Remove something from a photo</strong><br/><sub>Select + <code>Ctrl+Alt+X</code>. LaMa inpainting erases anything — tourists, power lines, ex-boyfriends — and fills the gap cleanly.</sub></td>
+<td width="16%" align="center"><img src="assets/showcase_lama_remove.png" alt="AI Eraser" width="100%"/></td>
+<td><strong>Remove something from a photo</strong><br/><sub>LaMa inpainting erases anything — tourists, power lines, ex-boyfriends — and fills the gap cleanly.</sub></td>
+<td width="18%"><sub>🖌️ <strong>GIMP</strong> — select + <code>Ctrl+Alt+X</code> ·<br/>📷 <strong>Darktable</strong> — Send to GIMP first</sub></td>
 </tr>
 <tr>
-<td width="20%" align="center"><img src="assets/showcase_rembg.png" alt="Remove Background" width="100%"/></td>
-<td><strong>Cut out the subject</strong><br/><sub>One click. Three engines — rembg, BiRefNet (best for hair), BiRefNet Portrait. You get transparency. No cleanup needed.</sub></td>
+<td width="16%" align="center"><img src="assets/showcase_rembg.png" alt="Remove Background" width="100%"/></td>
+<td><strong>Cut out the subject</strong><br/><sub>Three engines — rembg, BiRefNet (best for hair), BiRefNet Portrait. You get transparency. No cleanup needed.</sub></td>
+<td width="18%"><sub>🖌️ <strong>GIMP</strong> — <code>Ctrl+Alt+B</code> ·<br/>🧙 <strong>Guild</strong> — "remove the background"</sub></td>
 </tr>
 <tr>
-<td width="20%" align="center"><img src="assets/showcase_colorize.png" alt="Colorize" width="100%"/></td>
-<td><strong>Colorize a B&W photo</strong><br/><sub>Three engines — DDColor for instant artistic or natural, or ControlNet + diffusion for the "restored family portrait" look. Pick the vibe, click.</sub></td>
+<td width="16%" align="center"><img src="assets/showcase_colorize.png" alt="Colorize" width="100%"/></td>
+<td><strong>Colorize a B&W photo</strong><br/><sub>Three engines — DDColor artistic/natural, or ControlNet + diffusion for the "restored family portrait" look.</sub></td>
+<td width="18%"><sub>🖌️ <strong>GIMP</strong> — one dialog ·<br/>📷 <strong>Darktable</strong> — batch across shoots</sub></td>
 </tr>
 <tr>
-<td width="20%" align="center"><img src="assets/showcase_iclight_golden.png" alt="IC-Light" width="100%"/></td>
-<td><strong>Change the lighting</strong><br/><sub>IC-Light relighting. Pick "Golden Hour", "Neon", "Studio", 10 presets — the subject stays, the light changes. Same photo, different mood.</sub></td>
+<td width="16%" align="center"><img src="assets/showcase_iclight_golden.png" alt="IC-Light" width="100%"/></td>
+<td><strong>Change the lighting</strong><br/><sub>IC-Light relighting. Pick "Golden Hour", "Neon", "Studio", 10 presets — the subject stays, the light changes.</sub></td>
+<td width="18%"><sub>🖌️ <strong>GIMP</strong> — Style menu, one preset click ·<br/>🧙 <strong>Guild</strong> — "relight as sunset"</sub></td>
 </tr>
 <tr>
-<td width="20%" align="center"><img src="assets/showcase_face_restore.png" alt="Face Restore" width="100%"/></td>
-<td><strong>Fix a face</strong><br/><sub>Seven models — GPEN-2048, CodeFormer, GFPGAN, RestoreFormer++. The AI figures out what the face is supposed to look like and gives you sharp eyes and skin back.</sub></td>
+<td width="16%" align="center"><img src="assets/showcase_face_restore.png" alt="Face Restore" width="100%"/></td>
+<td><strong>Fix a face</strong><br/><sub>Seven models — GPEN-2048, CodeFormer, GFPGAN, RestoreFormer++. Sharp eyes and skin back.</sub></td>
+<td width="18%"><sub>🖌️ <strong>GIMP</strong> — <code>Ctrl+Alt+F</code> ·<br/>📷 <strong>Darktable</strong> — restore a whole folder</sub></td>
 </tr>
 <tr>
-<td width="20%" align="center"><img src="assets/showcase_faceid.png" alt="Face Identity" width="100%"/></td>
-<td><strong>Put your face on a character</strong><br/><sub>ReActor, FaceID, PuLID, Flux 2 Headswap. Upload a reference, generate a new scene, the subject has your face. We know why you're here. It's fine.</sub></td>
+<td width="16%" align="center"><img src="assets/showcase_faceid.png" alt="Face Identity" width="100%"/></td>
+<td><strong>Put your face on a character</strong><br/><sub>ReActor, FaceID, PuLID, Flux 2 Headswap. Upload a reference, generate a new scene, the subject has your face.</sub></td>
+<td width="18%"><sub>🖌️ <strong>GIMP</strong> — upload + preset ·<br/>🎭 <strong>ST</strong> — <code>/portrait</code> in roleplay</sub></td>
 </tr>
 <tr>
-<td width="20%" align="center"><img src="assets/showcase_style_transfer.png" alt="Style Transfer" width="100%"/></td>
-<td><strong>Copy a style</strong><br/><sub>IPAdapter style transfer. Point at any reference image — painting, photograph, illustration — and your image gets rewritten in that style. Ghibli, Van Gogh, a screenshot from a game.</sub></td>
+<td width="16%" align="center"><img src="assets/showcase_style_transfer.png" alt="Style Transfer" width="100%"/></td>
+<td><strong>Copy a style</strong><br/><sub>IPAdapter style transfer. Point at any reference image — painting, photograph, illustration — and your image gets rewritten in that style.</sub></td>
+<td width="18%"><sub>🖌️ <strong>GIMP</strong> — reference image picker ·<br/>🧙 <strong>Guild</strong> — drop a ref, chat it</sub></td>
 </tr>
 <tr>
-<td width="20%" align="center"><img src="assets/showcase_seedv2r.png" alt="SeedV2R Upscale" width="100%"/></td>
-<td><strong>Upscale with hallucinated detail</strong><br/><sub>Nine upscalers: WaveSpeed SeedVR2 (best, 2K/4K), UltraSharp, RealESRGAN, Remacri, NMKD, Anime. Controllable hallucination strength: none/light/high.</sub></td>
+<td width="16%" align="center"><img src="assets/showcase_seedv2r.png" alt="SeedV2R Upscale" width="100%"/></td>
+<td><strong>Upscale with hallucinated detail</strong><br/><sub>Nine upscalers: WaveSpeed SeedVR2 (best, 2K/4K), UltraSharp, RealESRGAN, Remacri, NMKD, Anime. Controllable hallucination.</sub></td>
+<td width="18%"><sub>🖌️ <strong>GIMP</strong> — <code>Ctrl+Alt+U</code> ·<br/>📷 <strong>Darktable</strong> — Hybrid Blend panel</sub></td>
 </tr>
 <tr>
-<td width="20%" align="center"><img src="assets/showcase_normal_map.png" alt="3D Normal Map" width="100%"/></td>
-<td><strong>Extract 3D surface geometry</strong><br/><sub>NormalCrafter generates a 3D normal map from any 2D image. Use it in Blender, in game engines, or feed it back into Spellcaster to relight the scene in physically-correct 3D.</sub></td>
+<td width="16%" align="center"><img src="assets/showcase_normal_map.png" alt="3D Normal Map" width="100%"/></td>
+<td><strong>Extract 3D surface geometry</strong><br/><sub>NormalCrafter generates a 3D normal map from any 2D image. Use it in Blender, in game engines, or feed it back into Spellcaster to relight the scene.</sub></td>
+<td width="18%"><sub>🖌️ <strong>GIMP</strong> — Enhance ▸ 3D Normal Map ·<br/>📷 <strong>Darktable</strong> — 3D / Relighting panel</sub></td>
 </tr>
 <tr>
-<td width="20%" align="center"><img src="assets/showcase_klein_flux2.png" alt="Flux 2 Klein" width="100%"/></td>
-<td><strong>Edit with Flux 2 Klein</strong><br/><sub>4-20 steps, photorealistic, best-in-class img2img and inpaint. Klein is the one people notice. 9 Klein-specific tools, all pre-tuned. You don't touch a sampler.</sub></td>
+<td width="16%" align="center"><img src="assets/showcase_klein_flux2.png" alt="Flux 2 Klein" width="100%"/></td>
+<td><strong>Edit with Flux 2 Klein</strong><br/><sub>4-20 steps, photorealistic, best-in-class img2img and inpaint. Klein is the one people notice. 9 Klein-specific tools, all pre-tuned.</sub></td>
+<td width="18%"><sub>🖌️ <strong>GIMP</strong> — Flux 2 submenu, 9 tools ·<br/>🧙 <strong>Guild</strong> — auto-routes via Portraitist wizard</sub></td>
 </tr>
 <tr>
-<td width="20%" align="center"><img src="assets/showcase_spellcaster_cat.gif" alt="Spellcaster — the mascot cat wizard" width="100%"/></td>
-<td><strong>Have fun and generate whatever the hell I want</strong><br/><sub>Text to Image across 9 model families. Type "a cat wizard reading a spellbook." Get a cat wizard reading a spellbook. Pick SDXL, Flux, Klein, Chroma, Illustrious — or let Spellcaster pick for you. 25 scene presets, infinite variations, zero judgement.</sub></td>
+<td width="16%" align="center"><img src="assets/showcase_spellcaster_cat.gif" alt="Spellcaster — the mascot cat wizard" width="100%"/></td>
+<td><strong>Have fun and generate whatever the hell I want</strong><br/><sub>Text to Image across 9 model families. Type "a cat wizard reading a spellbook." Get a cat wizard reading a spellbook. 25 scene presets.</sub></td>
+<td width="18%"><sub>🧙 <strong>Wizard Guild</strong> — just type it, the wizards route it ·<br/>🖌️ <strong>GIMP</strong> — Text to Image dialog</sub></td>
+</tr>
+<tr>
+<td width="16%" align="center"><img src="assets/showcase_wan_breathing.gif" alt="Animate a still" width="100%"/></td>
+<td><strong>Animate a still into a clip</strong><br/><sub>Wan 2.2 I2V (81 frames, 720p) or LTX 2.3. 26 motion presets — zoom, turntable, parallax, breathing portrait, falling petals.</sub></td>
+<td width="18%"><sub>🎬 <strong>Resolve</strong> — drop playhead, render to timeline ·<br/>🖌️ <strong>GIMP</strong> — Image ▸ WAN I2V ·<br/>🎭 <strong>ST</strong> — <code>/animate</code></sub></td>
 </tr>
 </table>
+
+<sub><strong>Icon key</strong> · 🖌️ GIMP plugin · 📷 Darktable plugin · 🧙 Wizard Guild chat · 🎬 DaVinci Resolve plugin · 🎭 SillyTavern extension — all four talk to the same ComfyUI backend and share a gallery, so any result shows up everywhere.</sub>
 
 **Too many to list here.** [All 69 tools →](DEEP_DIVE.md#all-69-tools)
 
