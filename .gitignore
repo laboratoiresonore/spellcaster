@@ -87,6 +87,7 @@ tests/*
 !tests/test_klein_enhancer.py
 !tests/test_quality_boost.py
 !tests/test_model_prompt_profiles.py
+!tests/test_lora_auto_calibrate.py
 audit_*.py
 
 # Spell icons (user-generated during install, not source)

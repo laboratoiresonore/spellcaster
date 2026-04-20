@@ -523,7 +523,20 @@ def classify_nsfw(k: LoraKnowledge, filename: Optional[str] = None) -> bool:
     probe_parts.extend(k.trigger_words)
     probe = " ".join(probe_parts).lower()
     tokens = set(re.sub(r"[^a-z0-9]+", " ", probe).split())
-    return bool(tokens & _NSFW_KEYWORDS)
+    if tokens & _NSFW_KEYWORDS:
+        return True
+    # Substring match for keywords containing punctuation ("r-18",
+    # "18+") that our word tokeniser flattens away. The false-positive
+    # bar is deliberately low here — better to mis-route a benign
+    # LoRA into the NSFW store (private) than leak explicit material
+    # into the public SFW store.
+    for kw in _NSFW_KEYWORDS:
+        if not kw:
+            continue
+        if any(ch in kw for ch in "-+._"):
+            if kw in probe:
+                return True
+    return False
 
 
 # ── Heuristic fallbacks ─────────────────────────────────────────────────
