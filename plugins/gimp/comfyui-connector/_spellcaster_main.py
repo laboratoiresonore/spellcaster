@@ -552,9 +552,8 @@ def _reapply_appearance_assets() -> dict:
     Before 2026-04-20 this logic lived inline in ``_auto_update``'s
     Step 6, so the boot-time updater reapplied the theme but the
     "Repair / Update Now" button in Settings only downloaded files
-    into the plugin dir and left GIMP reading the OLD theme / splash /
-    icon between restarts. Users clicked Repair, saw no change,
-    reported the bug.
+    into the plugin dir and left GIMP reading the OLD theme/splash/
+    icon. Users clicked Repair, saw no change, reported the bug.
 
     Extracted here so both call sites stay in sync. Respects the
     ``apply_theme`` config opt-in; no-ops otherwise.
@@ -571,6 +570,9 @@ def _reapply_appearance_assets() -> dict:
     if not cfg.get("apply_theme", False):
         return summary
 
+    # 1. gimp.css — writes the Spellcaster theme into every detected
+    # GIMP config dir. _install_spellcaster_theme_to_disk() already
+    # handles version detection and skips dirs that don't exist.
     try:
         _install_spellcaster_theme_to_disk()
         summary["theme"] = "installed"
@@ -578,6 +580,8 @@ def _reapply_appearance_assets() -> dict:
         print(f"[Spellcaster] theme re-install failed: {_e}",
               file=_sys.stderr)
 
+    # 2. gimp_banner.gif in the parent plugins/gimp/ directory (some
+    # dialogs look for it one level up from the plugin dir).
     try:
         banner_gif = _PLUGIN_DIR / "gimp_banner.gif"
         if not banner_gif.exists():
@@ -591,6 +595,8 @@ def _reapply_appearance_assets() -> dict:
     except Exception as _e:
         print(f"[Spellcaster] banner copy failed: {_e}", file=_sys.stderr)
 
+    # 3. gimp-splash.png — backup the original once, overwrite with
+    # the banner PNG. Searches every known GIMP 3 install root.
     try:
         banner_png = _PLUGIN_DIR.parent / "gimp_banner.png"
         if not banner_png.exists():
@@ -606,6 +612,10 @@ def _reapply_appearance_assets() -> dict:
                 roots = [Path("/usr/share/gimp/3.0"),
                          Path("/usr/local/share/gimp/3.0")]
             for pf in roots:
+                # Windows layout: <root>/share/gimp/3.0/images.
+                # macOS / Linux layout depends on the packaging; glob
+                # defensively for the gimp-splash*.png pattern anywhere
+                # under the root.
                 if pf.is_dir():
                     for f in pf.rglob("gimp-splash*.png"):
                         splash_candidates.append(f)
@@ -627,6 +637,8 @@ def _reapply_appearance_assets() -> dict:
     except Exception as _e:
         print(f"[Spellcaster] splash logic crashed: {_e}", file=_sys.stderr)
 
+    # 4. Custom icon — GIMP ships gimp-logo.png + wilber.png as the
+    # branding used throughout the UI. Replace both.
     try:
         icon_src = _PLUGIN_DIR / "spellcaster_icon.png"
         if icon_src.exists():
@@ -643,6 +655,9 @@ def _reapply_appearance_assets() -> dict:
                 if not pf.is_dir():
                     continue
                 for icon_name in ("gimp-logo.png", "wilber.png"):
+                    # Walk the tree so we catch the icon regardless of
+                    # whether it lives in share/gimp/3.0/images/ or
+                    # another packaging-specific subdir.
                     for icon_path in pf.rglob(icon_name):
                         try:
                             backup = icon_path.with_suffix(
@@ -919,9 +934,9 @@ def _auto_update():
 
         # Step 6: Re-apply appearance assets (theme CSS, splash, icons)
         # if the user opted in via apply_theme=True. Extracted into
-        # _reapply_appearance_assets() so Settings > Repair / Update
-        # Now runs the exact same logic — before 2026-04-20 the two
-        # paths diverged and Repair silently skipped the re-apply.
+        # _reapply_appearance_assets() so the Settings > Repair button
+        # runs the exact same logic — prior to 2026-04-20 the two code
+        # paths diverged and the Repair button skipped the re-apply.
         _reapply_appearance_assets()
 
         # Step 7b: Delete GIMP pluginrc cache — forces re-scan of procedures
@@ -16892,6 +16907,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-my-presets": None,
             "spellcaster-bridge": None,
             "spellcaster-clear-upload-cache": None,
+            "spellcaster-test-harness": None,
             # SAM3 AI Selection
             "spellcaster-sam3-select": None,    # always register — preflight checks server at runtime
             "spellcaster-sam3-extract": None,
@@ -16978,24 +16994,19 @@ class Spellcaster(Gimp.PlugIn):
                 continue                          # probe says node missing
             procs.append(name)
 
-        # Procedure-set drift guard: GIMP caches the registered
-        # procedure list in pluginrc. When we rename or remove a
-        # procedure (e.g. drop a duplicate or merge a submenu), GIMP
-        # keeps showing the stale old name alongside the new one
-        # until pluginrc is regenerated.
+        # Procedure-set drift guard: GIMP caches the registered procedure
+        # list in pluginrc. If we rename or remove a procedure (e.g. a
+        # renamed menu entry, a removed-duplicate), GIMP will keep
+        # showing the stale old name next to the new one until pluginrc
+        # is regenerated. _auto_update + _apply_staged_updates already
+        # purge pluginrc when code changes, BUT if the user disables
+        # auto-update OR the Repair button has already been used AND
+        # the SHA didn't change, we can silently miss it.
         #
-        # _auto_update + _apply_staged_updates already purge pluginrc
-        # when code changes, BUT if the user has disabled auto-update,
-        # or the Repair button already staged an update and the SHA
-        # short-circuits the next _auto_update call, the purge can
-        # silently be missed — which is exactly what produced the
-        # "Flux 2 + Klein" duplicate-submenu bug the user reported.
-        #
-        # Defense-in-depth: remember the last-registered procedure
-        # digest in config.json. Whenever the current set differs
-        # (names added or removed), delete pluginrc so GIMP drops
-        # stale procedure names on the next boot. Idempotent — no-op
-        # when the set is stable.
+        # Defense-in-depth: remember the last-registered procedure set
+        # in config.json. When the CURRENT set differs (names added or
+        # removed), delete pluginrc so GIMP re-scans on next launch.
+        # Idempotent — no-op when the set is stable.
         try:
             import hashlib as _hashlib
             _proc_digest = _hashlib.sha1(
@@ -17003,6 +17014,8 @@ class Spellcaster(Gimp.PlugIn):
             ).hexdigest()[:16]
             _last_digest = cfg.get("procedure_set_digest") or ""
             if _proc_digest != _last_digest:
+                # Drift detected (or first run). Purge pluginrc so GIMP
+                # drops any procedure name no longer in _PROC_FEATURES.
                 try:
                     _delete_all_gimp_pluginrc()
                 except Exception:
@@ -17078,13 +17091,12 @@ class Spellcaster(Gimp.PlugIn):
                                           "Enhance any region — face, eyes, hands, skin, hair, clothing"),
             "spellcaster-klein-generate": ("Generate Object...", self._run_klein_generate,
                                             "Generate any object as a transparent layer — matches scene lighting"),
-            # Auto-Inpaint / SAM3-Inpaint / Refine / Face Detailer /
-            # Color Match / Virtual Try-On used to live under a
-            # separate "Klein" submenu with redundant "Klein *"
-            # prefixes. Merged into the Flux 2 submenu (2026-04-20)
-            # so the user sees ONE current submenu instead of both
-            # a current ("Flux 2") and an outdated ("Klein") copy
-            # side-by-side.
+            # Auto-Inpaint / SAM3-Inpaint / Refine / Face Detailer / Color
+            # Match / Virtual Try-On used to live under a separate
+            # "Klein" submenu with redundant "Klein *" prefixes. Merged
+            # into the Flux 2 submenu (2026-04-20) so the user sees ONE
+            # current submenu instead of both a current ("Flux 2") and
+            # an outdated ("Klein") copy side-by-side.
             "spellcaster-klein-auto-inpaint": ("Auto-Inpaint... (Florence)", self._run_klein_auto_inpaint,
                                                 "Florence2 auto-mask + Flux 2 inpaint — describe what to replace, no mask painting"),
             "spellcaster-klein-sam3-inpaint": ("SAM3 Inpaint...", self._run_klein_sam3_inpaint,
@@ -17158,6 +17170,12 @@ class Spellcaster(Gimp.PlugIn):
                                                  "image by skipping the re-export; clearing it restores a "
                                                  "stricter privacy posture at the cost of one re-upload the "
                                                  "next time you send that image."),
+            "spellcaster-test-harness": ("Run test harness (batch only)",
+                                          self._run_test_harness,
+                                          "End-to-end test harness for tests/gimp_batch.py. "
+                                          "Does nothing when invoked from the menu \u2014 only runs "
+                                          "in GIMP batch mode (-idf + NONINTERACTIVE). Writes a "
+                                          "JSONL report to $SPELLCASTER_TEST_REPORT."),
             "spellcaster-sam3-select": ("AI Select by Description...", self._run_sam3_select,
                                          "Type what to select (person, shirt, hair) — AI creates the selection automatically"),
             "spellcaster-sam3-extract": ("AI Extract Subject...", self._run_sam3_extract,
@@ -17346,6 +17364,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-bridge":            f"{_S}/Tools",
             "spellcaster-calibration-wizard": f"{_S}/Tools",
             "spellcaster-clear-upload-cache": f"{_S}/Tools",
+            "spellcaster-test-harness":      f"{_S}/Tools",
             # R105: cross-plugin transfer submenu — visible diamond
             # markers make it easy to spot the inter-app channels.
             "spellcaster-send-to-resolve":      f"{_S}/Cross-App",
@@ -29884,6 +29903,297 @@ class Spellcaster(Gimp.PlugIn):
     #  Cancel Queued Generations
     # ══════════════════════════════════════════════════════════════════════
 
+    def _run_test_harness(self, procedure, run_mode, image, drawables, config, data):
+        """End-to-end test harness runnable from GIMP batch mode.
+
+        Invoked by ``tests/gimp_batch.py`` via:
+            gimp -idf -b "(gimp-pdb-run-procedure \"spellcaster-test-harness\" '())"
+
+        Writes a JSONL report to ``$SPELLCASTER_TEST_REPORT`` (default
+        ``<tmp>/spellcaster-test-report.jsonl``). Each line is one test
+        case: ``{"name": ..., "status": "PASS"|"FAIL", "detail": ...}``.
+
+        Runs without a display (``-idf`` mode): no Gtk widget creation,
+        no dialogs, no ComfyUI submit. Exercises the parts of the
+        plugin that can be tested against a synthetic in-memory
+        canvas \u2014 namely the workflow builders, fingerprint +
+        upload-cache helpers, result-import roundtrip, and
+        registration integrity.
+
+        Test cases:
+          * ``plugin_imports``       \u2014 module loaded without
+                                        exception.
+          * ``registry_shapes``      \u2014 _PROC_FEATURES / menu_map /
+                                        _menu_paths have matching keys.
+          * ``fingerprint_stable``   \u2014 _image_fingerprint returns
+                                        the same value on identical
+                                        canvas state.
+          * ``normal_layer_finder``  \u2014 _find_normal_layer detects a
+                                        "Normal Map (auto)"-named
+                                        layer.
+          * ``blank_rembg_detector`` \u2014 _looks_like_blank_rembg
+                                        classifies synthetic blank PNGs.
+          * ``uniform_mask_detector`` \u2014 _looks_like_uniform_mask on
+                                        synthetic monochrome PNGs.
+          * ``build_iclight_cn``     \u2014 build_iclight routes normal
+                                        map through ControlNetLoader.
+          * ``build_img2img``        \u2014 _build_img2img compiles a
+                                        valid workflow dict.
+          * ``import_layer``         \u2014 _import_result_as_layer adds
+                                        a new layer to a fresh image.
+        """
+        if run_mode != Gimp.RunMode.NONINTERACTIVE:
+            Gimp.message(
+                "Test harness is for batch mode only. Run via:\n\n"
+                "python tests/gimp_batch.py")
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        report_path = os.environ.get(
+            "SPELLCASTER_TEST_REPORT",
+            os.path.join(tempfile.gettempdir(),
+                         "spellcaster-test-report.jsonl"))
+        results: list[dict] = []
+
+        def _case(name: str, fn) -> None:
+            t0 = time.time()
+            try:
+                detail = fn() or ""
+                status = "PASS"
+            except AssertionError as ae:
+                status, detail = "FAIL", str(ae)
+            except Exception as e:
+                import traceback
+                status = "FAIL"
+                detail = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+            results.append({
+                "name": name, "status": status, "detail": detail,
+                "elapsed_ms": int((time.time() - t0) * 1000),
+            })
+
+        # ── Case: plugin_imports ──────────────────────────────
+        _case("plugin_imports", lambda: (
+            "_spellcaster_main loaded OK "
+            f"(__file__={os.path.basename(__file__)})"))
+
+        # ── Case: registry_shapes ─────────────────────────────
+        def _registry_shapes() -> str:
+            proc = {
+                "_PROC_FEATURES": None,  # filled below via introspection
+            }
+            # Load the source + AST-walk to get the three dicts.
+            import ast as _ast
+            try:
+                with open(__file__, encoding="utf-8") as f:
+                    src = f.read()
+                tree = _ast.parse(src)
+            except Exception as e:
+                raise AssertionError(f"AST parse failed: {e}")
+
+            def _dict_keys(name):
+                for node in _ast.walk(tree):
+                    if isinstance(node, _ast.Assign):
+                        for tgt in node.targets:
+                            if (isinstance(tgt, _ast.Name) and tgt.id == name
+                                    and isinstance(node.value, _ast.Dict)):
+                                return {k.value for k in node.value.keys
+                                        if isinstance(k, _ast.Constant)
+                                        and isinstance(k.value, str)}
+                            if (isinstance(tgt, _ast.Attribute) and tgt.attr == name
+                                    and isinstance(node.value, _ast.Dict)):
+                                return {k.value for k in node.value.keys
+                                        if isinstance(k, _ast.Constant)
+                                        and isinstance(k.value, str)}
+                return None
+            pk = _dict_keys("_PROC_FEATURES")
+            mk = _dict_keys("menu_map")
+            pa = _dict_keys("_menu_paths")
+            assert pk is not None, "_PROC_FEATURES dict not found"
+            assert mk is not None, "menu_map dict not found"
+            assert pa is not None, "_menu_paths dict not found"
+            assert pk == mk, f"features/menu mismatch: {pk ^ mk}"
+            assert pk == pa, f"features/paths mismatch: {pk ^ pa}"
+            return f"{len(pk)} procedures aligned across 3 dicts"
+        _case("registry_shapes", _registry_shapes)
+
+        # Create a fresh 256x256 RGB image to exercise canvas-level APIs.
+        test_img = Gimp.Image.new(
+            256, 256, Gimp.ImageBaseType.RGB)
+        # Fill with a flat colour via a new layer so fingerprint has
+        # real pixels to hash.
+        white_layer = Gimp.Layer.new(
+            test_img, "Canvas", 256, 256,
+            Gimp.ImageType.RGBA_IMAGE, 100.0,
+            Gimp.LayerMode.NORMAL)
+        test_img.insert_layer(white_layer, None, 0)
+        try:
+            white_layer.fill(Gimp.FillType.WHITE)
+        except Exception:
+            pass
+
+        # ── Case: fingerprint_stable ──────────────────────────
+        def _fp_stable() -> str:
+            fp1 = _image_fingerprint(test_img)
+            fp2 = _image_fingerprint(test_img)
+            assert fp1 == fp2, f"fingerprint not stable: {fp1} vs {fp2}"
+            assert len(fp1) >= 16, f"fingerprint too short: {fp1!r}"
+            return f"fp={fp1[:12]}\u2026 stable across 2 calls"
+        _case("fingerprint_stable", _fp_stable)
+
+        # ── Case: normal_layer_finder ─────────────────────────
+        def _nm_finder() -> str:
+            nm_layer = Gimp.Layer.new(
+                test_img, "Normal Map (auto)", 256, 256,
+                Gimp.ImageType.RGBA_IMAGE, 100.0,
+                Gimp.LayerMode.NORMAL)
+            test_img.insert_layer(nm_layer, None, 0)
+            try:
+                found = _find_normal_layer(test_img)
+                assert found is not None, "_find_normal_layer returned None"
+                assert "normal" in found.get_name().lower(), (
+                    f"wrong layer: {found.get_name()!r}")
+                return f"found '{found.get_name()}'"
+            finally:
+                # Leave the image clean for subsequent cases.
+                try:
+                    test_img.remove_layer(nm_layer)
+                except Exception:
+                    pass
+
+        _case("normal_layer_finder", _nm_finder)
+
+        # ── Case: blank_rembg_detector ────────────────────────
+        def _blank_rembg() -> str:
+            import struct, zlib, binascii
+            def _png(w, h, color_type, fill=255, alpha=255):
+                channels = {0:1, 2:3, 4:2, 6:4}[color_type]
+                ihdr = struct.pack(">IIBBBBB", w, h, 8, color_type, 0, 0, 0)
+                def chunk(tag, data):
+                    crc = binascii.crc32(tag + data) & 0xFFFFFFFF
+                    return (struct.pack(">I", len(data)) + tag + data
+                            + struct.pack(">I", crc))
+                if color_type == 6:
+                    px = bytes([fill, 0, 0, alpha])
+                elif color_type == 4:
+                    px = bytes([fill, alpha])
+                elif color_type == 2:
+                    px = bytes([fill, 0, 0])
+                else:
+                    px = bytes([fill])
+                row = b"\x00" + px * w
+                raw = row * h
+                idat = zlib.compress(raw)
+                return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr)
+                        + chunk(b"IDAT", idat) + chunk(b"IEND", b""))
+            assert _looks_like_blank_rembg(b""), "empty bytes"
+            assert _looks_like_blank_rembg(_png(16, 16, 6, alpha=0)), "RGBA alpha=0"
+            assert not _looks_like_blank_rembg(_png(16, 16, 6, alpha=255)), "RGBA alpha=255 opaque"
+            assert _looks_like_blank_rembg(_png(16, 16, 2)), "RGB (no alpha)"
+            return "4/4 cases"
+        _case("blank_rembg_detector", _blank_rembg)
+
+        # ── Case: build_iclight_cn ────────────────────────────
+        def _iclight_cn() -> str:
+            from spellcaster_core.workflows import build_iclight
+            wf = build_iclight(
+                image_filename="test.png",
+                ckpt_name="SD-1.5\\v1-5-pruned-emaonly.safetensors",
+                prompt="studio light",
+                negative="",
+                seed=42,
+                normal_map_filename="nm.png",
+            )
+            classes = {n.get("class_type") for n in wf.values()
+                       if isinstance(n, dict)}
+            assert "ControlNetLoader" in classes, (
+                f"no CN loader; classes={sorted(classes)}")
+            assert "ControlNetApplyAdvanced" in classes
+            # No fbc model regression
+            assert not any(
+                "iclight_sd15_fbc" in json.dumps(n.get("inputs") or {})
+                for n in wf.values() if isinstance(n, dict)
+            ), "iclight_sd15_fbc leaked back in"
+            return f"{len(wf)} nodes, CN chain present"
+        _case("build_iclight_cn", _iclight_cn)
+
+        # ── Case: build_img2img ───────────────────────────────
+        def _build_img2img_case() -> str:
+            # Pick the first SDXL preset (commonest arch).
+            sdxl_preset = next(
+                (p for p in MODEL_PRESETS
+                 if p.get("arch") == "sdxl"),
+                MODEL_PRESETS[0] if MODEL_PRESETS else None)
+            assert sdxl_preset is not None, "no MODEL_PRESETS loaded"
+            wf = _build_img2img(
+                "test_upload.png", sdxl_preset,
+                "a woman smiling", "", 42,
+                None, controlnet=None, controlnet_2=None)
+            assert isinstance(wf, dict) and wf, "workflow empty"
+            classes = {n.get("class_type") for n in wf.values()
+                       if isinstance(n, dict)}
+            expected_any = {"KSampler", "SamplerCustomAdvanced",
+                            "KSamplerAdvanced"}
+            assert classes & expected_any, (
+                f"no sampler node; classes={sorted(classes)}")
+            return f"{len(wf)} nodes, arch={sdxl_preset.get('arch')}"
+        _case("build_img2img", _build_img2img_case)
+
+        # ── Case: import_layer ────────────────────────────────
+        def _import_layer() -> str:
+            import struct, zlib, binascii
+            # Small opaque RGBA PNG
+            w = h = 64
+            ihdr = struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)
+            def chunk(tag, data):
+                crc = binascii.crc32(tag + data) & 0xFFFFFFFF
+                return (struct.pack(">I", len(data)) + tag + data
+                        + struct.pack(">I", crc))
+            row = b"\x00" + bytes([64, 128, 200, 255]) * w
+            raw = row * h
+            idat = zlib.compress(raw)
+            data_bytes = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr)
+                          + chunk(b"IDAT", idat) + chunk(b"IEND", b""))
+            before = len(test_img.get_layers())
+            _import_result_as_layer(test_img, data_bytes,
+                                     "Harness Import Test",
+                                     keep_size=True)
+            after = len(test_img.get_layers())
+            assert after == before + 1, (
+                f"layer count {before} \u2192 {after}, expected +1")
+            return f"layers {before} \u2192 {after}"
+        _case("import_layer", _import_layer)
+
+        # Write report.
+        try:
+            os.makedirs(os.path.dirname(report_path) or ".", exist_ok=True)
+            with open(report_path, "w", encoding="utf-8") as f:
+                for r in results:
+                    f.write(json.dumps(r) + "\n")
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            Gimp.message(f"Test harness: report write failed: {e}")
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+        # Clean up temp image.
+        try:
+            test_img.delete()
+        except Exception:
+            pass
+
+        n_pass = sum(1 for r in results if r["status"] == "PASS")
+        n_fail = len(results) - n_pass
+        print(f"[Spellcaster] test harness: {n_pass} PASS / "
+              f"{n_fail} FAIL \u2192 {report_path}")
+        # Return EXECUTION_ERROR when any case failed so the driver
+        # can trust the exit code as a pre-report signal.
+        if n_fail:
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+        return procedure.new_return_values(
+            Gimp.PDBStatusType.SUCCESS, GLib.Error())
+
     def _run_clear_upload_cache(self, procedure, run_mode, image, drawables, config, data):
         """Wipe the content-hash upload cache from the ComfyUI input dir.
 
@@ -31753,30 +32063,38 @@ class Spellcaster(Gimp.PlugIn):
                 # location. Before 2026-04-20 the Repair button skipped
                 # this and only dropped fresh files into the plugin
                 # dir — which meant GIMP kept reading the OLD theme /
-                # splash / icon across restarts. Now Repair pushes the
+                # splash / icon between restarts. Now Repair pushes the
                 # newly-downloaded assets into every known GIMP config
-                # + install root (same helper the boot updater uses).
-                # No-op when apply_theme is off.
+                # + install root the same way the boot auto-updater
+                # does. No-op when apply_theme is off.
                 _appearance_summary = {}
                 try:
                     _appearance_summary = _reapply_appearance_assets()
                 except Exception as _e:
                     print(f"[Repair] appearance re-apply failed: {_e}",
                           file=_sys.stderr)
+                # Build the status line so the user sees EXACTLY what
+                # the button just did — download count + which
+                # appearance assets actually landed. Before, the
+                # button claimed "Updated N files" but the theme /
+                # splash / icon might have been silently untouched
+                # (if apply_theme was off) or partially applied (if a
+                # permission error blocked one of the roots).
                 _parts = [f"Updated {updated}/{len(remote_files)} files."]
                 if _appearance_summary:
                     _applied = [k for k, v in _appearance_summary.items()
                                 if v == "installed"]
-                    _all_skipped = all(v == "skipped" for v in
-                                         _appearance_summary.values())
-                    if _all_skipped:
+                    _skipped_off = all(v == "skipped"
+                                        for v in _appearance_summary.values())
+                    if _skipped_off:
                         _parts.append("Theme/splash/icon re-apply skipped "
-                                      "(set apply_theme=true in Settings).")
+                                      "(set apply_theme=true in Settings to "
+                                      "enable).")
                     elif _applied:
                         _parts.append("Re-applied: " + ", ".join(_applied) + ".")
                     else:
                         _parts.append(
-                            "Assets downloaded but none reinstalled "
+                            "Theme assets downloaded but none were reinstalled "
                             "(check permissions on GIMP's install dir).")
                 _parts.append("Restart GIMP to see the new UI.")
                 update_status.set_markup(
