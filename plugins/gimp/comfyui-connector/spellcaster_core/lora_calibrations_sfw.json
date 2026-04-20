@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "notes": "SFW LoRA calibration recipes. Written by lora_calibration_store.write_calibration() when a LoRA the app classifies as SFW is confirmed. Keyed by filename; SHA-256 duplicate-detected via the lookup layer. Shipped with the public spellcaster repo so every install gets the same community baseline.",
+  "loras": {}
+}
