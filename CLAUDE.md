@@ -405,6 +405,23 @@ Turbo targets the LightX2V / Lightning 4-step distillation. On the user's RTX 50
 - Shotboard I2V default: 832×480 · 81 frames · fps=16 · turbo=True (lightning preset).
 - Shotboard I2V HQ: 1280×720 · 81 frames · fps=16 · turbo=False.
 
+**Optional quality + speed patches (auto-probed by the GIMP wrapper):**
+
+| Patch | Node class | Gain | Pack |
+|---|---|---|---|
+| SLG — Skip Layer Guidance | `SkipLayerGuidanceSD3` | Cleaner motion (layers 7,8,9 skipped during CFG) | Core ComfyUI |
+| NAG — Normalized Attention Guidance | `WanVideoNAG` | Sharper motion, less drift | Kijai WanVideoWrapper |
+| SAGE — Sage Attention | `PatchSageAttentionKJ` | **50–100% sampler speedup** on RTX 40/50xx | KJNodes |
+| CFG Zero Star | `CFGZeroStar` | Small quality win (no CFG on step 0) | Core ComfyUI (recent) |
+
+All four are probed at runtime via `/object_info` in `_wan_quality_patches_available` (GIMP wrapper). If the node is present they auto-enable; missing nodes silently skip. No server-specific hardcoding.
+
+**Auto-TeaCache:** `teacache=None` (the default for `build_wan_video`) resolves to `True` for full-step mode (non-turbo) — saves 30–40% time on 30-step runs. Turbo already fast enough, so `teacache=False` when `turbo=True`. Explicit `teacache=True/False` overrides the auto-choice.
+
+**CausVid support:** `video_presets.pick_wan_accel_loras` now matches the CausVid temporal-stabilisation LoRA family (reduces frame-to-frame flicker). Stacks cleanly with lightx2v/lightning; preset's `high_accel_lora`/`low_accel_lora` fields pick whichever family the server has.
+
+**Sampler override:** `build_wan_video(sampler_name=..., scheduler=...)` accepts per-call overrides (default `euler`/`simple` unchanged). Advanced users can try `dpmpp_2m_sde`/`karras` for full-step runs.
+
 #### 16.3 LTX 2.3 — full formula
 
 **Model family:**
