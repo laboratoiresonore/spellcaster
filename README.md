@@ -77,10 +77,10 @@
 <strong>📣 Status — April 2026</strong>
 
 <table>
-<tr><td><strong>🆕 News</strong></td><td>First version of the DaVinci Resolve plugin is out and needs testing &nbsp;·&nbsp; Wizard Guild + Antenna work quite well</td></tr>
-<tr><td><strong>✅ What works</strong></td><td>The GIMP plugin is dope — it's now all I use for image generation and retouching</td></tr>
-<tr><td><strong>🔧 Current focus</strong></td><td>Debugging SillyTavern plugin &nbsp;·&nbsp; Improving Wizard Guild and Antenna</td></tr>
-<tr><td><strong>⏭ Next</strong></td><td>Signal bridge &nbsp;·&nbsp; Moar plugins / frontends</td></tr>
+<tr><td><strong>🆕 News</strong></td><td>DaVinci Resolve plugin is out — test it and report all bugs!</td></tr>
+<tr><td><strong>✅ What works</strong></td><td>GIMP plugin is a powerhouse and a far better interface than ComfyUI for anything related to images</td></tr>
+<tr><td><strong>🔧 Current focus</strong></td><td>Global debugging and optimizing</td></tr>
+<tr><td><strong>⏭ Next</strong></td><td>Signal bridge &nbsp;·&nbsp; Moar plugins / frontends (<a href="https://github.com/laboratoiresonore/spellcaster/issues/new">make a request</a>)</td></tr>
 </table>
 
 </div>
