@@ -84,6 +84,7 @@ tests/*
 # ignored; whitelist the files that should travel with the repo)
 !tests/e2e_audit.py
 !tests/e2e_report.md
+!tests/test_klein_enhancer.py
 audit_*.py
 
 # Spell icons (user-generated during install, not source)
