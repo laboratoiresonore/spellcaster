@@ -114,11 +114,48 @@ closed captions, overlay, written letters, typography
 
 LTX 2.3's distilled corpus includes subtitled video, so without this the model reproduces subtitles. Callers that want a custom negative pass it verbatim.
 
-### VRAM optimisation (baked into `build_ltx_video`)
+### VRAM optimisation (canonical defaults, all overridable)
 
-- `LTXVChunkFeedForward` with `chunks=4` on every LTX workflow.
-- `LTXVApplySTG` on layers `14, 19` (Spatial-Temporal Guidance).
-- Both are core to the canon; removing either tanks quality.
+- `LTXVChunkFeedForward` with `chunks=4` on every LTX workflow. Override via `build_ltx_video(chunk_size=...)`.
+- `LTXVApplySTG` on layers `"14, 19"` (Spatial-Temporal Guidance). Override via `build_ltx_video(stg_layers="14, 19, 22")`.
+- `LTXVSpatioTemporalTiledVAEDecode` with `spatial_tiles=4`, `temporal_tile_length=16`, `last_frame_fix=False`, `working_dtype="auto"`. Override via `build_ltx_video(vae_spatial_tiles=..., vae_temporal_tile_length=..., vae_last_frame_fix=..., vae_working_dtype=...)`.
+- Removing the chunk or STG nodes tanks quality; re-tune the parameters instead.
+
+### Optional quality + speed patches (auto-probed by the GIMP LTX dialog)
+
+| Patch | Node class | Gain | Pack |
+|---|---|---|---|
+| SAGE — Sage Attention | `PatchSageAttentionKJ` | 50–100% sampler speedup on RTX 40/50xx, neutral quality. Injected BEFORE `LTXVChunkFeedForward` so the whole chain uses the kernel. | KJNodes |
+| CFG Zero Star | `CFGZeroStar` | Small quality win (no CFG on step 0). Auto-skipped in distilled mode (cfg=1.0). | Core ComfyUI (recent) |
+
+TeaCache / SLG / NAG do **not** apply to LTX — different sampler path (`LTXVBaseSampler` + `STGGuider`, not Wan's `KSamplerAdvanced`).
+
+### Sampler override
+
+`build_ltx_video(sampler_name=...)` accepts per-call overrides (default `"euler"`). Full-step runs can try `dpmpp_2m_sde` or `heun`; distilled mode is tuned for euler and usually regresses on other samplers.
+
+### Extra LoRAs
+
+`build_ltx_video(loras=[(name, strength), ...])` accepts arbitrary LoRAs applied AFTER the distilled LoRA. GIMP dialog exposes 3 slots + strength spinners + a server-LoRA fetch button.
+
+### Canonical builder signature — the full kwargs surface
+
+```python
+build_ltx_video(
+    preset, prompt_text, seed,                         # required
+    width=768, height=512, num_frames=25,              # geometry
+    steps=None, cfg=None, stg=None, rescale=None,      # sampling (None → preset default)
+    two_stage=False, distilled=False,                  # mode (pair with ltx_mode_kwargs)
+    loras=None, interpolate=False, rtx_scale=0,        # post-processing
+    fps=25, pingpong=False,                            # output
+    image_filename=None, i2v_strength=0.9,             # I2V conditioning
+    negative_text=None,                                # None → auto subtitle blocker
+    enable_sage=False, enable_cfg_zero=False,          # optional patches
+    sampler_name=None, stg_layers=None, chunk_size=None,         # tuning
+    vae_spatial_tiles=None, vae_temporal_tile_length=None,       # VAE tiling
+    vae_last_frame_fix=False, vae_working_dtype=None,            # VAE dtype/fix
+)
+```
 
 ## Boundary rules
 
@@ -127,6 +164,8 @@ LTX 2.3's distilled corpus includes subtitled video, so without this the model r
 3. **Preset fields are additive only.** `detect_wan_preset` returns a stable dict shape; code downstream reads by key. Don't rename keys — extend.
 4. **Plugin path:** GIMP / Resolve / Darktable plugins call `build_wan_video` + `build_ltx_video` via `spellcaster_core.workflows`, using the detection helpers in `video_presets`. They NEVER hand-roll WAN/LTX workflow JSON.
 5. **Arch filter does not touch WAN/LTX LoRAs.** The cross-family LoRA filter in `composites.inject_lora_chain` doesn't run on video — video builders call `lora_loader_model_only` directly so WAN-specific LoRAs aren't dropped.
+6. **Caller overrides win over preset hints.** In the scaffold dispatcher's LTX branch, caller-supplied `interpolate` / `rtx_scale` / `steps` / `cfg` / `stg` / `rescale` / `i2v_strength` / `sampler_name` / `stg_layers` / `chunk_size` / `enable_sage` / `enable_cfg_zero` / `vae_*` / `extra_loras` override `_LTX2_PRESET_HINTS` defaults. Hints are a floor, not a ceiling — a client asking for RIFE interpolation on `ltx2_distilled` gets it even though the hint defaults `interpolate=False`.
+7. **Fluent pipeline DSL accepts the full canon surface.** `Pipeline().ltx_video(...)` exposes every optional kwarg the builder supports. `_run_ltx` forwards them all; unset kwargs stay None so canon defaults ride through.
 
 ## Known divergences (tech debt)
 
