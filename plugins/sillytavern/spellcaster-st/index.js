@@ -1145,14 +1145,35 @@ function registerSlashCommands() {
                 const data = await res.json();
                 const msgs = (data && data.messages) || [];
                 if (!msgs.length) return '💎 Spellcaster inbox empty.';
+                // Sanitize before markdown interpolation — source, title
+                // and url all originate from whatever interface published
+                // the event. An attacker-controlled title containing
+                // `](javascript:alert(1))` would otherwise inject into
+                // both the link and the alt-text.
+                const _stripMd = (s) => String(s == null ? '' : s)
+                    .replace(/[\r\n]+/g, ' ')
+                    .replace(/[\[\]()`*_~]/g, '')
+                    .slice(0, 200);
+                const _urlOk = (u) => {
+                    if (typeof u !== 'string' || !u) return false;
+                    // Allow only http(s), data:image/*, or a relative /api/ path.
+                    if (u.startsWith('/api/')) return true;
+                    try {
+                        const p = new URL(u);
+                        if (p.protocol === 'http:' || p.protocol === 'https:') return true;
+                        if (p.protocol === 'data:' && /^data:image\//i.test(u)) return true;
+                    } catch { return false; }
+                    return false;
+                };
                 // Render each as markdown image + metadata
                 const parts = msgs.map((m, i) => {
                     const d = m.data || {};
-                    const src = d.source || '?';
-                    const title = d.title || m.kind;
-                    const url = d.image_url || '';
+                    const src = _stripMd(d.source || '?');
+                    const title = _stripMd(d.title || m.kind);
+                    const rawUrl = d.image_url || '';
+                    const url = _urlOk(rawUrl) ? rawUrl.replace(/[\s)]/g, encodeURIComponent) : '';
                     return `**${i + 1}. From ${src}:** ${title}\n\n` +
-                           (url ? `![${title}](${url})` : '(no image url)');
+                           (url ? `![${title}](${url})` : '(no usable image url)');
                 });
                 return `💎 ${msgs.length} item(s) in Spellcaster inbox:\n\n` +
                        parts.join('\n\n---\n\n');
@@ -1369,6 +1390,13 @@ function renderSettingsPanel() {
 
     const container = document.getElementById('extensions_settings');
     if (container) {
+        // Remove any previous Spellcaster panel + its listeners before
+        // re-inserting. Avoids handler accumulation if renderSettingsPanel
+        // is called more than once over the session.
+        const prev = document.getElementById('spellcaster-settings');
+        if (prev && prev.parentNode) {
+            prev.parentNode.removeChild(prev);
+        }
         const div = document.createElement('div');
         div.innerHTML = html;
         container.appendChild(div);
@@ -1425,12 +1453,33 @@ function renderSettingsPanel() {
 //  Utilities
 // ═══════════════════════════════════════════════════════════════════
 
+// Client-side 20 MB cap matches the server's 28 MB base64-chars cap
+// (decoded ≈ 21 MB). Fail fast so the user gets a clear error instead
+// of a generic HTTP 413 roundtrip.
+const BLOB_TO_B64_MAX_BYTES = 20 * 1024 * 1024;
 function blobToBase64(blob) {
     return new Promise((resolve, reject) => {
+        if (!(blob instanceof Blob)) {
+            reject(new Error('blobToBase64: expected Blob'));
+            return;
+        }
+        if (blob.size > BLOB_TO_B64_MAX_BYTES) {
+            reject(new Error(`blobToBase64: image is ${Math.round(blob.size / 1024 / 1024)} MB, max ${BLOB_TO_B64_MAX_BYTES / 1024 / 1024} MB`));
+            return;
+        }
         const reader = new FileReader();
         reader.onloadend = () => {
-            const base64 = reader.result.split(',')[1];
-            resolve(base64);
+            try {
+                const res = reader.result;
+                if (typeof res !== 'string') {
+                    reject(new Error('blobToBase64: FileReader produced non-string result'));
+                    return;
+                }
+                const comma = res.indexOf(',');
+                resolve(comma >= 0 ? res.slice(comma + 1) : res);
+            } catch (e) {
+                reject(e);
+            }
         };
         reader.onerror = () => reject(new Error('Failed to read image data'));
         reader.readAsDataURL(blob);
@@ -1580,8 +1629,13 @@ async function autoCastOnStartup() {
     const settings = getSettings();
     spellcasterAPI('/settings', { comfyui_url: settings.comfyui_url }).catch(() => {});
 
-    // Auto-cast all characters in background (non-blocking, 5s delay)
-    setTimeout(() => autoCastOnStartup(), 5000);
+    // Auto-cast all characters in background (non-blocking, 5s delay).
+    // Swallow any unhandled rejection — the function is best-effort;
+    // per-character failures are already logged inside it.
+    setTimeout(() => {
+        autoCastOnStartup().catch(err =>
+            console.warn('[Spellcaster] autoCastOnStartup failed:', err));
+    }, 5000);
 
     console.log('[Spellcaster] Extension loaded. ComfyUI:', settings.comfyui_url);
 })();

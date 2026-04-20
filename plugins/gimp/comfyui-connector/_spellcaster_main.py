@@ -575,6 +575,18 @@ def _auto_update():
     except ImportError:
         _au = None
 
+    # Cross-process lock — if another GIMP instance (or a crashed one
+    # whose lock is fresh) is already updating, back off. Prevents two
+    # concurrent updaters racing on the same files.
+    _lock_file = _PLUGIN_DIR / ".spellcaster_update.lock"
+    _lock_held = False
+    if _au is not None:
+        _lock_held = _au.acquire_lock(_lock_file, stale_after=600.0)
+        if not _lock_held:
+            print("[Spellcaster] Auto-update skipped: another update in flight.",
+                  file=_sys.stderr)
+            return
+
     try:
         # Step 1: Check latest commit SHA
         local_sha = _VERSION_FILE.read_text().strip() if _VERSION_FILE.exists() else ""
@@ -602,34 +614,49 @@ def _auto_update():
 
         # Step 3: Filter for files in our plugin directory (including subdirectories)
         # Also grab spellcaster_core/ — the shims need it at runtime.
-        remote_files = []  # list of (path, local_remainder, expected_size)
+        # list of (repo_path, local_remainder, expected_size, expected_sha)
+        remote_files = []
         # Track which local remainders we've already seen so the canonical
         # source (comfyui-spellcaster/) always wins over the bundled copy
         # (plugins/gimp/.../spellcaster_core/). Without this, the stale
         # bundled copy in the repo overwrites the canonical one because
         # the tree API returns files alphabetically and plugins/ > comfyui-.
         _seen_remainders = set()
+        _rejected_paths = 0
         for item in tree.get("tree", []):
             if item["type"] != "blob":
                 continue
             # CANONICAL SOURCE FIRST: spellcaster_core from comfyui-spellcaster/
             # This is the single source of truth — always takes priority.
+            raw_remainder: str = ""
             if item["path"].startswith(_CORE_LIB_PREFIX):
-                remainder = item["path"][len("comfyui-spellcaster/"):]
-                if remainder:
-                    remote_files.append((item["path"], remainder, item.get("size", 0)))
-                    _seen_remainders.add(remainder)
+                raw_remainder = item["path"][len("comfyui-spellcaster/"):]
             elif item["path"].startswith(_GIMP_PLUGIN_PREFIX):
-                remainder = item["path"][len(_GIMP_PLUGIN_PREFIX):]
-                if remainder:
-                    # Skip spellcaster_core/ files from the plugin dir if
-                    # we already have them from the canonical source. This
-                    # prevents the stale bundled copy from overwriting the
-                    # canonical one. Single source of truth.
-                    if remainder in _seen_remainders:
-                        continue
-                    remote_files.append((item["path"], remainder, item.get("size", 0)))
-                    _seen_remainders.add(remainder)
+                raw_remainder = item["path"][len(_GIMP_PLUGIN_PREFIX):]
+            if not raw_remainder:
+                continue
+            # Path-traversal defense — reject `../`, drive markers, NTFS
+            # reserved names, backslashes, control chars, etc. A hostile
+            # mirror or MITM can't smuggle a write outside _PLUGIN_DIR.
+            remainder = _au.safe_remainder(raw_remainder) if _au else raw_remainder
+            if remainder is None:
+                _rejected_paths += 1
+                continue
+            # Skip plugins/gimp spellcaster_core/ files if the canonical
+            # source already provided the same remainder. Single SoT.
+            if remainder in _seen_remainders:
+                continue
+            remote_files.append((
+                item["path"],
+                remainder,
+                item.get("size", 0),
+                item.get("sha", ""),
+            ))
+            _seen_remainders.add(remainder)
+
+        if _rejected_paths:
+            print(f"[Spellcaster] Auto-update rejected {_rejected_paths} "
+                  "unsafe tree entries.", file=_sys.stderr)
 
         if not remote_files:
             return  # Something went wrong with API, don't touch local files
@@ -643,7 +670,8 @@ def _auto_update():
         staged = 0
         failed = 0
         remote_filenames = set()
-        for rel_path, remainder, expected_size in remote_files:
+        _plugin_root = _PLUGIN_DIR.resolve()
+        for rel_path, remainder, expected_size, expected_sha in remote_files:
             remote_filenames.add(remainder)
             # NEVER overwrite the crash-safe boot shim. It is immutable.
             if remainder == "comfyui-connector.py":
@@ -651,23 +679,41 @@ def _auto_update():
             try:
                 url = f"{_RAW_BASE}/{rel_path}"
                 dest = _PLUGIN_DIR / remainder
+                # Belt-and-suspenders: after joining the (validated)
+                # remainder, resolve the path and confirm it still lives
+                # under the plugin root. If safe_remainder accepted it,
+                # this always passes — but defense-in-depth is free.
+                dest_resolved = dest.resolve() if dest.exists() else dest.parent.resolve() / dest.name
+                try:
+                    dest_resolved.relative_to(_plugin_root)
+                except ValueError:
+                    print(f"[Spellcaster] BUG: path {remainder} resolved "
+                          f"outside plugin root — skipping.", file=_sys.stderr)
+                    failed += 1
+                    continue
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 tmp = dest.with_suffix(dest.suffix + ".tmp")
-                req_dl = urllib.request.Request(url, headers=_hdrs)
-                with urllib.request.urlopen(req_dl, timeout=60) as r2:
-                    blob = r2.read()
-
-                    # Integrity check: reject incomplete downloads
+                if _au is not None:
+                    blob = _au.download_blob(
+                        url, expected_size, _hdrs,
+                        timeout=60,
+                        filename_hint=remainder,
+                        expected_sha=expected_sha,
+                    )
+                else:
+                    req_dl = urllib.request.Request(url, headers=_hdrs)
+                    with urllib.request.urlopen(req_dl, timeout=60) as r2:
+                        blob = r2.read(50 * 1024 * 1024 + 1)
+                    if len(blob) > 50 * 1024 * 1024:
+                        raise IOError("blob exceeds 50 MB cap")
                     if expected_size > 0 and len(blob) != expected_size:
                         raise IOError(
                             f"Incomplete download: got {len(blob)} bytes, "
                             f"expected {expected_size}")
-
-                    # Scrub ALL NTFS null-byte corruption from text files
-                    # (NTFS can embed nulls mid-file AND append trailing nulls)
-                    if remainder.endswith((".py", ".js", ".jsx", ".css", ".json", ".md", ".txt", ".html")):
+                    if remainder.endswith((".py", ".js", ".jsx", ".css",
+                                           ".json", ".md", ".txt", ".html")):
                         blob = blob.replace(b"\x00", b"")
-                    tmp.write_bytes(blob)
+                tmp.write_bytes(blob)
                 # Always stage .py files — never replace running Python modules
                 if remainder.endswith(".py"):
                     stage_path = dest.with_suffix(dest.suffix + ".update")
@@ -684,6 +730,13 @@ def _auto_update():
             except Exception as e:
                 failed += 1
                 print(f"[Spellcaster] Failed to download {remainder}: {e}", file=_sys.stderr)
+                # Clean up any partial tmp file so the next run starts fresh.
+                try:
+                    tmp_cleanup = dest.with_suffix(dest.suffix + ".tmp")
+                    if tmp_cleanup.exists():
+                        tmp_cleanup.unlink()
+                except Exception:
+                    pass
 
         # Step 5: Remove local files that no longer exist in the repo
         protected = {
@@ -796,21 +849,27 @@ def _auto_update():
             except Exception:
                 pass
 
-        # Step 8: Record version (always write full SHA for reliable comparison)
-        if updated > 0 or staged > 0:
+        # Step 8: Record version — but ONLY if every file downloaded
+        # cleanly. Writing the new SHA after a partial update would make
+        # the next run skip the retry (shas_match short-circuits), so
+        # failed files would stay stale indefinitely.
+        if failed == 0 and (updated > 0 or staged > 0):
             _VERSION_FILE.write_text(latest_sha)
+        if updated > 0 or staged > 0 or failed > 0:
             sha7 = latest_sha[:7]
             msg = f"Spellcaster updated to {sha7} ({updated} files"
             if staged > 0:
                 msg += f", {staged} staged for next restart"
             msg += ")."
             if failed > 0:
-                msg += f"\n{failed} file(s) failed to download."
+                msg += (f"\n{failed} file(s) failed integrity check or "
+                        "download — next launch will retry them.")
             if staged > 0:
                 msg += "\nRestart GIMP to apply all updates (some files were in use)."
-            else:
+            elif updated > 0:
                 msg += "\nRestart GIMP to use the new version."
-            msg += "\nPlugin cache cleared — new menus will appear on restart."
+            if updated > 0 or staged > 0:
+                msg += "\nPlugin cache cleared — new menus will appear on restart."
             def _show_update_msg_once(m=msg):
                 try:
                     print(f"[Spellcaster] {m}", file=_sys.stderr)
@@ -824,6 +883,11 @@ def _auto_update():
         import traceback
         print(f"[Spellcaster] Auto-update check failed: {e}", file=_sys.stderr)
         traceback.print_exc(file=_sys.stderr)
+    finally:
+        # Always release the lock — even on exception paths — so the
+        # next launch doesn't wait for the stale_after fallback.
+        if _lock_held and _au is not None:
+            _au.release_lock(_lock_file)
 
 # Fire-and-forget: runs once per GIMP session, daemon=True so it
 # won't prevent GIMP from exiting. Guard uses sys.modules to survive
@@ -24394,14 +24458,16 @@ class Spellcaster(Gimp.PlugIn):
         except Exception as e:
             Gimp.message(f"Send to {friendly}: couldn't export canvas:\n{e}")
             return False
-        try:
-            from spellcaster_core.cross_interface import CrossInterfaceClient
-        except ImportError:
+        # Re-use the memoized, heartbeating client from
+        # _get_cross_interface_client() instead of spawning a fresh one
+        # each click — a new client starts a new daemon heartbeat thread
+        # that is never joined until the GIMP process exits.
+        client = _get_cross_interface_client()
+        if client is None:
             Gimp.message(
-                "Send to {}: cross_interface helper missing — "
-                "Spellcaster install is incomplete.".format(friendly))
+                "Send to {}: Wizard Guild unreachable. Start the Guild "
+                "and try again.".format(friendly))
             return False
-        client = CrossInterfaceClient(interface_key="gimp")
         rec = client.upload_asset(
             png_bytes, kind=kind,
             title=f"From GIMP → {friendly}",
@@ -25034,11 +25100,26 @@ class Spellcaster(Gimp.PlugIn):
                 continue
             if image_url.startswith("/"):
                 image_url = guild_base.rstrip("/") + image_url
-            # Download bytes
+            # Scheme clamp — an attacker with Guild-publish access could
+            # otherwise smuggle file:// / gopher:// / ftp:// URLs that
+            # urllib happily follows, tricking this GIMP instance into
+            # reading arbitrary local files or probing internal services.
             try:
-                req = _ur.Request(image_url)
+                _scheme = urllib.parse.urlparse(image_url).scheme.lower()
+            except Exception:
+                _scheme = ""
+            if _scheme not in ("http", "https"):
+                failures.append(f"blocked non-http url: {image_url[:80]}")
+                continue
+            # Download bytes (cap size to avoid RAM-bomb replies)
+            try:
+                req = _ur.Request(image_url, headers={"User-Agent": "spellcaster-gimp/2.0"})
                 with _ur.urlopen(req, timeout=30) as resp:
-                    asset_bytes = resp.read()
+                    _MAX = 100 * 1024 * 1024  # 100 MB
+                    asset_bytes = resp.read(_MAX + 1)
+                    if len(asset_bytes) > _MAX:
+                        failures.append(f"oversize (>100 MB): {image_url[:80]}")
+                        continue
             except Exception as e:
                 failures.append(f"download: {e}")
                 continue
