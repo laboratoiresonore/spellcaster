@@ -2726,6 +2726,7 @@ def build_faceid_img2img(target_filename, face_ref_filename, preset,
     )
 
     # Text encoding (architecture-aware: no-negative archs get zero_out)
+    arch_key = preset.get("arch", "sdxl")
     pos_id, neg_id = encode_prompts(nf, arch_key, clip_ref,
                                      prompt_text,
                                      negative_text or "blurry, deformed, bad anatomy",
@@ -2734,7 +2735,7 @@ def build_faceid_img2img(target_filename, face_ref_filename, preset,
     # Target image → VAE encode → sample → decode → save
     target_id = nf.load_image(target_filename, node_id="7")
     enc_id = nf.vae_encode([target_id, 0], vae_ref, node_id="8")
-    is_klein = preset.get("arch") == "flux2klein"
+    is_klein = arch_key == "flux2klein"
     if is_klein:
         ref_pos = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="60")
         ref_neg = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="61")
