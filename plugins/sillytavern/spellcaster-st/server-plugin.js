@@ -24,6 +24,53 @@ let GUILD_URL = 'http://127.0.0.1:7777';
 // Backgrounds directory (SillyTavern stores them here)
 let BG_DIR = '';
 
+// Max base64 body size (~20 MB decoded). 20 * 1024 * 1024 * 4/3 ≈ 27.97 MB chars.
+const MAX_B64_CHARS = 28 * 1024 * 1024;
+const MAX_FETCH_BYTES = 50 * 1024 * 1024;
+
+// Reject a base64 body that would decode to more than MAX_B64_CHARS.
+// Returns an error-dict on reject, null on pass. Caller: `if (err) return res.status(413).json(err);`
+function _rejectOversizedB64(b64) {
+    if (typeof b64 !== 'string') return { error: 'image_base64 must be a string' };
+    if (b64.length > MAX_B64_CHARS) {
+        return { error: `image_base64 too large (${b64.length} chars, max ${MAX_B64_CHARS})` };
+    }
+    return null;
+}
+
+// Only http/https; block loopback metadata endpoints and obvious internal
+// footguns. Returns null on pass, error-dict on reject.
+function _rejectUnsafeUrl(u) {
+    if (typeof u !== 'string' || !u) return { error: 'url required' };
+    let parsed;
+    try { parsed = new URL(u); } catch { return { error: 'malformed url' }; }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return { error: `url scheme not allowed: ${parsed.protocol}` };
+    }
+    const host = parsed.hostname.toLowerCase();
+    // Block AWS/GCP/Azure instance metadata service hostnames.
+    if (host === '169.254.169.254' || host === 'metadata.google.internal'
+        || host === 'metadata' || host.endsWith('.internal')) {
+        return { error: 'url host blocked' };
+    }
+    return null;
+}
+
+// Accept most filenames ST users will produce (Unicode letters/digits,
+// spaces, common punctuation) while blocking path separators, traversal
+// tokens, and control chars. Callers should still pass the result
+// through path.basename and/or a resolve-under-root check.
+function _safeNameOrNull(name, { maxLen = 96 } = {}) {
+    if (typeof name !== 'string') return null;
+    const trimmed = name.trim();
+    if (!trimmed || trimmed.length > maxLen) return null;
+    if (trimmed === '.' || trimmed === '..') return null;
+    // Reject control chars, path separators, drive markers, wildcards.
+    if (/[\x00-\x1f\x7f/\\:*?"<>|]/.test(trimmed)) return null;
+    if (trimmed.includes('..')) return null;
+    return trimmed;
+}
+
 /**
  * Resolve ST's characters directory from the working directory.
  */
@@ -83,15 +130,25 @@ function fetchJSON(url, options = {}) {
 /**
  * Fetch raw bytes from a URL.
  */
-function fetchBytes(url) {
+function fetchBytes(url, { maxBytes = MAX_FETCH_BYTES, timeoutMs = 30000 } = {}) {
     return new Promise((resolve, reject) => {
         const mod = url.startsWith('https') ? https : http;
-        mod.get(url, (res) => {
+        const req = mod.get(url, (res) => {
             const chunks = [];
-            res.on('data', chunk => chunks.push(chunk));
+            let total = 0;
+            res.on('data', chunk => {
+                total += chunk.length;
+                if (total > maxBytes) {
+                    req.destroy(new Error(`response exceeded ${maxBytes} bytes`));
+                    return;
+                }
+                chunks.push(chunk);
+            });
             res.on('end', () => resolve(Buffer.concat(chunks)));
             res.on('error', reject);
-        }).on('error', reject);
+        });
+        req.on('error', reject);
+        req.setTimeout(timeoutMs, () => req.destroy(new Error(`fetchBytes timeout after ${timeoutMs}ms`)));
     });
 }
 
@@ -260,19 +317,27 @@ function init(router) {
     // ── Settings ──
     router.post('/settings', (req, res) => {
         if (req.body.comfyui_url) {
-            const newUrl = req.body.comfyui_url.replace(/\/+$/, '');
-            if (newUrl !== COMFYUI_URL) {
-                COMFYUI_URL = newUrl;
-                _cachedModel = null;  // Invalidate — new server may have different models
+            const raw = String(req.body.comfyui_url).replace(/\/+$/, '');
+            const bad = _rejectUnsafeUrl(raw);
+            if (bad) return res.status(400).json({ ...bad, field: 'comfyui_url' });
+            if (raw !== COMFYUI_URL) {
+                COMFYUI_URL = raw;
+                _cachedModel = null;
+                _cachedEditEngine = null;
             }
         }
         if (req.body.guild_url) {
-            GUILD_URL = String(req.body.guild_url).replace(/\/+$/, '');
+            const raw = String(req.body.guild_url).replace(/\/+$/, '');
+            const bad = _rejectUnsafeUrl(raw);
+            if (bad) return res.status(400).json({ ...bad, field: 'guild_url' });
+            GUILD_URL = raw;
         }
         if (req.body.backgrounds_dir) {
-            BG_DIR = req.body.backgrounds_dir;
+            const d = String(req.body.backgrounds_dir);
+            if (!path.isAbsolute(d)) return res.status(400).json({ error: 'backgrounds_dir must be absolute' });
+            BG_DIR = d;
         }
-        autoDetectBgDir();  // Auto-detect if not explicitly set
+        autoDetectBgDir();
         res.json({
             status: 'ok',
             comfyui_url: COMFYUI_URL,
@@ -305,23 +370,16 @@ function init(router) {
         // Resolve body_b64 from whichever source the caller provided.
         let body_b64 = '';
         if (req.body.image_data_url) {
-            const comma = req.body.image_data_url.indexOf(',');
-            body_b64 = comma >= 0
-                ? req.body.image_data_url.slice(comma + 1)
-                : req.body.image_data_url;
+            const dataUrl = String(req.body.image_data_url);
+            const comma = dataUrl.indexOf(',');
+            body_b64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
+            const bad = _rejectOversizedB64(body_b64);
+            if (bad) return res.status(413).json(bad);
         } else if (req.body.image_url) {
-            // Server-side fetch the absolute URL then base64.
+            const bad = _rejectUnsafeUrl(req.body.image_url);
+            if (bad) return res.status(400).json({ ...bad, field: 'image_url' });
             try {
-                const bin = await new Promise((resolve, reject) => {
-                    const mod = req.body.image_url.startsWith('https')
-                        ? https : http;
-                    mod.get(req.body.image_url, (r) => {
-                        const chunks = [];
-                        r.on('data', (c) => chunks.push(c));
-                        r.on('end', () => resolve(Buffer.concat(chunks)));
-                        r.on('error', reject);
-                    }).on('error', reject);
-                });
+                const bin = await fetchBytes(req.body.image_url);
                 body_b64 = bin.toString('base64');
             } catch (e) {
                 return res.status(502).json({
@@ -491,9 +549,10 @@ function init(router) {
             const model = await detectBestModel();
             if (!model) return res.status(500).json({ error: 'No checkpoint models found on ComfyUI' });
             const workflow = buildTxt2ImgWorkflow(
-                prompt || 'a beautiful scene',
-                negative || 'blurry, low quality',
-                width || 1024, height || 768,
+                _capPrompt(prompt) || 'a beautiful scene',
+                _capPrompt(negative) || 'blurry, low quality',
+                _roundMod(width || 1024, 8, 256),
+                _roundMod(height || 768, 8, 256),
                 seed || Math.floor(Math.random() * 2147483647),
                 model
             );
@@ -511,11 +570,12 @@ function init(router) {
     router.post('/scene', async (req, res) => {
         try {
             const { description, width, height, style } = req.body;
+            const desc = _capPrompt(description);
             // Klein scene prompts are natural language; no quality-tag
             // boilerplate (Klein penalises it). SDXL keeps the tags so
             // ordinary checkpoints still produce cinematic output.
-            const kleinPrompt = `${description}, cinematic scene, atmospheric, detailed environment`;
-            const sdxlPrompt  = `${description}, cinematic scene, atmospheric, professional photography, 8k, detailed environment`;
+            const kleinPrompt = `${desc}, cinematic scene, atmospheric, detailed environment`;
+            const sdxlPrompt  = `${desc}, cinematic scene, atmospheric, professional photography, 8k, detailed environment`;
             const negative = 'people, characters, faces, text, watermark, blurry, low quality';
 
             // Pick engine: Klein > Kontext > SDXL. Klein and Kontext
@@ -534,7 +594,8 @@ function init(router) {
                 usedEngine = "sdxl";
                 workflow = buildTxt2ImgWorkflow(
                     sdxlPrompt, negative,
-                    width || 1280, height || 720,
+                    _roundMod(width || 1280, 8, 256),
+                    _roundMod(height || 720, 8, 256),
                     Math.floor(Math.random() * 2147483647),
                     model,
                 );
@@ -565,6 +626,8 @@ function init(router) {
         try {
             const { image_base64, prompt, style, denoise } = req.body;
             if (!image_base64) return res.status(400).json({ error: 'image_base64 required' });
+            const bad = _rejectOversizedB64(image_base64);
+            if (bad) return res.status(413).json(bad);
 
             const imgBuf = Buffer.from(image_base64, 'base64');
             const uploadName = `spellcaster_restyle_${Date.now()}.png`;
@@ -577,7 +640,7 @@ function init(router) {
             const engine = await detectEditEngine();
             let workflow = null;
             let usedEngine = engine;
-            const effectivePrompt = prompt ||
+            const effectivePrompt = _capPrompt(prompt) ||
                 'photorealistic portrait, professional photography, detailed';
             if (engine === "klein") {
                 workflow = buildKleinEditWorkflow(uploadName, effectivePrompt, {
@@ -621,6 +684,16 @@ function init(router) {
             const { image_base64, instruction, denoise, engine: forceEngine } = req.body || {};
             if (!image_base64) return res.status(400).json({ error: 'image_base64 required' });
             if (!instruction) return res.status(400).json({ error: 'instruction required' });
+            const bad = _rejectOversizedB64(image_base64);
+            if (bad) return res.status(413).json(bad);
+            const instr = _capPrompt(instruction);
+            // Denoise in [0, 1] — ComfyUI rejects values outside this
+            // but we catch early so the caller gets a clean 400.
+            const denoiseNum = denoise == null ? undefined : Number(denoise);
+            if (denoiseNum !== undefined && (!Number.isFinite(denoiseNum)
+                || denoiseNum < 0 || denoiseNum > 1)) {
+                return res.status(400).json({ error: 'denoise must be in [0, 1]' });
+            }
 
             const imgBuf = Buffer.from(image_base64, 'base64');
             const uploadName = `spellcaster_edit_${Date.now()}.png`;
@@ -631,12 +704,12 @@ function init(router) {
             let workflow = null;
             let usedEngine = engine;
             if (engine === "klein") {
-                workflow = buildKleinEditWorkflow(uploadName, instruction, {
-                    denoise: denoise || 0.55,
+                workflow = buildKleinEditWorkflow(uploadName, instr, {
+                    denoise: denoiseNum || 0.55,
                 });
             } else if (engine === "kontext") {
-                workflow = buildKontextEditWorkflow(uploadName, instruction, {
-                    denoise: denoise || 1.0,
+                workflow = buildKontextEditWorkflow(uploadName, instr, {
+                    denoise: denoiseNum || 1.0,
                 });
             } else {
                 const model = await detectBestModel();
@@ -645,9 +718,9 @@ function init(router) {
                 });
                 usedEngine = "sdxl";
                 workflow = buildImg2ImgWorkflow(
-                    uploadName, instruction,
+                    uploadName, instr,
                     'blurry, low quality, distorted',
-                    denoise || 0.55, model,
+                    denoiseNum || 0.55, model,
                 );
             }
             const result = await dispatchWorkflow(workflow);
@@ -668,15 +741,21 @@ function init(router) {
             if (!avatar_filename || !image_base64) {
                 return res.status(400).json({ error: 'avatar_filename and image_base64 required' });
             }
+            const bad = _rejectOversizedB64(image_base64);
+            if (bad) return res.status(413).json(bad);
+            const safeName = _safeNameOrNull(path.basename(String(avatar_filename)));
+            if (!safeName) {
+                return res.status(400).json({ error: 'avatar_filename contains unsafe characters' });
+            }
 
             const charDir = resolveCharactersDir();
             if (!charDir) {
                 return res.status(500).json({ error: 'Cannot find SillyTavern characters directory' });
             }
 
-            const avatarPath = path.join(charDir, path.basename(avatar_filename));
+            const avatarPath = path.join(charDir, safeName);
             if (!fs.existsSync(avatarPath)) {
-                return res.status(404).json({ error: `Avatar not found: ${avatar_filename}` });
+                return res.status(404).json({ error: `Avatar not found: ${safeName}` });
             }
 
             // Create backup (only if no backup exists yet — preserve the true original)
@@ -702,13 +781,17 @@ function init(router) {
             if (!avatar_filename) {
                 return res.status(400).json({ error: 'avatar_filename required' });
             }
+            const safeName = _safeNameOrNull(path.basename(String(avatar_filename)));
+            if (!safeName) {
+                return res.status(400).json({ error: 'avatar_filename contains unsafe characters' });
+            }
 
             const charDir = resolveCharactersDir();
             if (!charDir) {
                 return res.status(500).json({ error: 'Cannot find SillyTavern characters directory' });
             }
 
-            const avatarPath = path.join(charDir, path.basename(avatar_filename));
+            const avatarPath = path.join(charDir, safeName);
             const bakPath = avatarPath.replace(/\.png$/i, '.bak.png');
 
             if (!fs.existsSync(bakPath)) {
@@ -726,112 +809,70 @@ function init(router) {
     });
 
     // ── Generate animated moment (video) ──
-    // Preference order:
-    //   1. WAN 2.2 I2V via canonical two-pass pipeline (real motion)
-    //   2. Fallback to the legacy noise-injection path (NOT real video,
-    //      just frame-variation jitter). Only lands here when the Guild
-    //      preset fetch returned null (no WAN install or Guild offline).
+    // Per CLAUDE.md §16.4: the WAN + LTX canon lives ONLY in
+    // spellcaster_core.video_presets + spellcaster_core.workflows (both
+    // Python). SillyTavern is a JS plugin, so it CANNOT import them —
+    // instead it POSTs to the Wizard Guild's /api/video/shots endpoints
+    // which wrap the canon server-side. The Guild owns preset detection,
+    // VAE pairing, turbo formula, subtitle-burn-in negative, and model
+    // selection; ST just sends a prompt + reference image.
+    //
+    // Fallback: if the Guild is unreachable (or the caller passes
+    // engine="legacy"), fall back to the local SDXL noise-injection
+    // animation — NOT real video, just frame-variation jitter, but
+    // useful as a last-resort preview.
     //
     // Client response shape is unchanged — { status, videos:[], images:[] }.
-    // WAN output is a GIF (see buildWanI2VWorkflow notes on format).
     router.post('/animate', async (req, res) => {
         try {
-            const { image_base64, prompt, length, turbo, pingpong,
-                    engine, end_image_base64, i2v_strength } = req.body || {};
+            const { image_base64, prompt, length, turbo, engine } = req.body || {};
             if (!image_base64) return res.status(400).json({ error: 'image_base64 required' });
+            const b64Bad = _rejectOversizedB64(image_base64);
+            if (b64Bad) return res.status(413).json(b64Bad);
 
+            const wantLegacy = engine === "legacy";
+            const effectivePrompt = String(prompt || 'subtle breathing, gentle movement, living portrait').slice(0, 2000);
+
+            // Try the canonical Guild path first.
+            if (!wantLegacy) {
+                try {
+                    const preset = (engine === "ltx")
+                        ? 'ltx_distilled'
+                        : (turbo ? 'wan22_i2v_lightning' : 'wan22_i2v_hq');
+                    const guildResult = await _animateViaGuild({
+                        image_base64,
+                        prompt: effectivePrompt,
+                        preset,
+                    });
+                    return res.json({
+                        status: 'ok',
+                        engine: guildResult.engine,
+                        shot_id: guildResult.shot_id,
+                        videos: guildResult.videos,
+                        images: [],
+                    });
+                } catch (guildErr) {
+                    // Guild offline or rejected — fall through to legacy.
+                    console.warn('[Spellcaster] /animate Guild path failed, falling back to SDXL:', guildErr.message);
+                }
+            }
+
+            // Legacy SDXL noise-injection fallback.
             const imgBuf = Buffer.from(image_base64, 'base64');
             const uploadName = `spellcaster_anim_${Date.now()}.png`;
             await uploadToComfyUI(imgBuf, uploadName);
-
-            // Optional first-last-frame end image — uploads alongside
-            // the start frame. WAN supports this natively via
-            // WanFirstLastFrameToVideo; LTX ignores it for now.
-            let endUploadName = null;
-            if (end_image_base64) {
-                const endBuf = Buffer.from(end_image_base64, 'base64');
-                endUploadName = `spellcaster_anim_end_${Date.now()}.png`;
-                await uploadToComfyUI(endBuf, endUploadName);
+            const fallbackModel = await detectBestModel();
+            if (!fallbackModel) {
+                return res.status(500).json({
+                    error: 'Wizard Guild unreachable AND no SDXL fallback checkpoint found on ComfyUI. Start the Guild, or install at least one generative model.',
+                });
             }
-
-            // Engine selection:
-            //   engine="wan"    → force WAN (default; auto-detects preset)
-            //   engine="ltx"    → force LTX-2
-            //   engine="legacy" → force the noise-injection fallback
-            //   engine undefined → try WAN first, then LTX, then legacy
-            const wantLtx    = engine === "ltx";
-            const wantLegacy = engine === "legacy";
-            const wantWan    = engine === "wan" || engine === undefined;
-
-            let workflow = null;
-            let usedEngine = "legacy";
-
-            if (!wantLegacy && wantWan) {
-                const wanPreset = await fetchVideoPreset("wan");
-                if (wanPreset) {
-                    usedEngine = "wan";
-                    workflow = buildWanI2VWorkflow(
-                        uploadName,
-                        prompt || 'subtle breathing, gentle movement, living portrait',
-                        wanPreset,
-                        {
-                            length: length || 33,
-                            // Default OFF — see buildWanI2VWorkflow's
-                            // turbo comment. Safe, slower path wins
-                            // until the caller explicitly opts in.
-                            turbo:    turbo    !== undefined ? !!turbo    : false,
-                            pingpong: pingpong !== undefined ? !!pingpong : true,
-                            endImage: endUploadName,
-                        },
-                    );
-                }
-            }
-
-            if (workflow === null && !wantLegacy && (wantLtx || engine === undefined)) {
-                const ltxPreset = await fetchVideoPreset("ltx");
-                if (ltxPreset) {
-                    usedEngine = "ltx";
-                    workflow = buildLtxI2VWorkflow(
-                        uploadName,
-                        prompt || 'subtle breathing, gentle movement, living portrait',
-                        ltxPreset,
-                        {
-                            length: length || 25,
-                            pingpong: pingpong !== undefined ? !!pingpong : true,
-                            distilled: turbo !== undefined ? !!turbo : true,
-                            i2v_strength: i2v_strength || 0.9,
-                        },
-                    );
-                }
-            }
-
-            if (workflow === null) {
-                // No preset available, or the caller forced legacy mode.
-                // The legacy builder needs a real SDXL/SD-1.5 checkpoint
-                // that exists on the server — detect one now. If even
-                // that's missing the user has no generative models
-                // installed and we surface a helpful error.
-                const fallbackModel = await detectBestModel();
-                if (!fallbackModel) {
-                    return res.status(500).json({
-                        error: 'No video engine (WAN / LTX) installed and no SDXL fallback checkpoint found on ComfyUI. Install at least one generative model via the Spellcaster installer.',
-                    });
-                }
-                workflow = buildAnimationWorkflow(
-                    uploadName,
-                    prompt || 'subtle animation, gentle movement',
-                    length || 8,
-                    fallbackModel,
-                );
-            }
-
-            // WAN full-step can take 60-120s on the RTX 5060 Ti;
-            // turbo ~20s. Keep 300s ceiling so slow servers don't
-            // bail early on a valid job.
+            const workflow = buildAnimationWorkflow(
+                uploadName, effectivePrompt, length || 8, fallbackModel);
             const result = await dispatchWorkflow(workflow, 300000);
             res.json({
                 status: 'ok',
-                engine: usedEngine,
+                engine: 'legacy',
                 videos: result.videos.map(v => ({ base64: v.base64, filename: v.filename })),
                 images: result.images.map(i => ({ base64: i.base64, filename: i.filename })),
             });
@@ -847,6 +888,12 @@ function init(router) {
             if (!character_name || !emotion || !image_base64) {
                 return res.status(400).json({ error: 'character_name, emotion, and image_base64 required' });
             }
+            const safeChar = _safeNameOrNull(character_name);
+            const safeEmotion = _safeNameOrNull(emotion, { maxLen: 32 });
+            if (!safeChar) return res.status(400).json({ error: 'character_name contains unsafe characters' });
+            if (!safeEmotion) return res.status(400).json({ error: 'emotion contains unsafe characters' });
+            const bad = _rejectOversizedB64(image_base64);
+            if (bad) return res.status(413).json(bad);
 
             // ST stores expressions at: data/default-user/characters/<CharName>/
             const charDir = resolveCharactersDir();
@@ -855,12 +902,18 @@ function init(router) {
             }
 
             // Expression sprites go in a subfolder named after the character
-            const exprDir = path.join(charDir, character_name);
+            const exprDir = path.join(charDir, safeChar);
+            // Defense-in-depth: ensure resolved path stays under charDir.
+            const resolvedExprDir = path.resolve(exprDir);
+            if (!resolvedExprDir.startsWith(path.resolve(charDir) + path.sep)
+                && resolvedExprDir !== path.resolve(charDir)) {
+                return res.status(400).json({ error: 'character_name escapes characters directory' });
+            }
             if (!fs.existsSync(exprDir)) {
                 fs.mkdirSync(exprDir, { recursive: true });
             }
 
-            const exprPath = path.join(exprDir, `${emotion}.png`);
+            const exprPath = path.join(exprDir, `${safeEmotion}.png`);
             fs.writeFileSync(exprPath, Buffer.from(image_base64, 'base64'));
 
             res.json({ status: 'ok', path: exprPath });
@@ -873,10 +926,11 @@ function init(router) {
     router.post('/portrait', async (req, res) => {
         try {
             const { description, width, height } = req.body;
+            const desc = _capPrompt(description);
             // Klein portrait prompts are conversational; SDXL gets the
             // photographic-studio tag trailer it needs.
-            const kleinPrompt = `${description}, portrait photograph, 85mm lens, shallow depth of field, studio lighting, detailed face`;
-            const sdxlPrompt  = `${description}, portrait photograph, 85mm lens, shallow depth of field, studio lighting, professional headshot, detailed face, 8k`;
+            const kleinPrompt = `${desc}, portrait photograph, 85mm lens, shallow depth of field, studio lighting, detailed face`;
+            const sdxlPrompt  = `${desc}, portrait photograph, 85mm lens, shallow depth of field, studio lighting, professional headshot, detailed face, 8k`;
             const negative = 'blurry, distorted, deformed, low quality, cartoon, watermark';
 
             // Default portrait size is 400×600 — tiny for Klein, which
@@ -897,7 +951,8 @@ function init(router) {
                 usedEngine = "sdxl";
                 workflow = buildTxt2ImgWorkflow(
                     sdxlPrompt, negative,
-                    width || 400, height || 600,
+                    _roundMod(width || 400, 8, 256),
+                    _roundMod(height || 600, 8, 256),
                     Math.floor(Math.random() * 2147483647),
                     model,
                 );
@@ -924,9 +979,14 @@ function init(router) {
             if (!avatar_base64 || !character_name) {
                 return res.status(400).json({ error: 'avatar_base64 and character_name required' });
             }
+            const b64Bad = _rejectOversizedB64(avatar_base64);
+            if (b64Bad) return res.status(413).json(b64Bad);
 
             // Sanitize name for filesystem
-            const safeName = character_name.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 30);
+            const safeName = String(character_name).replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 30);
+            if (!safeName) {
+                return res.status(400).json({ error: 'character_name has no usable characters' });
+            }
             const faceModelName = `spellcaster_${safeName}`;
 
             // Upload avatar to ComfyUI
@@ -969,7 +1029,7 @@ function init(router) {
             const model = await detectBestModel();
             if (!model) return res.status(500).json({ error: 'No checkpoint models found' });
 
-            const bodyPrompt = description || attire ||
+            const bodyPrompt = _capPrompt(description) || _capPrompt(attire) ||
                 `portrait of ${character_name}, neutral background, natural pose`;
 
             const workflow = buildBodyWorkflow(assets.avatar_upload, bodyPrompt, model);
@@ -1055,16 +1115,19 @@ function init(router) {
             let result;
             let bgFilename = null;
 
+            const sceneDesc = _capPrompt(description);
             if (charsToComposite.length > 0) {
                 // Generate scene with characters
-                const workflow = buildSceneCompositeWorkflow(description, charsToComposite, model);
+                const workflow = buildSceneCompositeWorkflow(sceneDesc, charsToComposite, model);
                 result = await dispatchWorkflow(workflow, 300000);
             } else {
                 // No characters — just generate the scene
-                const prompt = `${description}, cinematic scene, atmospheric, 8k`;
+                const promptText = `${sceneDesc}, cinematic scene, atmospheric, 8k`;
                 const negative = 'people, characters, faces, text, watermark, blurry, low quality';
                 const workflow = buildTxt2ImgWorkflow(
-                    prompt, negative, width || 1280, height || 720,
+                    promptText, negative,
+                    _roundMod(width || 1280, 8, 256),
+                    _roundMod(height || 720, 8, 256),
                     Math.floor(Math.random() * 2147483647), model
                 );
                 result = await dispatchWorkflow(workflow);
@@ -1102,10 +1165,25 @@ function init(router) {
     });
 
     // ── Raw workflow dispatch ──
+    // Disabled by default — arbitrary workflow submission lets a caller
+    // instruct ComfyUI to load/save any file the server can reach. Set
+    // SPELLCASTER_ALLOW_DISPATCH=1 in the ST process env to re-enable.
     router.post('/dispatch', async (req, res) => {
+        if (process.env.SPELLCASTER_ALLOW_DISPATCH !== '1') {
+            return res.status(403).json({
+                error: 'raw /dispatch is disabled. Set SPELLCASTER_ALLOW_DISPATCH=1 to enable.',
+            });
+        }
         try {
             const { workflow, timeout } = req.body;
             if (!workflow) return res.status(400).json({ error: 'workflow required' });
+            if (typeof workflow !== 'object' || Array.isArray(workflow)) {
+                return res.status(400).json({ error: 'workflow must be an object' });
+            }
+            const approxSize = JSON.stringify(workflow).length;
+            if (approxSize > 2 * 1024 * 1024) {
+                return res.status(413).json({ error: `workflow too large (${approxSize} chars)` });
+            }
             const result = await dispatchWorkflow(workflow, timeout || 180000);
             res.json({ status: 'ok', ...result });
         } catch (e) {
@@ -1121,19 +1199,34 @@ function init(router) {
 // ═══════════════════════════════════════════════════════════════════
 
 let _cachedModel = null;
+let _cachedModelUrl = null;
+let _cachedModelTs = 0;
+// Caches for ComfyUI introspection are invalidated on /settings URL
+// change AND after MODEL_CACHE_TTL_MS so a ComfyUI model-swap without
+// a /settings roundtrip still gets picked up within a few minutes.
+const MODEL_CACHE_TTL_MS = 5 * 60 * 1000;
 
 async function detectBestModel() {
-    if (_cachedModel) return _cachedModel;
+    const fresh = _cachedModel
+        && _cachedModelUrl === COMFYUI_URL
+        && (Date.now() - _cachedModelTs) < MODEL_CACHE_TTL_MS;
+    if (fresh) return _cachedModel;
     try {
         const res = await fetchJSON(`${COMFYUI_URL}/object_info/CheckpointLoaderSimple`);
         const ckpts = res.data?.CheckpointLoaderSimple?.input?.required?.ckpt_name?.[0] || [];
         // Prefer: flux > xl > juggernaut > anything
         const priorities = ['flux', 'xl', 'jugger', 'reborn', 'realistic'];
+        const pick = (m) => {
+            _cachedModel = m;
+            _cachedModelUrl = COMFYUI_URL;
+            _cachedModelTs = Date.now();
+            return m;
+        };
         for (const kw of priorities) {
             const match = ckpts.find(c => c.toLowerCase().includes(kw));
-            if (match) { _cachedModel = match; return match; }
+            if (match) return pick(match);
         }
-        if (ckpts.length > 0) { _cachedModel = ckpts[0]; return ckpts[0]; }
+        if (ckpts.length > 0) return pick(ckpts[0]);
     } catch { /* fallback */ }
     return null;
 }
@@ -1388,9 +1481,21 @@ function buildKleinTxt2ImgWorkflow(prompt, opts = {}) {
 
 // Round to nearest mod-N. Klein + Flux need mod-16 dims; SDXL
 // tolerates mod-8. Used by the endpoint-level dim normalizers.
-function _roundMod(n, mod = 16, minV = 64) {
-    const r = Math.max(minV, Math.round(n / mod) * mod);
-    return r;
+// Clamps to [minV, maxV] so a caller-supplied 1e9 can't reach the
+// allocator with a massive latent size.
+function _roundMod(n, mod = 16, minV = 64, maxV = 2048) {
+    const bounded = Math.min(maxV, Math.max(minV, Math.round(Number(n) / mod) * mod));
+    return Number.isFinite(bounded) ? bounded : minV;
+}
+
+// Prompt-text clamp used on every endpoint that forwards a prompt
+// string into a workflow. 4 kB is far past any model's effective
+// context window, and this keeps a bad caller from posting megabytes
+// of text to ComfyUI.
+function _capPrompt(s, maxLen = 4000) {
+    if (s == null) return '';
+    const str = String(s);
+    return str.length > maxLen ? str.slice(0, maxLen) : str;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1543,11 +1648,13 @@ function buildKontextEditWorkflow(imageName, instruction, opts = {}) {
  */
 let _cachedEditEngine = null;
 let _cachedEditEngineUrl = null;
+let _cachedEditEngineTs = 0;
 
 async function detectEditEngine() {
-    if (_cachedEditEngine && _cachedEditEngineUrl === COMFYUI_URL) {
-        return _cachedEditEngine;
-    }
+    const fresh = _cachedEditEngine
+        && _cachedEditEngineUrl === COMFYUI_URL
+        && (Date.now() - _cachedEditEngineTs) < MODEL_CACHE_TTL_MS;
+    if (fresh) return _cachedEditEngine;
     try {
         const r = await fetchJSON(`${COMFYUI_URL}/object_info/UNETLoader`);
         const names = r.data?.UNETLoader?.input?.required?.unet_name?.[0] || [];
@@ -1561,6 +1668,7 @@ async function detectEditEngine() {
         else if (haveKontext) engine = "kontext";
         _cachedEditEngine = engine;
         _cachedEditEngineUrl = COMFYUI_URL;
+        _cachedEditEngineTs = Date.now();
         return engine;
     } catch {
         return "sdxl";
@@ -1697,462 +1805,102 @@ function buildSceneCompositeWorkflow(scenePrompt, characters, modelName) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  WAN 2.2 I2V — canonical Spellcaster animation pipeline
+//  WAN 2.2 I2V / LTX 2.3 — via Wizard Guild's /api/video/shots
 // ═══════════════════════════════════════════════════════════════════
 //
-// This is the REAL animation path. It mirrors `build_wan_video` in
-// spellcaster_core/workflows.py. DO NOT diverge — every WAN workflow
-// in the Spellcaster app flows through the same two-pass high/low
-// KSamplerAdvanced pattern. See CLAUDE.md §16 for the canon.
+// Per CLAUDE.md §16.4: SillyTavern (JS, can't import spellcaster_core)
+// does NOT hand-roll WAN/LTX workflow JSON. The canon — preset
+// detection, VAE pairing, turbo vs HQ formula, subtitle burn-in
+// negative, STG layers, mod-16 rounding — all lives in
+// spellcaster_core.video_presets + spellcaster_core.workflows (Python).
+// The Guild wraps that canon behind /api/video/shots endpoints.
 //
-// The ST plugin fetches the WAN preset from the Guild
-// (`GET /api/video_preset?engine=wan`), which in turn calls
-// `spellcaster_core.video_presets.detect_wan_preset`. If the Guild
-// isn't reachable the endpoint we fall back to
-// `buildAnimationWorkflow` below (legacy noise-injection) so nothing
-// regresses on installs without a Guild running.
+// This JS path talks to the Guild only:
+//   1. POST /api/video/shots                  → draft shot, returns id
+//   2. POST /api/video/shots/<id>/reference   → attach the reference PNG
+//   3. POST /api/video/shots/<id>/render      → start the render
+//   4. GET  /api/video/shots                  → poll until status=ready
+//   5. GET  /api/video/shots/<id>/video       → download the MP4/GIF
+//
+// If any step fails the caller (/animate) falls back to the local
+// SDXL noise-injection path — still a last-resort preview for users
+// without the Guild, but clearly labeled as "engine=legacy" in the
+// response.
 
-// Fetch the WAN/LTX preset from the local Wizard Guild. Returns null
-// on any failure — callers must handle the null path.
-//
-// The Guild lives on the same machine as the SillyTavern server
-// plugin in the supported install (both run on the user's
-// workstation), so localhost:7777 is the usual target. GUILD_URL is
-// configurable via the `/settings` endpoint.
-//
-// Graceful degradation: when the Guild is unreachable OR running an
-// older build that lacks /api/video_preset (the endpoint was added
-// post-ST-audit and users on stale Guilds hit 404), we fall back to
-// a minimal JS-side WAN detector that probes ComfyUI directly. The
-// JS detector can't replicate every nuance of the canonical Python
-// one (VAE pairing, I2V-safe accel LoRA selection) but produces a
-// workable preset for the common case of a user with Wan 2.2 14B
-// I2V HIGH+LOW + wan_2.1_vae + umt5 CLIP already installed.
-async function fetchVideoPreset(engine = "wan") {
-    // Preferred: Guild-side canonical detector.
-    try {
-        const comfyParam = encodeURIComponent(COMFYUI_URL);
-        const url = `${GUILD_URL}/api/video_preset?engine=${engine}&comfy_url=${comfyParam}`;
-        const r = await fetchJSON(url);
-        if (r.status === 200 && r.data && r.data.preset) {
-            return r.data.preset;
+async function _animateViaGuild({ image_base64, prompt, preset }) {
+    if (!GUILD_URL) throw new Error('GUILD_URL not configured');
+    // Step 1: create a draft shot.
+    const createResp = await fetchJSON(`${GUILD_URL}/api/video/shots`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            title: `SillyTavern animate ${new Date().toISOString()}`,
+            prompt,
+            negative: '',
+            preset,
+        }),
+    });
+    if (createResp.status !== 200) {
+        throw new Error(`Guild refused shot creation: HTTP ${createResp.status}`);
+    }
+    const shot = createResp.data || {};
+    const shotId = shot.id || shot.shot_id;
+    if (!shotId) throw new Error('Guild returned no shot id');
+
+    // Step 2: attach the reference frame. The Guild expects either a
+    // data URL or raw base64 in `image_data`; pass the plain b64 so
+    // ST clients that forwarded a data-url already stripped work too.
+    const refResp = await fetchJSON(
+        `${GUILD_URL}/api/video/shots/${shotId}/reference`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image_data: image_base64 }),
+        });
+    if (refResp.status !== 200) {
+        throw new Error(`Guild refused reference upload: HTTP ${refResp.status}`);
+    }
+
+    // Step 3: render.
+    const renderResp = await fetchJSON(
+        `${GUILD_URL}/api/video/shots/${shotId}/render`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: '{}',
+        });
+    if (renderResp.status !== 200) {
+        throw new Error(`Guild refused render: HTTP ${renderResp.status}`);
+    }
+
+    // Step 4: poll until ready or failed. WAN 2.2 I2V on a single GPU
+    // takes 30-180s; 10-minute ceiling covers slow servers + queue.
+    const deadline = Date.now() + 10 * 60 * 1000;
+    let status = 'queued';
+    while (Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 2000));
+        const listResp = await fetchJSON(`${GUILD_URL}/api/video/shots`);
+        const shots = (listResp.data && listResp.data.shots) || [];
+        const current = shots.find(s => s.id === shotId);
+        status = current ? (current.status || 'unknown') : 'missing';
+        if (status === 'ready') break;
+        if (status === 'failed' || status === 'missing') {
+            throw new Error(`Guild shot ${shotId} status=${status}`);
         }
-    } catch { /* fall through to JS detector */ }
-    // Fallback: direct /object_info probe. Limited to WAN right now —
-    // LTX has more moving parts (Gemma TE + connector) that are
-    // harder to pick correctly without the canonical detector.
-    if (engine === "wan") {
-        return await _detectWanPresetDirect();
     }
-    return null;
-}
-
-async function _probeComboChoices(nodeClass, inputName) {
-    try {
-        const r = await fetchJSON(`${COMFYUI_URL}/object_info/${nodeClass}`);
-        const required = r.data?.[nodeClass]?.input?.required?.[inputName];
-        if (!required) return [];
-        // Legacy shape: [[list], {config}]. Modern COMBO shape: ["COMBO", {options: [...]}]
-        if (Array.isArray(required[0])) return required[0];
-        if (required[1]?.options) return required[1].options;
-        return [];
-    } catch { return []; }
-}
-
-async function _detectWanPresetDirect() {
-    // Enumerate UNETs from both loaders (safetensors + GGUF).
-    const unets = await _probeComboChoices("UNETLoader", "unet_name");
-    const ggufUnets = await _probeComboChoices("UnetLoaderGGUF", "unet_name");
-    const allUnets = [...unets, ...ggufUnets];
-    const lc = s => (s || "").toLowerCase();
-    const isI2vHigh = m => lc(m).includes("wan") && lc(m).includes("i2v")
-                          && lc(m).includes("high") && !lc(m).includes("t2v");
-    const isI2vLow  = m => lc(m).includes("wan") && lc(m).includes("i2v")
-                          && lc(m).includes("low")  && !lc(m).includes("t2v");
-    const high = allUnets.find(isI2vHigh);
-    const low  = allUnets.find(isI2vLow);
-    if (!high) return null;
-
-    // VAE — prefer wan_2.1_vae for 14B I2V, else any WAN VAE that isn't 5B.
-    const vaes = await _probeComboChoices("VAELoader", "vae_name");
-    const avoid5B = v => !lc(v).includes("wan2.2_vae");
-    const is14B  = lc(high).includes("14b");
-    let vae = null;
-    if (is14B) {
-        vae = vaes.find(v => /wan.?2[._]?1/.test(lc(v)) && avoid5B(v))
-           || vaes.find(v => lc(v).includes("wan") && avoid5B(v));
-    } else {
-        vae = vaes.find(v => lc(v).includes("wan2.2_vae"))
-           || vaes.find(v => lc(v).includes("wan"));
+    if (status !== 'ready') {
+        throw new Error(`Guild shot ${shotId} timed out in status=${status}`);
     }
-    if (!vae) return null;
 
-    // CLIP — prefer GGUF umt5, else fp8 safetensors.
-    const ggufClips = await _probeComboChoices("CLIPLoaderGGUF", "clip_name");
-    let clip = ggufClips.find(c => /umt5|t5xxl/.test(lc(c)) && lc(c).endsWith(".gguf"));
-    let clipIsGguf = !!clip;
-    if (!clip) {
-        const stdClips = await _probeComboChoices("CLIPLoader", "clip_name");
-        clip = stdClips.find(c => /umt5|t5xxl/.test(lc(c)));
-    }
-    if (!clip) return null;
-
-    // Accel LoRAs (optional; only populated for turbo).
-    const loras = await _probeComboChoices("LoraLoaderModelOnly", "lora_name");
-    const isWanAccel = l => lc(l).includes("wan") &&
-        (lc(l).includes("lightx2v") || lc(l).includes("lightning") || lc(l).includes("accel")) &&
-        !lc(l).includes("t2v");
-    const highAccel = loras.find(l => isWanAccel(l) && lc(l).includes("high"));
-    const lowAccel  = loras.find(l => isWanAccel(l) && lc(l).includes("low"));
-
-    const preset = {
-        arch: "wan",
-        high_model: high,
-        low_model: low || high,
-        clip, clip_is_gguf: clipIsGguf,
-        vae,
-        steps: 6, cfg: 1.0, shift: 8.0, second_step: 3,
-        is_i2v: true,
+    // Step 5: fetch the rendered video.
+    const videoBuf = await fetchBytes(
+        `${GUILD_URL}/api/video/shots/${shotId}/video`,
+        { maxBytes: 200 * 1024 * 1024, timeoutMs: 60000 });
+    return {
+        engine: `guild:${preset}`,
+        shot_id: shotId,
+        videos: [{ base64: videoBuf.toString('base64'), filename: `${shotId}.mp4` }],
     };
-    if (highAccel) { preset.high_accel_lora = highAccel; preset.accel_strength = 1.5; }
-    if (lowAccel)  { preset.low_accel_lora = lowAccel; }
-    console.log('[Spellcaster] JS fallback WAN preset built:', preset.high_model);
-    return preset;
 }
 
-// Build the canonical WAN 2.2 I2V workflow. `preset` is the dict
-// returned by fetchVideoPreset — see video_presets.py for the schema.
-// Parameters beyond `preset` are animation-shape only (dims, length,
-// fps) plus `turbo` and `pingpong` which are common caller overrides.
-//
-// When `endImage` is supplied the workflow switches to first-last-
-// frame mode via WanFirstLastFrameToVideo — the animation
-// interpolates from start to end. The end image uses its own
-// CLIPVisionEncode for matched semantic conditioning.
-function buildWanI2VWorkflow(avatarImage, prompt, preset, opts = {}) {
-    const {
-        width = 512, height = 512,       // mod-16 square for ST avatars
-        length = 33,                      // 33 frames ≈ 2s @ 16fps
-        fps = 16,
-        // Default to full-step. Live-testing on the RTX 5060 Ti with
-        // Wan 2.2 I2V A14B + the shipped LightX2V 4-step LoRAs
-        // produced pure-black output (mean luminance 0 / 255) at the
-        // preset's turbo defaults (6 steps, cfg=1.0, second_step=3).
-        // CLAUDE.md §16.2 documents this as the canonical failure
-        // mode for that model/LoRA combo. Full-step (30 steps,
-        // cfg=3.5, second_step=15, accel LoRAs skipped) is the
-        // reliable path; pass turbo:true explicitly when the user
-        // knows their server's LoRAs tolerate the distillation.
-        turbo = false,
-        pingpong = true,                  // looping avatar is the common case
-        negative_prompt = null,
-        endImage = null,                  // optional FLF target frame
-    } = opts;
-    const seed = Math.floor(Math.random() * 2147483647);
-
-    // Full-step override: the preset is tuned for turbo (6 steps,
-    // cfg=1.0, second_step=3). When turbo=false, apply the canonical
-    // full-step kwargs from wan_turbo_kwargs(turbo=False).
-    const steps       = turbo ? preset.steps       : 30;
-    const cfg         = turbo ? preset.cfg         : 3.5;
-    const second_step = turbo ? preset.second_step : 15;
-    const shift       = preset.shift != null ? preset.shift : 8.0;
-
-    const isGgufClip = !!preset.clip_is_gguf;
-    const isGgufHigh = (preset.high_model || "").toLowerCase().endsWith(".gguf");
-    const isGgufLow  = (preset.low_model  || "").toLowerCase().endsWith(".gguf");
-
-    const neg = negative_prompt || "static, frozen, blurry, low quality, distorted";
-
-    const wf = {};
-
-    // ── Model loaders ──
-    wf["1"] = isGgufClip
-        ? { class_type: "CLIPLoaderGGUF", inputs: { clip_name: preset.clip, type: "wan" }}
-        : { class_type: "CLIPLoader",     inputs: { clip_name: preset.clip, type: "wan", device: "default" }};
-
-    wf["2"] = isGgufHigh
-        ? { class_type: "UnetLoaderGGUF", inputs: { unet_name: preset.high_model }}
-        : { class_type: "UNETLoader",     inputs: { unet_name: preset.high_model, weight_dtype: "default" }};
-
-    wf["3"] = isGgufLow
-        ? { class_type: "UnetLoaderGGUF", inputs: { unet_name: preset.low_model }}
-        : { class_type: "UNETLoader",     inputs: { unet_name: preset.low_model, weight_dtype: "default" }};
-
-    wf["4"] = { class_type: "VAELoader", inputs: { vae_name: preset.vae }};
-
-    // ── Conditioning ──
-    wf["5"] = { class_type: "CLIPTextEncode", inputs: { text: prompt, clip: ["1", 0] }};
-    wf["6"] = { class_type: "CLIPTextEncode", inputs: { text: neg,    clip: ["1", 0] }};
-
-    // ── Start image: load + exact-fit resize (lanczos, center crop) ──
-    // The canonical builder pre-resizes so WanImageToVideo doesn't make
-    // its own center-crop decision and clip the source unexpectedly.
-    wf["7"]  = { class_type: "LoadImage", inputs: { image: avatarImage }};
-    wf["7r"] = { class_type: "ImageScale", inputs: {
-        image: ["7", 0], upscale_method: "lanczos",
-        width, height, crop: "center",
-    }};
-
-    // ── CLIPVision: encode the ORIGINAL image (more detail for
-    // semantic conditioning). Canonical pattern — don't shortcut to
-    // the scaled version.
-    wf["7cv"] = { class_type: "CLIPVisionLoader", inputs: {
-        clip_name: "clip_vision_h.safetensors",
-    }};
-    wf["7ce"] = { class_type: "CLIPVisionEncode", inputs: {
-        clip_vision: ["7cv", 0], image: ["7", 0],
-        crop: "none",
-    }};
-
-    // ── End image (first-last-frame mode) ──
-    // Mirror the start-image pipeline: LoadImage → ImageScale → own
-    // CLIPVisionEncode. Reuses the same CLIPVisionLoader to keep the
-    // workflow tight.
-    const useFLF = !!endImage;
-    if (useFLF) {
-        wf["7b"]  = { class_type: "LoadImage", inputs: { image: endImage }};
-        wf["7br"] = { class_type: "ImageScale", inputs: {
-            image: ["7b", 0], upscale_method: "lanczos",
-            width, height, crop: "center",
-        }};
-        wf["7be"] = { class_type: "CLIPVisionEncode", inputs: {
-            clip_vision: ["7cv", 0], image: ["7b", 0],
-            crop: "none",
-        }};
-    }
-
-    // ── Acceleration LoRAs (turbo only) — LightX2V/Lightning I2V pair
-    // stored on the preset. Strength 1.5 is the calibrated default.
-    let highRef = ["2", 0];
-    let lowRef  = ["3", 0];
-    if (turbo) {
-        const str = preset.accel_strength || 1.5;
-        if (preset.high_accel_lora) {
-            wf["100"] = { class_type: "LoraLoaderModelOnly", inputs: {
-                model: highRef, lora_name: preset.high_accel_lora,
-                strength_model: str,
-            }};
-            highRef = ["100", 0];
-        }
-        if (preset.low_accel_lora) {
-            wf["120"] = { class_type: "LoraLoaderModelOnly", inputs: {
-                model: lowRef, lora_name: preset.low_accel_lora,
-                strength_model: str,
-            }};
-            lowRef = ["120", 0];
-        }
-    }
-
-    // ── ModelSamplingSD3 shift on both branches ──
-    if (shift && shift > 0) {
-        wf["30"] = { class_type: "ModelSamplingSD3", inputs: { model: highRef, shift }};
-        wf["31"] = { class_type: "ModelSamplingSD3", inputs: { model: lowRef,  shift }};
-        highRef = ["30", 0];
-        lowRef  = ["31", 0];
-    }
-
-    // ── Video conditioning: WanImageToVideo (I2V) or
-    //    WanFirstLastFrameToVideo (FLF with end image). Both output
-    //    [positive, negative, latent].
-    if (useFLF) {
-        wf["40"] = { class_type: "WanFirstLastFrameToVideo", inputs: {
-            positive: ["5", 0],
-            negative: ["6", 0],
-            vae:      ["4", 0],
-            width, height, length, batch_size: 1,
-            clip_vision_start_image: ["7ce", 0],
-            clip_vision_end_image:   ["7be", 0],
-            start_image:             ["7r", 0],
-            end_image:               ["7br", 0],
-        }};
-    } else {
-        wf["40"] = { class_type: "WanImageToVideo", inputs: {
-            positive:            ["5", 0],
-            negative:            ["6", 0],
-            vae:                 ["4", 0],
-            width, height, length, batch_size: 1,
-            clip_vision_output:  ["7ce", 0],
-            start_image:         ["7r", 0],
-        }};
-    }
-
-    // ── Two-pass KSamplerAdvanced (HIGH frames 0..second_step,
-    //    LOW frames second_step..end). The LOW pass disables noise
-    //    injection and forces cfg=1 — it's a refinement pass,
-    //    matching the canonical pattern exactly.
-    wf["50"] = { class_type: "KSamplerAdvanced", inputs: {
-        model: highRef,
-        positive: ["40", 0], negative: ["40", 1],
-        latent_image: ["40", 2],
-        add_noise: "enable", noise_seed: seed,
-        steps, cfg, sampler_name: "euler", scheduler: "simple",
-        start_at_step: 0, end_at_step: second_step,
-        return_with_leftover_noise: "enable",
-    }};
-    wf["51"] = { class_type: "KSamplerAdvanced", inputs: {
-        model: lowRef,
-        positive: ["40", 0], negative: ["40", 1],
-        latent_image: ["50", 0],
-        add_noise: "disable", noise_seed: 0,
-        steps, cfg: 1, sampler_name: "euler", scheduler: "simple",
-        start_at_step: second_step, end_at_step: 10000,
-        return_with_leftover_noise: "disable",
-    }};
-
-    // ── Decode + encode as GIF ──
-    // GIF (not MP4) because the existing SillyTavern client renders
-    // videos via the markdown image syntax `![animated](data:image/gif;...)`
-    // — MP4 would need a <video> tag the client doesn't emit. Keep
-    // MP4 as a future opt-in.
-    wf["60"] = { class_type: "VAEDecode", inputs: {
-        samples: ["51", 0], vae: ["4", 0],
-    }};
-    wf["70"] = { class_type: "VHS_VideoCombine", inputs: {
-        images: ["60", 0], frame_rate: fps,
-        loop_count: 0, filename_prefix: "Spellcaster_ST_wan_i2v",
-        format: "image/gif", pingpong: !!pingpong,
-        save_output: true,
-    }};
-
-    return wf;
-}
-
-// ═══════════════════════════════════════════════════════════════════
-//  LTX-2.3 I2V — canonical Spellcaster alternative to WAN
-// ═══════════════════════════════════════════════════════════════════
-//
-// LTX-2 is ~4× faster than WAN full-step and comparable quality for
-// portrait animation. Mirrors build_ltx_video in spellcaster_core.
-// Key canon points (CLAUDE.md §16.3):
-//   • LTXVChunkFeedForward(chunks=4) wraps the UNET for VRAM
-//   • LTXVApplySTG on layers "14, 19" before the sampler
-//   • Default negative prompt blocks LTX's subtitle-burn-in artifact
-//   • Distilled mode overrides steps/cfg/stg/rescale + injects the
-//     distilled LoRA; full mode keeps preset defaults (30/4.0/1.0/0.7)
-
-function buildLtxI2VWorkflow(avatarImage, prompt, preset, opts = {}) {
-    const {
-        width = 768, height = 512, length = 25, fps = 24,
-        distilled = true,            // turbo-equivalent — 8 steps, cfg 1.0
-        i2v_strength = 0.9,
-        pingpong = true,
-        negative_prompt = null,
-    } = opts;
-    const seed = Math.floor(Math.random() * 2147483647);
-
-    // Distilled overrides — mirror build_ltx_video exactly
-    const steps   = distilled ? 8   : (preset.steps   ?? 30);
-    const cfg     = distilled ? 1.0 : (preset.cfg     ?? 4.0);
-    const stg     = distilled ? 0.0 : (preset.stg     ?? 1.0);
-    const rescale = distilled ? 0.0 : (preset.rescale ?? 0.7);
-
-    // Subtitle-burn-in blocker — LTX training corpus includes
-    // subtitled video; without this the model reproduces them.
-    const neg = negative_prompt || (
-        "text, subtitles, captions, watermark, logo, timestamp, UI, "
-        + "interface, closed captions, overlay, written letters, typography"
-    );
-
-    const wf = {};
-    const isGgufUnet = !!preset.unet_is_gguf ||
-        (preset.unet || "").toLowerCase().endsWith(".gguf");
-
-    wf["1"] = isGgufUnet
-        ? { class_type: "UnetLoaderGGUF", inputs: { unet_name: preset.unet }}
-        : { class_type: "UNETLoader",     inputs: { unet_name: preset.unet, weight_dtype: "default" }};
-
-    let modelRef = ["1", 0];
-    if (distilled && preset.distilled_lora) {
-        wf["1b"] = { class_type: "LoraLoaderModelOnly", inputs: {
-            model: modelRef, lora_name: preset.distilled_lora,
-            strength_model: 1.0,
-        }};
-        modelRef = ["1b", 0];
-    }
-
-    // VRAM chunking + Spatial-Temporal Guidance. Defaults mirror the
-    // node's declared schema — dim_threshold 4096 is the published
-    // sweet spot that only triggers chunking on high-dim activations.
-    wf["2"] = { class_type: "LTXVChunkFeedForward", inputs: {
-        model: modelRef, chunks: 4, dim_threshold: 4096,
-    }};
-    wf["3"] = { class_type: "LTXVApplySTG", inputs: {
-        model: ["2", 0], block_indices: "14, 19",
-    }};
-
-    // Text encoder (Gemma-3 via LTX's custom loader) + embeddings connector.
-    // The node input names differ from the canonical preset keys:
-    //   preset.text_encoder       → LTXAVTextEncoderLoader.text_encoder
-    //   preset.embeddings_connector → LTXAVTextEncoderLoader.ckpt_name
-    wf["4"] = { class_type: "LTXAVTextEncoderLoader", inputs: {
-        text_encoder: preset.text_encoder,
-        ckpt_name: preset.embeddings_connector,
-        device: "default",
-    }};
-
-    wf["10"] = { class_type: "CLIPTextEncode", inputs: {
-        text: prompt, clip: ["4", 0],
-    }};
-    wf["11"] = { class_type: "CLIPTextEncode", inputs: {
-        text: neg, clip: ["4", 0],
-    }};
-
-    wf["5"] = { class_type: "VAELoader", inputs: { vae_name: preset.vae }};
-
-    wf["12"] = { class_type: "LTXVConditioning", inputs: {
-        positive: ["10", 0], negative: ["11", 0],
-        frame_rate: fps,
-    }};
-
-    // LTXVScheduler wants the full shift/stretch/terminal set — use
-    // the node's declared defaults so output quality matches ComfyUI's
-    // reference LTX workflow.
-    wf["15"] = { class_type: "LTXVScheduler", inputs: {
-        steps, max_shift: 2.05, base_shift: 0.95,
-        stretch: true, terminal: 0.1,
-    }};
-    wf["16"] = { class_type: "STGGuider", inputs: {
-        model: ["3", 0],
-        positive: ["12", 0], negative: ["12", 1],
-        cfg, stg, rescale,
-    }};
-    wf["17"] = { class_type: "KSamplerSelect", inputs: { sampler_name: "euler" }};
-    wf["18"] = { class_type: "RandomNoise", inputs: { noise_seed: seed }};
-
-    // Start image — I2V conditioning
-    wf["19"] = { class_type: "LoadImage", inputs: { image: avatarImage }};
-    wf["20"] = { class_type: "LTXVBaseSampler", inputs: {
-        model: ["3", 0], vae: ["5", 0], guider: ["16", 0],
-        sampler: ["17", 0], sigmas: ["15", 0], noise: ["18", 0],
-        width, height, num_frames: length,
-        optional_cond_images: ["19", 0],
-        optional_cond_indices: "0",
-        strength: i2v_strength,
-    }};
-
-    // Spatio-temporal tiled VAE decode — LTX's memory-efficient path.
-    // Input name is `latents` (not `samples`); tile params + overlap
-    // + last_frame_fix all required after ComfyUI's recent LTX node
-    // refactor. Defaults mirror the node's declared defaults.
-    wf["40"] = { class_type: "LTXVSpatioTemporalTiledVAEDecode", inputs: {
-        vae: ["5", 0], latents: ["20", 0],
-        spatial_tiles: 4, spatial_overlap: 1,
-        temporal_tile_length: 16, temporal_overlap: 1,
-        last_frame_fix: false,
-        working_device: "auto", working_dtype: "auto",
-    }};
-
-    // GIF output so the existing markdown client renders inline
-    wf["50"] = { class_type: "VHS_VideoCombine", inputs: {
-        images: ["40", 0], frame_rate: fps,
-        loop_count: 0, filename_prefix: "Spellcaster_ST_ltx_i2v",
-        format: "image/gif", pingpong: !!pingpong,
-        save_output: true,
-    }};
-
-    return wf;
-}
 
 function buildAnimationWorkflow(imageName, prompt, numFrames, modelName) {
     // FALLBACK path — img2img with low-denoise noise injection on a
