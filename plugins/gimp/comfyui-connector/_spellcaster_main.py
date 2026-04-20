@@ -6997,15 +6997,20 @@ def _looks_like_blank_rembg(png_bytes: bytes) -> bool:
         from PIL import Image
         import io
         img = Image.open(io.BytesIO(png_bytes))
-        if img.mode not in ("RGBA", "LA"):
+        if img.mode not in ("RGBA", "LA", "PA"):
             # No alpha channel at all \u2014 rembg/BiRefNet always
             # emits RGBA, so a mode without alpha means the node
             # pass-through'd the source unchanged.
             return True
-        alpha = img.getchannel("A")
-        stat = alpha.getextrema()
-        if stat == (0, 0):
-            return True  # fully transparent
+        # Normalise to RGBA and split to isolate alpha. ``split()[-1]``
+        # is more robust than ``getchannel("A")`` across PIL versions:
+        # older/bundled PIL variants on GIMP's Python return subtly
+        # different extrema. The harness's ``blank_rembg_detector``
+        # case caught the regression.
+        alpha = img.convert("RGBA").split()[-1]
+        # ``getbbox()`` returns None for a fully-transparent band.
+        if alpha.getbbox() is None:
+            return True
         hist = alpha.histogram()
         total = sum(hist)
         if not total:
@@ -9867,8 +9872,26 @@ def _image_fingerprint(image, selection_bounds=None) -> str:
             alpha_incl = Gimp.PixbufTransparency.KEEP_ALPHA
         except Exception:
             alpha_incl = 0
+        # GdkPixbuf row layout has rowstride padding that may differ
+        # per call for the same content (uninitialised padding bytes).
+        # Hash only width*channels per row, not the full rowstride
+        # span. Harness's `fingerprint_stable` case catches this.
         thumb = image.get_thumbnail(256, 256, alpha_incl)
-        thumb_bytes = bytes(thumb.get_bytes().get_data()) if thumb else b""
+        if thumb is not None:
+            w_t = thumb.get_width()
+            h_t = thumb.get_height()
+            ch_t = thumb.get_n_channels()
+            rs_t = thumb.get_rowstride()
+            raw = bytes(thumb.get_pixels())
+            row_len = w_t * ch_t
+            if rs_t == row_len:
+                thumb_bytes = raw[:row_len * h_t]
+            else:
+                thumb_bytes = b"".join(
+                    raw[y * rs_t: y * rs_t + row_len]
+                    for y in range(h_t))
+        else:
+            thumb_bytes = b""
     except Exception:
         thumb_bytes = b""
     if thumb_bytes:
@@ -16827,7 +16850,6 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-klein-blend": "klein_flux2",
             "spellcaster-klein-repose": "klein_flux2",
             "spellcaster-klein-headswap": "klein_flux2",
-            "spellcaster-klein-headswap-face": "klein_flux2",
             "spellcaster-klein-inpaint": "klein_flux2",
             # R117: LTX procedures now go through the sentinel probe
             # (see _FEATURE_SENTINELS["ltx_video"]). Gate key remains
@@ -16955,6 +16977,47 @@ class Spellcaster(Gimp.PlugIn):
             if present is not None and feature not in present:
                 continue                          # probe says node missing
             procs.append(name)
+
+        # Procedure-set drift guard: GIMP caches the registered
+        # procedure list in pluginrc. When we rename or remove a
+        # procedure (e.g. drop a duplicate or merge a submenu), GIMP
+        # keeps showing the stale old name alongside the new one
+        # until pluginrc is regenerated.
+        #
+        # _auto_update + _apply_staged_updates already purge pluginrc
+        # when code changes, BUT if the user has disabled auto-update,
+        # or the Repair button already staged an update and the SHA
+        # short-circuits the next _auto_update call, the purge can
+        # silently be missed — which is exactly what produced the
+        # "Flux 2 + Klein" duplicate-submenu bug the user reported.
+        #
+        # Defense-in-depth: remember the last-registered procedure
+        # digest in config.json. Whenever the current set differs
+        # (names added or removed), delete pluginrc so GIMP drops
+        # stale procedure names on the next boot. Idempotent — no-op
+        # when the set is stable.
+        try:
+            import hashlib as _hashlib
+            _proc_digest = _hashlib.sha1(
+                "|".join(sorted(procs)).encode("utf-8")
+            ).hexdigest()[:16]
+            _last_digest = cfg.get("procedure_set_digest") or ""
+            if _proc_digest != _last_digest:
+                try:
+                    _delete_all_gimp_pluginrc()
+                except Exception:
+                    pass
+                try:
+                    cfg["procedure_set_digest"] = _proc_digest
+                    _save_config(cfg)
+                except Exception:
+                    pass
+        except Exception:
+            # Digest / config write failure must never block plugin
+            # registration. GIMP still gets the correct `procs` list —
+            # we just miss the pluginrc-purge speedup this launch.
+            pass
+
         return procs
 
     def do_create_procedure(self, name):
@@ -17009,25 +17072,30 @@ class Spellcaster(Gimp.PlugIn):
                                           "Change character pose, position, or camera angle"),
             "spellcaster-klein-headswap": ("Headswap...", self._run_klein_headswap,
                                             "Face swap + AI refinement for natural blending"),
-            "spellcaster-klein-headswap-face": ("Flux 2 Headswap...", self._run_klein_headswap,
-                                                  "Face swap with Flux 2 AI refinement pass"),
             "spellcaster-klein-inpaint": ("Inpaint...", self._run_klein_inpaint,
                                            "Regenerate selected area — context-aware, smooth edges"),
             "spellcaster-klein-detail": ("Detail Enhancer...", self._run_klein_detail,
                                           "Enhance any region — face, eyes, hands, skin, hair, clothing"),
             "spellcaster-klein-generate": ("Generate Object...", self._run_klein_generate,
                                             "Generate any object as a transparent layer — matches scene lighting"),
-            "spellcaster-klein-auto-inpaint": ("Klein Auto-Inpaint... (Florence)", self._run_klein_auto_inpaint,
-                                                "Florence2 auto-mask + Klein inpaint — describe what to replace, no mask painting"),
-            "spellcaster-klein-sam3-inpaint": ("Klein SAM3 Inpaint...", self._run_klein_sam3_inpaint,
-                                                "SAM3 segment + Klein inpaint — optionally guided by a reference image"),
-            "spellcaster-klein-refine": ("Klein Refine...", self._run_klein_refine,
-                                          "Multi-reference Klein refine — LineArt/HED/Tile/Depth structural enhancement"),
-            "spellcaster-klein-face-detail": ("Klein Face Detailer...", self._run_klein_face_detail,
-                                               "YOLO face detection + Klein high-detail regeneration of each face"),
-            "spellcaster-klein-color-match": ("Klein Color Match...", self._run_klein_color_match,
+            # Auto-Inpaint / SAM3-Inpaint / Refine / Face Detailer /
+            # Color Match / Virtual Try-On used to live under a
+            # separate "Klein" submenu with redundant "Klein *"
+            # prefixes. Merged into the Flux 2 submenu (2026-04-20)
+            # so the user sees ONE current submenu instead of both
+            # a current ("Flux 2") and an outdated ("Klein") copy
+            # side-by-side.
+            "spellcaster-klein-auto-inpaint": ("Auto-Inpaint... (Florence)", self._run_klein_auto_inpaint,
+                                                "Florence2 auto-mask + Flux 2 inpaint — describe what to replace, no mask painting"),
+            "spellcaster-klein-sam3-inpaint": ("SAM3 Inpaint...", self._run_klein_sam3_inpaint,
+                                                "SAM3 segment + Flux 2 inpaint — optionally guided by a reference image"),
+            "spellcaster-klein-refine": ("Refine...", self._run_klein_refine,
+                                          "Multi-reference Flux 2 refine — LineArt/HED/Tile/Depth structural enhancement"),
+            "spellcaster-klein-face-detail": ("Face Detailer...", self._run_klein_face_detail,
+                                               "YOLO face detection + Flux 2 high-detail regeneration of each face"),
+            "spellcaster-klein-color-match": ("Reference Color Match...", self._run_klein_color_match,
                                                "ColorMatchV2 — harmonize image colors against a reference photo (no diffusion)"),
-            "spellcaster-klein-virtual-tryon": ("Klein Virtual Try-On...", self._run_klein_virtual_tryon,
+            "spellcaster-klein-virtual-tryon": ("Virtual Try-On...", self._run_klein_virtual_tryon,
                                                  "4-reference photoshoot — face + outfit + optional background + pose"),
             "spellcaster-generate-anything": ("Generate Anything...", self._run_generate_anything,
                                                "Generate any object as a transparent layer — works with ALL models"),
@@ -17198,12 +17266,15 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-klein-inpaint":     f"{_S}/Flux 2",
             "spellcaster-klein-detail":      f"{_S}/Flux 2",
             "spellcaster-klein-generate":    f"{_S}/Flux 2",
-            "spellcaster-klein-auto-inpaint":  f"{_S}/Klein",
-            "spellcaster-klein-sam3-inpaint":  f"{_S}/Klein",
-            "spellcaster-klein-refine":        f"{_S}/Klein",
-            "spellcaster-klein-face-detail":   f"{_S}/Klein",
-            "spellcaster-klein-color-match":   f"{_S}/Klein",
-            "spellcaster-klein-virtual-tryon": f"{_S}/Klein",
+            # Promoted from a legacy "Klein" submenu into "Flux 2" so
+            # users no longer see two parallel submenus (one with the
+            # current brand, one with the codename). Same callbacks.
+            "spellcaster-klein-auto-inpaint":  f"{_S}/Flux 2",
+            "spellcaster-klein-sam3-inpaint":  f"{_S}/Flux 2",
+            "spellcaster-klein-refine":        f"{_S}/Flux 2",
+            "spellcaster-klein-face-detail":   f"{_S}/Flux 2",
+            "spellcaster-klein-color-match":   f"{_S}/Flux 2",
+            "spellcaster-klein-virtual-tryon": f"{_S}/Flux 2",
 
             # Enhance — fix, upscale, restore
             "spellcaster-upscale":           f"{_S}/Enhance",
@@ -17221,7 +17292,6 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-faceid-img2img":    f"{_S}/Face",
             "spellcaster-pulid-flux":        f"{_S}/Face",
             "spellcaster-face-restore":      f"{_S}/Face",
-            "spellcaster-klein-headswap-face": f"{_S}/Face",
 
             # Style — visual transformation
             "spellcaster-style-transfer":    f"{_S}/Style",
