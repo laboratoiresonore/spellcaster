@@ -188,11 +188,14 @@ class ClipImport(_EventBase):
 @dataclass
 class PlayheadGrab(_EventBase):
     """R122: Cinematographer wizard asks Resolve for the current
-    playhead frame + turns it into a new Shot. Payload is empty
-    (Resolve already knows its own playhead).
+    playhead frame + turns it into a new Shot. ``want`` tells Resolve
+    what to treat the grab as — ``"reference_still"`` (Cinematographer
+    flow, the Guild fills the shot's reference slot) or ``"raw_frame"``
+    (direct import, no shot wiring).
     """
 
     KIND: str = field(default="resolve.playhead.grab", init=False, repr=False)
+    want: Optional[str] = None
 
 
 @dataclass
@@ -211,12 +214,15 @@ class PlayheadSendToPeer(_EventBase):
 @dataclass
 class TimelineImport(_EventBase):
     """R122: ask Resolve to fetch the Guild's shotboard as an EDL +
-    import it as a new timeline. Empty payload; Resolve queries the
-    Guild for the EDL directly.
+    import it as a new timeline. ``source`` tags which Guild surface
+    fired the request (``"cinematographer"``, ``"shotboard"``, …) so
+    Resolve can branch on UX (e.g. auto-select the new timeline only
+    for Cinematographer). Resolve queries the Guild for the EDL directly.
     """
 
     KIND: str = field(default="resolve.timeline.import",
                       init=False, repr=False)
+    source: Optional[str] = None
 
 
 # ── Resolve bus responses (Resolve → Guild) ────────────────────────
@@ -261,6 +267,62 @@ class SendToPeerDone(_EventBase):
     error: Optional[str] = None
 
 
+# ── upload + presence + Guild lifecycle ────────────────────────────
+
+@dataclass
+class AssetUploaded(_EventBase):
+    """Emitted after ``POST /api/assets`` persists externally-supplied
+    bytes (a plugin pushing a finished render into the gallery). Kind
+    is ``"<origin>.asset.uploaded"``. Distinct from ``AssetCreated``:
+    the Created event fires for ANY gallery insertion (including the
+    Guild's own ComfyUI downloads); Uploaded fires only for the
+    plugin-initiated push path. Subscribers that want “someone gave us
+    a new file to look at” listen for Uploaded; subscribers that want
+    “anything new in the gallery” listen for Created.
+    """
+
+    KIND: str = field(default="*.asset.uploaded", init=False, repr=False)
+    hash: str = ""
+    kind: str = "generation"
+    title: Optional[str] = None
+    model: Optional[str] = None
+
+
+@dataclass
+class PresenceHeartbeat(_EventBase):
+    """Published by the Guild on every ``POST /api/interfaces/heartbeat``
+    receipt. ``meta`` carries whatever the plugin sent (version, uptime,
+    remote flag, …) — subscribers use it to update UI presence chips
+    without re-polling the registry.
+    """
+
+    KIND: str = field(default="*.presence.heartbeat", init=False, repr=False)
+    meta: dict = field(default_factory=dict)
+
+
+@dataclass
+class GuildSelfUpdateResult(_EventBase):
+    """Guild self-updater finished a run. ``applied=True`` means new
+    code was pulled + staged for the next restart. Listeners typically
+    toast the user and offer a one-click restart.
+    """
+
+    KIND: str = field(default="guild.self_update.result",
+                      init=False, repr=False)
+    applied: bool = False
+
+
+@dataclass
+class GuildSelfUpdateError(_EventBase):
+    """Guild self-updater crashed. Payload carries a human-readable
+    error string for the UI toast.
+    """
+
+    KIND: str = field(default="guild.self_update.error",
+                      init=False, repr=False)
+    error: str = ""
+
+
 # ── registry + helpers ─────────────────────────────────────────────
 
 #: Every kind mapped to its dataclass. Wildcard patterns ("*.X.Y")
@@ -274,6 +336,8 @@ EVENT_SCHEMAS: dict[str, type[_EventBase]] = {
     "resolve.timeline.import":       TimelineImport,
     "resolve.timeline.imported":     TimelineImported,
     "resolve.send_to_peer.done":     SendToPeerDone,
+    "guild.self_update.result":      GuildSelfUpdateResult,
+    "guild.self_update.error":       GuildSelfUpdateError,
 }
 
 #: Suffixes that map to a shared schema regardless of origin prefix.
@@ -281,8 +345,10 @@ EVENT_SCHEMAS: dict[str, type[_EventBase]] = {
 #: with ``.asset.created`` resolves to the same dataclass.
 _WILDCARD_SCHEMAS: dict[str, type[_EventBase]] = {
     "asset.created":       AssetCreated,
+    "asset.uploaded":      AssetUploaded,
     "generation.finished": GenerationFinished,
     "asset.send":          AssetSend,
+    "presence.heartbeat":  PresenceHeartbeat,
 }
 
 
@@ -342,7 +408,11 @@ __all__ = [
     "parse_event", "publish_event",
     "EVENT_SCHEMAS",
     # asset
-    "AssetCreated", "GenerationFinished", "AssetSend", "ClipImport",
+    "AssetCreated", "AssetUploaded", "GenerationFinished",
+    "AssetSend", "ClipImport",
+    # presence + Guild lifecycle
+    "PresenceHeartbeat",
+    "GuildSelfUpdateResult", "GuildSelfUpdateError",
     # resolve request
     "PlayheadGrab", "PlayheadSendToPeer", "TimelineImport",
     # resolve response

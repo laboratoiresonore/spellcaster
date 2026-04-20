@@ -63,6 +63,16 @@ async function importLayerFromURL(url, layerName) {
     const buffer = await blob.arrayBuffer();
     await file.write(buffer);
 
+    // Stash the bytes in the Guild's AssetGallery so cross-interface
+    // subscribers (GIMP, Darktable, Resolve, SillyTavern, Signal) see
+    // this generation via ``photoshop.asset.created``. Best-effort —
+    // import continues even when the Guild is offline.
+    try {
+        await stashInGallery(buffer, layerName || "Photoshop result");
+    } catch (e) {
+        /* silent — gallery is additive, not blocking */
+    }
+
     // Place the file as a new layer
     await core.executeAsModal(async () => {
         const doc = app.activeDocument;
@@ -75,6 +85,74 @@ async function importLayerFromURL(url, layerName) {
         const topLayer = doc.layers[0];
         if (topLayer) topLayer.name = layerName;
     }, { commandName: "Spellcaster Import" });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Cross-interface backbone (§15)
+// ═══════════════════════════════════════════════════════════════════
+
+function _bytesToBase64(buffer) {
+    // UXP's btoa() handles at most ~1 MB of binary-as-string; use a
+    // chunked loop for larger PNGs (a 4k canvas can be 10+ MB).
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode.apply(
+            null, bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+}
+
+async function stashInGallery(buffer, title) {
+    /** POST bytes to the Guild's AssetGallery. Fire-and-forget. */
+    const body = {
+        origin: "photoshop",
+        kind: "generation",
+        title: String(title || "Photoshop generation"),
+        tags: ["photoshop_generation"],
+        body_b64: _bytesToBase64(buffer),
+    };
+    const resp = await fetch(`${GUILD_URL}/api/assets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+    });
+    if (!resp.ok) return null;
+    const json = await resp.json();
+    return json && json.data && json.data.hash || null;
+}
+
+// Heartbeat loop — pings ``POST /api/interfaces/heartbeat`` every
+// ~20 s so the Guild knows this Photoshop install is live and surfaces
+// the chip in the sidebar. Silent on error (Guild offline); re-tries
+// on every tick. Guarded by a module-level flag so repeated panel
+// shows don't stack loops.
+let _HEARTBEAT_STARTED = false;
+function startHeartbeat(intervalS) {
+    if (_HEARTBEAT_STARTED) return;
+    _HEARTBEAT_STARTED = true;
+    const payload = JSON.stringify({
+        interface: "photoshop",
+        meta: {
+            plugin: "photoshop", plugin_version: "2.2.0",
+            transport: "uxp_panel",
+        },
+        remote: false,
+    });
+    const tick = async () => {
+        try {
+            await fetch(`${GUILD_URL}/api/interfaces/heartbeat`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: payload,
+            });
+        } catch (e) {
+            /* silent — Guild offline; try again next tick */
+        }
+    };
+    tick();  // fire immediately so the chip appears on panel show
+    setInterval(tick, (intervalS || 20) * 1000);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -194,7 +272,12 @@ function setupPanel() {
 entrypoints.setup({
     panels: {
         "spellcaster-panel": {
-            show() { setupPanel(); },
+            show() {
+                setupPanel();
+                // Fire the Guild heartbeat loop on every panel show —
+                // the module-level flag keeps it single-instance.
+                try { startHeartbeat(20); } catch (_) { /* silent */ }
+            },
         },
     },
     commands: {
