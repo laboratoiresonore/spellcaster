@@ -4704,6 +4704,7 @@ def build_photobooth(ref_filename, prompt_text, seed,
     if klein_models is None:
         klein_models = KLEIN_MODELS
 
+    _faceswap_guard("photobooth")
     km = klein_models[klein_model_key]
     nf = NodeFactory()
 
