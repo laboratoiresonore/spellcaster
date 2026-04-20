@@ -6268,6 +6268,216 @@ local wan_send_sel_btn = dt.new_widget("button") {
 }
 
 -- ═══════════════════════════════════════════════════════════════════════
+-- LTX 2.3 I2V GUI widgets (CLAUDE.md §16.3)
+-- Routes through the Guild's shot API; the server re-detects the correct
+-- preset and applies video_presets.ltx_mode_kwargs canonically.
+-- ═══════════════════════════════════════════════════════════════════════
+
+local LTX_MODES = {
+  { label = "Distilled (8-step fast)",  preset = "ltx2_distilled" },
+  { label = "Full 30-step (quality)",   preset = "ltx2_dev" },
+  { label = "Two-stage (upscale)",      preset = "ltx2_text_to_video_2stage" },
+  { label = "I2V (image-to-video)",     preset = "ltx2_image_to_video" },
+}
+
+local ltx_mode_selector = dt.new_widget("combobox") {
+  label = _("LTX Mode"),
+  tooltip = _("Distilled: 8 steps, fastest (~60s on RTX 5060 Ti).\n"
+           .. "Full 30-step: higher quality, slower.\n"
+           .. "Two-stage: half-res → latent upscale → refine.\n"
+           .. "I2V: start from the selected Darktable image."),
+  selected = 1,
+  LTX_MODES[1].label, LTX_MODES[2].label,
+  LTX_MODES[3].label, LTX_MODES[4].label,
+}
+
+local ltx_prompt_entry = dt.new_widget("entry") {
+  tooltip = _("LTX 2.3 generation prompt. Descriptive, cinematic language works best."),
+  text = "",
+  placeholder = _("e.g. a cat sitting on a windowsill, soft afternoon light, slight breeze"),
+}
+
+local ltx_neg_entry = dt.new_widget("entry") {
+  tooltip = _("Optional negative prompt. Leave empty to auto-inject the\n"
+           .. "subtitle-burn-in blocker (LTX's training corpus includes\n"
+           .. "subtitled video — canon negative blocks it)."),
+  text = "",
+  placeholder = _("(auto: blocks subtitles/watermarks)"),
+}
+
+local ltx_width_slider = dt.new_widget("slider") {
+  label = _("LTX Width"),
+  tooltip = _("Output width (multiple of 32). 768 is the canon sweet-spot."),
+  soft_min = 256, soft_max = 1280, hard_min = 128, hard_max = 1920,
+  step = 32, digits = 0, value = 768,
+}
+
+local ltx_height_slider = dt.new_widget("slider") {
+  label = _("LTX Height"),
+  tooltip = _("Output height (multiple of 32). 512 is the canon sweet-spot."),
+  soft_min = 256, soft_max = 1280, hard_min = 128, hard_max = 1920,
+  step = 32, digits = 0, value = 512,
+}
+
+local ltx_frames_slider = dt.new_widget("slider") {
+  label = _("LTX Frames"),
+  tooltip = _("Number of frames. 25 = 1 sec at 25fps. 121 = ~5 sec."),
+  soft_min = 9, soft_max = 121, hard_min = 1, hard_max = 257,
+  step = 8, digits = 0, value = 25,
+}
+
+local ltx_fps_slider = dt.new_widget("slider") {
+  label = _("LTX FPS"),
+  tooltip = _("Output frame rate. LTX 2.3 native is 25fps; 24fps also common."),
+  soft_min = 12, soft_max = 30, hard_min = 1, hard_max = 60,
+  step = 1, digits = 0, value = 25,
+}
+
+local ltx_i2v_strength_slider = dt.new_widget("slider") {
+  label = _("LTX I2V Strength"),
+  tooltip = _("Only used in I2V mode. How strongly the ref image drives the video.\n"
+           .. "0.85-0.90 is the sweet spot."),
+  soft_min = 0.0, soft_max = 1.0, hard_min = 0.0, hard_max = 1.0,
+  step = 0.05, digits = 2, value = 0.90,
+}
+
+-- Advanced patches — reuses the _wan_tri_combo helper (tri-state auto/on/off).
+local ltx_sage_combo = _wan_tri_combo("LTX SAGE",
+  "SageAttention kernel — 50-100% sampler speedup on RTX 40/50xx, neutral\n"
+  .. "quality. Requires ComfyUI-KJNodes (PatchSageAttentionKJ).\n"
+  .. "Auto: enable if the node is installed.")
+local ltx_cfg_zero_combo = _wan_tri_combo("LTX CFG Zero★",
+  "CFG Zero Star — CFG=0 on first step, reduces burn-in. Only takes effect\n"
+  .. "when cfg > 1 (distilled mode at cfg=1 is auto-skipped).")
+
+local ltx_sampler_combo = dt.new_widget("combobox") {
+  label = _("LTX Sampler"),
+  tooltip = _("Sampler name. Canon 'euler' matches the LTX team reference.\n"
+           .. "Distilled mode is tuned for euler; other samplers usually\n"
+           .. "regress on distilled runs."),
+  selected = 1,
+  "euler", "euler_ancestral", "dpmpp_2m", "dpmpp_2m_sde", "heun", "uni_pc",
+}
+
+local function collect_ltx_params()
+  local idx = ltx_mode_selector.selected or 1
+  local mode = LTX_MODES[idx] or LTX_MODES[1]
+  local sampler_idx = ltx_sampler_combo.selected or 1
+  local sampler_names = {"euler", "euler_ancestral", "dpmpp_2m",
+                         "dpmpp_2m_sde", "heun", "uni_pc"}
+  return {
+    preset       = mode.preset,
+    prompt       = ltx_prompt_entry.text or "",
+    negative     = ltx_neg_entry.text or "",
+    width        = math.floor(ltx_width_slider.value),
+    height       = math.floor(ltx_height_slider.value),
+    length       = math.floor(ltx_frames_slider.value),
+    fps          = math.floor(ltx_fps_slider.value),
+    i2v_strength = ltx_i2v_strength_slider.value,
+    sage         = _tri_combo_to_str(ltx_sage_combo),
+    cfg_zero     = _tri_combo_to_str(ltx_cfg_zero_combo),
+    sampler_name = sampler_names[sampler_idx] or "euler",
+    is_i2v       = (mode.preset == "ltx2_image_to_video"),
+  }
+end
+
+-- Route an LTX generation through the Guild shot API. Uses the same
+-- guild_create_shot / guild_attach_reference helpers as the WAN path
+-- (CLAUDE.md §16.4 rule #4: no plugin hand-rolls LTX workflow JSON).
+local function process_ltx_video(image)
+  local guild = get_guild_url()
+  if not guild or guild == "" then
+    dt.print(_("Wizard Guild URL not configured — preferences → Wizard Guild URL"))
+    return
+  end
+  local p = collect_ltx_params()
+  if (p.prompt or "") == "" then
+    dt.print(_("LTX: prompt is empty")); return
+  end
+
+  local overrides = {}
+  overrides.width        = p.width
+  overrides.height       = p.height
+  overrides.length       = p.length
+  overrides.fps          = p.fps
+  if p.is_i2v then overrides.i2v_strength = p.i2v_strength end
+  if p.sage     and p.sage     ~= "auto" then overrides.enable_sage     = (p.sage == "on") end
+  if p.cfg_zero and p.cfg_zero ~= "auto" then overrides.enable_cfg_zero = (p.cfg_zero == "on") end
+  if p.sampler_name and p.sampler_name ~= "euler" then
+    overrides.sampler_name = p.sampler_name
+  end
+
+  local ref_path = nil
+  if p.is_i2v and image then
+    dt.print(_("LTX I2V: exporting reference..."))
+    local tmp, _fn = export_to_temp(image)
+    if not tmp then dt.print(_("Export failed")); return end
+    ref_path = tmp
+  end
+
+  local title = string.format("Darktable LTX: %s",
+    (image and image.filename) or "t2v")
+  dt.print(_("Creating LTX shot in the Wizard Guild..."))
+  local shot_id, err = guild_create_shot(title, p.prompt, p.negative or "",
+                                         p.preset, overrides)
+  if not shot_id then
+    if ref_path then os.remove(ref_path) end
+    dt.print(string.format(_("Could not create shot: %s"), tostring(err)))
+    return
+  end
+
+  if ref_path then
+    local ok_ref, ref_err = guild_attach_reference(shot_id, ref_path)
+    os.remove(ref_path)
+    if not ok_ref then
+      dt.print(string.format(_("Reference upload failed: %s"), tostring(ref_err)))
+      return
+    end
+  end
+
+  dt.print(string.format(_("Rendering LTX via canonical pipeline (%s)..."), p.preset))
+  local ok_render, render_err = guild_render_shot(shot_id)
+  if not ok_render then
+    dt.print(string.format(_("Render failed: %s"), tostring(render_err)))
+    return
+  end
+
+  local ok_wait, wait_err = guild_wait_for_shot_ready(shot_id, 900)
+  if not ok_wait then
+    dt.print(string.format(_("Wait failed: %s"), tostring(wait_err)))
+    return
+  end
+
+  local saved_path, dl_err = guild_download_shot_video(shot_id)
+  if not saved_path then
+    dt.print(string.format(_("Download failed: %s"), tostring(dl_err)))
+    return
+  end
+  dt.print(string.format(_("LTX video saved: %s"), saved_path))
+end
+
+local ltx_send_t2v_btn = dt.new_widget("button") {
+  label = _("LTX: Text-to-Video"),
+  tooltip = _("Generate video from the prompt alone (no image ref)."),
+  clicked_callback = function()
+    local ok, e = pcall(process_ltx_video, nil)
+    if not ok then dt.print(_("LTX error: ") .. tostring(e)) end
+  end
+}
+
+local ltx_send_i2v_btn = dt.new_widget("button") {
+  label = _("LTX: Image-to-Video"),
+  tooltip = _("Generate video starting from the first selected Darktable image.\n"
+           .. "Make sure the LTX Mode is set to 'I2V'."),
+  clicked_callback = function()
+    local imgs = dt.gui.selection()
+    if #imgs == 0 then dt.print(_("No images selected")); return end
+    local ok, e = pcall(process_ltx_video, imgs[1])
+    if not ok then dt.print(_("LTX error: ") .. tostring(e)) end
+  end
+}
+
+-- ═══════════════════════════════════════════════════════════════════════
 -- Klein Flux2 GUI widgets
 -- ═══════════════════════════════════════════════════════════════════════
 
@@ -8400,6 +8610,26 @@ local module_widget = dt.new_widget("box") {
   wan_preset_load,
   wan_preset_save,
   wan_preset_delete,
+  dt.new_widget("separator") {},
+
+  -- LTX 2.3 Video section (CLAUDE.md §16.3)
+  dt.new_widget("label") { label = _("\xe2\x9c\xa6 LTX 2.3 VIDEO") },
+  ltx_mode_selector,
+  dt.new_widget("label") { label = _("Prompt:") },
+  ltx_prompt_entry,
+  dt.new_widget("label") { label = _("Negative (empty = auto):") },
+  ltx_neg_entry,
+  ltx_width_slider,
+  ltx_height_slider,
+  ltx_frames_slider,
+  ltx_fps_slider,
+  ltx_i2v_strength_slider,
+  dt.new_widget("label") { label = _("\xe2\x9c\xa6 LTX ADVANCED") },
+  ltx_sampler_combo,
+  ltx_sage_combo,
+  ltx_cfg_zero_combo,
+  ltx_send_t2v_btn,
+  ltx_send_i2v_btn,
   dt.new_widget("separator") {},
 
   -- Klein Flux2 section

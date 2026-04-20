@@ -450,9 +450,20 @@ closed captions, overlay, written letters, typography
 LTX 2.3's distilled corpus includes subtitled video, so without this the model reproduces subtitles. Callers that want a custom negative pass it verbatim.
 
 **VRAM optimisation:**
-- `LTXVChunkFeedForward` with `chunks=4` on every LTX workflow (preset-independent — baked into `build_ltx_video`).
-- `LTXVApplySTG` on layers `14, 19` (Spatial-Temporal Guidance).
+- `LTXVChunkFeedForward` with `chunks=4` on every LTX workflow (canon default; override via `build_ltx_video(chunk_size=...)`).
+- `LTXVApplySTG` on layers `14, 19` (Spatial-Temporal Guidance; override via `build_ltx_video(stg_layers="14, 19, 22")`).
 - Both are core to the canon; removing either tanks quality.
+
+**Optional quality + speed patches (auto-probed by the GIMP LTX dialog):**
+
+| Patch | Node class | Gain | Pack |
+|---|---|---|---|
+| SAGE — Sage Attention | `PatchSageAttentionKJ` | **50–100% sampler speedup** on RTX 40/50xx, neutral quality. Applied BEFORE `LTXVChunkFeedForward` so the whole chain uses the kernel. | KJNodes |
+| CFG Zero Star | `CFGZeroStar` | Small quality win (no CFG on step 0). Auto-skipped in distilled mode (cfg=1.0). | Core ComfyUI (recent) |
+
+TeaCache / SLG / NAG do **not** apply to LTX — LTX uses `LTXVBaseSampler` + `STGGuider` (different sampler path from Wan's `KSamplerAdvanced`).
+
+**Sampler override:** `build_ltx_video(sampler_name=...)` accepts per-call overrides (default `"euler"`). Full-step runs can try `dpmpp_2m_sde` or `heun`; distilled mode is tuned for euler and usually regresses on other samplers.
 
 #### 16.4 Boundary rules
 
@@ -499,7 +510,8 @@ Every runtime call path for video goes through exactly one of:
 | Wizard Guild API consumers | `POST /api/video/shots` → `_VIDEO_BRIDGE.add_shot` → scaffold dispatcher | Dispatcher applies `wan_turbo_kwargs` |
 | SillyTavern plugin | `POST /api/video/shots` with `preset="wan22_i2v_lightning"` or `"wan22_i2v_hq"` | Goes through the Guild |
 | DaVinci Resolve plugin | `spellcaster_api.create_shot()` → `POST /api/video/shots` | Goes through the Guild |
-| Darktable Lua plugin | `guild_create_shot()` helper → `POST /api/video/shots` | Goes through the Guild (pre-R200 hand-rolled JSON removed) |
+| Darktable Lua plugin (WAN) | `guild_create_shot()` helper → `POST /api/video/shots` | Goes through the Guild (pre-R200 hand-rolled JSON removed) |
+| Darktable Lua plugin (LTX) | `process_ltx_video()` → `guild_create_shot()` → `POST /api/video/shots` | Same shot API; dispatcher's LTX branch uses `ltx_mode_kwargs(mode)` |
 | `spellcaster_core.pipeline.Pipeline().wan_video()` | `_run_wan` → `detect_wan_preset()` + `wan_turbo_kwargs()` + `build_wan_video()` | Fluent-chain client |
 | Live diagnostic (`diagnostic._build_wan_test`) | `detect_wan_preset()` + `wan_turbo_kwargs(True)` + `build_wan_video()` | Probes server with canon |
 | `tools/generate_showcase.py`, `tools/generate_walkthrough.py`, `tools/generate_readme_gifs.py` | Detect preset live + `build_wan_video()` + `wan_turbo_kwargs()` | Ad-hoc dev tools |

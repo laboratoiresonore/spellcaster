@@ -521,6 +521,19 @@ class VideoBridge:
             enable_cfg_zero=_opt_bool("enable_cfg_zero"),
             sampler_name=ov.get("sampler_name") or None,
             scheduler=ov.get("scheduler") or None,
+            # LTX-specific overrides (CLAUDE.md §16.3). None = let the
+            # preset default ride. Used by the Guild shot API for any
+            # caller (Darktable, SillyTavern, Resolve, future clients)
+            # who wants per-shot quality / speed tuning on LTX.
+            steps=ov.get("steps") if ov.get("steps") is not None else None,
+            cfg=float(ov["cfg"]) if ov.get("cfg") is not None else None,
+            stg=float(ov["stg"]) if ov.get("stg") is not None else None,
+            rescale=float(ov["rescale"]) if ov.get("rescale") is not None else None,
+            i2v_strength=float(ov["i2v_strength"])
+                if ov.get("i2v_strength") is not None else None,
+            stg_layers=ov.get("stg_layers") or None,
+            chunk_size=int(ov["chunk_size"])
+                if ov.get("chunk_size") is not None else None,
         )
         if not workflow:
             return {"status": "error", "message": err or "build failed"}

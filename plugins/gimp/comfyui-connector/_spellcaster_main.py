@@ -4016,6 +4016,44 @@ def _wan_quality_patches_available(server):
     _WAN_PATCH_PROBE_CACHE[server] = result
     return result
 
+_LTX_PATCH_PROBE_CACHE = {}
+
+
+def _ltx_quality_patches_available(server):
+    """Probe the server for optional LTX 2.3 quality + speed patches.
+
+    Returns a dict with two bool keys:
+      - sage      — PatchSageAttentionKJ (ComfyUI-KJNodes). 50-100%
+                    sampler speedup on RTX 40/50xx; neutral quality.
+      - cfg_zero  — CFGZeroStar, core ComfyUI on recent builds. Sets
+                    CFG=0 for the first sampling step; small quality
+                    win at zero cost. LTX distilled mode skips this
+                    automatically since its cfg=1.0.
+
+    TeaCache, SLG, and NAG do NOT apply to LTX (different sampler
+    path — LTXVBaseSampler / STGGuider instead of Wan's
+    KSamplerAdvanced). See CLAUDE.md §16.3 for the LTX canon.
+
+    Cached per-server so we don't hammer /object_info on every tool
+    run.
+    """
+    if server in _LTX_PATCH_PROBE_CACHE:
+        return _LTX_PATCH_PROBE_CACHE[server]
+    result = {"sage": False, "cfg_zero": False}
+    probes = [
+        ("sage",     "/object_info/PatchSageAttentionKJ"),
+        ("cfg_zero", "/object_info/CFGZeroStar"),
+    ]
+    for key, path in probes:
+        try:
+            _api_get(server, path)
+            result[key] = True
+        except Exception:
+            pass
+    _LTX_PATCH_PROBE_CACHE[server] = result
+    return result
+
+
 def _fetch_reactor_models(server):
     """Fetch available ReActor swap_model and face_restore_model lists from the server."""
     try:
@@ -5676,9 +5714,38 @@ def _build_ltx_video(preset_key, prompt_text, seed,
                       two_stage=False, distilled=False,
                       loras=None, interpolate=False, rtx_scale=0,
                       fps=25, pingpong=False, image_filename=None,
-                      i2v_strength=0.9):
-    """→ Delegated to v2 builder (resolves preset_key → preset dict)."""
+                      i2v_strength=0.9,
+                      server_url=None,
+                      # Tri-state per-call overrides. None/"auto" = defer
+                      # to the server probe (auto-enable when the node is
+                      # present); True/False / "on"/"off" = force on/off.
+                      sage=None, cfg_zero=None,
+                      # Optional tuning knobs. None = canon default.
+                      sampler_name=None, stg_layers=None, chunk_size=None):
+    """→ Delegated to canonical build_ltx_video with GIMP-side extras.
+
+    See CLAUDE.md §16.3 "LTX 2.3 — full formula". This wrapper probes
+    /object_info on the target server for the optional quality /
+    speed patches (SAGE, CFG Zero Star) and auto-enables those that
+    are installed. Caller can force-on / force-off via tri-state
+    args.
+    """
     preset = LTX_PRESETS[preset_key]
+
+    # Server probe = default; explicit True/False overrides.
+    probe = {"sage": False, "cfg_zero": False}
+    if server_url:
+        probe = _ltx_quality_patches_available(server_url)
+
+    def _resolve_patch(override_val, probe_val):
+        canon = _tri_to_canon(override_val)
+        if canon is None:
+            return probe_val
+        return canon
+
+    enable_sage     = _resolve_patch(sage,     probe["sage"])
+    enable_cfg_zero = _resolve_patch(cfg_zero, probe["cfg_zero"])
+
     return build_ltx_video(preset, prompt_text, seed,
                             width=width, height=height, num_frames=num_frames,
                             steps=steps, cfg=cfg, stg=stg, rescale=rescale,
@@ -5686,7 +5753,12 @@ def _build_ltx_video(preset_key, prompt_text, seed,
                             loras=loras, interpolate=interpolate,
                             rtx_scale=rtx_scale, fps=fps, pingpong=pingpong,
                             image_filename=image_filename,
-                            i2v_strength=i2v_strength)
+                            i2v_strength=i2v_strength,
+                            enable_sage=enable_sage,
+                            enable_cfg_zero=enable_cfg_zero,
+                            sampler_name=sampler_name,
+                            stg_layers=stg_layers,
+                            chunk_size=chunk_size)
 
 
 def _write_rgb_png(filepath, width, height, pixel_rows):
@@ -9755,6 +9827,71 @@ class LtxVideoDialog(Gtk.Dialog):
         hb_i2v.pack_start(self.i2v_strength_spin, False, False, 0)
         box.pack_start(hb_i2v, False, False, 0)
 
+        # ── Advanced quality / speed patches (CLAUDE.md §16.3) ────────
+        sep4 = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        box.pack_start(sep4, False, False, 4)
+        adv_label = Gtk.Label(xalign=0)
+        adv_label.set_markup("<b>Advanced</b> — quality / speed patches")
+        box.pack_start(adv_label, False, False, 0)
+
+        grid_adv = Gtk.Grid(column_spacing=8, row_spacing=4)
+
+        def _ltx_tri(lbl, tip):
+            cb = Gtk.ComboBoxText()
+            cb.append("auto", f"{lbl}: Auto")
+            cb.append("on",   f"{lbl}: On")
+            cb.append("off",  f"{lbl}: Off")
+            cb.set_active_id("auto")
+            cb.set_tooltip_text(tip)
+            return cb
+
+        self.ltx_sage_combo = _ltx_tri("SAGE",
+            "SageAttention kernel — 50-100% sampler speedup on RTX 40/50xx,\n"
+            "neutral quality. Requires ComfyUI-KJNodes (PatchSageAttentionKJ).\n"
+            "Auto: enable if the server has the node.")
+        self.ltx_cfg_zero_combo = _ltx_tri("CFG Zero★",
+            "CFG Zero Star — CFG=0 on first sampling step, reduces burn-in.\n"
+            "Only takes effect when CFG > 1 (distilled mode at cfg=1 is\n"
+            "auto-skipped). Requires recent ComfyUI.")
+        grid_adv.attach(self.ltx_sage_combo,     0, 0, 1, 1)
+        grid_adv.attach(self.ltx_cfg_zero_combo, 1, 0, 1, 1)
+
+        # Sampler selector — LTX 2.3 defaults to euler but the pipeline
+        # accepts any ComfyUI sampler name; dpmpp_2m_sde / heun sometimes
+        # give cleaner motion on full-step runs.
+        grid_adv.attach(Gtk.Label(label="Sampler:", xalign=1), 0, 1, 1, 1)
+        self.ltx_sampler_combo = Gtk.ComboBoxText()
+        for s in ("euler", "euler_ancestral", "dpmpp_2m",
+                  "dpmpp_2m_sde", "heun", "uni_pc"):
+            self.ltx_sampler_combo.append(s, s)
+        self.ltx_sampler_combo.set_active_id("euler")
+        self.ltx_sampler_combo.set_tooltip_text(
+            "Sampler name. Canon default 'euler' matches the LTX team's\n"
+            "reference workflow. Distilled mode is tuned for euler and\n"
+            "usually regresses on other samplers.")
+        grid_adv.attach(self.ltx_sampler_combo, 1, 1, 1, 1)
+
+        # STG layers — hardcoded canon is "14, 19". Advanced users can
+        # try "14, 19, 22" or narrower ranges for style experimentation.
+        grid_adv.attach(Gtk.Label(label="STG Layers:", xalign=1), 0, 2, 1, 1)
+        self.ltx_stg_layers_entry = Gtk.Entry()
+        self.ltx_stg_layers_entry.set_text("14, 19")
+        self.ltx_stg_layers_entry.set_tooltip_text(
+            "Transformer block indices for Spatio-Temporal Guidance.\n"
+            "Canon: '14, 19'. Comma-separated ints. Empty = canon default.")
+        grid_adv.attach(self.ltx_stg_layers_entry, 1, 2, 1, 1)
+
+        # Chunk size — VRAM tuning knob for LTXVChunkFeedForward.
+        grid_adv.attach(Gtk.Label(label="Chunk Size:", xalign=1), 0, 3, 1, 1)
+        self.ltx_chunk_spin = Gtk.SpinButton.new_with_range(1, 16, 1)
+        self.ltx_chunk_spin.set_value(4)
+        self.ltx_chunk_spin.set_tooltip_text(
+            "Feed-forward chunking for VRAM savings. Canon: 4.\n"
+            "Higher = less VRAM but slightly slower; lower = faster if\n"
+            "you have spare VRAM.")
+        grid_adv.attach(self.ltx_chunk_spin, 1, 3, 1, 1)
+        box.pack_start(grid_adv, False, False, 0)
+
         # Runs
         hbr2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         hbr2.pack_start(Gtk.Label(label="Runs:"), False, False, 0)
@@ -9827,6 +9964,12 @@ class LtxVideoDialog(Gtk.Dialog):
             "i2v": self.i2v_check.get_active(),
             "i2v_strength": self.i2v_strength_spin.get_value(),
             "runs": int(self._runs_spin.get_value()),
+            # Advanced section — tri-state patches + tuning knobs.
+            "sage":         self.ltx_sage_combo.get_active_id() or "auto",
+            "cfg_zero":     self.ltx_cfg_zero_combo.get_active_id() or "auto",
+            "sampler_name": self.ltx_sampler_combo.get_active_id() or "euler",
+            "stg_layers":   (self.ltx_stg_layers_entry.get_text().strip() or None),
+            "chunk_size":   int(self.ltx_chunk_spin.get_value()),
         }
 
 
@@ -12702,6 +12845,12 @@ class Spellcaster(Gimp.PlugIn):
                     pingpong=v.get("pingpong", False),
                     image_filename=i2v_filename,
                     i2v_strength=v.get("i2v_strength", 0.9),
+                    server_url=v["server"],
+                    sage=v.get("sage", "auto"),
+                    cfg_zero=v.get("cfg_zero", "auto"),
+                    sampler_name=v.get("sampler_name"),
+                    stg_layers=v.get("stg_layers"),
+                    chunk_size=v.get("chunk_size"),
                 )
                 mode_str = "I2V" if i2v_filename else "T2V"
                 label = f"LTX {mode_str} run {run_i+1}/{runs}" if runs > 1 else f"LTX {mode_str}"
