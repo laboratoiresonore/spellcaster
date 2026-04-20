@@ -311,7 +311,7 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
                   # so only the described region visibly changes. Requires
                   # SAM3Segment on the server (preflight at the caller side).
                   sam3_prompt=None, sam3_invert=False, sam3_confidence=0.6,
-                  sam3_expand=4, sam3_blur=4):
+                  sam3_expand=4, sam3_blur=4, enhance=True):
     """Image-to-image generation (standard diffusion variant).
 
     Loads an input image, encodes it to latent space, diffuses it with a prompt,
@@ -396,10 +396,17 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
     if is_klein:
         ref_pos = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="60")
         ref_neg = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="61")
-        guider_id = nf.cfg_guider(model_ref, [ref_pos, 0], [ref_neg, 0],
+        # Optional Flux2Klein-Enhancer chain. Wraps the model so the guider
+        # AND scheduler receive the enhanced ref; no-op when enhance=False
+        # or when the custom nodes aren't present on the server (preflight
+        # surfaces that upstream).
+        guider_model = (_klein_enhance_model(nf, model_ref, [pos_id, 0],
+                                              node_base_id=880)
+                        if enhance else model_ref)
+        guider_id = nf.cfg_guider(guider_model, [ref_pos, 0], [ref_neg, 0],
                                   preset.get("cfg", 1.0), node_id="62")
         sampler_sel = nf.ksampler_select("euler", node_id="63")
-        sched_id = nf.basic_scheduler(model_ref, preset.get("steps", 20),
+        sched_id = nf.basic_scheduler(guider_model, preset.get("steps", 20),
                                        preset.get("denoise", 0.65),
                                        scheduler="simple", node_id="64")
         noise_id = nf.random_noise(seed, node_id="65")
@@ -468,7 +475,7 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
 #  txt2img — Text-to-image generation
 # ═══════════════════════════════════════════════════════════════════════════
 
-def build_txt2img(preset, prompt_text, negative_text, seed, loras=None):
+def build_txt2img(preset, prompt_text, negative_text, seed, loras=None, enhance=True):
     """Text-to-image generation (from scratch).
 
     Generates an image entirely from a text prompt by starting with an empty
@@ -517,10 +524,14 @@ def build_txt2img(preset, prompt_text, negative_text, seed, loras=None):
 
     is_klein = preset.get("arch") == "flux2klein"
     if is_klein:
-        guider_id = nf.cfg_guider(model_ref, [pos_id, 0], [neg_id, 0],
+        # Optional Flux2Klein-Enhancer chain (same contract as build_img2img).
+        guider_model = (_klein_enhance_model(nf, model_ref, [pos_id, 0],
+                                              node_base_id=870)
+                        if enhance else model_ref)
+        guider_id = nf.cfg_guider(guider_model, [pos_id, 0], [neg_id, 0],
                                   preset.get("cfg", 1.0), node_id="60")
         sampler_sel = nf.ksampler_select("euler", node_id="61")
-        sched_id = nf.basic_scheduler(model_ref, preset.get("steps", 20),
+        sched_id = nf.basic_scheduler(guider_model, preset.get("steps", 20),
                                        1.0, scheduler="simple", node_id="62")
         noise_id = nf.random_noise(seed, node_id="63")
         samp_id = nf.sampler_custom_advanced(
@@ -2369,7 +2380,8 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
                    negative_text, seed, loras=None,
                    controlnet=None, controlnet_2=None, guide_modes=None,
                    sam3_prompt=None, sam3_invert=False,
-                   sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
+                   sam3_confidence=0.6, sam3_expand=4, sam3_blur=4,
+                   enhance=True):
     """Inpainting: regenerate masked region using diffusion.
 
     Selectively regenerates only the masked area of an image while preserving
@@ -2481,10 +2493,14 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
     if is_klein:
         ref_pos = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="60")
         ref_neg = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="61")
-        guider_id = nf.cfg_guider(model_ref, [ref_pos, 0], [ref_neg, 0],
+        # Optional Flux2Klein-Enhancer chain (same contract as build_img2img).
+        guider_model = (_klein_enhance_model(nf, model_ref, [pos_id, 0],
+                                              node_base_id=890)
+                        if enhance else model_ref)
+        guider_id = nf.cfg_guider(guider_model, [ref_pos, 0], [ref_neg, 0],
                                   preset.get("cfg", 1.0), node_id="62")
         sampler_sel = nf.ksampler_select("euler", node_id="63")
-        sched_id = nf.basic_scheduler(model_ref, preset.get("steps", 20),
+        sched_id = nf.basic_scheduler(guider_model, preset.get("steps", 20),
                                        preset.get("denoise", 0.65),
                                        scheduler="simple", node_id="64")
         noise_id = nf.random_noise(seed, node_id="65")
