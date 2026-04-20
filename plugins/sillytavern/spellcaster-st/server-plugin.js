@@ -530,6 +530,16 @@ function init(router) {
         let body_b64 = '';
         if (req.body.image_data_url) {
             const dataUrl = String(req.body.image_data_url);
+            // Scheme clamp: only accept `data:image/...` URLs. Without this
+            // a caller could hand in `data:text/html;base64,...` which the
+            // Guild would dutifully store + publish — a downstream plugin
+            // that rendered the bytes without sniffing could then execute
+            // HTML/JS. Also rejects `javascript:` pseudo-URLs.
+            if (!/^data:image\/[a-zA-Z0-9.+-]+(;[a-zA-Z0-9=-]+)*,/i.test(dataUrl)) {
+                return res.status(400).json({
+                    error: 'image_data_url must be data:image/<type>[;...],<payload>',
+                });
+            }
             const comma = dataUrl.indexOf(',');
             body_b64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
             const bad = _rejectOversizedB64(body_b64);

@@ -5721,7 +5721,13 @@ def _build_ltx_video(preset_key, prompt_text, seed,
                       # present); True/False / "on"/"off" = force on/off.
                       sage=None, cfg_zero=None,
                       # Optional tuning knobs. None = canon default.
-                      sampler_name=None, stg_layers=None, chunk_size=None):
+                      sampler_name=None, stg_layers=None, chunk_size=None,
+                      # VAE decode tiling (CLAUDE.md §16.3).
+                      vae_spatial_tiles=None, vae_temporal_tile_length=None,
+                      vae_last_frame_fix=False, vae_working_dtype=None,
+                      # Extra LoRAs beyond the distilled LoRA. List of
+                      # (lora_filename, strength) tuples; empty = none.
+                      extra_loras=None):
     """→ Delegated to canonical build_ltx_video with GIMP-side extras.
 
     See CLAUDE.md §16.3 "LTX 2.3 — full formula". This wrapper probes
@@ -5746,11 +5752,19 @@ def _build_ltx_video(preset_key, prompt_text, seed,
     enable_sage     = _resolve_patch(sage,     probe["sage"])
     enable_cfg_zero = _resolve_patch(cfg_zero, probe["cfg_zero"])
 
+    # Merge dialog-supplied LoRAs with any legacy 'loras' param. The
+    # canonical build_ltx_video's `loras` kwarg is a list of (name,
+    # strength) tuples that are applied AFTER the distilled LoRA.
+    merged_loras = list(loras or [])
+    if extra_loras:
+        merged_loras.extend(extra_loras)
+
     return build_ltx_video(preset, prompt_text, seed,
                             width=width, height=height, num_frames=num_frames,
                             steps=steps, cfg=cfg, stg=stg, rescale=rescale,
                             two_stage=two_stage, distilled=distilled,
-                            loras=loras, interpolate=interpolate,
+                            loras=(merged_loras or None),
+                            interpolate=interpolate,
                             rtx_scale=rtx_scale, fps=fps, pingpong=pingpong,
                             image_filename=image_filename,
                             i2v_strength=i2v_strength,
@@ -5758,7 +5772,11 @@ def _build_ltx_video(preset_key, prompt_text, seed,
                             enable_cfg_zero=enable_cfg_zero,
                             sampler_name=sampler_name,
                             stg_layers=stg_layers,
-                            chunk_size=chunk_size)
+                            chunk_size=chunk_size,
+                            vae_spatial_tiles=vae_spatial_tiles,
+                            vae_temporal_tile_length=vae_temporal_tile_length,
+                            vae_last_frame_fix=vae_last_frame_fix,
+                            vae_working_dtype=vae_working_dtype)
 
 
 def _write_rgb_png(filepath, width, height, pixel_rows):
@@ -9686,6 +9704,22 @@ class LtxVideoDialog(Gtk.Dialog):
         self.prompt_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         sw.add(self.prompt_view)
         box.pack_start(sw, False, False, 0)
+
+        # Prompt enhancement — LTX explicitly rewards long cinematic
+        # descriptions (see spellcaster_core/prompt_enhance.py "ltx"
+        # profile: "LENGTH: aim for 150-200 words — short prompts
+        # produce static shots"). Requires config.json → prompt_enhance
+        # to be true AND an LLM URL configured, otherwise no-op.
+        self.enhance_check = Gtk.CheckButton(
+            label="Enhance prompt via LLM (recommended for LTX)")
+        self.enhance_check.set_active(bool(_PROMPT_ENHANCE))
+        self.enhance_check.set_tooltip_text(
+            "Run the user prompt through the local LLM with LTX's cinematic\n"
+            "prompt profile before generation. LTX 2.3 explicitly rewards\n"
+            "long (150-200 word) cinematic descriptions — short prompts\n"
+            "produce static shots. Uses your configured LLM URL\n"
+            "(global prefs → Prompt Enhancement).")
+        box.pack_start(self.enhance_check, False, False, 0)
 
         # Dimensions & Frames — defaults are VRAM-aware
         _def_w, _def_h = 768, 512
