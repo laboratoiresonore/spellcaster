@@ -75,6 +75,19 @@ async function probeLlm(url) {
     return false;
 }
 
+async function _guildLlmHealthy() {
+    try {
+        const r = await fetch('/api/llm_status', { cache: 'no-store', signal: AbortSignal.timeout(3000) });
+        if (!r.ok) return true;
+        const s = await r.json();
+        if (s.state === 'error') return false;
+        if (s.last_error && /exhausted/i.test(s.last_error)) return false;
+        return true;
+    } catch (e) {
+        return true;
+    }
+}
+
 let characters = [];
 let activeCharacterId = null;
 let systemPrompt = "";
@@ -2856,7 +2869,17 @@ async function checkLlmAndGenerateNames() {
             if (await probeLlm(koboldUrl)) {
                 llmDot.className = "dot green";
                 llmStatus.textContent = "LLM: Connected";
-                await generateNamesForCharacters();
+                // Transport probe passing (e.g. Ollama /api/tags) doesn't
+                // mean the Guild's guild_llm.chat() chain can actually
+                // serve: ComfyUI-native LLM may be unreachable and each
+                // llm_generate then pays the full backend-exhaustion cost
+                // (~8s+) before returning 502. With ~35 wizards × 2 calls
+                // that's a 10+ min boot hang behind the splash. Ask the
+                // Guild directly if the composite chain is healthy before
+                // entering the per-wizard naming loop.
+                if (await _guildLlmHealthy()) {
+                    await generateNamesForCharacters();
+                }
             } else { throw new Error("Bad response"); }
         }
     } catch(e) {
