@@ -7615,6 +7615,62 @@ class GuildHandler(SimpleHTTPRequestHandler):
             # traceback for that — the response is useless anyway.
             pass
 
+    # Shot dicts land in HTTP responses via add_shot / update_shot /
+    # board.duplicate / archived_shots / list shots. Their raw shape
+    # (shotboard.Shot.to_dict) stores ref_image, video_path, and
+    # input_video as ABSOLUTE LOCAL PATHS — e.g.
+    # C:\\Users\\<name>\\...\\tavern\\creations\\foo.png — which leaks
+    # the user's account name and disk layout to every caller over the
+    # LAN. The frontend only uses these fields as truthy checks (see
+    # tavern/static/video_panel.jsx), so replace them with stable
+    # derived URLs that carry the same "present / absent" signal
+    # without the leak. The `/api/video/shots/<id>/reference` and
+    # `/video` endpoints already serve the bytes.
+    _API_PATH_FIELDS = ("ref_image", "video_path", "input_video",
+                        "mask_image")
+
+    @classmethod
+    def _sanitize_shot(cls, d):
+        """Return a copy of `d` with local-path fields replaced by
+        stable, non-leaky API URLs (or None when empty)."""
+        if not isinstance(d, dict):
+            return d
+        out = dict(d)
+        sid = out.get("id") or out.get("shot_id") or ""
+        for field in cls._API_PATH_FIELDS:
+            val = out.get(field)
+            if val:
+                # Keep a stable derived URL the frontend can already
+                # fetch from. For unknown fields we just emit a boolean.
+                if field == "ref_image" and sid:
+                    out[field] = f"/api/video/shots/{sid}/reference"
+                elif field == "video_path" and sid:
+                    out[field] = f"/api/video/shots/{sid}/video"
+                else:
+                    out[field] = True
+            else:
+                out[field] = None
+        return out
+
+    def _shot_json(self, status, shot_or_list):
+        """Like end_json but pre-sanitizes shot dicts (one or many)."""
+        if isinstance(shot_or_list, list):
+            payload = [self._sanitize_shot(s) for s in shot_or_list]
+        elif isinstance(shot_or_list, dict):
+            # Could be a bare shot OR a wrapper like {"status": ok,
+            # "shot": {...}} / {"shots": [...]}.
+            if "shot" in shot_or_list and isinstance(shot_or_list["shot"], dict):
+                payload = dict(shot_or_list)
+                payload["shot"] = self._sanitize_shot(payload["shot"])
+            elif "shots" in shot_or_list and isinstance(shot_or_list["shots"], list):
+                payload = dict(shot_or_list)
+                payload["shots"] = [self._sanitize_shot(s) for s in payload["shots"]]
+            else:
+                payload = self._sanitize_shot(shot_or_list)
+        else:
+            payload = shot_or_list
+        return self.end_json(status, payload)
+
     def _guess_guild_lan_url(self) -> str | None:
         """R83d: report this Guild's URL as reachable from another host on
         the LAN. Used by the antenna pair flow to hand the Resolve bridge
@@ -9730,7 +9786,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 if field in data:
                     kw[field] = data[field]
             shot = _VIDEO_BRIDGE.add_shot(**kw)
-            return self.end_json(200, shot)
+            return self._shot_json(200, shot)
 
         elif self.path == '/api/video/import-timeline' and self.command == 'POST':
             # R83: ingest a DaVinci Resolve timeline capture. Body:
@@ -9890,7 +9946,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 tmp.write(raw)
                 tmp.close()
                 result = _VIDEO_BRIDGE.update_shot(shot_id, ref_image=tmp.name)
-                return self.end_json(200, result)
+                return self._shot_json(200, result)
             except Exception as e:
                 return self.end_json(400, {"error": str(e)})
 
@@ -10072,7 +10128,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
             try:
                 shot_id = data.get('shot_id')
                 result = _VIDEO_BRIDGE.board.duplicate(shot_id)
-                return self.end_json(200, result)
+                return self._shot_json(200, result)
             except Exception as e:
                 return self.end_json(400, {"error": str(e)})
 
@@ -10096,7 +10152,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
             try:
                 shot_id = self.path.split('/api/video/shots/')[1].rsplit('/cancel', 1)[0]
                 result = _VIDEO_BRIDGE.cancel_shot(shot_id)
-                return self.end_json(200, result)
+                return self._shot_json(200, result)
             except Exception as e:
                 return self.end_json(400, {"error": str(e)})
 
@@ -10452,7 +10508,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 return self.end_json(404, {"error": "source shot not found"})
             _VIDEO_BRIDGE.board.log_activity("variation_created",
                 source_id=shot_id, new_id=new_shot.id)
-            return self.end_json(200, {"shot": new_shot.to_dict()})
+            return self._shot_json(200, {"shot": new_shot.to_dict()})
 
         elif (self.path.startswith('/api/video/shots/')
               and self.path.endswith('/promote-variation')
@@ -10465,7 +10521,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
             if shot is None:
                 return self.end_json(400, {"error": "shot not found or not in a variation group"})
             _VIDEO_BRIDGE.board.log_activity("variation_promoted", shot_id=shot_id)
-            return self.end_json(200, {"shot": shot.to_dict()})
+            return self._shot_json(200, {"shot": shot.to_dict()})
 
         elif self.path == '/api/video/activity-log' and self.command == 'GET':
             # R72b: recent activity log
@@ -10602,7 +10658,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
         elif self.path == '/api/video/archived-shots' and self.command == 'GET':
             if not _VIDEO_BRIDGE:
                 return self.end_json(503, {"error": "Video Bridge not initialised"})
-            items = [s.to_dict() for s in _VIDEO_BRIDGE.board.archived_shots()]
+            items = [self._sanitize_shot(s.to_dict())
+                     for s in _VIDEO_BRIDGE.board.archived_shots()]
             return self.end_json(200, {"archived": items})
 
         elif self.path == '/api/video/named-states' and self.command == 'GET':
@@ -10711,7 +10768,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
             if result is None:
                 return self.end_json(400, {"error": "Cannot revert: shot not found, locked, or no render history"})
             shot = _VIDEO_BRIDGE.board.get(shot_id)
-            return self.end_json(200, {"shot_id": shot_id, "reverted": result, "shot": shot.to_dict()})
+            return self._shot_json(200, {"shot_id": shot_id, "reverted": result,
+                                          "shot": shot.to_dict()})
 
         # R45a: per-shot version snapshots (save / list / restore / delete)
         elif self.path.startswith('/api/video/shots/') and self.path.endswith('/snapshot') and self.command == 'POST':
@@ -10755,8 +10813,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
             if restored is None:
                 return self.end_json(400, {"error": "shot not found, snapshot not found, or shot locked"})
             shot = _VIDEO_BRIDGE.board.get(shot_id)
-            return self.end_json(200, {"shot_id": shot_id, "restored": restored,
-                                        "shot": shot.to_dict() if shot else None})
+            return self._shot_json(200, {"shot_id": shot_id, "restored": restored,
+                                          "shot": shot.to_dict() if shot else None})
         elif (self.path.startswith('/api/video/shots/')
               and '/snapshot/' in self.path
               and self.command == 'POST'
