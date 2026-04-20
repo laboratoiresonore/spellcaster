@@ -385,6 +385,61 @@ def case_seedv2r_klein_bypass():
     assert not enhancer_node_ids(g)
 
 
+def case_pulid_flux_klein_enhanced_chain_order():
+    """PuLID Flux auto-detects Klein from the flux_model filename.
+    When Klein is detected, the PuLID-patched model must be chained
+    through the enhancer before it reaches the KSampler, so the
+    sampler sees: loader -> PuLID -> Enhancer -> sampler.
+    Note: build_pulid_flux uses KSampler (not CFGGuider); the enhancer
+    still applies because it returns a patched MODEL regardless of
+    which sampler consumes it.
+    """
+    g = workflows.build_pulid_flux(
+        "target.png", "face.png", "a portrait", "", 21,
+        flux_model="Flux2\\flux-2-klein-9b.safetensors",
+        enhance=True,
+    )
+    ids = enhancer_node_ids(g)
+    assert ids == _enh_id_set(840), f"pulid_flux IDs wrong: {sorted(ids)}"
+
+    # Enhancer head (840) must draw from node "6" (apply_pulid_flux2).
+    ref_ctrl_id = str(840)
+    assert ref_ctrl_id in g
+    model_in = g[ref_ctrl_id]["inputs"]["model"]
+    assert model_in == ["6", 0], (
+        f"enhancer head should chain from apply_pulid_flux2 (node 6); got {model_in}")
+
+    # KSampler must take the ColorAnchor output, not the raw apply node.
+    anchor = color_anchor_id(g)
+    assert ksampler_model_ref(g) == [anchor, 0]
+    assert_unique_ids(g, "pulid_flux Klein enhance=True")
+
+
+def case_pulid_flux_klein_bypass():
+    g = workflows.build_pulid_flux(
+        "target.png", "face.png", "portrait", "", 21,
+        flux_model="Flux2\\flux-2-klein-9b.safetensors",
+        enhance=False,
+    )
+    assert not enhancer_node_ids(g)
+    # KSampler sees the apply_pulid_flux2 output directly.
+    assert ksampler_model_ref(g) == ["6", 0]
+
+
+def case_pulid_flux_flux1_flag_ignored():
+    """When flux_model is a Flux 1 Dev file, the is_flux2 branch is
+    inactive, so enhance=True must be a no-op (no Klein enhancer, and
+    the standard Flux 1 PuLID apply node feeds straight into KSampler).
+    """
+    g = workflows.build_pulid_flux(
+        "target.png", "face.png", "portrait", "", 21,
+        flux_model="Flux\\FLUX1 Dev fp8.safetensors",
+        enhance=True,
+    )
+    assert not enhancer_node_ids(g), (
+        "Klein enhancer must not fire on Flux 1 Dev PuLID")
+
+
 def case_enhancer_node_ids_disjoint_across_builders():
     """When the same workflow file imports multiple enhanced builders,
     each uses a disjoint node-id base so there is no collision if a
@@ -400,6 +455,7 @@ def case_enhancer_node_ids_disjoint_across_builders():
         "faceid_img2img": 810,
         "style_transfer": 820,
         "seedv2r": 830,
+        "pulid_flux": 840,
     }
     all_ids = set()
     for _, base in bases.items():
@@ -438,6 +494,11 @@ CASES = [
     ("build_style_transfer      | klein + bypass",  case_style_transfer_klein_bypass),
     ("build_seedv2r             | klein + enhance", case_seedv2r_klein_enhanced),
     ("build_seedv2r             | klein + bypass",  case_seedv2r_klein_bypass),
+    ("build_pulid_flux          | klein + PuLID chain order",
+        case_pulid_flux_klein_enhanced_chain_order),
+    ("build_pulid_flux          | klein + bypass",  case_pulid_flux_klein_bypass),
+    ("build_pulid_flux          | flux1 ignores flag",
+        case_pulid_flux_flux1_flag_ignored),
 
     ("invariant: enhancer IDs are disjoint across builders",
         case_enhancer_node_ids_disjoint_across_builders),

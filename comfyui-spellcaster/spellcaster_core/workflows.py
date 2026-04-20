@@ -2803,7 +2803,7 @@ def build_pulid_flux(target_filename, face_ref_filename,
                       pulid_model="pulid_flux_v0.9.1.safetensors",
                       strength=0.9, steps=20, guidance=3.5,
                       denoise=0.65, width=1024, height=1024,
-                      loras=None):
+                      loras=None, enhance=True):
     """PuLID Flux — auto-detects Flux1 vs Flux2 (Klein). Drop-in for _build_pulid_flux().
 
     Flux.1-dev → PulidFlux* nodes
@@ -2866,9 +2866,18 @@ def build_pulid_flux(target_filename, face_ref_filename,
     vae_id = nf.vae_loader(vae_name, node_id="10")
     enc_id = nf.vae_encode([target_id, 0], [vae_id, 0], node_id="11")
 
+    # For Klein (Flux 2), wrap the PuLID-patched model with the
+    # Flux2Klein-Enhancer chain so identity injection and reference
+    # fidelity/color-anchor both fire. Non-Klein (Flux 1 Dev) keeps
+    # the raw PuLID output — enhancer is a no-op outside Klein.
+    sampler_model = [apply_id, 0]
+    if is_flux2 and enhance:
+        sampler_model = _klein_enhance_model(nf, [apply_id, 0], [pos_id, 0],
+                                              node_base_id=840)
+
     # Sample (Flux uses positive for both pos and neg)
     samp_id = nf.ksampler(
-        [apply_id, 0],
+        sampler_model,
         [pos_id, 0], [pos_id, 0],  # Flux: no negative, use same conditioning
         [enc_id, 0],
         seed, steps, guidance, "euler", "simple", denoise, node_id="12",
