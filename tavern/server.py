@@ -8680,6 +8680,40 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 except Exception:
                     pass
             return self.end_json(200, {"has_video_model": has_video, "engine": engine})
+        elif (self.path == '/api/video_preset'
+                or self.path.startswith('/api/video_preset?')):
+            # Canonical preset probe — returns the dict shape that
+            # `spellcaster_core.workflows.build_wan_video` /
+            # `build_ltx_video` expect as the `preset=` kwarg. Used by
+            # the SillyTavern plugin + any other out-of-process caller
+            # that doesn't want to duplicate
+            # `spellcaster_core.video_presets.detect_*_preset` in JS.
+            # Without this route every new surface would reinvent the
+            # detection (UNET family split, VAE pairing, I2V-safe accel
+            # LoRAs) and regress differently — see CLAUDE.md §16
+            # "Canonical Video Pipelines" rule #1.
+            qs = urllib.parse.urlparse(self.path).query
+            qp = urllib.parse.parse_qs(qs)
+            engine = (qp.get("engine") or ["wan"])[0].lower()
+            # ?comfy_url= lets an antenna / out-of-proc caller probe a
+            # different ComfyUI than the Guild is configured for. Omit
+            # to probe the Guild's own COMFYUI_URL.
+            target = (qp.get("comfy_url") or [COMFYUI_URL])[0]
+            if not target:
+                return self.end_json(
+                    400, {"error": "ComfyUI URL not configured"})
+            if engine == "wan":
+                preset = _detect_wan_preset(target)
+            elif engine == "ltx":
+                preset = _detect_ltx_preset(target)
+            else:
+                return self.end_json(
+                    400, {"error": f"unknown engine {engine!r} — "
+                                   "use 'wan' or 'ltx'"})
+            return self.end_json(200, {
+                "engine": engine, "comfy_url": target,
+                "preset": preset,
+            })
         elif self.path == '/api/version':
             return self.end_json(200, {"version": VERSION})
         elif self.path == '/api/system_prompt':
