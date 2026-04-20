@@ -14271,8 +14271,22 @@ class GuildHandler(SimpleHTTPRequestHandler):
             print(f"  [Guild] Scaffold deleted: {char_id}")
             return self.end_json(200, {"status": "ok", "id": char_id})
 
-        # -- /api/summon_wizard -- create a new wizard character from a model
+        # -- /api/summon_wizard -- create a new wizard character, either:
+        #   * classic per-model wizard (model_name + scaffold), or
+        #   * archetype wizard (archetype_kind + archetype_config)
         elif self.path == '/api/summon_wizard':
+            archetype_kind = (data.get('archetype_kind') or '').strip().lower()
+            # Archetype branch: different validation + record shape. Short-
+            # circuits before the classic per-model path so we don't demand
+            # a model_name for archetypes that don't tie to one.
+            if archetype_kind:
+                return self.end_json(*_spellcaster_summon_archetype(
+                    kind=archetype_kind,
+                    name=data.get('name', 'Unnamed Wizard'),
+                    personality=data.get('personality', ''),
+                    subtext=data.get('subtext', ''),
+                    config=data.get('archetype_config') or {},
+                ))
             model_name = data.get('model_name', '')
             model_arch = data.get('model_arch', 'sdxl')
             model_type = data.get('model_type', 'checkpoint')

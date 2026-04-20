@@ -6587,12 +6587,40 @@ summonRegenerate.addEventListener('click', () => {
 });
 
 summonCreate.addEventListener('click', async () => {
-    if (!selectedSummonModel) return;
-    const m = selectedSummonModel;
-    const scaffold = summonScaffoldSelect.value === 'auto' ? guessScaffold(m.name, m.arch) : summonScaffoldSelect.value;
     const name = document.getElementById('summon-name-input').value.trim() || 'Unnamed Wizard';
     const personality = document.getElementById('summon-personality-input').value.trim();
     const subtext = document.getElementById('summon-subtext-input').value.trim();
+
+    // Build the payload by archetype. per_model requires a selected
+    // model; archetypes either use no model, one, or many depending on
+    // their kind.
+    let payload;
+    if (summonFlow.archetype === 'per_model') {
+        if (!selectedSummonModel) return;
+        const m = selectedSummonModel;
+        const scaffold = summonScaffoldSelect.value === 'auto'
+            ? guessScaffold(m.name, m.arch) : summonScaffoldSelect.value;
+        payload = {
+            model_name: m.name, model_arch: m.arch, model_type: m.type,
+            name, personality, subtext, scaffold,
+        };
+    } else {
+        payload = {
+            archetype_kind: summonFlow.archetype,
+            name, personality, subtext,
+        };
+        if (summonFlow.archetype === 'chimera') {
+            if (summonFlow.chimeraPicks.length < 2) return;
+            payload.archetype_config = { models: summonFlow.chimeraPicks };
+        } else if (summonFlow.archetype === 'oracle') {
+            payload.archetype_config = { ...summonFlow.oracleConfig };
+        } else if (summonFlow.archetype === 'scalpel') {
+            if (!summonFlow.scalpelBase) return;
+            payload.archetype_config = { base_model: summonFlow.scalpelBase };
+        } else {
+            payload.archetype_config = {};
+        }
+    }
 
     summonCreate.disabled = true;
     summonCreate.textContent = 'Summoning...';
@@ -6601,15 +6629,7 @@ summonCreate.addEventListener('click', async () => {
         const res = await fetch('/api/summon_wizard', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model_name: m.name,
-                model_arch: m.arch,
-                model_type: m.type,
-                name: name,
-                personality: personality,
-                subtext: subtext,
-                scaffold: scaffold,
-            })
+            body: JSON.stringify(payload),
         });
         const data = await res.json();
 
@@ -6623,7 +6643,10 @@ summonCreate.addEventListener('click', async () => {
             selectCharacter(newChar.id);
 
             summonModal.classList.add('hidden');
-            addSystemMessage(`<strong>Wizard Summoned!</strong><br>${name} has joined the Guild, wielding the power of <em>${m.name}</em> (${getScaffoldLabel(scaffold)}).`);
+            const blurb = summonFlow.archetype === 'per_model'
+                ? `${name} has joined the Guild, wielding the power of <em>${selectedSummonModel.name}</em>.`
+                : `${name} has joined the Guild as a <em>${SUMMON_ARCHETYPES.find(a => a.id === summonFlow.archetype).title}</em> archetype.`;
+            addSystemMessage(`<strong>Wizard Summoned!</strong><br>${blurb}`);
 
             // Auto-generate avatar in background
             try {
