@@ -1122,6 +1122,57 @@ function init(router) {
         }
     });
 
+    // ── List currently-running /animate shots ──
+    // Used by the `/animate-cancel` slash command so the client can
+    // pick a shot to cancel without having to remember its id.
+    router.get('/animate/active', (req, res) => {
+        const active = [];
+        for (const [id, info] of _activeAnimateShots.entries()) {
+            active.push({
+                shot_id: id,
+                started_at: info.startedAt,
+                cancelled: !!info.cancelled,
+                age_seconds: Math.round((Date.now() - info.startedAt) / 1000),
+            });
+        }
+        res.json({ active });
+    });
+
+    // ── Cancel an in-flight /animate shot ──
+    // Flips the tracker's cancelled flag so the next poll tick of
+    // _animateViaGuild breaks out, AND forwards a cancel to the Guild
+    // so the backend stops rendering too. If shot_id is omitted, cancels
+    // every in-flight animation — useful when the user doesn't know which
+    // one they triggered.
+    router.post('/animate/cancel', async (req, res) => {
+        const ids = [];
+        const want = req.body && req.body.shot_id;
+        if (want) {
+            if (_activeAnimateShots.has(want)) ids.push(want);
+        } else {
+            for (const k of _activeAnimateShots.keys()) ids.push(k);
+        }
+        if (!ids.length) return res.status(404).json({ error: 'no active animate shot' });
+        const results = [];
+        for (const id of ids) {
+            // Local flag first — this bounds the worst-case wait to
+            // one poll tick (~2 s).
+            const tracked = _activeAnimateShots.get(id);
+            if (tracked) tracked.cancelled = true;
+            // Then forward to the Guild so the backend actually stops.
+            let guildCode = 0;
+            try {
+                const r = await fetchJSON(
+                    `${GUILD_URL}/api/video/shots/${id}/cancel`,
+                    { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                      body: '{}', timeoutMs: 5000 });
+                guildCode = r.status || 0;
+            } catch { /* best-effort */ }
+            results.push({ shot_id: id, local_flagged: !!tracked, guild_status: guildCode });
+        }
+        res.json({ cancelled: results });
+    });
+
     // ── Save expression sprite to ST's expressions folder ──
     router.post('/save-expression', (req, res) => {
         try {
@@ -2287,3 +2338,15 @@ const info = {
 };
 
 export { info, init, exit };
+
+// Named exports for the test suite. ST only destructures
+// { info, init, exit } from this module, so the additional surface
+// here is inert at runtime. Keep in lock-step with the helpers'
+// definitions above; the tests in test/ pin their behaviour.
+export {
+    _rejectOversizedB64,
+    _rejectUnsafeUrl,
+    _safeNameOrNull,
+    _roundMod,
+    _capPrompt,
+};

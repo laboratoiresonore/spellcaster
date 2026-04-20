@@ -815,7 +815,10 @@ function registerSlashCommands() {
         helpString: 'Edit the current avatar via natural-language instruction (Klein 2 / Flux Kontext / SDXL). Identity is preserved; the instruction drives the change.',
     }));
 
-    // /animate [prompt] — Animate the current character's avatar as a short GIF
+    // /animate [prompt] — Animate the current character's avatar as a short GIF.
+    // Long-running (30-600 s via Guild). Shows a periodic progress toast
+    // and reminds the user they can `/animate-cancel` if they change
+    // their mind mid-render.
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'animate',
         callback: async (args, value) => {
@@ -823,7 +826,20 @@ function registerSlashCommands() {
             const char = context.characters[context.characterId];
             if (!char?.avatar) return 'No character with avatar selected. Select a character first.';
 
-            toastr.info(`Animating ${char.name}...`, 'Spellcaster');
+            // Ambient progress ticker — every 15 s, a fresh toast
+            // reminds the user the render is still going and that
+            // /animate-cancel is available. Silenced as soon as the
+            // real response lands.
+            let tick = 0;
+            const tickTimer = setInterval(() => {
+                tick += 15;
+                if (typeof toastr !== 'undefined') {
+                    toastr.info(`${char.name} still animating (${tick}s)… use /animate-cancel to stop`,
+                                'Spellcaster', { timeOut: 4000 });
+                }
+            }, 15000);
+            toastr.info(`Animating ${char.name}… (WAN 2.2 takes ~30-180 s; /animate-cancel to abort)`,
+                        'Spellcaster');
             try {
                 const avatarUrl = `/characters/${char.avatar}`;
                 const avatarRes = await fetch(avatarUrl);
@@ -849,9 +865,35 @@ function registerSlashCommands() {
                 return 'Animation generation completed but no output received';
             } catch (e) {
                 return `Error: ${e.message}`;
+            } finally {
+                clearInterval(tickTimer);
             }
         },
-        helpString: 'Animate the current character\'s avatar as a short looping GIF.',
+        helpString: 'Animate the current character\'s avatar as a short looping GIF. Long-running — shows a progress toast every 15 s; /animate-cancel aborts.',
+    }));
+
+    // /animate-cancel — abort an in-flight /animate. With no argument
+    // cancels every active shot; pass a shot_id to cancel one.
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'animate-cancel',
+        callback: async (args, value) => {
+            try {
+                const body = value ? { shot_id: String(value).trim() } : {};
+                const r = await fetch(`${API_BASE}/animate/cancel`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json',
+                               ...getContext().getRequestHeaders() },
+                    body: JSON.stringify(body),
+                });
+                if (r.status === 404) return 'No in-flight /animate to cancel.';
+                const j = await r.json().catch(() => ({}));
+                const ids = (j.cancelled || []).map(c => c.shot_id).join(', ');
+                return `Cancelled: ${ids || '(none)'} — the next poll tick will abort.`;
+            } catch (e) {
+                return `Cancel failed: ${e.message}`;
+            }
+        },
+        helpString: 'Cancel an in-flight /animate. With no arg, cancels all active shots.',
     }));
 
     // ═══════════════════════════════════════════════════════════════
