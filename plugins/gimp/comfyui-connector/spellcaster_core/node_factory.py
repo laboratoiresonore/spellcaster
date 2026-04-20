@@ -706,6 +706,19 @@ class NodeFactory:
             "base_shift": base_shift, "width": width, "height": height,
         }, node_id)
 
+    def align_your_steps_scheduler(self, model_type="SDXL", steps=20,
+                                     denoise=1.0, node_id=None):
+        """AlignYourStepsScheduler (AYS) — NVIDIA paper sigmas targeted
+        at SD1/SDXL. Produces meaningfully better output than Karras at
+        low step counts (8-12); parity at 20+. Only works on sd15/sdxl
+        (and illustrious which IS sdxl). model_type must be "SD1" or
+        "SDXL"; "SVD" exists but Spellcaster doesn't do SVD.
+        Outputs: [0]=SIGMAS — wire to SamplerCustomAdvanced.sigmas.
+        """
+        return self._add("AlignYourStepsScheduler", {
+            "model_type": model_type, "steps": steps, "denoise": denoise,
+        }, node_id)
+
     # ═══════════════════════════════════════════════════════════════════
     #  FLUX2KLEIN-ENHANCER (OPTIONAL — from Sarcastic TOFU node pack)
     # ═══════════════════════════════════════════════════════════════════

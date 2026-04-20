@@ -254,6 +254,214 @@ def case_outpaint_klein_untouched():
     assert count(g, "PerturbedAttentionGuidance") == 0
 
 
+# --- Secondary Klein-capable builders (non-Klein branches) ---------------
+# The six builders below have a Klein dispatch we already cover, plus a
+# non-Klein branch that runs plain KSampler. Those branches now pick up
+# the quality + Flux1 boosters when called with a non-Klein preset.
+
+def case_detail_hallucinate_sdxl_balanced():
+    g = workflows.build_detail_hallucinate(
+        "in.png", "4x-UltraSharp.pth", SDXL_PRESET,
+        "sharper", "", 1, denoise=0.4, cfg=8.0, quality="balanced")
+    assert count(g, "PerturbedAttentionGuidance") == 1
+    assert count(g, "RescaleCFG") == 1
+
+
+def case_detail_hallucinate_flux1_foundational():
+    g = workflows.build_detail_hallucinate(
+        "in.png", "4x-UltraSharp.pth", FLUX1_PRESET,
+        "sharper", "", 1, denoise=0.4, cfg=3.5, quality="fast")
+    # Foundational boosters on Flux1 fire regardless of quality=fast.
+    assert count(g, "FluxGuidance") == 1
+    assert count(g, "ModelSamplingFlux") == 1
+
+
+def case_detail_hallucinate_klein_no_quality_boost():
+    g = workflows.build_detail_hallucinate(
+        "in.png", "4x-UltraSharp.pth", KLEIN_PRESET,
+        "sharper", "", 1, denoise=0.4, cfg=1.0, quality="max")
+    assert count(g, "PerturbedAttentionGuidance") == 0
+    assert count(g, "FreeU_V2") == 0
+
+
+def case_colorize_sdxl_balanced():
+    g = workflows.build_colorize(
+        "in.png", SDXL_PRESET, "colorful", "", 1,
+        controlnet_strength=0.8, denoise=0.55, cfg=8.0, quality="balanced")
+    assert count(g, "PerturbedAttentionGuidance") == 1
+    assert count(g, "RescaleCFG") == 1
+
+
+def case_colorize_flux1_wraps_cn_conditioning():
+    """FluxGuidance on colorize wraps the CN-augmented positive, not the
+    raw CLIP output — the graph should still have exactly ONE FluxGuidance
+    fed from the ControlNetApplyAdvanced output."""
+    g = workflows.build_colorize(
+        "in.png", FLUX1_PRESET, "colorful", "", 1,
+        controlnet_strength=0.8, denoise=0.55, cfg=3.5, quality="balanced")
+    fg_nodes = [n for n in g.values() if n["class_type"] == "FluxGuidance"]
+    assert len(fg_nodes) == 1
+    model_in = fg_nodes[0]["inputs"]["conditioning"]
+    # Input should be a ref pointing at a ControlNet apply node, not raw
+    # CLIPTextEncode. Walk: model_in = [node_id, slot]. The node at
+    # model_in[0] should be ControlNetApplyAdvanced.
+    src_node = g[model_in[0]]
+    assert src_node["class_type"] == "ControlNetApplyAdvanced", (
+        f"FluxGuidance should consume CN-apply output; got {src_node['class_type']}")
+
+
+def case_controlnet_gen_sdxl_balanced():
+    g = workflows.build_controlnet_gen(
+        "in.png", "CannyEdgePreprocessor",
+        "SDXL\\controlnet-canny-sdxl-1.0.safetensors",
+        SDXL_PRESET, "a castle", "", 1,
+        width=1024, height=1024, steps=20, cfg=8.0,
+        sampler="euler", scheduler="normal", quality="balanced")
+    assert count(g, "PerturbedAttentionGuidance") == 1
+    assert count(g, "RescaleCFG") == 1
+
+
+def case_faceid_sdxl_chain_after_ipa():
+    """Quality boost on faceid_img2img must chain AFTER the IPAdapter
+    FaceID node so the sampler sees: loader -> FaceID -> PAG/... -> sampler.
+    """
+    g = workflows.build_faceid_img2img(
+        "target.png", "face.png", SDXL_PRESET,
+        "a portrait", "", 1, denoise=0.6, steps=20, cfg=8.0,
+        quality="balanced")
+    assert count(g, "PerturbedAttentionGuidance") == 1
+    # The PAG node's model input should trace back to the IPAdapter node (4),
+    # either directly or through a chain.
+    pag_node = next(n for n in g.values()
+                    if n["class_type"] == "PerturbedAttentionGuidance")
+    model_in = pag_node["inputs"]["model"]
+    # PAG input is always a single ref since it's the first in the quality
+    # chain for faceid (no ModelSamplingFlux/etc on SDXL).
+    assert model_in == ["4", 0], (
+        f"PAG should consume the IPAdapter FaceID output (node 4); got {model_in}")
+
+
+def case_style_transfer_flux1_pag_and_foundational():
+    g = workflows.build_style_transfer(
+        "target.png", "style.png", FLUX1_PRESET,
+        "match style", "", 1, weight=0.8, denoise=0.6, quality="balanced")
+    assert count(g, "FluxGuidance") == 1
+    assert count(g, "ModelSamplingFlux") == 1
+    assert count(g, "PerturbedAttentionGuidance") == 1
+
+
+def case_seedv2r_sdxl_balanced():
+    g = workflows.build_seedv2r(
+        "in.png", "4x-UltraSharp.pth", SDXL_PRESET,
+        "sharp", "", 1, denoise=0.5, cfg=8.0, steps=20,
+        scale_factor=2.0, orig_width=512, orig_height=512,
+        quality="balanced")
+    assert count(g, "PerturbedAttentionGuidance") == 1
+    assert count(g, "RescaleCFG") == 1
+
+
+def case_seedv2r_zit_no_boosters():
+    g = workflows.build_seedv2r(
+        "in.png", "4x-UltraSharp.pth", ZIT_PRESET,
+        "sharp", "", 1, denoise=0.5, cfg=1.5, steps=6,
+        scale_factor=2.0, orig_width=512, orig_height=512,
+        quality="max")
+    assert count(g, "PerturbedAttentionGuidance") == 0
+    assert count(g, "FreeU_V2") == 0
+
+
+# --- AlignYourStepsScheduler (AYS) at quality="max" -----------------------
+# AYS replaces the single-node KSampler with a 5-node custom-advanced
+# pipeline. Only fires on sd15/sdxl/illustrious at max quality.
+
+def _sampler_is_custom_advanced(graph):
+    return count(graph, "SamplerCustomAdvanced") >= 1
+
+
+def _sampler_is_plain_ksampler(graph):
+    return count(graph, "KSampler") >= 1 and count(graph, "SamplerCustomAdvanced") == 0
+
+
+def case_ays_fires_img2img_sdxl_max():
+    g = workflows.build_img2img("in.png", SDXL_PRESET, "cat", "", 1,
+                                 quality="max")
+    assert count(g, "AlignYourStepsScheduler") == 1
+    assert _sampler_is_custom_advanced(g)
+
+
+def case_ays_fires_txt2img_sdxl_max():
+    g = workflows.build_txt2img(SDXL_PRESET, "cat", "", 1, quality="max")
+    assert count(g, "AlignYourStepsScheduler") == 1
+    assert _sampler_is_custom_advanced(g)
+
+
+def case_ays_fires_inpaint_sd15_max():
+    g = workflows.build_inpaint("in.png", "mask.png", SD15_PRESET,
+                                 "fix", "", 1, quality="max")
+    ays_node = next(n for n in g.values()
+                    if n["class_type"] == "AlignYourStepsScheduler")
+    # SD1.5 gets model_type="SD1" (the node's only option besides SDXL).
+    assert ays_node["inputs"]["model_type"] == "SD1"
+
+
+def case_ays_fires_inpaint_sdxl_max():
+    g = workflows.build_inpaint("in.png", "mask.png", SDXL_PRESET,
+                                 "fix", "", 1, quality="max")
+    ays_node = next(n for n in g.values()
+                    if n["class_type"] == "AlignYourStepsScheduler")
+    assert ays_node["inputs"]["model_type"] == "SDXL"
+
+
+def case_ays_illustrious_uses_sdxl_type():
+    g = workflows.build_txt2img(ILLUSTRIOUS_PRESET, "anime", "", 1,
+                                 quality="max")
+    ays_node = next(n for n in g.values()
+                    if n["class_type"] == "AlignYourStepsScheduler")
+    assert ays_node["inputs"]["model_type"] == "SDXL"
+
+
+def case_ays_balanced_keeps_plain_ksampler():
+    g = workflows.build_img2img("in.png", SDXL_PRESET, "cat", "", 1,
+                                 quality="balanced")
+    assert count(g, "AlignYourStepsScheduler") == 0
+    assert _sampler_is_plain_ksampler(g)
+
+
+def case_ays_skips_flux1_even_at_max():
+    """Flux has no AYS sigma table. Quality=max on Flux1 should still
+    use plain KSampler (with Flux boosters + PAG on the model side),
+    not the AYS chain."""
+    g = workflows.build_img2img("in.png", FLUX1_PRESET, "dragon", "", 1,
+                                 quality="max")
+    assert count(g, "AlignYourStepsScheduler") == 0
+    assert _sampler_is_plain_ksampler(g)
+
+
+def case_ays_skips_zit_even_at_max():
+    g = workflows.build_txt2img(ZIT_PRESET, "photo", "", 1, quality="max")
+    assert count(g, "AlignYourStepsScheduler") == 0
+    assert _sampler_is_plain_ksampler(g)
+
+
+def case_ays_skips_klein():
+    """Klein has its own custom-advanced pipeline with enhancer +
+    CFGGuider; the AYS path is gated off at source. The graph still
+    contains a SamplerCustomAdvanced (from Klein's own builder) but NO
+    AlignYourStepsScheduler — Klein uses BasicScheduler instead."""
+    g = workflows.build_img2img("in.png", KLEIN_PRESET, "cat", "", 1,
+                                 quality="max")
+    assert count(g, "AlignYourStepsScheduler") == 0
+    # Klein's own SamplerCustomAdvanced may be present — that's expected.
+
+
+def case_ays_outpaint_sdxl_max():
+    g = workflows.build_outpaint("in.png", SDXL_PRESET, "", "", 1,
+                                  left=32, top=0, right=32, bottom=0,
+                                  feathering=10, quality="max")
+    assert count(g, "AlignYourStepsScheduler") == 1
+    assert _sampler_is_custom_advanced(g)
+
+
 # --- Runner ---------------------------------------------------------------
 
 CASES = [
@@ -278,6 +486,28 @@ CASES = [
 
     ("outpaint | sdxl DiffDiff + PAG",                 case_outpaint_sdxl_differential_and_pag),
     ("outpaint | klein untouched",                     case_outpaint_klein_untouched),
+
+    ("detail_hallucinate | sdxl balanced",             case_detail_hallucinate_sdxl_balanced),
+    ("detail_hallucinate | flux1 foundational",        case_detail_hallucinate_flux1_foundational),
+    ("detail_hallucinate | klein no quality boost",    case_detail_hallucinate_klein_no_quality_boost),
+    ("colorize           | sdxl balanced",             case_colorize_sdxl_balanced),
+    ("colorize           | flux1 wraps CN cond",       case_colorize_flux1_wraps_cn_conditioning),
+    ("controlnet_gen     | sdxl balanced",             case_controlnet_gen_sdxl_balanced),
+    ("faceid_img2img     | sdxl PAG after IPA",        case_faceid_sdxl_chain_after_ipa),
+    ("style_transfer     | flux1 foundational + PAG",  case_style_transfer_flux1_pag_and_foundational),
+    ("seedv2r            | sdxl balanced",             case_seedv2r_sdxl_balanced),
+    ("seedv2r            | zit max skips boosters",    case_seedv2r_zit_no_boosters),
+
+    ("AYS | img2img sdxl max fires",                   case_ays_fires_img2img_sdxl_max),
+    ("AYS | txt2img sdxl max fires",                   case_ays_fires_txt2img_sdxl_max),
+    ("AYS | inpaint sd15 max uses SD1 type",           case_ays_fires_inpaint_sd15_max),
+    ("AYS | inpaint sdxl max uses SDXL type",          case_ays_fires_inpaint_sdxl_max),
+    ("AYS | illustrious uses SDXL type",               case_ays_illustrious_uses_sdxl_type),
+    ("AYS | balanced keeps plain KSampler",            case_ays_balanced_keeps_plain_ksampler),
+    ("AYS | skips flux1 at max",                       case_ays_skips_flux1_even_at_max),
+    ("AYS | skips zit at max",                         case_ays_skips_zit_even_at_max),
+    ("AYS | skips klein (own pipeline)",               case_ays_skips_klein),
+    ("AYS | outpaint sdxl max fires",                  case_ays_outpaint_sdxl_max),
 ]
 
 
