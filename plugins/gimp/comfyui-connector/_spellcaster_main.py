@@ -7148,6 +7148,25 @@ def _import_result_as_layer(image, image_data, layer_name="ComfyUI Result",
             pass  # best-effort; insert_layer will fail with a clear error
 
     layers = result_image.get_layers()  # re-fetch after conversion
+
+    # Upscaler auto-route: if the result is larger than the canvas on either
+    # axis, open it as its own GIMP image instead of squashing it down to
+    # fit a layer. Scale-to-fit here would throw away the whole point of
+    # the upscale pass. Same-size / smaller results fall through to the
+    # in-place layer path (so z1 "enhance only" detail passes, img2img,
+    # inpaint etc. still overlay on the original canvas).
+    rw = layers[0].get_width()
+    rh = layers[0].get_height()
+    if not keep_size and (rw > image.get_width() or rh > image.get_height()):
+        try:
+            layers[0].set_name(layer_name)
+        except Exception:
+            pass
+        Gimp.Display.new(result_image)
+        Gimp.displays_flush()
+        os.unlink(tmp.name)
+        return None
+
     new_layer = Gimp.Layer.new_from_drawable(layers[0], image)
     new_layer.set_name(layer_name)
     image.insert_layer(new_layer, None, 0)
