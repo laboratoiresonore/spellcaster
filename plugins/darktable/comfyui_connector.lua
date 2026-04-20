@@ -4305,6 +4305,125 @@ local function process_klein_repose(image, klein_model_label, prompt, denoise)
   dt.print(string.format(_("Klein re-pose done — %d image(s) imported"), imported))
 end
 
+-- ── Klein Head Swap (canonical) ────────────────────────────────────────
+-- ReActor face swap → Klein img2img refinement. The two stages are
+-- chained inside spellcaster_core.workflows.build_klein_headswap so we
+-- just hand it both filenames + the model key. ``source`` is the face
+-- to insert; ``target`` is the photo whose head gets replaced.
+local function process_klein_headswap(image, source_path, klein_model_label,
+                                       prompt, denoise)
+  local server = get_server()
+
+  dt.print(_("Exporting target for Klein head swap..."))
+  local path, fname = export_to_temp(image)
+  if not path then dt.print(_("Export failed")); return end
+
+  dt.print(_("Uploading target to ComfyUI..."))
+  local tgt_name = "dt_khs_tgt_" .. os.time() .. "_" .. math.random(10000, 99999) .. ".png"
+  curl_upload(server .. "/upload/image", path, tgt_name)
+  os.remove(path)
+
+  dt.print(_("Uploading source face..."))
+  local src_name = "dt_khs_src_" .. os.time() .. "_" .. math.random(10000, 99999) .. ".png"
+  curl_upload(server .. "/upload/image", source_path, src_name)
+
+  local seed = math.random(1, 2^31 - 1)
+  local params = string.format(
+    '{"target_filename":"%s","source_filename":"%s","prompt":"%s",'
+    .. '"seed":%d,"klein_model_key":"%s","denoise":%.2f,"enhance":true}',
+    json_escape(tgt_name),
+    json_escape(src_name),
+    json_escape(prompt or ""),
+    seed,
+    json_escape(klein_model_label or "Klein 9B"),
+    denoise or 0.35)
+
+  dt.print(_("Klein head swap running (ReActor + Klein refine)..."))
+  local urls, err = _run_builder("build_klein_headswap", params)
+  if not urls then dt.print(_("Klein head swap failed: ") .. tostring(err)); return end
+  if #urls == 0 then dt.print(_("Klein head swap returned no images")); return end
+  local imported = _download_guild_assets(urls, "klein_headswap")
+  dt.print(string.format(_("Klein head swap done — %d image(s) imported"), imported))
+end
+
+-- ── Klein img2img with reference (canonical) ───────────────────────────
+-- Uses the reference image as the ReferenceLatent source rather than
+-- the input itself — soft style/lighting/structure guidance from a
+-- separate photo while editing the main image. ref_strength 1.0 =
+-- strong influence, 0.4 = subtle nudge.
+local function process_klein_img2img_ref(image, ref_path, klein_model_label,
+                                          prompt, denoise, ref_strength)
+  local server = get_server()
+
+  dt.print(_("Exporting for Klein img2img+ref..."))
+  local path, fname = export_to_temp(image)
+  if not path then dt.print(_("Export failed")); return end
+
+  dt.print(_("Uploading image to ComfyUI..."))
+  local img_name = "dt_kref_img_" .. os.time() .. "_" .. math.random(10000, 99999) .. ".png"
+  curl_upload(server .. "/upload/image", path, img_name)
+  os.remove(path)
+
+  dt.print(_("Uploading reference..."))
+  local ref_name = "dt_kref_ref_" .. os.time() .. "_" .. math.random(10000, 99999) .. ".png"
+  curl_upload(server .. "/upload/image", ref_path, ref_name)
+
+  local seed = math.random(1, 2^31 - 1)
+  local params = string.format(
+    '{"image_filename":"%s","ref_filename":"%s","prompt_text":"%s",'
+    .. '"seed":%d,"klein_model_key":"%s","denoise":%.2f,'
+    .. '"ref_strength":%.2f,"enhance":true}',
+    json_escape(img_name),
+    json_escape(ref_name),
+    json_escape(prompt or ""),
+    seed,
+    json_escape(klein_model_label or "Klein 9B"),
+    denoise or 0.65,
+    ref_strength or 1.0)
+
+  dt.print(_("Klein img2img+ref running..."))
+  local urls, err = _run_builder("build_klein_img2img_ref", params)
+  if not urls then dt.print(_("Klein img2img+ref failed: ") .. tostring(err)); return end
+  if #urls == 0 then dt.print(_("Klein img2img+ref returned no images")); return end
+  local imported = _download_guild_assets(urls, "klein_img2img_ref")
+  dt.print(string.format(_("Klein img2img+ref done — %d image(s) imported"), imported))
+end
+
+-- ── Upscale Blend (canonical) ──────────────────────────────────────────
+-- Run two upscaler models in parallel and blend the outputs. Useful
+-- when one model is sharp-but-crunchy (e.g. RealESRGAN) and the other
+-- is smooth-but-soft (e.g. Remacri) — the blend gives a tunable
+-- middle ground.
+local function process_upscale_blend(image, model_a_file, model_b_file,
+                                      blend_factor, scale_by)
+  local server = get_server()
+
+  dt.print(_("Exporting for upscale blend..."))
+  local path, fname = export_to_temp(image)
+  if not path then dt.print(_("Export failed")); return end
+
+  dt.print(_("Uploading to ComfyUI..."))
+  local img_name = "dt_ublend_" .. os.time() .. "_" .. math.random(10000, 99999) .. ".png"
+  curl_upload(server .. "/upload/image", path, img_name)
+  os.remove(path)
+
+  local params = string.format(
+    '{"image_filename":"%s","model_a_name":"%s","model_b_name":"%s",'
+    .. '"blend_factor":%.2f,"scale_by":%.2f}',
+    json_escape(img_name),
+    json_escape(model_a_file or ""),
+    json_escape(model_b_file or ""),
+    blend_factor or 0.5,
+    scale_by or 1.0)
+
+  dt.print(_("Upscale blend running..."))
+  local urls, err = _run_builder("build_upscale_blend", params)
+  if not urls then dt.print(_("Upscale blend failed: ") .. tostring(err)); return end
+  if #urls == 0 then dt.print(_("Upscale blend returned no images")); return end
+  local imported = _download_guild_assets(urls, "upscale_blend")
+  dt.print(string.format(_("Upscale blend done — %d image(s) imported"), imported))
+end
+
 -- ── Color Grading / LUT processing ────────────────────────────────────
 local function process_lut(image, lut_file, strength)
   local server = get_server()
@@ -7338,6 +7457,176 @@ local klein_repose_send_btn = dt.new_widget("button") {
   end
 }
 
+-- Klein Head Swap controls
+local klein_headswap_source_entry = dt.new_widget("entry") {
+  text = "",
+  placeholder = _("Path to source face image..."),
+  tooltip = _("PNG/JPG of the face you want to swap INTO the selected target image"),
+  editable = true,
+}
+
+local klein_headswap_prompt_entry = dt.new_widget("entry") {
+  text = "",
+  placeholder = _("Optional refinement prompt (e.g. 'natural skin, studio lighting')..."),
+  tooltip = _("Klein refinement prompt — leave empty for a neutral blend"),
+  editable = true,
+}
+
+local klein_headswap_denoise_slider = dt.new_widget("slider") {
+  label = _("Refine denoise"),
+  tooltip = _("Klein refinement strength after ReActor swap. 0.20 = subtle blend, 0.45 = stronger smoothing."),
+  soft_min = 0.10, soft_max = 0.60,
+  hard_min = 0.05, hard_max = 0.95,
+  step = 0.02, digits = 2, value = 0.35,
+}
+
+local klein_headswap_send_btn = dt.new_widget("button") {
+  label = _("Klein Head Swap"),
+  tooltip = _("ReActor face swap + Klein refinement (canonical workflow via the Guild)"),
+  clicked_callback = function()
+    local images = dt.gui.selection()
+    if #images == 0 then dt.print(_("No images selected")); return end
+    if #images > 1 then dt.print(_("Klein head swap processes one image at a time — using first selected")); end
+    local src = klein_headswap_source_entry.text
+    if not src or src == "" then dt.print(_("Enter source face image path first")); return end
+    local sf = io.open(src, "r")
+    if not sf then dt.print(_("Source face image not found: ") .. src); return end
+    sf:close()
+    local model_idx = klein_model_selector.selected or 1
+    local model_label = KLEIN_MODELS[model_idx] and KLEIN_MODELS[model_idx].label or "Klein 9B"
+    local prompt = klein_headswap_prompt_entry.text or ""
+    local denoise = klein_headswap_denoise_slider.value
+    local ok, err = pcall(process_klein_headswap, images[1], src, model_label, prompt, denoise)
+    if not ok then
+      dt.print(_("Error: ") .. tostring(err))
+      dt.print_error("Spellcaster Klein head swap error: " .. tostring(err))
+    end
+  end
+}
+
+-- Klein img2img with reference controls
+local klein_img2img_ref_path_entry = dt.new_widget("entry") {
+  text = "",
+  placeholder = _("Path to reference image (lighting / mood / style guide)..."),
+  tooltip = _("PNG/JPG used as soft style + structure guidance via Klein's ReferenceLatent"),
+  editable = true,
+}
+
+local klein_img2img_ref_prompt_entry = dt.new_widget("entry") {
+  text = "",
+  placeholder = _("Edit prompt (what should change in the main image)..."),
+  tooltip = _("Klein img2img with reference — natural language prompt"),
+  editable = true,
+}
+
+local klein_img2img_ref_denoise_slider = dt.new_widget("slider") {
+  label = _("Denoise"),
+  tooltip = _("How far the result drifts from the input. 0.4 = subtle, 0.8 = bold."),
+  soft_min = 0.30, soft_max = 0.95,
+  hard_min = 0.10, hard_max = 1.00,
+  step = 0.02, digits = 2, value = 0.65,
+}
+
+local klein_img2img_ref_strength_slider = dt.new_widget("slider") {
+  label = _("Reference strength"),
+  tooltip = _("How strongly the reference influences the output. 1.0 = strong guide, 0.4 = soft hint."),
+  soft_min = 0.20, soft_max = 1.50,
+  hard_min = 0.10, hard_max = 2.00,
+  step = 0.05, digits = 2, value = 1.0,
+}
+
+local klein_img2img_ref_send_btn = dt.new_widget("button") {
+  label = _("Klein img2img + Ref"),
+  tooltip = _("Edit while matching a reference image's lighting/structure (canonical workflow via the Guild)"),
+  clicked_callback = function()
+    local images = dt.gui.selection()
+    if #images == 0 then dt.print(_("No images selected")); return end
+    if #images > 1 then dt.print(_("Klein img2img+ref processes one image at a time — using first selected")); end
+    local refp = klein_img2img_ref_path_entry.text
+    if not refp or refp == "" then dt.print(_("Enter reference image path first")); return end
+    local rf = io.open(refp, "r")
+    if not rf then dt.print(_("Reference image not found: ") .. refp); return end
+    rf:close()
+    local prompt = klein_img2img_ref_prompt_entry.text or ""
+    if prompt == "" then dt.print(_("Enter a prompt describing the edit")); return end
+    local model_idx = klein_model_selector.selected or 1
+    local model_label = KLEIN_MODELS[model_idx] and KLEIN_MODELS[model_idx].label or "Klein 9B"
+    local denoise = klein_img2img_ref_denoise_slider.value
+    local refs = klein_img2img_ref_strength_slider.value
+    local ok, err = pcall(process_klein_img2img_ref, images[1], refp, model_label,
+                          prompt, denoise, refs)
+    if not ok then
+      dt.print(_("Error: ") .. tostring(err))
+      dt.print_error("Spellcaster Klein img2img+ref error: " .. tostring(err))
+    end
+  end
+}
+
+-- Hybrid Upscale Blend controls
+-- Reuses the existing UPSCALE_MODELS table (line ~2033). Two combos
+-- for the two models, one slider for the mix.
+local upscale_blend_model_a_selector = dt.new_widget("combobox") {
+  label = _("Upscale model A"),
+  tooltip = _("First upscaler — typically the sharper one"),
+  selected = 1,
+  UPSCALE_MODELS[1].label,
+  UPSCALE_MODELS[2].label,
+  UPSCALE_MODELS[3].label,
+  UPSCALE_MODELS[4].label,
+  UPSCALE_MODELS[5].label,
+}
+
+local upscale_blend_model_b_selector = dt.new_widget("combobox") {
+  label = _("Upscale model B"),
+  tooltip = _("Second upscaler — typically the smoother one"),
+  selected = 4,
+  UPSCALE_MODELS[1].label,
+  UPSCALE_MODELS[2].label,
+  UPSCALE_MODELS[3].label,
+  UPSCALE_MODELS[4].label,
+  UPSCALE_MODELS[5].label,
+}
+
+local upscale_blend_factor_slider = dt.new_widget("slider") {
+  label = _("Blend (A→B)"),
+  tooltip = _("0.0 = pure A, 1.0 = pure B, 0.5 = even mix"),
+  soft_min = 0.0, soft_max = 1.0,
+  hard_min = 0.0, hard_max = 1.0,
+  step = 0.05, digits = 2, value = 0.5,
+}
+
+local upscale_blend_scale_slider = dt.new_widget("slider") {
+  label = _("Scale by"),
+  tooltip = _("Final downscale relative to the upscaler's native output. 1.0 keeps the full 4x; 0.5 halves it."),
+  soft_min = 0.25, soft_max = 1.0,
+  hard_min = 0.10, hard_max = 1.0,
+  step = 0.05, digits = 2, value = 1.0,
+}
+
+local upscale_blend_send_btn = dt.new_widget("button") {
+  label = _("Hybrid Upscale (Blend)"),
+  tooltip = _("Run two upscalers in parallel and blend the outputs (canonical workflow via the Guild)"),
+  clicked_callback = function()
+    local images = dt.gui.selection()
+    if #images == 0 then dt.print(_("No images selected")); return end
+    local a_idx = upscale_blend_model_a_selector.selected or 1
+    local b_idx = upscale_blend_model_b_selector.selected or 4
+    local a_file = UPSCALE_MODELS[a_idx] and UPSCALE_MODELS[a_idx].file
+    local b_file = UPSCALE_MODELS[b_idx] and UPSCALE_MODELS[b_idx].file
+    if not a_file or not b_file then dt.print(_("Invalid upscale model selection")); return end
+    local blend = upscale_blend_factor_slider.value
+    local scale = upscale_blend_scale_slider.value
+    for i, img in ipairs(images) do
+      dt.print(string.format(_("Upscale blend %d/%d"), i, #images))
+      local ok, err = pcall(process_upscale_blend, img, a_file, b_file, blend, scale)
+      if not ok then
+        dt.print(_("Error: ") .. tostring(err))
+        dt.print_error("Spellcaster upscale blend error: " .. tostring(err))
+      end
+    end
+  end
+}
+
 -- ═══════════════════════════════════════════════════════════════════════
 -- Color Grading / LUT GUI widgets
 -- ═══════════════════════════════════════════════════════════════════════
@@ -9057,6 +9346,28 @@ local module_widget = dt.new_widget("box") {
   klein_repose_prompt_entry,
   klein_repose_denoise_slider,
   klein_repose_send_btn,
+  dt.new_widget("label") { label = _("Head swap source face path:") },
+  klein_headswap_source_entry,
+  dt.new_widget("label") { label = _("Head swap refine prompt:") },
+  klein_headswap_prompt_entry,
+  klein_headswap_denoise_slider,
+  klein_headswap_send_btn,
+  dt.new_widget("label") { label = _("img2img reference image path:") },
+  klein_img2img_ref_path_entry,
+  dt.new_widget("label") { label = _("img2img+ref prompt:") },
+  klein_img2img_ref_prompt_entry,
+  klein_img2img_ref_denoise_slider,
+  klein_img2img_ref_strength_slider,
+  klein_img2img_ref_send_btn,
+  dt.new_widget("separator") {},
+
+  -- Hybrid Upscale Blend (canonical builder via the Guild)
+  dt.new_widget("label") { label = _("\xe2\x9c\xa6 HYBRID UPSCALE BLEND") },
+  upscale_blend_model_a_selector,
+  upscale_blend_model_b_selector,
+  upscale_blend_factor_slider,
+  upscale_blend_scale_slider,
+  upscale_blend_send_btn,
   dt.new_widget("separator") {},
 
   -- Color Grading / LUT section
