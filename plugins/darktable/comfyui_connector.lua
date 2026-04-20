@@ -1119,6 +1119,131 @@ local function get_guild_url()
   return dt.preferences.read(MODULE_NAME, "guild_url", "string")
 end
 
+-- ── ComfyUI-side presence (phase-9) ────────────────────────────────
+--
+-- Zero-config cross-app discovery. Each plugin registers itself with
+-- the ComfyUI-Spellcaster custom-nodes pack's /spellcaster/presence/*
+-- routes so sibling plugins (GIMP, SillyTavern, Resolve) discover
+-- Darktable WITHOUT needing the Wizard Guild. Presence is
+-- best-effort; a Guild heartbeat still runs below for the richer
+-- record when the Guild IS up.
+-- Short, LAN-safe hostname so the broker can disambiguate the same
+-- plugin kind running on multiple machines. Lua has no portable
+-- os.hostname, so we shell out once at script load and cache.
+local function _dt_hostname()
+  local f = io.popen(package.config:sub(1,1) == "\\" and "hostname" or "uname -n")
+  if not f then return "dt-host" end
+  local h = f:read("*l") or ""
+  f:close()
+  h = (h or ""):gsub("%s+$", ""):gsub("%..*$", "")  -- trim + short form
+  -- Keep the broker's _safe_host charset happy.
+  h = h:gsub("[^%w%-_]", "")
+  if h == "" then return "dt-host" end
+  return h:sub(1, 64)
+end
+
+local DARKTABLE_HOST = _dt_hostname()
+local DARKTABLE_PRESENCE_META = {
+  key = "darktable",
+  label = "Darktable",
+  icon = "📷",
+  version = "2.0.0",
+  capabilities = { "send_image", "receive_image", "raw_edit" },
+  host = DARKTABLE_HOST,
+  instance_id = "darktable@" .. DARKTABLE_HOST,
+}
+
+-- Fire-and-forget POST via curl. Guards: 2s timeout; stdout+stderr
+-- swallowed so a missing route / ComfyUI-down doesn't flood the log.
+local function _comfy_presence_post(endpoint, body_str)
+  local comfy = get_server()
+  if not comfy or comfy == "" then return end
+  local tmp = _unique_tmp("dt_presence", ".json")
+  local f = io.open(tmp, "w"); if not f then return end
+  f:write(body_str); f:close()
+  local cmd
+  if package.config:sub(1,1) == "\\" then
+    cmd = string.format(
+      'curl -s --max-time 2 -X POST -H "Content-Type: application/json" --data-binary "@%s" "%s%s" -o NUL 2>NUL',
+      shell_esc(tmp), shell_esc(comfy), shell_esc(endpoint))
+  else
+    cmd = string.format(
+      'curl -s --max-time 2 -X POST -H "Content-Type: application/json" --data-binary "@%s" "%s%s" -o /dev/null 2>/dev/null',
+      shell_esc(tmp), shell_esc(comfy), shell_esc(endpoint))
+  end
+  os.execute(cmd)
+  os.remove(tmp)
+end
+
+local function comfy_presence_register()
+  -- Caps list as JSON array
+  local caps_json = '["' .. table.concat(DARKTABLE_PRESENCE_META.capabilities, '","') .. '"]'
+  local body = string.format(
+    '{"key":"%s","label":"%s","icon":"%s","version":"%s","capabilities":%s,"host":"%s","instance_id":"%s"}',
+    DARKTABLE_PRESENCE_META.key,
+    DARKTABLE_PRESENCE_META.label,
+    DARKTABLE_PRESENCE_META.icon,
+    DARKTABLE_PRESENCE_META.version,
+    caps_json,
+    DARKTABLE_PRESENCE_META.host,
+    DARKTABLE_PRESENCE_META.instance_id)
+  _comfy_presence_post("/spellcaster/presence/register", body)
+end
+
+local function comfy_presence_heartbeat()
+  _comfy_presence_post("/spellcaster/presence/heartbeat",
+    string.format('{"key":"%s","host":"%s","instance_id":"%s"}',
+      DARKTABLE_PRESENCE_META.key,
+      DARKTABLE_PRESENCE_META.host,
+      DARKTABLE_PRESENCE_META.instance_id))
+end
+
+-- Query siblings. Returns a list of peer tables; empty on failure
+-- (ComfyUI down, pack too old, etc.). Does NOT merge Guild data here —
+-- the existing guild_active_peers() helper handles the Guild side so
+-- callers decide which union they want.
+local function comfy_presence_list()
+  local comfy = get_server()
+  if not comfy or comfy == "" then return {} end
+  local tmp = _unique_tmp("dt_peers", ".json")
+  local cmd
+  if package.config:sub(1,1) == "\\" then
+    cmd = string.format(
+      'curl -s --max-time 2 "%s/spellcaster/presence/list" -o "%s" 2>NUL',
+      shell_esc(comfy), shell_esc(tmp))
+  else
+    cmd = string.format(
+      'curl -s --max-time 2 "%s/spellcaster/presence/list" -o "%s" 2>/dev/null',
+      shell_esc(comfy), shell_esc(tmp))
+  end
+  os.execute(cmd)
+  local f = io.open(tmp, "r")
+  if not f then return {} end
+  local body = f:read("*all"); f:close(); os.remove(tmp)
+  if not body or body == "" then return {} end
+  -- Minimal JSON-object extraction — Lua has no stdlib JSON. We pull
+  -- each peer's key + label with a targeted pattern. Good enough for
+  -- a menu render; callers should treat the returned list as advisory.
+  local peers = {}
+  for obj in body:gmatch('%b{}') do
+    local key = obj:match('"key"%s*:%s*"([^"]+)"')
+    local label = obj:match('"label"%s*:%s*"([^"]+)"') or key
+    local icon = obj:match('"icon"%s*:%s*"([^"]*)"') or ""
+    local host = obj:match('"host"%s*:%s*"([^"]*)"') or ""
+    local instance_id = obj:match('"instance_id"%s*:%s*"([^"]+)"') or key
+    -- Filter out only OUR own instance_id, not every Darktable entry —
+    -- another Darktable on the LAN is a real peer worth listing.
+    if instance_id and instance_id ~= DARKTABLE_PRESENCE_META.instance_id then
+      table.insert(peers, {
+        key = key, label = label, icon = icon,
+        host = host, instance_id = instance_id,
+      })
+    end
+  end
+  return peers
+end
+
+
 local function guild_heartbeat(meta_pairs)
   -- meta_pairs: optional flat k=v list, e.g. { active_image = "photo.raw" }
   local guild = get_guild_url()
@@ -10059,5 +10184,14 @@ if _apply_theme then pcall(install_spellcaster_theme) end
 -- and Darktable stays out of the Guild's active-interface list — no
 -- "dead function" chips appear in the Guild UI.
 pcall(guild_heartbeat, { active_view = "lighttable" })
+
+-- Also register with ComfyUI-Spellcaster's presence broker. Zero-
+-- config cross-app discovery: GIMP / SillyTavern / Resolve see
+-- Darktable listed WITHOUT needing the Guild running. Register once
+-- + heartbeat on the same cadence Darktable uses for Guild
+-- (opportunistic — Lua has no timer; each user action that
+-- heartbeats refreshes presence TTL).
+pcall(comfy_presence_register)
+pcall(comfy_presence_heartbeat)
 
 return script_data
