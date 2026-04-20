@@ -181,6 +181,89 @@ def case_every_arch_has_sensible_defaults():
         assert arch.default_scheduler, f"{key}: default_scheduler empty"
 
 
+# ── Builder-level method enforcement ──────────────────────────────────
+
+def _minimal_preset(arch: str) -> dict:
+    """Preset with only the fields the guard inspects. The builders
+    would need more keys to actually run, but we're testing that the
+    guard fires BEFORE any of that matters."""
+    return {"arch": arch, "ckpt": "dummy.safetensors",
+            "width": 512, "height": 512, "steps": 4, "cfg": 3.0,
+            "sampler": "euler", "scheduler": "simple", "denoise": 1.0,
+            "loader": "checkpoint", "clip_name1": "", "clip_name2": "",
+            "clip_type": "", "vae_name": ""}
+
+
+def case_guard_rejects_sd3_stub_on_txt2img():
+    """SD3 is a stub (registered=False, supported_methods=()). Calling
+    build_txt2img with an sd3 preset must raise a clear error BEFORE
+    any workflow assembly — otherwise the user sees a cryptic shape
+    mismatch at sampler time."""
+    from spellcaster_core.workflows import build_txt2img, UnsupportedMethodError
+    raised = False
+    try:
+        build_txt2img(_minimal_preset("sd3"), "a test", "", 0)
+    except UnsupportedMethodError as e:
+        raised = True
+        msg = str(e)
+        assert "sd3" in msg
+        assert "not yet fully scaffolded" in msg or "does not support" in msg
+    assert raised, "build_txt2img should reject sd3 stub"
+
+
+def case_guard_rejects_video_arch_on_img2img():
+    """WAN is a video-only arch. Calling build_img2img with a wan
+    preset must raise because `img2img` isn't in WAN's supported_methods."""
+    from spellcaster_core.workflows import build_img2img, UnsupportedMethodError
+    raised = False
+    try:
+        build_img2img("foo.png", _minimal_preset("wan"), "a test", "", 0)
+    except UnsupportedMethodError as e:
+        raised = True
+        assert "wan" in str(e)
+    assert raised, "build_img2img should reject WAN preset"
+
+
+def case_guard_rejects_image_arch_on_video_gen():
+    """Symmetrical: build_wan_video with an sdxl preset must also
+    raise — sdxl's supported_methods doesn't include video_gen."""
+    from spellcaster_core.workflows import UnsupportedMethodError, _assert_method
+    raised = False
+    try:
+        _assert_method("sdxl", "video_gen")
+    except UnsupportedMethodError:
+        raised = True
+    assert raised, "_assert_method should reject sdxl for video_gen"
+
+
+def case_guard_accepts_sdxl_on_txt2img():
+    """Sanity check: the guard doesn't block legitimate calls."""
+    from spellcaster_core.workflows import _assert_method
+    # Should not raise
+    _assert_method("sdxl", "txt2img")
+    _assert_method("flux1dev", "img2img")
+    _assert_method("wan", "video_gen")
+    _assert_method("flux2klein", "klein_headswap")
+
+
+def case_guard_passes_unknown_arch_for_backward_compat():
+    """An arch key not in the registry should be treated as "unknown
+    capabilities" and pass through — breaking custom/3rd-party archs
+    would be worse than silently dispatching."""
+    from spellcaster_core.workflows import _assert_method
+    _assert_method("my_custom_unknown_arch", "txt2img")  # should not raise
+
+
+def case_guard_ignores_missing_inputs():
+    """No arch or no method → silent pass. Prevents spurious raises
+    from callers that forgot a field."""
+    from spellcaster_core.workflows import _assert_method, _assert_method_for_preset
+    _assert_method("", "txt2img")
+    _assert_method("sdxl", "")
+    _assert_method_for_preset(None, "txt2img")
+    _assert_method_for_preset({}, "txt2img")
+
+
 CASES = [
     ("registry: every detected arch is registered",       case_every_detected_arch_is_registered),
     ("registry: every arch has supported_methods tuple",  case_registered_archs_have_supported_methods),
@@ -195,6 +278,13 @@ CASES = [
     ("fallback: unknown checkpoint uses size hint",       case_unknown_checkpoint_uses_size_hint),
     ("fallback: known-name keywords beat size hint",      case_known_names_beat_size_hint),
     ("sanity: every arch has sensible defaults",          case_every_arch_has_sensible_defaults),
+
+    ("guard: rejects SD3 stub on txt2img",                case_guard_rejects_sd3_stub_on_txt2img),
+    ("guard: rejects video arch on img2img",              case_guard_rejects_video_arch_on_img2img),
+    ("guard: rejects image arch on video_gen",            case_guard_rejects_image_arch_on_video_gen),
+    ("guard: accepts sdxl on txt2img",                    case_guard_accepts_sdxl_on_txt2img),
+    ("guard: unknown arch passes through",                case_guard_passes_unknown_arch_for_backward_compat),
+    ("guard: missing inputs silent-pass",                 case_guard_ignores_missing_inputs),
 ]
 
 
