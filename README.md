@@ -58,63 +58,102 @@
 
 ## Save a day of work, right now
 
-Three things Spellcaster does in one click that most people spend an afternoon (or a whole day) on.
+<p align="center"><em>Three things Spellcaster does in one click that most people spend an afternoon — or a whole day — on.</em></p>
 
-<h3 align="center">🎨 Image models</h3>
-<p align="center">
-  <a href="DEEP_DIVE.md#all-69-tools" title="Flux 2 Klein — 4-step, ref-aware, SOTA photoreal"><img src="https://img.shields.io/badge/Flux%202%20Klein-ffd700?style=flat-square&labelColor=1a1422" alt="Flux 2 Klein"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="Flux 1 Dev — 12B rectified-flow, ControlNet Union Pro"><img src="https://img.shields.io/badge/Flux%201%20Dev-58e0ff?style=flat-square&labelColor=1a1422" alt="Flux 1 Dev"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="Flux Kontext — edit-by-instruction"><img src="https://img.shields.io/badge/Flux%20Kontext-7ad7ff?style=flat-square&labelColor=1a1422" alt="Flux Kontext"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="Chroma — 8B open-weights DiT"><img src="https://img.shields.io/badge/Chroma-ff7ad7?style=flat-square&labelColor=1a1422" alt="Chroma"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="SDXL — the workhorse, every ControlNet works"><img src="https://img.shields.io/badge/SDXL-b470ff?style=flat-square&labelColor=1a1422" alt="SDXL"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="Illustrious — booru-tagged anime/illustration"><img src="https://img.shields.io/badge/Illustrious-ff8fd1?style=flat-square&labelColor=1a1422" alt="Illustrious"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="Pony — score-cascade SDXL finetune"><img src="https://img.shields.io/badge/Pony-ffa8d4?style=flat-square&labelColor=1a1422" alt="Pony"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="Playground — aesthetic SDXL finetune"><img src="https://img.shields.io/badge/Playground-c09bff?style=flat-square&labelColor=1a1422" alt="Playground"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="SD 1.5 — classic, universal LoRA compatibility"><img src="https://img.shields.io/badge/SD%201.5-8aa9ff?style=flat-square&labelColor=1a1422" alt="SD 1.5"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="SDXL Turbo — 6-step distilled"><img src="https://img.shields.io/badge/SDXL%20Turbo-ffb864?style=flat-square&labelColor=1a1422" alt="SDXL Turbo"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="Z-Image Turbo — 6-step, 2B, sharpest distill"><img src="https://img.shields.io/badge/Z%E2%80%91Image%20Turbo-ffef4a?style=flat-square&labelColor=1a1422" alt="Z-Image Turbo"/></a>
-</p>
+<br/>
 
-<h3 align="center">🎬 Video models</h3>
-<p align="center">
-  <a href="DEEP_DIVE.md#all-69-tools" title="Wan 2.2 I2V — 14B image-to-video"><img src="https://img.shields.io/badge/Wan%202.2-10b981?style=flat-square&labelColor=1a1422" alt="Wan 2.2"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="LTX 2.3 — 22B cinematic T2V + I2V"><img src="https://img.shields.io/badge/LTX%202.3-5eead4?style=flat-square&labelColor=1a1422" alt="LTX 2.3"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="SeedVR — temporally consistent video upscale"><img src="https://img.shields.io/badge/SeedVR-34d399?style=flat-square&labelColor=1a1422" alt="SeedVR"/></a>
-</p>
-
-<h3 align="center">🧠 Brains & helpers</h3>
-<p align="center">
-  <a href="DEEP_DIVE.md#all-69-tools" title="SAM 3 — type 'earring' to select the earring"><img src="https://img.shields.io/badge/SAM%203-ff6b9d?style=flat-square&labelColor=1a1422" alt="SAM 3"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="NormalCrafter — 3D normal maps from 2D"><img src="https://img.shields.io/badge/NormalCrafter-9f7aea?style=flat-square&labelColor=1a1422" alt="NormalCrafter"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="IC-Light — surface-aware relighting"><img src="https://img.shields.io/badge/IC%E2%80%91Light-fbbf24?style=flat-square&labelColor=1a1422" alt="IC-Light"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="ReActor + InsightFace — face swap / restore"><img src="https://img.shields.io/badge/ReActor-f472b6?style=flat-square&labelColor=1a1422" alt="ReActor"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="Ollama — local LLM for prompt enhance + scoring"><img src="https://img.shields.io/badge/Ollama-64748b?style=flat-square&labelColor=1a1422&logo=ollama&logoColor=white" alt="Ollama"/></a>
-</p>
-
-<table>
+<!-- ─────────────────────────────────────────────────────────
+     1 / 3  —  Type what to select
+     Image on the LEFT, copy on the right. The two halves are
+     fixed-width columns so image heights stop fighting each
+     other for vertical alignment (the bug users saw: each cell
+     in the old 3-up table had a different image height so the
+     captions drifted wildly up and down in a giant white gutter).
+     ───────────────────────────────────────────────────────── -->
+<table width="100%">
 <tr>
-<td width="33%" align="center" valign="top">
-  <img src="assets/sam3demo.png" alt="AI Select with SAM3 — earring mask" width="100%"/>
-  <br/><br/>
-  <strong>Type what to select</strong><br/>
-  <sub>Open the AI Select tool. Type <code>earring</code> (or <code>hair</code>, or <code>left shoe</code>). SAM3 gives you a perfect mask. No lasso, no quick-mask, no endless zooming. The thing graphics people said saves a day of work.</sub>
+<td width="52%" align="center" valign="middle">
+  <a href="DEEP_DIVE.md#all-69-tools"><img src="assets/sam3demo.png" alt="AI Select with SAM3 — earring mask" width="100%"/></a>
 </td>
-<td width="33%" align="center" valign="top">
-  <img src="assets/showcase_supir.png" alt="SUPIR Restoration" width="100%"/>
-  <img src="assets/_px.gif" width="1" height="208" alt=""/>
-  <br/><br/>
-  <strong>Resurrect a blurry photo</strong><br/>
-  <sub>SUPIR state-of-the-art restoration. One click. Damaged, compressed, low-res — it reconstructs faces, skin, texture. Works on grandma's scanned photos and on JPEGs you downloaded in 2006.</sub>
-</td>
-<td width="33%" align="center" valign="top">
-  <img src="assets/showcase_wan_breathing.gif" alt="Wan 2.2 Image-to-Video" width="100%"/>
-  <img src="assets/_px.gif" width="1" height="323" alt=""/>
-  <br/><br/>
-  <strong>Animate a still</strong><br/>
-  <sub>Wan 2.2 Image-to-Video. Pick your motion preset (zoom, turntable, parallax, 26 of them), click. 81 frames, 720p, 2-5 seconds. The image breathes. Render it overnight, post it tomorrow.</sub>
+<td width="48%" valign="middle">
+  <h3>⚡ Type what to select</h3>
+  <p>Open <strong>AI Select by Description</strong>. Type <code>earring</code>, <code>hair</code>, or <code>left shoe</code>.</p>
+  <p><strong>SAM 3 gives you a perfect mask — in one second.</strong> No lasso. No quick-mask. No endless zooming. The thing graphics people said saves a day of work.</p>
+  <p><sub>🖌️ <strong>GIMP</strong> · <code>Select &gt; AI Select by Description</code></sub></p>
 </td>
 </tr>
 </table>
+
+<!-- ─────────────────────────────────────────────────────────
+     2 / 3  —  Resurrect a blurry photo   (image on the RIGHT)
+     ───────────────────────────────────────────────────────── -->
+<table width="100%">
+<tr>
+<td width="48%" valign="middle">
+  <h3>🔮 Resurrect a blurry photo</h3>
+  <p><strong>SUPIR state-of-the-art restoration.</strong> One click.</p>
+  <p>Damaged, compressed, low-res — it reconstructs faces, skin, texture. Works on grandma's scanned photos and on the JPEGs you downloaded in 2006.</p>
+  <p><sub>🖌️ <strong>GIMP</strong> · SUPIR Upscale &nbsp;·&nbsp; 📷 <strong>Darktable</strong> · batch across shoots</sub></p>
+</td>
+<td width="52%" align="center" valign="middle">
+  <a href="DEEP_DIVE.md#all-69-tools"><img src="assets/showcase_supir.png" alt="SUPIR Restoration — before / after" width="100%"/></a>
+</td>
+</tr>
+</table>
+
+<!-- ─────────────────────────────────────────────────────────
+     3 / 3  —  Animate a still    (image on the LEFT — GIF)
+     ───────────────────────────────────────────────────────── -->
+<table width="100%">
+<tr>
+<td width="52%" align="center" valign="middle">
+  <a href="DEEP_DIVE.md#all-69-tools"><img src="assets/showcase_wan_breathing.gif" alt="Wan 2.2 Image-to-Video — breathing portrait" width="100%"/></a>
+</td>
+<td width="48%" valign="middle">
+  <h3>🎬 Animate a still</h3>
+  <p><strong>Wan 2.2 Image-to-Video.</strong> Pick a motion preset — zoom, turntable, parallax, 26 of them. Click.</p>
+  <p>81 frames, 720p, 2–5 seconds. The image breathes. Render it overnight, post it tomorrow.</p>
+  <p><sub>🧙 <strong>Wizard Guild</strong> · Shotboard &nbsp;·&nbsp; 🎬 <strong>Resolve</strong> · Cinematographer timeline</sub></p>
+</td>
+</tr>
+</table>
+
+<br/>
+
+<!-- ─────────────────────────────────────────────────────────
+     Models that power the above — badge strip. GitHub's
+     markdown renderer wraps badges naturally; dropping the
+     manual <br/> line breaks lets 11 image-model badges flow
+     into a clean grid instead of the 8+3 orphan-wrap they
+     used to make.
+     ───────────────────────────────────────────────────────── -->
+<p align="center"><sub><strong>POWERED BY</strong></sub></p>
+
+<p align="center">
+  <a href="DEEP_DIVE.md#all-69-tools" title="🎨 Image · Flux 2 Klein — 4-step, ref-aware, SOTA photoreal"><img src="https://img.shields.io/badge/Flux%202%20Klein-ffd700?style=for-the-badge&labelColor=1a1422" alt="Flux 2 Klein"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="🎨 Image · Flux 1 Dev — 12B rectified-flow"><img src="https://img.shields.io/badge/Flux%201%20Dev-58e0ff?style=for-the-badge&labelColor=1a1422" alt="Flux 1 Dev"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="🎨 Image · Flux Kontext — edit-by-instruction"><img src="https://img.shields.io/badge/Flux%20Kontext-7ad7ff?style=for-the-badge&labelColor=1a1422" alt="Flux Kontext"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="🎨 Image · Chroma — 8B open-weights DiT"><img src="https://img.shields.io/badge/Chroma-ff7ad7?style=for-the-badge&labelColor=1a1422" alt="Chroma"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="🎨 Image · SDXL — the workhorse, every ControlNet works"><img src="https://img.shields.io/badge/SDXL-b470ff?style=for-the-badge&labelColor=1a1422" alt="SDXL"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="🎨 Image · Illustrious — booru-tagged anime"><img src="https://img.shields.io/badge/Illustrious-ff8fd1?style=for-the-badge&labelColor=1a1422" alt="Illustrious"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="🎨 Image · Pony — score-cascade SDXL finetune"><img src="https://img.shields.io/badge/Pony-ffa8d4?style=for-the-badge&labelColor=1a1422" alt="Pony"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="🎨 Image · Playground — aesthetic SDXL finetune"><img src="https://img.shields.io/badge/Playground-c09bff?style=for-the-badge&labelColor=1a1422" alt="Playground"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="🎨 Image · SD 1.5 — classic, universal LoRA compatibility"><img src="https://img.shields.io/badge/SD%201.5-8aa9ff?style=for-the-badge&labelColor=1a1422" alt="SD 1.5"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="🎨 Image · SDXL Turbo — 6-step distilled"><img src="https://img.shields.io/badge/SDXL%20Turbo-ffb864?style=for-the-badge&labelColor=1a1422" alt="SDXL Turbo"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="🎨 Image · Z-Image Turbo — 6-step, 2B, sharpest distill"><img src="https://img.shields.io/badge/Z%E2%80%91Image%20Turbo-ffef4a?style=for-the-badge&labelColor=1a1422" alt="Z-Image Turbo"/></a>
+  <br/>
+  <a href="DEEP_DIVE.md#all-69-tools" title="🎬 Video · Wan 2.2 I2V"><img src="https://img.shields.io/badge/Wan%202.2%20I2V-10b981?style=for-the-badge&labelColor=1a1422" alt="Wan 2.2"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="🎬 Video · LTX 2.3 — 22B cinematic T2V + I2V"><img src="https://img.shields.io/badge/LTX%202.3-5eead4?style=for-the-badge&labelColor=1a1422" alt="LTX 2.3"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="🎬 Video · SeedVR — temporally consistent upscale"><img src="https://img.shields.io/badge/SeedVR-34d399?style=for-the-badge&labelColor=1a1422" alt="SeedVR"/></a>
+  <br/>
+  <a href="DEEP_DIVE.md#all-69-tools" title="🧠 Helper · SAM 3 — type it, select it"><img src="https://img.shields.io/badge/SAM%203-ff6b9d?style=for-the-badge&labelColor=1a1422" alt="SAM 3"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="🧠 Helper · NormalCrafter — 3D normal maps from 2D"><img src="https://img.shields.io/badge/NormalCrafter-9f7aea?style=for-the-badge&labelColor=1a1422" alt="NormalCrafter"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="🧠 Helper · IC-Light — surface-aware relighting"><img src="https://img.shields.io/badge/IC%E2%80%91Light-fbbf24?style=for-the-badge&labelColor=1a1422" alt="IC-Light"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="🧠 Helper · ReActor + InsightFace"><img src="https://img.shields.io/badge/ReActor-f472b6?style=for-the-badge&labelColor=1a1422" alt="ReActor"/></a>
+  <a href="DEEP_DIVE.md#all-69-tools" title="🧠 Helper · Ollama — local LLM for prompt enhance + scoring"><img src="https://img.shields.io/badge/Ollama-64748b?style=for-the-badge&labelColor=1a1422&logo=ollama&logoColor=white" alt="Ollama"/></a>
+</p>
+
+<p align="center"><sub><a href="DEEP_DIVE.md#all-69-tools"><strong>→ 69 tools across 19 models.</strong> See the full matrix in DEEP_DIVE.md</a></sub></p>
 
 ---
 
