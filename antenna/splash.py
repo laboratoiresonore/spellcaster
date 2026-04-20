@@ -35,8 +35,51 @@ _BG = "#0B0715"
 _ACCENT = "#D122E3"
 _TEXT = "#E2DFEB"
 _SUBTEXT = "#8B7CA8"
-_FONT = ("Segoe UI", 10)
-_TITLE_FONT = ("Segoe UI", 16, "bold")
+
+
+def _pick_font(size: int, bold: bool = False) -> tuple:
+    """Walk a preference list so the splash never lands on Times New
+    Roman. Segoe UI is the Windows default since Vista but isn't
+    guaranteed on every locale / Server edition — fall back through
+    modern sans-serifs then to TkDefaultFont as last resort.
+
+    Called from _TkSplash.__init__ AFTER tk.Tk() exists, because
+    tkinter.font.families() needs a root window."""
+    family = "TkDefaultFont"
+    try:
+        import tkinter.font as tkfont
+        try:
+            avail = set(tkfont.families())
+        except Exception:  # noqa: BLE001
+            avail = set()
+        for candidate in ("Segoe UI Variable", "Segoe UI",
+                          "Inter", "Roboto", "Arial",
+                          "Helvetica Neue", "Helvetica"):
+            if candidate in avail:
+                family = candidate
+                break
+    except Exception:  # noqa: BLE001
+        pass
+    return (family, size, "bold" if bold else "normal")
+
+
+def _apply_modern_theme() -> None:
+    """Force a platform-appropriate ttk theme. Silent no-op on
+    failure. Called after tk.Tk() so the style object has a master."""
+    try:
+        from tkinter import ttk
+        style = ttk.Style()
+        themes = set(style.theme_names())
+        for candidate in ("vista", "xpnative", "winnative", "aqua",
+                          "clam", "alt", "default"):
+            if candidate in themes:
+                try:
+                    style.theme_use(candidate)
+                    return
+                except Exception:  # noqa: BLE001
+                    continue
+    except Exception:  # noqa: BLE001
+        return
 
 
 def _asset_path() -> Optional[Path]:
@@ -88,6 +131,15 @@ class _TkSplash:
         self._root.attributes("-topmost", True)
         self._root.configure(bg=_BG)
 
+        # Modern ttk theme + resolved font stack BEFORE any widget
+        # is created, so every child renders styled. Without these
+        # the splash falls back to Motif-looking defaults on any
+        # machine where the Tcl theme package wasn't properly
+        # bundled / installed — the "ugly as fuck" symptom.
+        _apply_modern_theme()
+        _font = _pick_font(10)
+        _title_font = _pick_font(16, bold=True)
+
         # Centre on the primary screen
         w, h = 420, 520
         sw = self._root.winfo_screenwidth()
@@ -115,13 +167,13 @@ class _TkSplash:
 
         tk.Label(
             container, text="Spellcaster Antenna",
-            fg=_TEXT, bg=_BG, font=_TITLE_FONT,
+            fg=_TEXT, bg=_BG, font=_title_font,
         ).pack(pady=(6, 2))
 
         self._status_var = tk.StringVar(value="Starting…")
         tk.Label(
             container, textvariable=self._status_var,
-            fg=_SUBTEXT, bg=_BG, font=_FONT, wraplength=380, justify="center",
+            fg=_SUBTEXT, bg=_BG, font=_font, wraplength=380, justify="center",
         ).pack(pady=(0, 8))
 
         # Indeterminate progress bar — a single thin accent line that

@@ -118,6 +118,64 @@ def _prefer_tray() -> bool:
     return True
 
 
+# ── Tk theme + font helpers ──────────────────────────────────────
+#
+# Tk falls back to an unstyled Motif-looking theme when ttk can't
+# find a platform-appropriate one. That's the "ugly as fuck" face
+# users see on fresh Windows machines where the Tcl theme package
+# isn't properly bundled. Forcing "vista" (Windows 10/11) or
+# "winnative" (older Windows) at dialog construction gives every
+# target the same modern look.
+#
+# Font: Segoe UI is the Windows default since Vista but isn't
+# guaranteed on every locale / Server edition. Walk a preference
+# list and land on whatever Tk reports as available. Last fallback
+# is TkDefaultFont so something always renders.
+
+
+def _apply_modern_theme() -> None:
+    """Best-effort: pick the most modern ttk theme available on
+    this platform. Silent no-op if tkinter / ttk aren't importable
+    (the caller is already gated on that)."""
+    try:
+        from tkinter import ttk
+        style = ttk.Style()
+        themes = set(style.theme_names())
+        for candidate in ("vista", "xpnative", "winnative", "aqua",
+                          "clam", "alt", "default"):
+            if candidate in themes:
+                try:
+                    style.theme_use(candidate)
+                    return
+                except Exception:  # noqa: BLE001
+                    continue
+    except Exception:  # noqa: BLE001
+        return
+
+
+def _pick_font(size: int = 10, bold: bool = False) -> tuple:
+    """Return a (family, size, weight) tuple for tk.Label / tk.Button
+    `font=` parameters. Walks a preference list so we never end up on
+    Times New Roman just because Segoe UI is missing on a locale."""
+    family = "TkDefaultFont"
+    try:
+        import tkinter.font as tkfont
+        try:
+            avail = set(tkfont.families())
+        except Exception:  # noqa: BLE001
+            avail = set()
+        for candidate in ("Segoe UI Variable", "Segoe UI",
+                          "Inter", "Roboto", "Arial",
+                          "Helvetica Neue", "Helvetica"):
+            if candidate in avail:
+                family = candidate
+                break
+    except Exception:  # noqa: BLE001
+        pass
+    weight = "bold" if bold else "normal"
+    return (family, size, weight)
+
+
 def _first_run_shortcut_prompt() -> None:
     """Windows-only: on the very first launch of the tray-only .exe,
     pop a tk dialog asking whether to create a desktop icon, a Start
@@ -163,31 +221,47 @@ def _first_run_shortcut_prompt() -> None:
         from . import install_shortcuts as _shc
     except Exception:  # noqa: BLE001
         return
+    try:
+        from . import firewall as _fw
+    except Exception:  # noqa: BLE001
+        _fw = None  # firewall step is best-effort
 
-    choices = {"desktop": True, "start_menu": True, "startup": False}
+    choices = {"desktop": True, "start_menu": True, "startup": False,
+                "firewall": True}
 
     root = tk.Tk()
     root.title("Spellcaster Antenna — setup")
     root.attributes("-topmost", True)
     root.configure(bg="#12101d")
-    root.minsize(420, 250)
+    root.minsize(440, 300)
+    # Pick a modern ttk theme + real fonts BEFORE creating widgets so
+    # every child inherits the styled look. This is the fix for the
+    # "ugly as fuck on another computer" symptom — without it Tk
+    # falls back to a Motif-looking default theme with Times New Roman.
+    _apply_modern_theme()
+    font_title = _pick_font(12, bold=True)
+    font_body  = _pick_font(9)
+    font_check = _pick_font(10)
+    font_status = _pick_font(9)
 
     frm = ttk.Frame(root, padding=22)
     frm.pack(fill="both", expand=True)
     ttk.Label(frm, text="Welcome — how should the antenna launch?",
                foreground="#ffd700", background="#12101d",
-               font=("Segoe UI", 12, "bold")).pack(anchor="w")
+               font=font_title).pack(anchor="w")
     ttk.Label(frm, text=(
                 "Pick any combination. You can change this any time\n"
                 "from the tray icon → right-click → Reinstall / Startup."),
                foreground="#c4b8e3", background="#12101d",
-               font=("Segoe UI", 9)).pack(anchor="w", pady=(4, 14))
+               font=font_body).pack(anchor="w", pady=(4, 14))
 
     vars_ = {}
     for key, label, default in (
         ("desktop",    "Create a desktop icon",                       True),
         ("start_menu", "Add to the Start Menu \u2192 Programs",          True),
         ("startup",    "Launch automatically at every Windows login", False),
+        ("firewall",
+         "Allow inbound LAN connections on port 7334 (firewall rule)", True),
     ):
         v = tk.BooleanVar(value=default)
         cb = tk.Checkbutton(frm, text=label, variable=v,
@@ -195,14 +269,25 @@ def _first_run_shortcut_prompt() -> None:
                              activebackground="#1a1730",
                              activeforeground="#ffffff",
                              selectcolor="#1a1730",
-                             font=("Segoe UI", 10))
+                             font=font_check)
         cb.pack(anchor="w", pady=2)
         vars_[key] = v
+
+    # Explanatory sub-line under the firewall checkbox so the UAC
+    # prompt that follows isn't surprising. Indented to the same
+    # column as the checkbox label.
+    ttk.Label(frm, text=(
+                "    ↳ Ticking this pops a Windows UAC prompt so netsh can\n"
+                "       whitelist the port. Without the rule, other PCs on\n"
+                "       your LAN can't pair with this antenna."),
+               foreground="#8a7eaf", background="#12101d",
+               font=font_body).pack(anchor="w", pady=(2, 4))
 
     status_text = tk.StringVar(value="")
     ttk.Label(frm, textvariable=status_text,
                foreground="#8a7eaf", background="#12101d",
-               font=("Segoe UI", 9)).pack(anchor="w", pady=(10, 0))
+               font=font_status, wraplength=400, justify="left"
+               ).pack(anchor="w", pady=(10, 0))
 
     def apply_and_close():
         for k in choices:
@@ -212,13 +297,35 @@ def _first_run_shortcut_prompt() -> None:
             start_menu=choices["start_menu"],
             startup=choices["startup"],
         )
+        # Firewall — fire after the shortcut step so the UAC prompt
+        # surfaces AFTER the user has pressed Install and isn't
+        # competing with the shortcut dialog.
+        fw_msg = ""
+        if choices["firewall"] and _fw is not None:
+            status_text.set("Requesting firewall rule (UAC prompt)…")
+            root.update_idletasks()
+            try:
+                fw = _fw.ensure_inbound_rule()
+            except Exception as e:  # noqa: BLE001
+                fw = {"error": f"{type(e).__name__}: {e}"}
+            if fw.get("existed"):
+                fw_msg = "firewall: already configured"
+            elif fw.get("created"):
+                fw_msg = ("firewall: rule added" +
+                          (" (elevated)" if fw.get("elevated") else ""))
+            else:
+                fw_msg = (f"firewall: NOT added — {fw.get('error') or 'unknown'}. "
+                          f"Run this in an admin cmd:\n{fw.get('cmd_hint','')}")
         ok = sum(1 for k in ("desktop", "start_menu", "startup")
                   if result.get(k))
-        if result.get("errors"):
+        issues = list(result.get("errors") or [])
+        if fw_msg and fw_msg.startswith("firewall: NOT"):
+            issues.append(fw_msg)
+        if issues:
             status_text.set(
-                f"Created {ok}/3. Issues: "
-                + ", ".join(result["errors"])[:120])
-            root.after(2500, root.destroy)
+                f"Shortcuts {ok}/3. "
+                + " · ".join(issues)[:500])
+            root.after(4500, root.destroy)
         else:
             try:
                 os.makedirs(sentinel_dir, exist_ok=True)
