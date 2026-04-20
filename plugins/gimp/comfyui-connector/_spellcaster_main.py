@@ -2284,10 +2284,7 @@ def _add_normal_map_selector(dialog, box, image):
             gen_status.set_text("Exporting canvas…")
             while Gtk.events_pending():
                 Gtk.main_iteration()
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_nm_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname)
-            os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[nm-gen] ")
             gen_status.set_text("Generating… (may take ~30 s)")
             while Gtk.events_pending():
                 Gtk.main_iteration()
@@ -2604,13 +2601,7 @@ def _collect_normal_map_from_dialog(dlg, image, server_url):
             pass  # probe failed — best-effort, let the workflow error out
         # Export canvas + upload
         try:
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_nmsrc_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(server_url, tmp, uname)
-            try:
-                os.unlink(tmp)
-            except Exception:
-                pass
+            uname = _export_and_upload_cached(server_url, image, debug_prefix="[nm-src] ")
         except Exception as e:
             print(f"[Spellcaster] auto-normal-map export failed: {e}")
             return None
@@ -6460,14 +6451,33 @@ def _mask_image_to_gimp_selection(image, mask_path, feather=4):
 
     Args:
         image: The GIMP image to apply the selection to.
-        mask_path (str): Path to the downloaded mask PNG (grayscale).
+        mask_path: Path to the downloaded mask PNG (str / PathLike),
+            OR the raw PNG bytes \u2014 we accept both because
+            ``_download_image`` returns bytes while callers sometimes
+            already stage a file. Bytes are written to a temp file
+            transparently.
         feather (int): Feather radius in pixels (0 = hard edge).
     """
     # Strategy: load mask as image → save as channel in target → convert
     # channel to selection. Uses only proven API calls from
     # _create_selection_mask_png (which works on GIMP 3.0-3.2).
     mask_img = None
+    _tmp_mask_path: str | None = None
     try:
+        # Callers occasionally pass raw PNG bytes from
+        # ``_download_image`` directly \u2014 that hits "embedded null
+        # byte" when Gio.File.new_for_path tries to interpret the
+        # binary as a filesystem path. Materialise bytes to a temp
+        # file so the downstream GIMP loader gets what it expects,
+        # and remember the path so we can clean it up below.
+        if isinstance(mask_path, (bytes, bytearray)):
+            _tmp = tempfile.NamedTemporaryFile(
+                suffix=".png", prefix="sam3_mask_", delete=False)
+            _tmp.write(bytes(mask_path))
+            _tmp.close()
+            _tmp_mask_path = _tmp.name
+            mask_path = _tmp_mask_path
+
         # 1. Load mask PNG as a separate GIMP image
         mask_file = Gio.File.new_for_path(mask_path)
         mask_img = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, mask_file)
@@ -6584,6 +6594,15 @@ def _mask_image_to_gimp_selection(image, mask_path, feather=4):
         raise RuntimeError(f"Could not convert SAM3 mask to selection: {e}.\n"
                            "The mask was added as a layer — you can convert it "
                            "manually via Select > By Color.") from e
+    finally:
+        # Best-effort cleanup for the materialised temp file when
+        # bytes were passed. We avoid unlinking the caller's own
+        # path (only the one we created in this function).
+        if _tmp_mask_path:
+            try:
+                os.unlink(_tmp_mask_path)
+            except Exception:
+                pass
 
 
 def _create_selection_mask_png(filepath, image):
@@ -6845,6 +6864,110 @@ def _precache_results(server, results):
                 _download_cache[key] = tmp.name
         except Exception:
             pass
+
+
+def _looks_like_uniform_mask(png_bytes: bytes) -> bool:
+    """True when a grayscale mask PNG is essentially all one value.
+
+    Complement to ``_looks_like_blank_rembg``. Segmentation nodes
+    sometimes return masks that are entirely black (no match) or
+    entirely white (post-invert no match). Both are useless \u2014
+    the former selects nothing, the latter selects everything.
+    Detect either and the caller can warn the user instead of
+    silently applying a bogus selection.
+
+    Returns True when >99% of pixels share the same bucket in a
+    coarse 4-bucket histogram. False when there's real structure,
+    when PIL is absent (fail-open), or when the PNG fails to decode.
+    """
+    if not png_bytes:
+        return True
+    try:
+        from PIL import Image
+        import io
+        img = Image.open(io.BytesIO(png_bytes))
+        if img.mode == "LA":
+            img = img.getchannel("L")
+        elif img.mode in ("RGB", "RGBA", "P"):
+            img = img.convert("L")
+        stat = img.getextrema()
+        if stat[0] == stat[1]:
+            return True  # literally flat
+        hist = img.histogram()
+        total = sum(hist) or 1
+        buckets = [sum(hist[i:i + 64]) for i in range(0, 256, 64)]
+        peak = max(buckets)
+        return (peak / total) > 0.99
+    except ImportError:
+        return False
+    except Exception:
+        return True
+
+
+def _looks_like_blank_rembg(png_bytes: bytes) -> bool:
+    """Heuristic: decide whether a rembg / BiRefNet result is useless.
+
+    A healthy background-removal returns an RGBA PNG where a sizeable
+    fraction of pixels are fully opaque (the foreground). A failed
+    run \u2014 OOM mid-BiRefNet, missing model file, unsupported image
+    size \u2014 surfaces as either a fully-transparent image or a
+    pass-through of the original with no alpha channel. Either way
+    the user gets nothing useful and we should retry with the safer
+    engine.
+
+    Returns True when:
+      * the decoded image has no alpha channel at all, OR
+      * fewer than 0.5% of pixels have alpha > 10 (essentially
+        nothing selected), OR
+      * the decode fails (corrupt bytes from a crashed node).
+
+    Returns False for any non-trivial RGBA image, including the
+    "rembg found a subject but not a perfect mask" case \u2014 that's
+    still usable, we don't want to retry gratuitously.
+    """
+    if not png_bytes:
+        return True
+    try:
+        from PIL import Image
+        import io
+        img = Image.open(io.BytesIO(png_bytes))
+        if img.mode not in ("RGBA", "LA"):
+            # No alpha channel at all \u2014 rembg/BiRefNet always
+            # emits RGBA, so a mode without alpha means the node
+            # pass-through'd the source unchanged.
+            return True
+        alpha = img.getchannel("A")
+        stat = alpha.getextrema()
+        if stat == (0, 0):
+            return True  # fully transparent
+        hist = alpha.histogram()
+        total = sum(hist)
+        if not total:
+            return True
+        opaque_ish = sum(hist[11:])  # pixels with alpha > 10
+        return (opaque_ish / total) < 0.005
+    except ImportError:
+        # Without PIL, parse the PNG IHDR to at least catch the
+        # "node returned a non-alpha image" case (color type 6 = RGBA,
+        # 4 = LA; anything else has no alpha channel, which rembg /
+        # BiRefNet must emit if it worked). PNG signature is 8 bytes,
+        # then a 4-byte IHDR length, "IHDR", 13-byte IHDR data:
+        #   width (4) + height (4) + bit_depth (1) + color_type (1) + ...
+        try:
+            if len(png_bytes) < 29 or png_bytes[:8] != b"\x89PNG\r\n\x1a\n":
+                return True
+            color_type = png_bytes[25]
+            if color_type not in (4, 6):
+                return True
+            # Deeper analysis would need zlib-decoding; we skip that
+            # and fail-open here so the rare "RGBA but mostly empty"
+            # case doesn't gratuitously retry on PIL-less installs.
+            return False
+        except Exception:
+            return False
+    except Exception:
+        # Corrupt PNG / decode error \u2014 treat as blank so we retry.
+        return True
 
 
 def _download_image_raw(server, filename, subfolder="", folder_type="output"):
@@ -9289,12 +9412,9 @@ def _speedcoach_initial_estimate(job: dict, *, rich: dict | None = None) -> dict
     render loop. Combines three data sources:
 
       1. ``_SPEEDCOACH_STATE["last_prediction"]`` — stamped by the
-         handler-dialog banner helper before dispatch. When present
-         and fresh, treat it as the pre-dispatch median.
-      2. Otherwise call the Guild's ``/api/speedcoach/estimate``
-         endpoint with whatever spec we can infer from session state.
-      3. Fall back to the local ``spellcaster_core.estimate`` module
-         so even without the Guild we get an arch-default baseline.
+         handler-dialog banner helper before dispatch.
+      2. Otherwise call the Guild's ``/api/speedcoach/estimate``.
+      3. Fall back to the local ``spellcaster_core.estimate`` module.
 
     ``rich`` is the cached ``_fetch_comfy_status_rich`` dict so we
     can pass queue depth + VRAM % into the estimator without a
@@ -9308,8 +9428,6 @@ def _speedcoach_initial_estimate(job: dict, *, rich: dict | None = None) -> dict
     spec_handler = str(pred.get("handler") or "")
     spec_steps = pred.get("steps")
     spec_lora_hash = pred.get("lora_stack_hash")
-    # Ask the Guild first — it has dispatch_log + preflight cache in
-    # one place and already does the pre-dispatch adjustments.
     try:
         params = {}
         if spec_arch:    params["arch"] = spec_arch
@@ -9327,9 +9445,6 @@ def _speedcoach_initial_estimate(job: dict, *, rich: dict | None = None) -> dict
             return data
     except Exception:
         pass
-    # Local fallback: estimate module runs against whatever
-    # dispatch_log the plugin has access to locally (shared state-dir
-    # on same-box installs; empty otherwise → arch default only).
     try:
         from spellcaster_core import estimate as _est_mod
         spec = {
@@ -9612,6 +9727,229 @@ def _update_spinner_status(text):
 # Legacy module-level slot — some older paths still read this. Kept so
 # any external callers that import it don't AttributeError.
 _spinner_label_text = ""
+
+
+# ── Upload cache: skip re-export + re-upload on identical resubmits ─
+# Keyed by (server_url, content_fingerprint). Value carries the
+# filename we last uploaded to ComfyUI for this content. Privacy
+# module's ``CACHE_PREFIXES`` exempts ``sc_cache_*`` from the after-
+# every-workflow wipe so the entry stays live between submits; the
+# user can blow the cache away manually via "Clear image cache".
+#
+# The fingerprint is computed from the GIMP thumbnail bytes + canvas
+# dims + optional selection bounds (see ``_image_fingerprint``). It
+# survives a selection change on the SAME image because the selection
+# is part of the key \u2014 sending "the whole image" and "a selection
+# of the image" are different cache entries.
+_UPLOAD_CACHE: "dict[tuple[str, str], dict]" = {}
+
+# Per-entry TTL (seconds). After this window expires we re-export +
+# re-upload even if the content hash still matches, in case the user
+# manually wiped the server-side file. 1 hour strikes a balance
+# between "always fresh" and "rare re-exports".
+_UPLOAD_CACHE_TTL = 3600
+
+# Aggregate cap on distinct cache entries per session. A user who
+# cycles through dozens of different canvases would otherwise let the
+# cache grow unbounded and keep stale files live on ComfyUI forever.
+# When the cap is hit, the oldest entry is evicted + its server-side
+# file is wiped (so the cap doubles as a privacy ceiling).
+_UPLOAD_CACHE_MAX = 32
+
+
+def _upload_cache_enabled() -> bool:
+    """Read the ``image_upload_cache`` flag from config, default ON.
+
+    Users who prioritise strict privacy can set this to ``false`` in
+    ``config.json``; every submit then re-exports + re-uploads (the
+    pre-2026-04-20 behaviour). Also forces the cache off when
+    ``SPELLCASTER_DISABLE_UPLOAD_CACHE`` is set in the environment,
+    so a single shell export can disable it for a debug session.
+    """
+    if os.environ.get("SPELLCASTER_DISABLE_UPLOAD_CACHE"):
+        return False
+    try:
+        return bool(_load_config().get("image_upload_cache", True))
+    except Exception:
+        return True
+
+
+def _image_fingerprint(image, selection_bounds=None) -> str:
+    """Compute a fast content fingerprint of the active GIMP image.
+
+    Strategy: hash the thumbnail bytes (GIMP-rendered flattened RGBA,
+    fast \u2014 no PDB export pass needed) plus the canvas dimensions
+    and the optional selection bounds. False-positive rate:
+    astronomically low (SHA-256 of ~200 \u00d7 200 \u00d7 4 bytes).
+
+    When the thumbnail call fails (rare, but some Gimp versions
+    expose it differently) we fall back to
+    ``(image_id, dims, selection_bounds, time)`` \u2014 a signature
+    that NEVER matches across calls, so the cache degrades to the
+    old "always re-upload" behaviour rather than incorrectly
+    serving a stale entry.
+    """
+    import hashlib
+    h = hashlib.sha256()
+    try:
+        # Gimp.Image.get_thumbnail(w, h, alpha) -> GLib.Bytes.
+        # The thumbnail is the FLATTENED image at up to the given
+        # size; we use 256 so even tiny canvas differences are
+        # captured. GimpAlphaComponent.INCLUDE keeps the alpha so
+        # transparent-pixel shifts still bust the cache.
+        try:
+            alpha_incl = Gimp.PixbufTransparency.KEEP_ALPHA
+        except Exception:
+            alpha_incl = 0
+        thumb = image.get_thumbnail(256, 256, alpha_incl)
+        thumb_bytes = bytes(thumb.get_bytes().get_data()) if thumb else b""
+    except Exception:
+        thumb_bytes = b""
+    if thumb_bytes:
+        h.update(thumb_bytes)
+        h.update(f"|{image.get_width()}x{image.get_height()}".encode())
+        if selection_bounds:
+            h.update(f"|sel={selection_bounds}".encode())
+        return h.hexdigest()[:24]
+    # Fallback — force a miss on every call so we don't cache-hit
+    # with bad data.
+    h.update(f"{image.get_id()}|{image.get_width()}x{image.get_height()}"
+             f"|sel={selection_bounds}|t={time.time()}".encode())
+    return h.hexdigest()[:24]
+
+
+def _upload_cache_evict_lru(current_server: str) -> None:
+    """When the cache overflows, drop the oldest entry + wipe its
+    server-side file via the privacy module. Keeps the cache honest
+    (no unbounded growth on the user's ComfyUI disk).
+    """
+    if len(_UPLOAD_CACHE) < _UPLOAD_CACHE_MAX:
+        return
+    try:
+        oldest_key = min(
+            _UPLOAD_CACHE.keys(),
+            key=lambda k: _UPLOAD_CACHE[k].get("uploaded_at", 0),
+        )
+    except ValueError:
+        return
+    entry = _UPLOAD_CACHE.pop(oldest_key, None)
+    if not entry:
+        return
+    fname = entry.get("filename")
+    srv = oldest_key[0]
+    if fname and srv:
+        try:
+            from spellcaster_core.privacy import _overwrite_with_tiny
+            _overwrite_with_tiny(srv, fname)
+        except Exception:
+            pass
+
+
+def _export_and_upload_cached(server, image, *, selection_bounds=None,
+                                debug_prefix="") -> str:
+    """Return the ComfyUI input filename for the current image/selection.
+
+    On a cache hit, this is a \u2248 10 ms lookup \u2014 no export, no
+    upload. On a miss we do the full export + upload dance and store
+    the resulting filename under the content hash so the next identical
+    submit hits. The returned filename always starts with
+    ``sc_cache_`` so the privacy module's ``CACHE_PREFIXES`` exempts
+    it from the after-every-workflow wipe.
+
+    Args:
+        server: ComfyUI URL.
+        image: ``Gimp.Image`` \u2014 the canvas to export.
+        selection_bounds: optional ``(x1, y1, x2, y2)`` to export a
+            selection instead of the full canvas. Part of the cache
+            key, so full-image vs selection submits don't collide.
+        debug_prefix: prepended to the log line when we emit a
+            cache-hit or miss trace. Helps distinguish callers in the
+            GIMP console (e.g. ``"[img2img]"``).
+
+    Raises:
+        RuntimeError when both export strategies fail. Callers that
+        want to fall back silently should catch this and re-try the
+        non-cached path.
+    """
+    srv_key = (server or "").rstrip("/")
+    if not _upload_cache_enabled():
+        # Straight-through path: export + upload fresh every time.
+        if selection_bounds:
+            tmp, _w, _h = _export_selection_to_tmp(image)
+        else:
+            tmp = _export_image_to_tmp(image)
+        if not tmp:
+            raise RuntimeError("image export failed")
+        uname = f"gimp_{uuid.uuid4().hex[:8]}.png"
+        _upload_image(server, tmp, uname)
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
+        return uname
+
+    fp = _image_fingerprint(image, selection_bounds=selection_bounds)
+    cache_key = (srv_key, fp)
+    hit = _UPLOAD_CACHE.get(cache_key)
+    now = time.time()
+    if hit and (now - hit.get("uploaded_at", 0)) < _UPLOAD_CACHE_TTL:
+        if debug_prefix:
+            print(f"[Spellcaster] {debug_prefix}cache-hit "
+                  f"{hit['filename']} (fp={fp[:8]}\u2026)")
+        # Refresh the timestamp so recently-used entries linger.
+        hit["uploaded_at"] = now
+        return hit["filename"]
+
+    # Miss \u2014 export + upload.
+    if selection_bounds:
+        tmp, _w, _h = _export_selection_to_tmp(image)
+    else:
+        tmp = _export_image_to_tmp(image)
+    if not tmp:
+        raise RuntimeError("image export failed")
+    filename = f"sc_cache_{fp}.png"
+    try:
+        _upload_image(server, tmp, filename)
+    finally:
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
+    _upload_cache_evict_lru(srv_key)
+    _UPLOAD_CACHE[cache_key] = {
+        "filename": filename,
+        "uploaded_at": now,
+        "fp": fp,
+    }
+    if debug_prefix:
+        print(f"[Spellcaster] {debug_prefix}cache-miss {filename} "
+              f"(fp={fp[:8]}\u2026)")
+    return filename
+
+
+def _purge_upload_cache(server: "str | None" = None) -> int:
+    """Wipe every cached upload from the server + clear the in-memory
+    map. Called by "Clear image cache" and by the "switch server"
+    flow. Returns the number of files wiped."""
+    try:
+        from spellcaster_core.privacy import purge_cache as _pc
+    except Exception:
+        _pc = None
+    wiped_count = 0
+    servers = set()
+    for (srv, _fp), entry in list(_UPLOAD_CACHE.items()):
+        if server is not None and srv != server.rstrip("/"):
+            continue
+        servers.add(srv)
+        _UPLOAD_CACHE.pop((srv, _fp), None)
+    if _pc is not None:
+        for srv in servers:
+            try:
+                res = _pc(srv)
+                wiped_count += len(res.get("wiped") or [])
+            except Exception:
+                pass
+    return wiped_count
 
 
 # ── Mask cache for inpaint ──────────────────────────────────────────
@@ -11063,8 +11401,14 @@ class PresetDialog(Gtk.Dialog):
         def on_done(data):
             if not isinstance(data, dict):
                 return
-            triggers = data.get("trigger_words") or []
-            weight = data.get("recommended_weight")
+            # The Guild endpoint wraps the record under ``knowledge``:
+            # ``{"knowledge": {trigger_words, recommended_weight, \u2026}}``.
+            # Earlier revisions read fields off the top-level dict
+            # \u2014 a silent no-op that made the cross-plugin
+            # fallback useless. Handle both shapes.
+            record = data.get("knowledge") if isinstance(data.get("knowledge"), dict) else data
+            triggers = record.get("trigger_words") or []
+            weight = record.get("recommended_weight")
             if not triggers and weight in (None, ""):
                 return
             self._apply_lora_metadata(
@@ -16459,6 +16803,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-settings": None,
             "spellcaster-my-presets": None,
             "spellcaster-bridge": None,
+            "spellcaster-clear-upload-cache": None,
             # SAM3 AI Selection
             "spellcaster-sam3-select": None,    # always register — preflight checks server at runtime
             "spellcaster-sam3-extract": None,
@@ -16672,6 +17017,13 @@ class Spellcaster(Gimp.PlugIn):
                                        "Quick access to saved prompt and settings presets"),
             "spellcaster-bridge": ("Workflow Library...", self._run_bridge,
                                     "Browse workflows, import from server, edit scaffolds"),
+            "spellcaster-clear-upload-cache": ("Clear image cache (ComfyUI)",
+                                                 self._run_clear_upload_cache,
+                                                 "Wipe every cached canvas/selection upload from the ComfyUI "
+                                                 "input dir. The cache speeds up repeat submits of the same "
+                                                 "image by skipping the re-export; clearing it restores a "
+                                                 "stricter privacy posture at the cost of one re-upload the "
+                                                 "next time you send that image."),
             "spellcaster-sam3-select": ("AI Select by Description...", self._run_sam3_select,
                                          "Type what to select (person, shirt, hair) — AI creates the selection automatically"),
             "spellcaster-sam3-extract": ("AI Extract Subject...", self._run_sam3_extract,
@@ -16857,6 +17209,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-settings":          f"{_S}/Tools",
             "spellcaster-bridge":            f"{_S}/Tools",
             "spellcaster-calibration-wizard": f"{_S}/Tools",
+            "spellcaster-clear-upload-cache": f"{_S}/Tools",
             # R105: cross-plugin transfer submenu — visible diamond
             # markers make it easy to spot the inter-app channels.
             "spellcaster-send-to-resolve":      f"{_S}/Cross-App",
@@ -17001,10 +17354,12 @@ class Spellcaster(Gimp.PlugIn):
             srv = v["server"]
             cn_active = v.get("controlnet", {}).get("mode", "Off") != "Off"
 
-            # GIMP export on main thread (PDB not thread-safe)
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            # Content-hash upload cache: when the user sends the same
+            # image to ComfyUI twice in a row, the helper short-circuits
+            # the export + upload pass and returns the previously-
+            # uploaded filename. sc_cache_* prefix survives the
+            # per-workflow privacy wipe.
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[img2img] ")
 
             base_seed = v["seed"]
             for run_i in range(runs):
@@ -17033,6 +17388,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster img2img Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -17084,6 +17441,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster txt2img Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -17147,9 +17506,11 @@ class Spellcaster(Gimp.PlugIn):
                     "server": srv,
                 }
 
-            tmp = _export_image_to_tmp(image)
-            iname = f"gimp_inp_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, iname); os.unlink(tmp)
+            # Inpaint always uploads the FULL canvas (the mask carries
+            # the region). Cache key is image-only \u2014 the mask cache
+            # (separate, above) handles selection-bounded caching for
+            # the mask PNG itself.
+            iname = _export_and_upload_cached(srv, image, debug_prefix="[inpaint] ")
 
             base_seed = v["seed"]
             for run_i in range(runs):
@@ -17179,6 +17540,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Inpaint Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -17205,9 +17568,7 @@ class Spellcaster(Gimp.PlugIn):
             _update_spinner_status("Face Swap: exporting images...")
             srv = v["server"]
             # Upload target (current canvas)
-            tmp = _export_image_to_tmp(image)
-            tgt_name = f"gimp_fstgt_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, tgt_name); os.unlink(tmp)
+            tgt_name = _export_and_upload_cached(srv, image, debug_prefix="[fstgt] ")
             # Upload source face
             src_name = f"gimp_fssrc_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, v["face_file"], src_name)
@@ -17247,6 +17608,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-faceswap"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Face Swap Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -17273,9 +17636,7 @@ class Spellcaster(Gimp.PlugIn):
         try:
             _update_spinner_status("Face Swap (Model): exporting image...")
             srv = v["server"]
-            tmp = _export_image_to_tmp(image)
-            tgt_name = f"gimp_fsm_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, tgt_name); os.unlink(tmp)
+            tgt_name = _export_and_upload_cached(srv, image, debug_prefix="[fsm] ")
             wf = build_faceswap_model(
                 tgt_name, v["face_model"],
                 swap_model=v["swap_model"],
@@ -17300,6 +17661,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-faceswap-model"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Face Swap (Model) Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -17379,13 +17742,14 @@ class Spellcaster(Gimp.PlugIn):
                 has_sel, sx1, sy1, sx2, sy2 = _get_selection_bounds(image)
                 if has_sel:
                     _update_spinner_status("LTX I2V: exporting selection region...")
-                    tmp, _sw, _sh = _export_selection_to_tmp(image)
+                    i2v_filename = _export_and_upload_cached(
+                        v["server"], image,
+                        selection_bounds=_get_selection_bounds(image)[1:5],
+                        debug_prefix="[ltx-i2v-sel] ")
                 else:
                     _update_spinner_status("LTX I2V: exporting image...")
-                    tmp = _export_image_to_tmp(image)
-                i2v_filename = f"gimp_ltx_i2v_{uuid.uuid4().hex[:8]}.png"
-                _upload_image(v["server"], tmp, i2v_filename)
-                os.unlink(tmp)
+                    i2v_filename = _export_and_upload_cached(
+                        v["server"], image, debug_prefix="[ltx-i2v] ")
 
             # Prompt enhancement — if the dialog toggle is on, run the
             # user prompt through the local LLM with LTX's cinematic
@@ -17465,6 +17829,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster LTX T2V Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -17509,9 +17875,7 @@ class Spellcaster(Gimp.PlugIn):
             else:
                 _update_spinner_status("Wan I2V: exporting image...")
                 srv = v["server"]
-                tmp = _export_image_to_tmp(image)
-            uname = f"gimp_wan_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+                uname = _export_and_upload_cached(srv, image, debug_prefix="[wan] ")
 
             # IP-Adapter: upload reference image if using a separate file
             ipa_image = None
@@ -17613,6 +17977,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Wan I2V Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -17789,6 +18155,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Wan FLF Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -18057,9 +18425,7 @@ class Spellcaster(Gimp.PlugIn):
         # ═══════════════════════════════════════════════════════════════
         try:
             # Export start image
-            tmp = _export_image_to_tmp(image)
-            start_name = f"gimp_duo_start_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, start_name); os.unlink(tmp)
+            start_name = _export_and_upload_cached(srv, image, debug_prefix="[duo_start] ")
 
             # Upload Actor A face ref
             if a_source == "file" and a_file:
@@ -18182,6 +18548,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.message("Two-Actor Director complete!\nLast frames imported. MP4s in ComfyUI output folder.")
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Director Duo Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -18370,9 +18738,7 @@ class Spellcaster(Gimp.PlugIn):
 
         # Execution
         try:
-            tmp = _export_image_to_tmp(image)
-            start_name = f"gimp_trio_start_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, start_name); os.unlink(tmp)
+            start_name = _export_and_upload_cached(srv, image, debug_prefix="[trio_start] ")
 
             ref_names = []
             for i, af in enumerate(actor_info):
@@ -18453,6 +18819,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.message("Three-Actor Director complete!\nMP4s in ComfyUI output folder.")
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Director Trio Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -18570,6 +18938,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Video Upscale Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -18726,6 +19096,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Video ReActor Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -18932,6 +19304,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.message("SeedVR2 Video Upscale complete!\nCheck ComfyUI output folder for the upscaled MP4.")
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"SeedVR2 Video Upscale Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -18959,9 +19333,7 @@ class Spellcaster(Gimp.PlugIn):
             _update_spinner_status("Face Swap (mtb): exporting images...")
             srv = v["server"]
             # Export target (current canvas)
-            tmp = _export_image_to_tmp(image)
-            tgt_name = f"gimp_mtb_tgt_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, tgt_name); os.unlink(tmp)
+            tgt_name = _export_and_upload_cached(srv, image, debug_prefix="[mtb_tgt] ")
             # Upload source face image
             src_name = f"gimp_mtb_src_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, v["source_path"], src_name)
@@ -18979,6 +19351,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-faceswap-mtb"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Face Swap (mtb) Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -19014,9 +19388,7 @@ class Spellcaster(Gimp.PlugIn):
         try:
             _update_spinner_status("FaceID: exporting images...")
             srv = v["server"]
-            tmp = _export_image_to_tmp(image)
-            tgt_name = f"gimp_fid_tgt_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, tgt_name); os.unlink(tmp)
+            tgt_name = _export_and_upload_cached(srv, image, debug_prefix="[fid_tgt] ")
             src_name = f"gimp_fid_ref_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, v["source_path"], src_name)
             base_seed = v["seed"]
@@ -19045,6 +19417,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-faceid-img2img"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster FaceID Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -19083,9 +19457,7 @@ class Spellcaster(Gimp.PlugIn):
         try:
             _update_spinner_status("PuLID Flux: exporting images...")
             srv = v["server"]
-            tmp = _export_image_to_tmp(image)
-            tgt_name = f"gimp_pulid_tgt_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, tgt_name); os.unlink(tmp)
+            tgt_name = _export_and_upload_cached(srv, image, debug_prefix="[pulid_tgt] ")
             src_name = f"gimp_pulid_ref_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, v["source_path"], src_name)
             base_seed = v["seed"]
@@ -19116,6 +19488,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-pulid-flux"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster PuLID Flux Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -19310,9 +19684,7 @@ class Spellcaster(Gimp.PlugIn):
 
         try:
             # Export target (current canvas) on main thread
-            tmp = _export_image_to_tmp(image)
-            tgt_name = f"gimp_hs_tgt_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, tgt_name); os.unlink(tmp)
+            tgt_name = _export_and_upload_cached(srv, image, debug_prefix="[hs_tgt] ")
 
             # Upload source face image (if file, not model)
             src_name = None
@@ -19346,6 +19718,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Klein Headswap Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -19374,9 +19748,7 @@ class Spellcaster(Gimp.PlugIn):
         try:
             _update_spinner_status("Klein: exporting image...")
             srv = v["server"]
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_klein_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[klein] ")
             _klein_prompt, _ = _auto_enhance(v["prompt"], "flux2klein")
             base_seed = v["seed"]
             for run_i in range(runs):
@@ -19402,6 +19774,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Klein Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -19429,9 +19803,7 @@ class Spellcaster(Gimp.PlugIn):
             _update_spinner_status("Klein+Ref: exporting images...")
             srv = v["server"]
             # Upload main image
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_kleinm_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[kleinm] ")
             # Upload reference image
             ref_name = f"gimp_kleinr_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, v["ref_file"], ref_name)
@@ -19459,6 +19831,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-klein-img2img-ref"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Klein+Ref Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -19631,9 +20005,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         try:
             _update_spinner_status("Klein Outpaint: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_klein_out_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[klein_out] ")
 
             km = _preset_pick(KLEIN_MODELS, klein_key)
             preset = {
@@ -19665,6 +20037,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.displays_flush()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Klein Outpaint Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -19979,6 +20353,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.displays_flush()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Klein Layer Blender Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -20390,9 +20766,7 @@ class Spellcaster(Gimp.PlugIn):
 
         try:
             _update_spinner_status("Klein Re-poser: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_repose_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[repose] ")
 
             # Repose preserves the subject and changes only the pose — treat
             # as refine scope so the LLM doesn't invent new characters.
@@ -20419,6 +20793,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Klein Re-poser Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -20808,9 +21184,7 @@ class Spellcaster(Gimp.PlugIn):
                     "server": srv,
                 }
 
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_kinp_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[kinp] ")
 
             # Enhance once, use across all runs. method='klein_inpaint'
             # narrows the LLM to "describe what fills the mask" so Klein
@@ -20846,6 +21220,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Klein Inpaint Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -20966,9 +21342,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         try:
             _update_spinner_status("Klein Detail: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_detail_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[detail] ")
             # Detail boost — preserves subject, adds quality/texture descriptors.
             prompt, _ = _auto_enhance(prompt, "flux2klein",
                                        method="klein_refine")
@@ -20988,6 +21362,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Klein Detail Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -21106,9 +21482,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _update_spinner_status("Klein Generate: exporting scene reference...")
-            tmp = _export_image_to_tmp(image)
-            scene_uname = f"gimp_scene_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, scene_uname); os.unlink(tmp)
+            scene_uname = _export_and_upload_cached(srv, image, debug_prefix="[scene] ")
             # Klein generate_object drops a described object into the
             # scene — inpaint-scope (focus on the new object, not the
             # whole scene which already exists).
@@ -21156,6 +21530,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Klein Generate Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -21281,9 +21657,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _update_spinner_status("Klein Auto-Inpaint: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_klauto_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[klauto] ")
             _prompt = inpaint_prompt
             if enhance:
                 _prompt, _ = _auto_enhance(inpaint_prompt, "flux2klein",
@@ -21308,6 +21682,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Klein Auto-Inpaint Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -21462,9 +21838,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _update_spinner_status("Klein SAM3 Inpaint: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_klsam3_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[klsam3] ")
             ref_name = None
             if ref_file:
                 ref_name = f"gimp_klsam3ref_{uuid.uuid4().hex[:8]}.png"
@@ -21611,9 +21985,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _update_spinner_status("Klein Refine: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_klrefine_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[klrefine] ")
             _prompt = prompt
             if enhance:
                 _prompt, _ = _auto_enhance(prompt, "flux2klein",
@@ -21638,6 +22010,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Klein Refine Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -21766,9 +22140,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         try:
             _update_spinner_status("Klein Face Detail: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_klface_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[klface] ")
             _prompt = prompt
             if enhance:
                 _prompt, _ = _auto_enhance(prompt, "flux2klein",
@@ -21795,6 +22167,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Klein Face Detail Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -21894,9 +22268,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _update_spinner_status("Klein Color Match: uploading...")
-            tmp = _export_image_to_tmp(image)
-            tgt_name = f"gimp_klcm_tgt_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, tgt_name); os.unlink(tmp)
+            tgt_name = _export_and_upload_cached(srv, image, debug_prefix="[klcm_tgt] ")
             ref_name = f"gimp_klcm_ref_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, ref_file, ref_name)
             wf = build_klein_color_match(tgt_name, ref_name, method=method, strength=strength)
@@ -21912,6 +22284,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Klein Color Match Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -22063,9 +22437,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _update_spinner_status("Klein Try-On: exporting face (canvas)...")
-            tmp = _export_image_to_tmp(image)
-            face_name = f"gimp_tryon_face_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, face_name); os.unlink(tmp)
+            face_name = _export_and_upload_cached(srv, image, debug_prefix="[tryon_face] ")
             outfit_name = f"gimp_tryon_outfit_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, outfit_file, outfit_name)
             bg_name = None
@@ -22101,6 +22473,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Klein Virtual Try-On Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -22230,9 +22604,7 @@ class Spellcaster(Gimp.PlugIn):
             scene_uname = None
             arch_key = preset.get("arch", "sdxl")
             if arch_key in ("flux2klein", "flux1dev"):
-                tmp = _export_image_to_tmp(image)
-                scene_uname = f"gimp_scene_{uuid.uuid4().hex[:8]}.png"
-                _upload_image(srv, tmp, scene_uname); os.unlink(tmp)
+                scene_uname = _export_and_upload_cached(srv, image, debug_prefix="[scene] ")
             # Auto-enhance prompt if enabled
             prompt, negative = _auto_enhance(prompt, arch_key, negative)
             base_seed = seed
@@ -22267,6 +22639,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Generate Anything Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -22393,6 +22767,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-layer-blend-ratio"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Layer Blend Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -22506,9 +22882,7 @@ class Spellcaster(Gimp.PlugIn):
 
         try:
             _update_spinner_status("Upscale Blend: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_upblend_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[upscale-blend] ")
 
             wf = build_upscale_blend(uname, ma_file, mb_file, ratio, scale_by=1.0)
 
@@ -22529,6 +22903,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-upscale-blend"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Upscaler Blend Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -23103,9 +23479,7 @@ class Spellcaster(Gimp.PlugIn):
         # ═══════════════════════════════════════════════════════════════
         try:
             # Export start image (current canvas) on main thread
-            tmp = _export_image_to_tmp(image)
-            start_name = f"gimp_director_start_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, start_name); os.unlink(tmp)
+            start_name = _export_and_upload_cached(srv, image, debug_prefix="[director_start] ")
 
             # all_results[step][variation] = list of (fn, sf, ft)
             all_results = []
@@ -23333,6 +23707,8 @@ class Spellcaster(Gimp.PlugIn):
                          f"MP4 saved in ComfyUI output folder.")
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Wan Director Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -23528,6 +23904,8 @@ class Spellcaster(Gimp.PlugIn):
                     dup.delete()
                     Gimp.message(f"GIF stitched! {len(all_frames)} frames.\nExported to: {out_path}")
                 except Exception as e:
+                    import traceback
+                    traceback.print_exc()
                     Gimp.message(f"Stitched {len(all_frames)} frames as layers.\n"
                                  f"Auto-export failed: {e}\n"
                                  f"Use File > Export As to save as GIF manually.")
@@ -23573,6 +23951,8 @@ class Spellcaster(Gimp.PlugIn):
 
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"GIF Stitch Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -23705,6 +24085,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Watermark embedding failed: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -23774,6 +24156,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Watermark reading failed: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -23842,9 +24226,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         try:
             _update_spinner_status("Upscale: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_upscale_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[upscale] ")
             # WaveSpeed AI upscale (special handling)
             if model_name and model_name.startswith("__wavespeed_"):
                 parts = model_name.strip("_").split("_")
@@ -23861,6 +24243,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Upscale Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -24032,9 +24416,7 @@ class Spellcaster(Gimp.PlugIn):
             mtmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False); mtmp.close()
             _create_selection_mask_png(mtmp.name, image)
             _update_spinner_status("Object Removal: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            iname = f"gimp_remove_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, iname); os.unlink(tmp)
+            iname = _export_and_upload_cached(srv, image, debug_prefix="[remove] ")
             mname = f"gimp_remove_mask_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, mtmp.name, mname); os.unlink(mtmp.name)
 
@@ -24061,6 +24443,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-lama-remove"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Object Removal Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -24118,9 +24502,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         try:
             _update_spinner_status("LUT: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_lut_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[lut] ")
             wf = build_lut(uname, lut_name, strength)
             _update_spinner_status("LUT: processing on ComfyUI...")
             results = _run_with_spinner("LUT: processing on ComfyUI...",
@@ -24132,6 +24514,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-lut"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster LUT Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -24283,9 +24667,7 @@ class Spellcaster(Gimp.PlugIn):
         try:
             srv = v["server"]
             _update_spinner_status("Outpaint: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_outpaint_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[outpaint] ")
             base_seed = v["seed"]
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
@@ -24307,6 +24689,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-outpaint"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Outpaint Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -24604,9 +24988,7 @@ class Spellcaster(Gimp.PlugIn):
         try:
             _update_spinner_status("Style Transfer: exporting images...")
             # Upload target (current canvas)
-            tmp = _export_image_to_tmp(image)
-            tgt_name = f"gimp_style_tgt_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, tgt_name); os.unlink(tmp)
+            tgt_name = _export_and_upload_cached(srv, image, debug_prefix="[style_tgt] ")
             # Upload style reference
             ref_name = f"gimp_style_ref_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, style_path, ref_name)
@@ -24632,6 +25014,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Style Transfer Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -24748,9 +25132,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         try:
             _update_spinner_status("Face Restore: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_facerestore_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[facerestore] ")
             # If comparison mode, import the original as a "Before" layer first
             if do_compare:
                 _import_result_as_layer(image, tmp if os.path.exists(tmp) else _export_image_to_tmp(image),
@@ -24784,6 +25166,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-face-restore"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Face Restore Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -24907,9 +25291,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         try:
             _update_spinner_status("Photo Restore: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_photorestore_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[photorestore] ")
             wf = build_photo_restore(uname, upscale_model, fr_preset["model"],
                                        facedetection, 1.0, codeformer_weight,
                                        sharpen_radius, 0.5, sharpen_amount)
@@ -24922,6 +25304,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-photo-restore"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Photo Restore Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -25218,9 +25602,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         try:
             _update_spinner_status("Detail Hallucinate: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_hallucinate_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[hallucinate] ")
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = _build_detail_hallucinate(uname, upscale_model, preset, prompt, negative,
@@ -25245,6 +25627,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Detail Hallucinate Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -25548,9 +25932,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         try:
             _update_spinner_status("SeedV2R: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_seedv2r_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[seedv2r] ")
             orig_w = image.get_width()
             orig_h = image.get_height()
             # Klein/Flux2 uses guidance=1.0 — never the SDXL-tuned preset CFG
@@ -25579,6 +25961,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster SeedV2R Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -25849,9 +26233,7 @@ class Spellcaster(Gimp.PlugIn):
         if _colorize_engine and _colorize_engine.startswith("ddcolor"):
             try:
                 _update_spinner_status("DDColor: exporting image...")
-                tmp = _export_image_to_tmp(image)
-                uname = f"gimp_colorize_{uuid.uuid4().hex[:8]}.png"
-                _upload_image(srv, tmp, uname); os.unlink(tmp)
+                uname = _export_and_upload_cached(srv, image, debug_prefix="[colorize] ")
                 ckpt = "ddcolor_artistic.pth" if "artistic" in _colorize_engine else "ddcolor_modelscope.pth"
                 wf = build_ddcolor(uname, checkpoint=ckpt)
                 results = _run_with_spinner("DDColor: colorizing...",
@@ -25862,6 +26244,8 @@ class Spellcaster(Gimp.PlugIn):
                 Gimp.displays_flush(); Gimp.progress_end()
                 return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 Gimp.message(f"DDColor Error: {e}")
                 return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -25875,9 +26259,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _update_spinner_status("Colorize: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_colorize_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[colorize] ")
             # Colorize scope: the LLM outputs ONLY colour/tone keywords
             # (the subject comes from the B&W source). method='colorize'
             # caps length at 15-30 words.
@@ -25906,6 +26288,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Colorize Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -25969,6 +26353,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-batch-variations"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Batch Variations Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -26177,9 +26563,7 @@ class Spellcaster(Gimp.PlugIn):
         use_normal = normal_cb.get_active()
         try:
             _update_spinner_status("IC-Light: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_iclight_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[iclight] ")
             # Generate or reuse normal map if enabled
             normal_uname = None
             if use_normal:
@@ -26256,6 +26640,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster IC-Light Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -26733,9 +27119,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         try:
             _update_spinner_status("SUPIR: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_supir_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[supir] ")
             # SUPIR is AI restoration — prompt adds quality/detail guidance,
             # not new subjects. method='refine' caps at 15-40 words.
             prompt, _ = _auto_enhance(prompt, "sdxl", method="refine")
@@ -26758,6 +27142,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster SUPIR Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -26998,9 +27384,7 @@ class Spellcaster(Gimp.PlugIn):
                 ref_name = f"gimp_pb_ref_{uuid.uuid4().hex[:8]}.png"
                 _upload_image(srv, face_file, ref_name)
             else:
-                tmp = _export_image_to_tmp(image)
-                ref_name = f"gimp_pb_ref_{uuid.uuid4().hex[:8]}.png"
-                _upload_image(srv, tmp, ref_name); os.unlink(tmp)
+                ref_name = _export_and_upload_cached(srv, image, debug_prefix="[pb_ref] ")
 
             klein_key = list(KLEIN_MODELS.keys())[0]  # Default to first available
 
@@ -27125,6 +27509,8 @@ class Spellcaster(Gimp.PlugIn):
                 f"  ComfyUI/models/reactor/faces/{model_name}.safetensors")
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Photobooth Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -27686,9 +28072,7 @@ class Spellcaster(Gimp.PlugIn):
                 ref_name = f"gimp_bf_ref_{uuid.uuid4().hex[:8]}.png"
                 _upload_image(srv, face_file, ref_name)
             else:
-                tmp = _export_image_to_tmp(image)
-                ref_name = f"gimp_bf_ref_{uuid.uuid4().hex[:8]}.png"
-                _upload_image(srv, tmp, ref_name); os.unlink(tmp)
+                ref_name = _export_and_upload_cached(srv, image, debug_prefix="[bf_ref] ")
 
             preset = dict(MODEL_PRESETS[model_idx] if 0 <= model_idx < len(MODEL_PRESETS) else MODEL_PRESETS[0])
             # Quality boost: prepend proven realism tokens
@@ -27798,6 +28182,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.message("Body Factory complete!\nThe selected body is your top layer — use it as a start image for Wan I2V or Director.")
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Body Factory Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -27990,9 +28376,7 @@ class Spellcaster(Gimp.PlugIn):
                 mname = f"gimp_cs_mask_{uuid.uuid4().hex[:8]}.png"
                 _upload_image(srv, mtmp.name, mname); os.unlink(mtmp.name)
 
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_cs_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[cs] ")
 
             # Clothing Store — a targeted outfit swap. Tryon scope focuses
             # the LLM on garment details (cut / fabric / drape) and keeps
@@ -28028,6 +28412,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.message("Clothing Store complete!\nNew outfits added as layers.")
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Clothing Store Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -28257,9 +28643,7 @@ class Spellcaster(Gimp.PlugIn):
             # STEP 1: Background
             # ══════════════════════════════════════════════════════════
             if bg_key == "(use current canvas as background)":
-                tmp = _export_image_to_tmp(image)
-                bg_name = f"gimp_ss_bg_{uuid.uuid4().hex[:8]}.png"
-                _upload_image(srv, tmp, bg_name); os.unlink(tmp)
+                bg_name = _export_and_upload_cached(srv, image, debug_prefix="[ss_bg] ")
                 _import_result_as_layer(image, _download_image(srv, bg_name, "", "input"), "Studio Set BG")
             else:
                 # Generate background — pick best (with quality boost)
@@ -28362,6 +28746,8 @@ class Spellcaster(Gimp.PlugIn):
                 "TIP: Save the image before generating video — it's your 'master shot'.")
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Studio Set Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -28411,25 +28797,115 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         try:
             _update_spinner_status("Remove Background: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_rembg_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
-            if _engine == "birefnet":
-                wf = build_rembg_birefnet(uname, model="BiRefNet-general")
-            elif _engine == "birefnet-portrait":
-                wf = build_rembg_birefnet(uname, model="BiRefNet-portrait")
-            else:
-                wf = build_rembg(uname)
-            _update_spinner_status("Remove Background: processing on ComfyUI...")
-            results = _run_with_spinner("Remove Background: processing on ComfyUI...",
-                                        lambda: list(_run_comfyui_workflow(srv, wf)))
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[rembg] ")
+
+            # Preflight the engine the user picked. BiRefNet models
+            # aren't always installed on a vanilla ComfyUI; probing
+            # first turns a 30-second "process then blank" into a
+            # 1-second "not installed, falling back" message.
+            nodes = _probe_comfyui_nodes(srv) or set()
+            effective_engine = _engine
+            if effective_engine in ("birefnet", "birefnet-portrait"):
+                if "BiRefNetRMBG" not in nodes:
+                    try:
+                        Gimp.message(
+                            "BiRefNet is not installed on this ComfyUI "
+                            "server. Falling back to the faster rembg "
+                            "engine.\n\nTo enable BiRefNet: install "
+                            "'ComfyUI-RMBG' (1038lab) via ComfyUI "
+                            "Manager and download BiRefNet-general to "
+                            "models/RMBG/BiRefNet/.")
+                    except Exception:
+                        print("[Spellcaster] BiRefNet not installed; "
+                              "falling back to rembg.")
+                    effective_engine = "rembg"
+                elif "Image Rembg (Remove Background)" not in nodes:
+                    # If BiRefNet IS installed, a rembg fallback path
+                    # won't work either. We'll still try BiRefNet; a
+                    # blank result triggers an actionable error below.
+                    pass
+
+            def _build_wf(engine_key: str):
+                if engine_key == "birefnet":
+                    return build_rembg_birefnet(uname, model="BiRefNet-general")
+                if engine_key == "birefnet-portrait":
+                    return build_rembg_birefnet(uname, model="BiRefNet-portrait")
+                return build_rembg(uname)
+
+            wf = _build_wf(effective_engine)
+            label_text = {
+                "birefnet":          "BiRefNet (detailed, slower)",
+                "birefnet-portrait": "BiRefNet Portrait (people)",
+                "rembg":             "rembg (fast)",
+            }.get(effective_engine, effective_engine)
+            _update_spinner_status(
+                f"Remove Background: processing via {label_text}\u2026 "
+                f"(BiRefNet can take 30-90 s on the first run)")
+            results = _run_with_spinner(
+                f"Remove Background ({label_text})\u2026",
+                lambda: list(_run_comfyui_workflow(srv, wf, timeout=180)))
+
+            # Blank-output guard. A BiRefNet run that OOMs or fails
+            # mid-model-load can succeed at the workflow level and
+            # return a PNG whose alpha channel is entirely zero (or
+            # an RGBA-flat image with no subject). Detect that and
+            # auto-fall-back to rembg so the user gets SOMETHING.
+            imported = 0
             for i, (fn, sf, ft) in enumerate(results):
-                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), _layer_label("Background Removed", extra="rembg", i=i), False)
+                data = _download_image(srv, fn, sf, ft)
+                if _looks_like_blank_rembg(data):
+                    print(f"[Spellcaster] rembg result looked blank "
+                          f"({effective_engine}); falling back to rembg.")
+                    if effective_engine != "rembg":
+                        # Retry once with the safer engine.
+                        wf2 = _build_wf("rembg")
+                        _update_spinner_status(
+                            "Remove Background: BiRefNet returned empty; "
+                            "retrying with rembg\u2026")
+                        results2 = _run_with_spinner(
+                            "Remove Background (rembg fallback)\u2026",
+                            lambda: list(_run_comfyui_workflow(srv, wf2, timeout=120)))
+                        for j, (fn2, sf2, ft2) in enumerate(results2):
+                            data2 = _download_image(srv, fn2, sf2, ft2)
+                            _apply_mask_mode(
+                                srv, image, data2,
+                                _layer_label("Background Removed",
+                                              extra="rembg fallback", i=j),
+                                False)
+                            imported += 1
+                        break
+                    else:
+                        # Plain rembg itself returned blank \u2014 the
+                        # source image probably doesn't have a
+                        # distinguishable subject. Import it so the
+                        # user can see what came back, but flag it.
+                        _apply_mask_mode(
+                            srv, image, data,
+                            _layer_label("Background Removed (empty result)",
+                                          extra="check subject", i=i),
+                            False)
+                        imported += 1
+                else:
+                    _apply_mask_mode(
+                        srv, image, data,
+                        _layer_label("Background Removed",
+                                      extra=label_text, i=i),
+                        False)
+                    imported += 1
+
+            if imported == 0:
+                raise RuntimeError(
+                    "Server returned no usable image. Check the ComfyUI "
+                    "console for the actual node error (missing model "
+                    "file, OOM, or unsupported image size).")
+
             Gimp.displays_flush()
             Gimp.progress_end()
             _LAST_PROCEDURE["name"] = "spellcaster-rembg"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Remove Background Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -28492,9 +28968,7 @@ class Spellcaster(Gimp.PlugIn):
         _propagate_server_url(srv); dlg.destroy()
         try:
             _update_spinner_status("SAM3: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_sam3_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[sam3] ")
             wf = build_sam3_segment(uname, prompt, mask_expand=0, mask_blur=0)
             _update_spinner_status("SAM3: segmenting on ComfyUI...")
             results = _run_with_spinner("SAM3: segmenting on ComfyUI...",
@@ -28505,7 +28979,24 @@ class Spellcaster(Gimp.PlugIn):
             imported = False
             for fn, sf, ft in results:
                 if 'subject' in fn.lower():
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
+                    data = _download_image(srv, fn, sf, ft)
+                    # Empty-detection guard: when SAM3 finds nothing
+                    # matching the prompt, slot 0 comes back fully
+                    # transparent. Tell the user rather than silently
+                    # importing an invisible layer.
+                    if _looks_like_blank_rembg(data):
+                        try:
+                            Gimp.message(
+                                f"SAM3 didn't find '{prompt}' in this image.\n\n"
+                                f"Try a simpler prompt (e.g. 'person' "
+                                f"instead of 'the man in the red shirt'), "
+                                f"or check the canvas actually contains "
+                                f"what you described.")
+                        except Exception:
+                            print(f"[Spellcaster] SAM3 found nothing for '{prompt}'.")
+                        imported = True
+                        break
+                    _import_result_as_layer(image, data,
                                             f"SAM3: {prompt}", keep_size=True)
                     imported = True
                     break
@@ -28568,19 +29059,39 @@ class Spellcaster(Gimp.PlugIn):
         _propagate_server_url(srv); dlg.destroy()
         try:
             _update_spinner_status("SAM3 Extract: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_sam3x_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[sam3x] ")
             wf = build_sam3_extract(uname, prompt)
             _update_spinner_status("SAM3 Extract: processing on ComfyUI...")
             results = _run_with_spinner("SAM3 Extract: processing...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
+            nothing_found = False
             for i, (fn, sf, ft) in enumerate(results):
-                # Import at natural size — the result is full-canvas with alpha,
-                # so it overlays exactly on top of the original subject position.
-                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
+                data = _download_image(srv, fn, sf, ft)
+                # Empty-detection guard: SAM3 Extract emits an RGBA
+                # image that is fully transparent when nothing in the
+                # canvas matches the prompt. Rather than import an
+                # invisible layer, tell the user. We check only the
+                # first sensible result; subsequent ones would be
+                # variants of the same (failed) detection.
+                if _looks_like_blank_rembg(data):
+                    nothing_found = True
+                    continue
+                # Import at natural size \u2014 the result is full-canvas
+                # with alpha, so it overlays exactly on top of the
+                # original subject position.
+                _import_result_as_layer(image, data,
                                         f"SAM3 Extracted: {prompt} #{i+1}",
                                         keep_size=True)
+                nothing_found = False
+            if nothing_found:
+                try:
+                    Gimp.message(
+                        f"SAM3 Extract didn't find '{prompt}' in this image.\n\n"
+                        f"Try a simpler prompt (e.g. 'person' instead of "
+                        f"'the man in the red shirt'), or make sure the "
+                        f"subject is visible on the active canvas.")
+                except Exception:
+                    print(f"[Spellcaster] SAM3 Extract found nothing for '{prompt}'.")
             Gimp.displays_flush()
             Gimp.progress_end()
             _LAST_PROCEDURE["name"] = "spellcaster-sam3-extract"
@@ -28646,23 +29157,45 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _update_spinner_status("Anything But: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_antibut_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[antibut] ")
             # invert=True -> mask output (slot 1) is reversed.
             wf = build_sam3_segment(uname, prompt, invert=True,
                                      mask_expand=0, mask_blur=0)
             _update_spinner_status("Anything But: segmenting on ComfyUI...")
             results = _run_with_spinner("Anything But: segmenting on ComfyUI...",
                                          lambda: list(_run_comfyui_workflow(srv, wf)))
-            mask_path = None
+            # ``_download_image`` returns raw PNG bytes, not a path \u2014
+            # the variable name makes that explicit to avoid the
+            # "embedded null byte" regression this bug was filed under.
+            # ``_mask_image_to_gimp_selection`` accepts both shapes.
+            mask_bytes = None
             for fn, sf, ft in results:
                 if 'mask' in fn.lower():
-                    mask_path = _download_image(srv, fn, sf, ft)
+                    mask_bytes = _download_image(srv, fn, sf, ft)
                     break
-            if not mask_path:
+            if not mask_bytes:
                 raise RuntimeError("SAM3 did not return a mask image")
-            _mask_image_to_gimp_selection(image, mask_path, feather=feather)
+            # Empty-mask guard: when SAM3 finds nothing, slot 1's
+            # mask is entirely black \u2014 inverting it yields a
+            # fully-white mask, i.e. "select everything", which is
+            # never what the user asked for. ``_looks_like_uniform_mask``
+            # catches both the all-black and all-white degenerate
+            # cases (post-invert the all-white one surfaces here).
+            if _looks_like_uniform_mask(mask_bytes):
+                try:
+                    Gimp.message(
+                        f"SAM3 didn't find '{prompt}' in this image, so "
+                        f"'Anything But' would select the entire canvas. "
+                        f"No selection applied.\n\nTry a simpler prompt "
+                        f"(e.g. 'person', 'sky', 'car').")
+                except Exception:
+                    print(f"[Spellcaster] Anything But: SAM3 found "
+                          f"nothing for '{prompt}'.")
+                Gimp.progress_end()
+                _LAST_PROCEDURE["name"] = "spellcaster-anything-but"
+                return procedure.new_return_values(
+                    Gimp.PDBStatusType.SUCCESS, GLib.Error())
+            _mask_image_to_gimp_selection(image, mask_bytes, feather=feather)
             Gimp.displays_flush()
             Gimp.progress_end()
             _LAST_PROCEDURE["name"] = "spellcaster-anything-but"
@@ -28743,9 +29276,7 @@ class Spellcaster(Gimp.PlugIn):
         _propagate_server_url(srv); dlg.destroy()
         try:
             _update_spinner_status("Magic Eraser: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_magicerase_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[magicerase] ")
             wf = build_magic_eraser(uname, prompt,
                                      mask_expand=expand_px, mask_blur=blur_px)
             _update_spinner_status("Magic Eraser: detecting + inpainting...")
@@ -28754,7 +29285,56 @@ class Spellcaster(Gimp.PlugIn):
             if not results:
                 raise RuntimeError("Magic Eraser returned no result")
             fn, sf, ft = results[0]
-            _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
+            out_bytes = _download_image(srv, fn, sf, ft)
+            # No-match heuristic: when SAM3 finds nothing, its mask
+            # comes through empty and LaMa pass-throughs the input.
+            # A perceptual-hash match between input and output tells
+            # us the pipeline ran but erased nothing. We hash the
+            # downloaded result + the uploaded input's canvas
+            # fingerprint; if they look visually identical, warn.
+            try:
+                from PIL import Image
+                import io, hashlib
+                in_fp = _image_fingerprint(image)
+                out_img = Image.open(io.BytesIO(out_bytes)).convert("RGB")
+                # 16x16 thumbnail is enough to detect "nothing
+                # changed" without false-positives for valid erases.
+                out_img.thumbnail((16, 16))
+                out_hash = hashlib.sha256(out_img.tobytes()).hexdigest()[:24]
+                # The canvas fingerprint uses a different thumbnail
+                # method; we can't compare them directly. Instead
+                # export the canvas thumbnail the same way for a
+                # like-to-like match.
+                try:
+                    try:
+                        alpha_incl = Gimp.PixbufTransparency.KEEP_ALPHA
+                    except Exception:
+                        alpha_incl = 0
+                    in_thumb = image.get_thumbnail(16, 16, alpha_incl)
+                    in_raw = bytes(in_thumb.get_bytes().get_data())
+                    in_img = Image.frombytes(
+                        "RGBA" if in_thumb.get_has_alpha() else "RGB",
+                        (in_thumb.get_width(), in_thumb.get_height()),
+                        in_raw).convert("RGB")
+                    in_img.thumbnail((16, 16))
+                    canvas_hash = hashlib.sha256(in_img.tobytes()).hexdigest()[:24]
+                    if canvas_hash == out_hash:
+                        try:
+                            Gimp.message(
+                                f"Magic Eraser didn't find '{prompt}' to remove "
+                                f"\u2014 the output is identical to the input.\n\n"
+                                f"Try a simpler or more specific prompt "
+                                f"(e.g. 'person', 'watermark', 'car') and "
+                                f"make sure the target is visible on the "
+                                f"active canvas.")
+                        except Exception:
+                            print(f"[Spellcaster] Magic Eraser: nothing "
+                                  f"matched '{prompt}', output = input.")
+                except Exception:
+                    pass  # best-effort; never block the import
+            except ImportError:
+                pass
+            _import_result_as_layer(image, out_bytes,
                                     f"Erased: {prompt}", keep_size=True)
             Gimp.displays_flush()
             Gimp.progress_end()
@@ -28802,6 +29382,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-send-image"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Upload Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -29120,9 +29702,7 @@ class Spellcaster(Gimp.PlugIn):
             _update_spinner_status("Kontext: exporting image...")
             srv = v["server"]
             _propagate_server_url(srv)
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_kontext_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[kontext] ")
             # Build a preset dict compatible with build_img2img
             preset = {
                 "arch": "flux_kontext",
@@ -29159,12 +29739,51 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Kontext Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     # ══════════════════════════════════════════════════════════════════════
     #  Cancel Queued Generations
     # ══════════════════════════════════════════════════════════════════════
+
+    def _run_clear_upload_cache(self, procedure, run_mode, image, drawables, config, data):
+        """Wipe the content-hash upload cache from the ComfyUI input dir.
+
+        Every handler that uses ``_export_and_upload_cached`` saves the
+        uploaded PNG under a ``sc_cache_*`` filename and keeps an
+        in-memory ``(server, content_hash) \u2192 filename`` map so
+        repeat submits of the same image skip the re-export + re-upload
+        step. That cache is EXEMPT from the per-workflow privacy wipe
+        (see ``CACHE_PREFIXES`` in ``spellcaster_core/privacy.py``),
+        which is great for speed but leaves the file on the server
+        between sessions. This command is the manual override: it
+        calls ``privacy.purge_cache`` against every server we have a
+        cache entry for, then resets the in-memory map. The next
+        submit will re-export + re-upload (one-time cost).
+        """
+        try:
+            wiped = _purge_upload_cache()
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            try:
+                Gimp.message(f"Clear upload cache failed: {e}")
+            except Exception:
+                pass
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+        try:
+            Gimp.message(
+                f"Cleared Spellcaster upload cache.\n\n"
+                f"Wiped {wiped} cached file(s) from the ComfyUI input "
+                f"folder. Your next submit will re-export + re-upload "
+                f"(~1-2 s) before the cache starts warming up again.")
+        except Exception:
+            print(f"[Spellcaster] Cleared upload cache: {wiped} file(s)")
+        return procedure.new_return_values(
+            Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
     def _run_cancel_queued(self, procedure, run_mode, image, drawables, config, data):
         """Signal every in-flight Spellcaster job to cancel cooperatively.
@@ -29469,9 +30088,7 @@ class Spellcaster(Gimp.PlugIn):
                                       image, drawables, config, data)
         try:
             srv = v["server"]
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_qe_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[qe] ")
             seed = random.randint(0, 2**32 - 1)
             wf = _build_img2img(uname, v["preset"], v["prompt"], v["negative"],
                                 seed, loras=v.get("loras"),
@@ -29488,6 +30105,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Quick Enhance Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -29514,9 +30133,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             srv = v["server"]
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_qi_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[qi] ")
             # Export selection as mask
             mask_tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
             mask_tmp.close()
@@ -29539,6 +30156,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Quick Inpaint Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -29553,9 +30172,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         try:
             srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_qu_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[qu] ")
             wf = build_upscale(uname, "4x_foolhardy_Remacri.pth")
             results = _run_with_spinner("Quick Upscale 4x...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
@@ -29567,6 +30184,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Quick Upscale Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -29576,9 +30195,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         try:
             srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_qfr_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[qfr] ")
             wf = build_face_restore(uname, "codeformer-v0.1.0.pth",
                                      "retinaface_resnet50", 1.0, 0.5)
             results = _run_with_spinner("Quick Face Restore...",
@@ -29591,6 +30208,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Quick Face Restore Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -29600,9 +30219,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         try:
             srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_qrm_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[qrm] ")
             wf = build_rembg(uname)
             results = _run_with_spinner("Quick Remove Background...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
@@ -29614,6 +30231,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Quick Remove BG Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -29645,9 +30264,7 @@ class Spellcaster(Gimp.PlugIn):
                     f"Then restart ComfyUI and try again.\n(Server: {srv})")
                 return procedure.new_return_values(
                     Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_normal_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[normal] ")
             wf = build_normal_map(uname, max_res=min(image.get_width(), 1024))
             results = _run_with_spinner("NormalCrafter: generating normal map...",
                                         lambda: list(_run_comfyui_workflow(srv, wf, timeout=300)))
@@ -29659,6 +30276,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-normal-map"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"NormalCrafter Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -29695,9 +30314,7 @@ class Spellcaster(Gimp.PlugIn):
         try:
             srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
             # Export image (same as Quick Inpaint line 21380)
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_erase_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[erase] ")
             # Export selection as mask (same as Quick Inpaint line 21384)
             mask_tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
             mask_tmp.close()
@@ -29721,6 +30338,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"AI Eraser Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -29801,10 +30420,8 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
         try:
             _update_spinner_status("Color Match: exporting images...")
-            tmp = _export_image_to_tmp(image)
-            src_uname = f"gimp_cm_src_{uuid.uuid4().hex[:8]}.png"
+            src_uname = _export_and_upload_cached(srv, image, debug_prefix="[color-match-src] ")
             ref_uname = f"gimp_cm_ref_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, src_uname); os.unlink(tmp)
             _upload_image(srv, ref_path, ref_uname)
             wf = build_color_match(src_uname, ref_uname, strength, method_key)
             results = _run_with_spinner("Color Match: processing...",
@@ -29818,6 +30435,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Color Match Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -29987,6 +30606,8 @@ class Spellcaster(Gimp.PlugIn):
         try:
             _apply_spellcaster_theme()
         except Exception:
+            import traceback
+            traceback.print_exc()
             pass
 
         try:
@@ -29998,6 +30619,8 @@ class Spellcaster(Gimp.PlugIn):
         try:
             from spellcaster_core.cross_interface import resolve_guild_url
         except ImportError:
+            import traceback
+            traceback.print_exc()
             resolve_guild_url = lambda: "http://127.0.0.1:7777"
 
         import os, json, tempfile, copy
@@ -30037,6 +30660,8 @@ class Spellcaster(Gimp.PlugIn):
             try:
                 card = _st.decode_chara(chara_b64)
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 Gimp.message(
                     "Character Card Editor: the `chara` chunk couldn't be "
                     f"decoded ({e}). Starting from an empty card.")
