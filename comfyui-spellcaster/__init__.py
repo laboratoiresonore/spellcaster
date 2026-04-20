@@ -25,6 +25,11 @@ from .nodes.prompt import SpellcasterPromptEnhance
 from .nodes.sampler import SpellcasterSampler
 from .nodes.output import SpellcasterOutput
 
+# Presence broker — lets sibling plugins (GIMP, Darktable, ST, Resolve)
+# discover each other through ComfyUI instead of requiring the Wizard
+# Guild to be running. See AUDIT_CROSS_APP_DISCOVERY.md §6.5.
+from . import presence as _presence
+
 
 NODE_CLASS_MAPPINGS = {
     "SpellcasterLoader": SpellcasterLoader,
@@ -181,8 +186,13 @@ def _write_web_marker(installed: bool):
 _suite_ok = _check_full_suite_installed()
 _write_web_marker(_suite_ok)
 
+# Register the presence broker routes on ComfyUI's HTTP server. Silent
+# no-op if PromptServer isn't available (bare-import contexts).
+_presence_ok = _presence.install()
+
 if _suite_ok:
-    print("\033[36m[Spellcaster]\033[0m Node pack loaded — 4 nodes registered")
+    print("\033[36m[Spellcaster]\033[0m Node pack loaded — 4 nodes registered"
+          + ("  •  presence broker ON" if _presence_ok else ""))
 else:
     _bat = _drop_installer_bat()
     print("")

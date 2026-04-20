@@ -1483,7 +1483,130 @@ function init(router) {
         }
     });
 
+    // ── Presence: list alive peers ──────────────────────────────────
+    // Browser-side UI (e.g., cross-send slash commands) calls this on
+    // menu render to decide which /sc-send-to-* chips to offer.
+    router.get('/peers', async (req, res) => {
+        try {
+            const peers = await getPeerList();
+            res.json({ peers });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    // ── Presence: register this ST instance with peers ──────────────
+    // Both ComfyUI-Spellcaster's /spellcaster/presence/* routes AND
+    // (if running) the Wizard Guild's /api/interfaces/heartbeat. Zero-
+    // config cross-app discovery: when another plugin queries the
+    // presence list, ST shows up without the user configuring
+    // anything. See AUDIT_CROSS_APP_DISCOVERY.md §6.5.
+    _startPresenceHeartbeat();
+
     console.log('[Spellcaster] Server plugin loaded. ComfyUI:', COMFYUI_URL);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Cross-app presence (phase-9)
+// ═══════════════════════════════════════════════════════════════════
+
+const _ST_PRESENCE = {
+    key: 'sillytavern',
+    label: 'SillyTavern',
+    icon: '🎭',
+    version: '2.0.0',
+    capabilities: ['chat', 'send_image', 'receive_image', 'roleplay'],
+};
+
+let _stPresenceTimer = null;
+
+async function _presencePost(baseUrl, path, body, timeoutMs = 5000) {
+    try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), timeoutMs);
+        try {
+            await fetch(`${baseUrl}${path}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+                signal: ctrl.signal,
+            });
+        } finally { clearTimeout(t); }
+    } catch { /* best-effort, silent */ }
+}
+
+async function _heartbeatOnce() {
+    const body = { ..._ST_PRESENCE };
+    // Pack: ComfyUI-Spellcaster /spellcaster/presence/*. Primary path —
+    // works even when the Guild is offline, which is the whole point.
+    await _presencePost(COMFYUI_URL, '/spellcaster/presence/heartbeat', body);
+    // Guild /api/interfaces/heartbeat — richer metadata; best-effort.
+    // Shape is slightly different (interface= instead of key=) — the
+    // Guild endpoint pre-dates the presence broker.
+    await _presencePost(GUILD_URL, '/api/interfaces/heartbeat', {
+        interface: _ST_PRESENCE.key,
+        meta: {
+            label: _ST_PRESENCE.label,
+            capabilities: _ST_PRESENCE.capabilities,
+            version: _ST_PRESENCE.version,
+        },
+    });
+}
+
+function _startPresenceHeartbeat() {
+    // One-shot register first (presence broker auto-registers on
+    // heartbeat too, but the explicit /register sets the label +
+    // capabilities cleanly).
+    _presencePost(COMFYUI_URL, '/spellcaster/presence/register', {
+        ..._ST_PRESENCE,
+    }).catch(() => {});
+    // Immediate heartbeat so peers see us right away.
+    _heartbeatOnce().catch(() => {});
+    // Then every 20 s (under the 45 s default TTL so one miss is OK).
+    if (_stPresenceTimer) clearInterval(_stPresenceTimer);
+    _stPresenceTimer = setInterval(() => _heartbeatOnce().catch(() => {}), 20_000);
+    // Don't pin Node's event loop open for the heartbeat timer alone.
+    if (_stPresenceTimer.unref) _stPresenceTimer.unref();
+}
+
+// Query the union of both presence surfaces. Returns a deduped list;
+// when the same key appears in both, prefer the Guild's richer record
+// (has online_local / online_remote distinction via antennas).
+async function getPeerList() {
+    const seen = new Map();
+    // 1) ComfyUI-Spellcaster — the baseline, always present when this
+    //    plugin is installed (the pack is a hard dep for image gen).
+    try {
+        const r = await fetch(`${COMFYUI_URL}/spellcaster/presence/list`);
+        if (r.ok) {
+            const data = await r.json();
+            for (const p of data.peers || []) {
+                if (p.key && p.key !== _ST_PRESENCE.key) seen.set(p.key, p);
+            }
+        }
+    } catch { /* pack too old or ComfyUI down */ }
+    // 2) Guild — richer record when it's running; overwrites the
+    //    pack's entry for the same key (Guild knows online_local etc.).
+    try {
+        const r = await fetch(`${GUILD_URL}/api/interfaces`);
+        if (r.ok) {
+            const data = await r.json();
+            const ifaces = data.interfaces || {};
+            for (const [key, info] of Object.entries(ifaces)) {
+                if (key === _ST_PRESENCE.key) continue;
+                if (!info || info.online === false) continue;
+                seen.set(key, {
+                    key,
+                    label: info.ui_label || key,
+                    icon: info.icon || '',
+                    capabilities: info.capabilities || [],
+                    age_s: Math.max(0, Math.round(Date.now()/1000 - (info.last_heartbeat || 0))),
+                    source: 'guild',
+                });
+            }
+        }
+    } catch { /* Guild off, that's fine */ }
+    return [...seen.values()];
 }
 
 // ═══════════════════════════════════════════════════════════════════

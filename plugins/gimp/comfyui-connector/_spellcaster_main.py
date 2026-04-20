@@ -1064,6 +1064,123 @@ def _get_cross_interface_client():
     return _CROSS_IFACE_CLIENT
 
 
+# ── ComfyUI-side presence (phase-9) ─────────────────────────────────
+#
+# Zero-config cross-app discovery: each plugin registers itself with
+# the ComfyUI-Spellcaster custom-nodes pack's /spellcaster/presence/*
+# routes. When another plugin (Darktable, SillyTavern) installs later
+# against the SAME ComfyUI, everyone sees everyone — no Wizard Guild
+# required. The Guild's /api/interfaces still gets heartbeats (via
+# CrossInterfaceClient); this supplements it with a ComfyUI-hosted
+# fallback so the Guild isn't a hard dep for discovery.
+#
+# Fire-and-forget: failures (old ComfyUI-Spellcaster pack without the
+# routes; ComfyUI down; mis-configured URL) are swallowed. Presence is
+# best-effort; absence of presence just means the "Send to X" menu in
+# sibling plugins won't list GIMP until GIMP next heartbeats.
+
+_GIMP_PRESENCE_META = {
+    "key": "gimp",
+    "label": "GIMP",
+    "icon": "🖼️",
+    "version": "2.0.0",
+    "capabilities": ["send_image", "receive_image", "pixel_edit"],
+}
+_GIMP_PRESENCE_THREAD = None
+_GIMP_PRESENCE_STOP = None
+
+
+def _presence_post(comfy_url, path, body, timeout=3.0):
+    try:
+        import urllib.request, json as _json
+        req = urllib.request.Request(
+            f"{comfy_url.rstrip('/')}{path}",
+            data=_json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=timeout):
+            pass
+    except Exception:
+        pass
+
+
+def _presence_get(comfy_url, path, timeout=3.0):
+    try:
+        import urllib.request, json as _json
+        req = urllib.request.Request(f"{comfy_url.rstrip('/')}{path}")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return _json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return None
+
+
+def _start_comfy_presence_heartbeat():
+    """Start a daemon that registers with ComfyUI-Spellcaster's
+    presence broker and heartbeats every 20 s. Idempotent."""
+    global _GIMP_PRESENCE_THREAD, _GIMP_PRESENCE_STOP
+    if _GIMP_PRESENCE_THREAD and _GIMP_PRESENCE_THREAD.is_alive():
+        return
+    cfg = _load_config()
+    comfy_url = cfg.get("server_url") or "http://127.0.0.1:8188"
+    _GIMP_PRESENCE_STOP = threading.Event()
+
+    def _loop():
+        # Explicit register first so label/icon/capabilities land cleanly.
+        _presence_post(comfy_url, "/spellcaster/presence/register",
+                        _GIMP_PRESENCE_META)
+        # Heartbeat immediately, then every 20 s until told to stop.
+        while not _GIMP_PRESENCE_STOP.is_set():
+            _presence_post(comfy_url, "/spellcaster/presence/heartbeat",
+                            {"key": _GIMP_PRESENCE_META["key"]})
+            if _GIMP_PRESENCE_STOP.wait(20.0):
+                break
+
+    _GIMP_PRESENCE_THREAD = threading.Thread(
+        target=_loop, daemon=True, name="spellcaster-gimp-presence")
+    _GIMP_PRESENCE_THREAD.start()
+
+
+def _list_peers():
+    """Union of ComfyUI-Spellcaster's /spellcaster/presence/list and
+    the Guild's /api/interfaces. Used by the Send-to-X menu to gate
+    which siblings are alive. Returns a list of dicts with at least
+    {key, label, icon, capabilities, age_s}."""
+    cfg = _load_config()
+    comfy_url = cfg.get("server_url") or "http://127.0.0.1:8188"
+    guild_url = cfg.get("guild_url") or "http://127.0.0.1:7777"
+    seen = {}
+
+    # Primary: ComfyUI-Spellcaster pack
+    data = _presence_get(comfy_url, "/spellcaster/presence/list")
+    if isinstance(data, dict):
+        for p in data.get("peers", []):
+            k = p.get("key")
+            if k and k != _GIMP_PRESENCE_META["key"]:
+                seen[k] = p
+
+    # Secondary: Wizard Guild (richer data; wins where both exist)
+    data = _presence_get(guild_url, "/api/interfaces")
+    if isinstance(data, dict):
+        import time as _time
+        now = _time.time()
+        for key, info in (data.get("interfaces") or {}).items():
+            if key == _GIMP_PRESENCE_META["key"]:
+                continue
+            if not info or info.get("online") is False:
+                continue
+            last_hb = info.get("last_heartbeat") or 0
+            seen[key] = {
+                "key": key,
+                "label": info.get("ui_label") or key,
+                "icon": info.get("icon") or "",
+                "capabilities": info.get("capabilities") or [],
+                "age_s": max(0, round(now - last_hb, 2)),
+                "source": "guild",
+            }
+    return list(seen.values())
+
+
 def _publish_event(kind, **data):
     """Publish an event to the Guild's cross-interface bus.
 
@@ -1083,6 +1200,18 @@ def _publish_event(kind, **data):
         client.publish(kind, data=dict(data))
     except Exception:
         pass
+
+
+# Kick off the ComfyUI-side presence heartbeat at module load — guarded
+# by sys.modules so the thread is single-instance across GIMP reloads
+# (mirrors the _auto_update guard convention).
+_PRESENCE_KEY = "_spellcaster_presence_started"
+if not getattr(sys.modules.get(__name__), _PRESENCE_KEY, False):
+    setattr(sys.modules[__name__], _PRESENCE_KEY, True)
+    try:
+        _start_comfy_presence_heartbeat()
+    except Exception as _e:  # pragma: no cover — defensive
+        print(f"[Spellcaster] Presence heartbeat failed to start: {_e}")
 
 
 def _auto_enhance(prompt, arch_key, negative="", model_name=None,

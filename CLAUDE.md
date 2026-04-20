@@ -465,6 +465,47 @@ TeaCache / SLG / NAG do **not** apply to LTX — LTX uses `LTXVBaseSampler` + `S
 
 **Sampler override:** `build_ltx_video(sampler_name=...)` accepts per-call overrides (default `"euler"`). Full-step runs can try `dpmpp_2m_sde` or `heun`; distilled mode is tuned for euler and usually regresses on other samplers.
 
+**VAE decode tiling knobs** — `LTXVSpatioTemporalTiledVAEDecode` is parameterised via `build_ltx_video(vae_spatial_tiles=..., vae_temporal_tile_length=..., vae_last_frame_fix=..., vae_working_dtype=...)`. Canon defaults: `spatial_tiles=4`, `temporal_tile_length=16`, `last_frame_fix=False`, `working_dtype="auto"`. Low-VRAM users raise `spatial_tiles` to 6–8; RTX 50xx users hitting garbled last frames set `last_frame_fix=True` or `working_dtype="bf16"`. The GIMP dialog's Advanced section exposes all four.
+
+**Extra LoRAs** — `build_ltx_video(loras=[("style/cinematic_v2.safetensors", 0.8), ...])` accepts a list of `(name, strength)` tuples applied AFTER the distilled LoRA. The GIMP dialog exposes 3 slots with strength spinners and a "Fetch LoRAs from server" button.
+
+**Canonical builder signature — the full kwargs surface (29 args):**
+
+```python
+build_ltx_video(
+    preset, prompt_text, seed,                         # required
+    width=768, height=512, num_frames=25,              # geometry
+    steps=None, cfg=None, stg=None, rescale=None,      # sampling (None → preset default)
+    two_stage=False, distilled=False,                  # mode (pair with ltx_mode_kwargs)
+    loras=None, interpolate=False, rtx_scale=0,        # post-processing
+    fps=25, pingpong=False,                            # output
+    image_filename=None, i2v_strength=0.9,             # I2V conditioning
+    negative_text=None,                                # None → auto subtitle blocker
+    enable_sage=False, enable_cfg_zero=False,          # optional patches
+    sampler_name=None, stg_layers=None, chunk_size=None,         # tuning
+    vae_spatial_tiles=None, vae_temporal_tile_length=None,       # VAE tiling
+    vae_last_frame_fix=False, vae_working_dtype=None,            # VAE dtype/fix
+)
+```
+
+Every live caller in the app is audited against this surface — see §16.6 for the full call-landing table.
+
+**LTX model presets in the GIMP dialog** — `LTX_PRESETS` dict in `_spellcaster_main.py` carries 7 variants: 22B GGUF Q4_K_M / Q5_K_M / Q6_K / Q8_0 / fp8 scaled / bf16, plus 13B GGUF Q4_K_M. Shared fields (text encoder, VAE, embeddings connector, distilled LoRA, upscaler) are factored into `_LTX_COMMON` so adding a new variant is a one-liner. Users with non-standard filenames can use the Guild shot API (`detect_ltx_preset` handles detection automatically server-side).
+
+**Scene template library** — `LTX_VIDEO_PRESETS` in `_spellcaster_main.py` has ~35 SFW entries tuned to LTX's strengths: VFX (fireball explosions, dancing flames, lightning, sparks, magic spells, volumetric smoke), weather (rain/snow/fog/dust), liquid physics (water splash, wave crash, pour), cinematic camera moves (golden-hour pan, dolly-in, orbital tracking, crane reveal), lighting (neon cyberpunk, moonlit forest, candlelit), sci-fi (hologram, laser, energy aura), portrait micro-motion, cinemagraph loops, particle abstract. Each prompt is 80–150 words so LTX's cinematic prior engages. NSFW build injects 15 additional entries at the `# ── NSFW_LTX_INJECTION_POINT ──` sentinel during `nsfw/build_nsfw.py --patch`.
+
+**GIMP LtxVideoDialog exposes:**
+- preflight node check (warning banner if `LTXVBaseSampler` / `LTXAVTextEncoderLoader` / `LTXVApplySTG` / `LTXVSpatioTemporalTiledVAEDecode` missing)
+- prompt enhance checkbox (async via `_run_with_spinner`; uses LTX profile in `prompt_enhance.py`)
+- negative prompt field (empty = canon default subtitle blocker)
+- aspect ratio preset buttons (9:16 / 1:1 / 16:9 / 21:9 snapped to mod-32)
+- scene template combobox (~35 SFW + 15 NSFW)
+- mode checkboxes (distilled / two_stage — mutually exclusive)
+- steps / cfg / stg / rescale / seed / width / height / frames / fps / i2v strength / rtx_scale / runs
+- Advanced: SAGE / CFG Zero (tri-state auto/on/off), sampler combo (euler / euler_ancestral / dpmpp_2m / dpmpp_2m_sde / heun / uni_pc), STG layers entry, chunk size spin, VAE spatial/temporal tiles, last-frame-fix check, VAE dtype combo
+- 3 LoRA slots + fetch button
+- preset save/load bar
+
 #### 16.4 Boundary rules
 
 1. **No parallel detection.** If you see `_detect_wan_preset` / `_detect_ltx_preset` anywhere outside `spellcaster_core/video_presets.py`, delete it and import the canonical one. Same for WAN VAE pairing and turbo kwargs.
@@ -475,6 +516,8 @@ TeaCache / SLG / NAG do **not** apply to LTX — LTX uses `LTXVBaseSampler` + `S
    - Lua / JS / remote plugins (Darktable, SillyTavern) POST to the Guild's `/api/video/shots` endpoints instead — that surface wraps the canon server-side. The GIMP plugin uses `_build_wan_video` (its local wrapper) that applies `wan_turbo_kwargs` itself.
    - No plugin hand-rolls WAN/LTX workflow JSON. The Darktable plugin's `build_wan_i2v_json` is an emergency escape hatch ONLY — live code goes through `guild_create_shot` → Guild → canon.
 5. **Arch filter does not touch WAN/LTX LoRAs.** The cross-family LoRA filter in `composites.inject_lora_chain` doesn't run on video — video builders call `lora_loader_model_only` directly so WAN-specific LoRAs aren't dropped.
+6. **Caller overrides win over preset hints.** In the scaffold dispatcher's LTX branch, caller-supplied `interpolate` / `rtx_scale` / `steps` / `cfg` / `stg` / `rescale` / `i2v_strength` / `sampler_name` / `stg_layers` / `chunk_size` / `enable_sage` / `enable_cfg_zero` / `vae_*` / `extra_loras` override the `_LTX2_PRESET_HINTS` default. Hints are a floor, not a ceiling — a client asking for RIFE interpolation on `ltx2_distilled` gets it even though the hint defaults `interpolate=False`.
+7. **Fluent pipeline DSL accepts the full canon surface.** `Pipeline().ltx_video(...)` exposes every optional kwarg the builder supports (`distilled`, `two_stage`, `steps`, `cfg`, `stg`, `rescale`, `i2v_strength`, `pingpong`, `interpolate`, `rtx_scale`, `enable_sage`, `enable_cfg_zero`, `sampler_name`, `stg_layers`, `chunk_size`, `vae_*`, `loras`, `negative`). `_run_ltx` forwards them all; unset kwargs stay None so canon defaults ride through.
 
 #### 16.5 Canon verification — `tests/e2e_audit.py`
 
@@ -501,7 +544,9 @@ If any WAN/LTX test fails after changes, the diagnostic output tells you exactly
 
 #### 16.6 Where every WAN/LTX call lands
 
-Every runtime call path for video goes through exactly one of:
+Every runtime call path for video goes through exactly one of the entries below. The **LTX section** has been end-to-end audited (2026-04-20) — every live call site either uses the canonical `build_ltx_video` kwarg surface in full, or has a documented reason for being minimal.
+
+**WAN 2.2 call paths:**
 
 | Caller | Entry point | Mechanism |
 |---|---|---|
@@ -511,10 +556,29 @@ Every runtime call path for video goes through exactly one of:
 | SillyTavern plugin | `POST /api/video/shots` with `preset="wan22_i2v_lightning"` or `"wan22_i2v_hq"` | Goes through the Guild |
 | DaVinci Resolve plugin | `spellcaster_api.create_shot()` → `POST /api/video/shots` | Goes through the Guild |
 | Darktable Lua plugin (WAN) | `guild_create_shot()` helper → `POST /api/video/shots` | Goes through the Guild (pre-R200 hand-rolled JSON removed) |
-| Darktable Lua plugin (LTX) | `process_ltx_video()` → `guild_create_shot()` → `POST /api/video/shots` | Same shot API; dispatcher's LTX branch uses `ltx_mode_kwargs(mode)` |
 | `spellcaster_core.pipeline.Pipeline().wan_video()` | `_run_wan` → `detect_wan_preset()` + `wan_turbo_kwargs()` + `build_wan_video()` | Fluent-chain client |
 | Live diagnostic (`diagnostic._build_wan_test`) | `detect_wan_preset()` + `wan_turbo_kwargs(True)` + `build_wan_video()` | Probes server with canon |
 | `tools/generate_showcase.py`, `tools/generate_walkthrough.py`, `tools/generate_readme_gifs.py` | Detect preset live + `build_wan_video()` + `wan_turbo_kwargs()` | Ad-hoc dev tools |
+
+**LTX 2.3 call paths — all audited against the 29-kwarg canon:**
+
+| # | Caller | Entry point | Kwarg coverage |
+|---|---|---|---|
+| 1 | GIMP LTX button (T2V / I2V) | `LtxVideoDialog.get_values()` → `_build_ltx_video` wrapper → canon | **All 26 optional kwargs** exposed via dialog widgets (§16.3); wrapper tri-state-resolves SAGE/CFG Zero vs server probe and forwards everything |
+| 2 | Guild avatar baker | `tavern/server.py::_queue_animated_avatar` → `build_ltx_video(..., **ltx_mode_kwargs("i2v"), **_ltx_server_opts(url))` | Fixed 512×512×25 I2V; auto-probes SAGE + CFG Zero via `_ltx_server_opts`. Other kwargs stay canon default by design |
+| 3 | Guild I2V retry path | `tavern/server.py::_retry_anim_as_ltx` → same as #2 | Same as #2 |
+| 4 | Wizard Guild API consumers | `POST /api/video/shots` (body has `overrides` dict) → `_VIDEO_BRIDGE.add_shot` → `queue_shot` → `_build_native_workflow` → dispatcher LTX branch → canon | Bridge reads 16 LTX keys from `overrides`; dispatcher spreads them via `**extra`. **Caller overrides win** over `_LTX2_PRESET_HINTS` defaults (§16.4 rule #6) |
+| 5 | SillyTavern plugin | `POST /api/video/shots` with `preset="ltx2_distilled"` etc. + `overrides` | Same chain as #4 |
+| 6 | DaVinci Resolve plugin | `spellcaster_api.create_shot()` → `POST /api/video/shots` + `overrides` | Same chain as #4 |
+| 7 | Darktable Lua plugin | `process_ltx_video()` → `guild_create_shot()` → `POST /api/video/shots` | Same chain as #4; Darktable UI exposes mode + scene-template selector + advanced patches |
+| 8 | `spellcaster_core.pipeline.Pipeline().ltx_video(...)` | Fluent DSL: `_run_ltx` → `detect_ltx_preset()` + `build_ltx_video()` | **All 20+ optional kwargs** accepted in the fluent API (§16.4 rule #7); `_run_ltx` forwards them all |
+| 9 | Live diagnostic (`diagnostic._build_ltx_test`) | `detect_ltx_preset()` + `build_ltx_video()` | Minimal (5 kwargs) — intentional, just a live probe test |
+
+**Receivers verified (2026-04-20 audit):**
+- [scaffold/video_bridge.py](scaffold/video_bridge.py) `queue_shot()` reads 16 LTX override keys (`steps`, `cfg`, `stg`, `rescale`, `i2v_strength`, `sampler_name`, `stg_layers`, `chunk_size`, `enable_sage`, `enable_cfg_zero`, `vae_spatial_tiles`, `vae_temporal_tile_length`, `vae_last_frame_fix`, `vae_working_dtype`, `extra_loras`, `pingpong`) from `shot.overrides` and passes them to `_build_native_workflow`.
+- [scaffold/video_workflow_dispatch.py](scaffold/video_workflow_dispatch.py) `build_native_workflow()` LTX branch spreads all 16 into the build call via `**extra`. Caller's `interpolate` / `rtx_scale` override the hint's defaults.
+- [tavern/server.py](tavern/server.py) `_ltx_server_opts(comfy_url)` auto-probes `/object_info/{PatchSageAttentionKJ, CFGZeroStar}` and returns ready-to-spread kwargs; used by every Guild-side LTX caller (avatar baker + retry path).
+- GIMP `_build_ltx_video` wrapper auto-probes SAGE + CFG Zero via `_ltx_quality_patches_available(server)` and resolves tri-state user overrides against the probe.
 
 If you see a new caller that doesn't fit one of these, it's a canon violation in the making — route it through one of the above.
 
