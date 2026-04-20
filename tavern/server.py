@@ -5128,8 +5128,9 @@ def _spellcaster_forensic_extract(image_b64: str) -> tuple[int, dict]:
     """
     if not image_b64:
         return (400, {"error": "image_b64 required"})
+    import base64 as _b64
     try:
-        raw = base64.b64decode(image_b64)
+        raw = _b64.b64decode(image_b64)
     except Exception as e:
         return (400, {"error": f"base64 decode failed: {e}"})
     try:

@@ -30,6 +30,12 @@ from .nodes.output import SpellcasterOutput
 # Guild to be running. See AUDIT_CROSS_APP_DISCOVERY.md §6.5.
 from . import presence as _presence
 
+# Blob bus — Guild-less asset transport. Any plugin can POST bytes to
+# /spellcaster/blob/put and hand the returned URL to peers; they GET
+# directly from ComfyUI without the Guild being on the critical path.
+# TTL-based eviction; 256 MB/blob, 2 GB aggregate.
+from . import blob_bus as _blob_bus
+
 
 NODE_CLASS_MAPPINGS = {
     "SpellcasterLoader": SpellcasterLoader,
@@ -189,10 +195,18 @@ _write_web_marker(_suite_ok)
 # Register the presence broker routes on ComfyUI's HTTP server. Silent
 # no-op if PromptServer isn't available (bare-import contexts).
 _presence_ok = _presence.install()
+_blob_ok = _blob_bus.install()
+
+_extras = []
+if _presence_ok:
+    _extras.append("presence broker ON")
+if _blob_ok:
+    _extras.append("blob bus ON")
+_extras_str = ("  •  " + "  •  ".join(_extras)) if _extras else ""
 
 if _suite_ok:
     print("\033[36m[Spellcaster]\033[0m Node pack loaded — 4 nodes registered"
-          + ("  •  presence broker ON" if _presence_ok else ""))
+          + _extras_str)
 else:
     _bat = _drop_installer_bat()
     print("")
