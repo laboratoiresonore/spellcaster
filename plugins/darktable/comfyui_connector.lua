@@ -219,7 +219,7 @@ du.check_min_api_version("7.0.0", MODULE_NAME)  -- requires dt API 7.0+
 -- gettext must be defined BEFORE anything uses _() for i18n string wrapping
 local gettext = dt.gettext.gettext
 dt.gettext.bindtextdomain(MODULE_NAME, dt.configuration.config_dir .. "/lua/locale/")
-local function _(msgid) return gettext(msgid) end
+function _(msgid) return gettext(msgid) end
 
 -- script_manager lifecycle table -- populated at end of file with destroy/restart
 local script_data = {}
@@ -748,7 +748,7 @@ local SCENE_PRESETS = {
 -- Maps a MODEL_PRESETS entry (arch + label) to a scene architecture
 -- group key used to look up the correct prompt variant in SCENE_PRESETS.
 
-local function scene_arch(model_arch, model_label)
+function scene_arch(model_arch, model_label)
   if model_arch == "flux1dev" or model_arch == "flux2klein" then
     return "flux"
   end
@@ -818,11 +818,11 @@ local VIDEO_LORA_MARKERS = {
   "seed-vr", "seedvr",
 }
 
-local function starts_with(str, prefix)
+function starts_with(str, prefix)
   return str:sub(1, #prefix) == prefix
 end
 
-local function _looks_like_video_lora(lora_lower)
+function _looks_like_video_lora(lora_lower)
   for _, marker in ipairs(VIDEO_LORA_MARKERS) do
     if lora_lower:find(marker, 1, true) then
       return true
@@ -831,7 +831,7 @@ local function _looks_like_video_lora(lora_lower)
   return false
 end
 
-local function filter_loras_for_arch(all_loras, arch)
+function filter_loras_for_arch(all_loras, arch)
   -- Three gates, progressively more permissive, matching the canonical
   -- _filter_loras_for_arch in the GIMP plugin:
   --   1. case-insensitive folder prefix match (Linux/macOS servers
@@ -921,7 +921,7 @@ local TURBO_CONFIGS = {
   },
 }
 
-local function get_turbo_config(arch)
+function get_turbo_config(arch)
   return TURBO_CONFIGS[arch]
 end
 
@@ -984,13 +984,13 @@ local sep = "/"
 
 -- @return string : ComfyUI server URL from preferences (e.g. "http://127.0.0.1:8188")
 -- Stores in Darktable's darktablerc file (editable via Preferences → Lua → comfyui_connector)
-local function get_server()
+function get_server()
   return dt.preferences.read(MODULE_NAME, "server_url", "string")
 end
 
 -- @return string : Platform-specific temp directory
 -- Tries: TEMP (Windows) → TMP (Windows/POSIX) → TMPDIR (POSIX) → /tmp (fallback)
-local function tmp_dir()
+function tmp_dir()
   return os.getenv("TEMP") or os.getenv("TMP") or os.getenv("TMPDIR") or "/tmp"
 end
 
@@ -1004,7 +1004,7 @@ end
 -- Usage: curl -s -o "outfile" "URL" where URL=shell_esc(user_url)
 -- @param s : string to escape (or nil)
 -- @return string : escaped version (empty if nil)
-local function shell_esc(s)
+function shell_esc(s)
   if not s then return "" end
   return tostring(s):gsub('"', '')
 end
@@ -1017,7 +1017,7 @@ end
 -- @param tag : short identifier embedded in the filename for log traces
 -- @param ext : file extension including the dot (".json", ".txt", ".png")
 local _tmp_seq = 0
-local function _unique_tmp(tag, ext)
+function _unique_tmp(tag, ext)
   _tmp_seq = _tmp_seq + 1
   return string.format(
     "%s%s%s_%d_%d_%d%s",
@@ -1040,7 +1040,7 @@ end
 --   3. Read tmpfile into string variable
 --   4. Delete tmpfile
 -- Used by: fetch_all_loras(), fetch_face_models(), fetch_swap_models(), etc.
-local function curl_get(url)
+function curl_get(url)
   local tmp = _unique_tmp("comfyui_resp", ".json")
   os.execute(string.format('curl -s -o "%s" "%s"', shell_esc(tmp), shell_esc(url)))
   local f = io.open(tmp, "r")
@@ -1063,7 +1063,7 @@ end
 --   4. Read tr into return value, delete both temp files
 -- Response format: {"prompt_id":"<uuid>","number":"<int>","..."}
 -- Used by: process_image, process_wan_i2v, all AI workflows
-local function curl_post_json(url, json_str)
+function curl_post_json(url, json_str)
   local tb = _unique_tmp("comfyui_body",  ".json")
   local tr = _unique_tmp("comfyui_presp", ".json")
   local f = io.open(tb, "w"); f:write(json_str); f:close()
@@ -1088,7 +1088,7 @@ end
 --   3. Read tr, delete it, return response
 -- Response format: {"name":"filename","subfolder":"input","type":"input"}
 -- Used by: export_to_temp + process_image (upload step)
-local function curl_upload(url, filepath, filename)
+function curl_upload(url, filepath, filename)
   local tr = _unique_tmp("comfyui_up", ".json")
   os.execute(string.format(
     'curl -s -X POST -F "image=@%s;filename=%s" -F "type=input" -F "overwrite=true" -o "%s" "%s"',
@@ -1107,7 +1107,7 @@ end
 --   1. Execute: curl -s -o "out" "url"
 --   2. Return (no response body to read; curl handles file writing)
 -- Used by: result polling + importing into Darktable (see wait_result, process_image)
-local function curl_download(url, out)
+function curl_download(url, out)
   os.execute(string.format('curl -s -o "%s" "%s"', shell_esc(out), shell_esc(url)))
 end
 
@@ -1134,7 +1134,7 @@ local _download_comfyui_view
 -- to pull the resulting /api/assets/<hash> URLs into Darktable's library.
 -- For new image-editing features, prefer this path over inlining.
 
-local function _run_builder(builder_name, params_json)
+function _run_builder(builder_name, params_json)
   -- ``params_json`` MUST already be a valid JSON object literal (e.g.
   -- '{"image_filename":"foo.png","prompt_text":"a cat"}'). Caller is
   -- responsible for json_escape on string values — we pass through as-is.
@@ -1165,7 +1165,7 @@ local function _run_builder(builder_name, params_json)
   return urls
 end
 
-local function _download_guild_assets(urls, prefix)
+function _download_guild_assets(urls, prefix)
   -- Guild returns canonical /api/assets/<hash> URLs (AssetGallery
   -- backed). Resolve to absolute, fetch, and import each into the
   -- Darktable library so the user sees the result alongside the
@@ -1204,7 +1204,7 @@ end
 -- keeps us "online" during active sessions without any background
 -- work. The Guild's 30s TTL handles graceful disappearance.
 
-local function get_guild_url()
+function get_guild_url()
   return dt.preferences.read(MODULE_NAME, "guild_url", "string")
 end
 
@@ -1346,7 +1346,7 @@ function comfy_presence_list()
 end
 
 
-local function guild_heartbeat(meta_pairs)
+function guild_heartbeat(meta_pairs)
   -- meta_pairs: optional flat k=v list, e.g. { active_image = "photo.raw" }
   local guild = get_guild_url()
   if not guild or guild == "" then return end
@@ -1386,7 +1386,7 @@ local function guild_heartbeat(meta_pairs)
   os.remove(tmp)
 end
 
-local function guild_emit_event(kind, data_json)
+function guild_emit_event(kind, data_json)
   -- data_json: raw JSON string for the 'data' field, e.g.
   --   '{"prompt":"sunset","model":"sdxl"}'
   -- Keeping it as a raw string means callers format it however they
@@ -1454,7 +1454,7 @@ function _blob_upload(png_path)
   return hash, url
 end
 
-local function _asset_upload_and_emit(target, png_path, friendly)
+function _asset_upload_and_emit(target, png_path, friendly)
   local guild = get_guild_url()
   if not guild or guild == "" then return false, "no guild url" end
   -- Blob-bus-first path — byte transport skips the Guild when possible.
@@ -1549,7 +1549,7 @@ end
 -- can't OOM the Python interpreter we spawn. The Guild's own reference
 -- upload cap is 200 MB; we match that on the client side.
 local MAX_REF_BYTES = 200 * 1024 * 1024
-local function _file_to_base64(path)
+function _file_to_base64(path)
   -- Cheap pre-check: ask the OS for the file size via Lua io.open +
   -- seek, without reading the body. If we can't size it, play safe
   -- and refuse rather than pushing unbounded data through Python.
@@ -1645,7 +1645,7 @@ end
 -- Guild will pass through to build_wan_video (width, height, length, fps,
 -- ip_adapter_*, loras_high, loras_low, motion_mask, etc.). The Guild
 -- applies wan_turbo_kwargs internally based on the `preset` name.
-local function guild_create_shot(title, prompt, negative, preset, overrides)
+function guild_create_shot(title, prompt, negative, preset, overrides)
   local guild = get_guild_url()
   if not guild or guild == "" then
     return nil, "Guild URL not configured (preferences → Wizard Guild URL)"
@@ -1711,7 +1711,7 @@ end
 -- `-w "%{http_code}"` and only report success on 2xx. The Guild's
 -- response body goes into its own tmp file so we can surface the
 -- error text to the caller on failure.
-local function guild_attach_reference(shot_id, image_path)
+function guild_attach_reference(shot_id, image_path)
   local guild = get_guild_url()
   if not guild or guild == "" then return false, "no guild url" end
   local b64 = _file_to_base64(image_path)
@@ -1758,7 +1758,7 @@ local function guild_attach_reference(shot_id, image_path)
 end
 
 -- Trigger render for a shot. Returns true on queued, false on error.
-local function guild_render_shot(shot_id)
+function guild_render_shot(shot_id)
   local guild = get_guild_url()
   if not guild or guild == "" then return false, "no guild url" end
   local url = string.format("%s/api/video/shots/%s/render", guild, shot_id)
@@ -1787,7 +1787,7 @@ end
 
 -- Poll the Guild's shot list until the target shot reaches status="ready"
 -- (or "failed"). Returns (ready, status_or_error).
-local function guild_wait_for_shot_ready(shot_id, timeout_s)
+function guild_wait_for_shot_ready(shot_id, timeout_s)
   local guild = get_guild_url()
   if not guild or guild == "" then return false, "no guild url" end
   timeout_s = timeout_s or 600
@@ -1826,7 +1826,7 @@ local function guild_wait_for_shot_ready(shot_id, timeout_s)
 end
 
 -- Download the rendered video for a shot. Returns true on success.
-local function guild_download_shot_video(shot_id, out_path)
+function guild_download_shot_video(shot_id, out_path)
   local guild = get_guild_url()
   if not guild or guild == "" then return false, "no guild url" end
   local url = string.format("%s/api/video/shots/%s/video", guild, shot_id)
@@ -1862,7 +1862,7 @@ end
 -- @return string or nil : the value (without quotes) or nil if key not found
 -- Example: json_val('{"prompt_id":"abc123","number":5}', "prompt_id") → "abc123"
 -- Pattern: matches "key" : "value" with optional whitespace, captures the value part
-local function json_val(s, key)
+function json_val(s, key)
   return s and s:match('"' .. key .. '"%s*:%s*"([^"]*)"')
 end
 
@@ -1882,7 +1882,7 @@ local cached_loras = {}       -- currently displayed (filtered by architecture v
 -- Side effects: populates cached_all_loras (used by refresh_lora_selector when filtering by arch)
 -- HTTP: GET /object_info/LoraLoader → parse "lora_name" field → extract quoted names
 -- Called by: fetch_lora_btn.clicked_callback (in UI section)
-local function fetch_all_loras()
+function fetch_all_loras()
   local server = get_server()
   local r = curl_get(server .. "/object_info/LoraLoader")
   if not r then return {} end
@@ -1906,7 +1906,7 @@ end
 -- @return string : architecture ID ("sd15", "sdxl", "flux1dev", "flux2klein", etc.)
 -- Fallback: "sdxl" if no model preset is selected (should not happen in normal use)
 -- Called by: refresh_lora_selector, refresh_scene_selector, get_turbo_config
-local function get_current_arch()
+function get_current_arch()
   local idx = model_selector and model_selector.selected or 1
   local preset = MODEL_PRESETS[idx]
   return preset and preset.arch or "sdxl"
@@ -1957,7 +1957,7 @@ end
 --   'path\\to\\file' → 'path\\\\to\\\\file' (Windows paths get doubled backslashes)
 --   'say "hi"' → 'say \\"hi\\"' (quotes escaped for JSON)
 -- IMPORTANT: backslash must be escaped first, or we'd double-escape everything
-local function json_escape(s)
+function json_escape(s)
   s = s:gsub("\\", "\\\\")   -- backslash must be first (catches existing escapes too)
   s = s:gsub('"', '\\"')      -- double-quote → \"
   s = s:gsub("\n", "\\n")     -- literal newline → \n escape sequence
@@ -1980,7 +1980,7 @@ end
 --   compute_scale_dims(1024, 768, 512) → (512, 384) [max dimension fits in 512]
 --   compute_scale_dims(1920, 1080, 1024) → (1024, 576)
 --   compute_scale_dims(640, 480, 0) → (640, 480) [no scaling]
-local function compute_scale_dims(orig_w, orig_h, max_res)
+function compute_scale_dims(orig_w, orig_h, max_res)
   if max_res <= 0 or (orig_w <= max_res and orig_h <= max_res) then
     return orig_w, orig_h
   end
@@ -2001,7 +2001,7 @@ end
 -- @return w, h : width and height in pixels
 -- Fallback: 4096x4096 if image is nil or dimensions are invalid (<=0)
 -- Used by: build_*_json functions to determine if scaling is needed
-local function get_image_dims(image)
+function get_image_dims(image)
   local w = (image and image.width) or 4096
   local h = (image and image.height) or 4096
   if w <= 0 then w = 4096 end
@@ -2060,7 +2060,7 @@ end
 --     - ControlNetApplyAdvanced (applies guidance) → node 22
 --   If enabled, nodes 2-3 outputs are replaced with nodes 22's outputs in KSampler.
 --
-local function build_img2img_json(image_filename, preset, prompt, negative, seed,
+function build_img2img_json(image_filename, preset, prompt, negative, seed,
                                    lora_name, lora_strength, scale_w, scale_h,
                                    cn_mode, cn_strength, cn_preprocessor, cn_model,
                                    turbo_config)
@@ -2169,7 +2169,7 @@ end
 local cached_face_models = {}   -- face model files from ReActorLoadFaceModel
 local cached_swap_models = {}   -- swap engine options from ReActorFaceSwap
 
-local function fetch_face_models()
+function fetch_face_models()
   local server = get_server()
   local r = curl_get(server .. "/object_info/ReActorLoadFaceModel")
   if not r then return {} end
@@ -2188,7 +2188,7 @@ end
 
 -- Fetch swap models (detection/replacement backends) from ComfyUI.
 -- @return table : array of swap model names (e.g. ["inswapper_128.onnx", ...])
-local function fetch_swap_models()
+function fetch_swap_models()
   local server = get_server()
   local r = curl_get(server .. "/object_info/ReActorFaceSwap")
   if not r then return {} end
@@ -2225,7 +2225,7 @@ end
 -- @param scale_w, scale_h : downscaled dimensions
 -- @return string : complete workflow JSON
 --
-local function build_faceswap_model_json(image_filename, face_model_name, swap_model, scale_w, scale_h)
+function build_faceswap_model_json(image_filename, face_model_name, swap_model, scale_w, scale_h)
   local esc_face = json_escape(face_model_name)
   local esc_swap = json_escape(swap_model)
 
@@ -2261,7 +2261,7 @@ end
 -- Alternative to the saved-model approach: uploads a source face image
 -- directly. Simpler setup but requires the source image each time.
 
-local function build_faceswap_direct_json(target_filename, source_filename,
+function build_faceswap_direct_json(target_filename, source_filename,
                                            swap_model, scale_w, scale_h)
   local esc_swap = json_escape(swap_model)
 
@@ -2299,7 +2299,7 @@ end
 -- @param overwrite : boolean (true = overwrite existing, false = skip if exists)
 -- @return string : complete workflow JSON
 --
-local function build_save_face_model_json(image_filename, model_name, overwrite)
+function build_save_face_model_json(image_filename, model_name, overwrite)
   local esc_name = json_escape(model_name)
   return string.format([[
 {"prompt":{
@@ -2328,7 +2328,7 @@ end
 -- @param image_filename : input image name on ComfyUI
 -- @return string : complete workflow JSON
 --
-local function build_rembg_json(image_filename)
+function build_rembg_json(image_filename)
   return string.format([[
 {"prompt":{
   "1":{"class_type":"LoadImage","inputs":{"image":"%s"}},
@@ -2367,7 +2367,7 @@ local UPSCALE_MODELS = {
   { label = "4x Anime",             file = "RealESRGAN_x4plus_anime_6B.pth" },
 }
 
-local function build_upscale_json(image_filename, model_name)
+function build_upscale_json(image_filename, model_name)
   return string.format([[
 {"prompt":{
   "1":{"class_type":"LoadImage","inputs":{"image":"%s"}},
@@ -2406,7 +2406,7 @@ end
 -- alpha channel). An ImageToMask step extracts the mask bitmap from
 -- the mask PNG's red channel — matches the canonical
 -- build_lama_remove workflow.
-local function build_lama_json(image_filename, mask_filename)
+function build_lama_json(image_filename, mask_filename)
   return string.format([[
 {"prompt":{
   "1":{"class_type":"LoadImage","inputs":{"image":"%s"}},
@@ -2446,7 +2446,7 @@ local LUT_PRESETS = {
   { label = "ACES HDR",               file = "ACES_LMT_v0.1.1.cube" },
 }
 
-local function build_lut_json(image_filename, lut_file, strength)
+function build_lut_json(image_filename, lut_file, strength)
   return string.format([[
 {"prompt":{
   "1":{"class_type":"LoadImage","inputs":{"image":"%s"}},
@@ -2463,7 +2463,7 @@ end
 -- area using the first model preset. Padding values (left/right/top/bottom)
 -- specify how many pixels to extend in each direction.
 
-local function build_outpaint_json(image_filename, preset, prompt, negative, seed,
+function build_outpaint_json(image_filename, preset, prompt, negative, seed,
                                     pad_left, pad_right, pad_top, pad_bottom,
                                     scale_w, scale_h)
   local esc_ckpt = json_escape(preset.ckpt)
@@ -2500,7 +2500,7 @@ end
 -- transfer artistic style from a reference image. The checkpoint comes
 -- from the first model preset for maximum compatibility.
 
-local function build_style_transfer_json(image_filename, style_ref_filename,
+function build_style_transfer_json(image_filename, style_ref_filename,
                                           ckpt, prompt, negative, seed,
                                           strength, scale_w, scale_h)
   local esc_ckpt = json_escape(ckpt)
@@ -2555,7 +2555,7 @@ local FACE_RESTORE_MODELS = {
   { label = "RestoreFormer++",       file = "RestoreFormer_PP.onnx" },
 }
 
-local function build_face_restore_json(image_filename, model, visibility, codeformer_weight)
+function build_face_restore_json(image_filename, model, visibility, codeformer_weight)
   return string.format([[
 {"prompt":{
   "1":{"class_type":"LoadImage","inputs":{"image":"%s"}},
@@ -2579,7 +2579,7 @@ local PHOTO_RESTORE_UPSCALE_MODELS = {
   { label = "8x NMKD Faces",           file = "8x_NMKD-Faces_160000_G.pth" },
 }
 
-local function build_photo_restore_json(image_filename, upscale_model, face_model, sharpen_alpha)
+function build_photo_restore_json(image_filename, upscale_model, face_model, sharpen_alpha)
   return string.format([[
 {"prompt":{
   "1":{"class_type":"LoadImage","inputs":{"image":"%s"}},
@@ -2606,7 +2606,7 @@ local DETAIL_HALLUCINATE_LEVELS = {
   { label = "Extreme (creative)",         denoise = 0.60, cfg = 7.0 },
 }
 
-local function build_detail_hallucinate_json(image_filename, ckpt, prompt, negative, seed, cfg, denoise)
+function build_detail_hallucinate_json(image_filename, ckpt, prompt, negative, seed, cfg, denoise)
   local esc_ckpt = json_escape(ckpt)
   local esc_prompt = json_escape(prompt)
   local esc_neg = json_escape(negative)
@@ -2636,7 +2636,7 @@ end
 -- ControlNet lineart-guided img2img to add color to B&W photos.
 -- Auto-selects ControlNet model based on checkpoint architecture.
 
-local function build_colorize_json(image_filename, ckpt, controlnet_name, prompt, negative, seed, strength, denoise)
+function build_colorize_json(image_filename, ckpt, controlnet_name, prompt, negative, seed, strength, denoise)
   local esc_ckpt = json_escape(ckpt)
   local esc_cn = json_escape(controlnet_name)
   local esc_prompt = json_escape(prompt)
@@ -2672,7 +2672,7 @@ end
 local MTB_ANALYSIS_MODELS = {"buffalo_l", "antelopev2", "buffalo_m", "buffalo_sc"}
 local MTB_SWAP_MODELS = {"inswapper_128.onnx", "inswapper_128_fp16.onnx"}
 
-local function build_faceswap_mtb_json(target_filename, source_filename,
+function build_faceswap_mtb_json(target_filename, source_filename,
                                         analysis_model, swap_model, faces_index,
                                         scale_w, scale_h)
   local esc_analysis = json_escape(analysis_model)
@@ -2696,7 +2696,7 @@ local function build_faceswap_mtb_json(target_filename, source_filename,
      esc_analysis, esc_swap, esc_idx)
 end
 
-local function process_faceswap_mtb(image, source_path, analysis_model, swap_model, faces_index)
+function process_faceswap_mtb(image, source_path, analysis_model, swap_model, faces_index)
   local server = get_server()
 
   dt.print(_("Exporting for mtb face swap..."))
@@ -2750,7 +2750,7 @@ end
 --   RTXVideoSuperResolution -> RIFE VFI 2x interpolation
 -- Output is saved as both H.264 MP4 and GIF.
 
-local function wan_video_dims(src_w, src_h, target_long, align)
+function wan_video_dims(src_w, src_h, target_long, align)
   -- Scale so longest side = target_long, round to align (Wan VAE needs multiples of 16)
   target_long = target_long or 720
   align = align or 16
@@ -2963,7 +2963,7 @@ local WAN_VIDEO_PRESETS = {
 local cached_wan_loras = {}     -- all Wan\ loras from server
 local cached_wan_loras_filtered = {}  -- subset shown in combos (per-preset filtered)
 
-local function fetch_wan_loras()
+function fetch_wan_loras()
   -- Fetch all LoRAs, then keep only those inside any wan-related subfolder.
   -- Adaptive: matches any folder starting with 'wan' (case-insensitive).
   local server = get_server()
@@ -2984,7 +2984,7 @@ local function fetch_wan_loras()
   return loras
 end
 
-local function filter_wan_loras(all_loras, wan_preset)
+function filter_wan_loras(all_loras, wan_preset)
   -- Filter cached Wan loras by the preset's lora_prefixes list.
   -- Falls back to matching all wan-related folders if no prefixes defined.
   local prefixes = (wan_preset and wan_preset.lora_prefixes)
@@ -3008,7 +3008,7 @@ end
 -- filename and auto-pair high/low counterparts so the user only needs
 -- to select one and the other is found automatically.
 
-local function detect_wan_lora_noise(lora_name)
+function detect_wan_lora_noise(lora_name)
   -- Detect whether a Wan LoRA targets the high or low noise model.
   -- Returns "high", "low", or "both" (universal).
   local basename = lora_name:match("\\([^\\]+)$") or lora_name:match("/([^/]+)$") or lora_name
@@ -3026,7 +3026,7 @@ local function detect_wan_lora_noise(lora_name)
   return "both"
 end
 
-local function wan_lora_concept_key(lora_name)
+function wan_lora_concept_key(lora_name)
   -- Strip noise tokens from LoRA filename to get a concept key for pair grouping.
   local base = lora_name:match("\\([^\\]+)$") or lora_name:match("/([^/]+)$") or lora_name
   local low = base:lower()
@@ -3069,7 +3069,7 @@ local cached_wan_lora_pairs = {}
 --  direct caller, you're reintroducing the drift this file fought
 --  for months. Go through the Guild.
 -- ══════════════════════════════════════════════════════════════════
-local function build_wan_i2v_json(image_filename, wan_preset, prompt, negative, seed,
+function build_wan_i2v_json(image_filename, wan_preset, prompt, negative, seed,
                                    width, height, length, steps, cfg, shift, second_step,
                                    loras, accel_enabled, accel_strength,
                                    upscale, upscale_factor, interpolate, pingpong, fps,
@@ -3243,7 +3243,7 @@ local KLEIN_MODELS = {
   { label = "Klein Base 4B",   unet = "A-Flux\\flux-2-klein-base-4b-fp8.safetensors",    clip = "qwen_3_4b.safetensors" },
 }
 
-local function build_klein_img2img_json(image_filename, klein_model, prompt, seed,
+function build_klein_img2img_json(image_filename, klein_model, prompt, seed,
                                          steps, guidance, scale_w, scale_h)
   local esc_prompt = json_escape(prompt)
   local esc_unet = json_escape(klein_model.unet)
@@ -3294,7 +3294,7 @@ end
 -- (PuLIDModelLoader, PuLIDEVACLIPLoader, PuLIDInsightFaceLoader,
 -- ApplyPuLIDFlux2) designed for Flux.2 architecture (Klein 4B/9B).
 
-local function build_pulid_flux_json(image_filename, face_filename, prompt, seed,
+function build_pulid_flux_json(image_filename, face_filename, prompt, seed,
                                       strength, steps, guidance, scale_w, scale_h)
   local esc_prompt = json_escape(prompt)
 
@@ -3379,7 +3379,7 @@ local FACEID_PRESETS = {
   },
 }
 
-local function build_faceid_json(target_filename, face_ref_filename, preset,
+function build_faceid_json(target_filename, face_ref_filename, preset,
                                   prompt, negative, seed, scale_w, scale_h,
                                   weight, weight_v2, denoise_override)
   local esc_ckpt = json_escape(preset.ckpt)
@@ -3435,7 +3435,7 @@ end
 -- Both the target and reference images are VAE-encoded as ReferenceLatent
 -- conditioning, allowing style/structure transfer from the reference.
 
-local function build_klein_ref_json(image_filename, ref_filename, klein_model,
+function build_klein_ref_json(image_filename, ref_filename, klein_model,
                                      prompt, seed, steps, guidance, scale_w, scale_h)
   local esc_prompt = json_escape(prompt)
   local esc_unet = json_escape(klein_model.unet)
@@ -3884,7 +3884,7 @@ local INPAINT_REFINEMENTS = {
 -- mask via ImageToMask (red channel), and applied to the VAE-encoded latent.
 -- White mask regions are regenerated; black regions are preserved.
 
-local function build_inpaint_json(image_filename, mask_filename, preset, prompt, negative,
+function build_inpaint_json(image_filename, mask_filename, preset, prompt, negative,
                                    seed, scale_w, scale_h, loras,
                                    cn_mode, cn_strength, cn_preprocessor, cn_model)
   local esc_prompt = json_escape(prompt)
@@ -3975,7 +3975,7 @@ end
 -- to generate multiple variations in one pass. Reuses the img2img
 -- checkpoint/prompt pipeline but generates from noise instead of encoding.
 
-local function build_batch_txt2img_json(preset, prompt, negative, seed, lora_name, lora_strength, width, height, batch_count)
+function build_batch_txt2img_json(preset, prompt, negative, seed, lora_name, lora_strength, width, height, batch_count)
   local esc_prompt = json_escape(prompt)
   local esc_neg = json_escape(negative)
   local esc_ckpt = json_escape(preset.ckpt)
@@ -4084,7 +4084,7 @@ local ICLIGHT_PRESETS = {
   {label = "Dramatic", prompt = "dramatic chiaroscuro lighting, strong contrast, film noir"},
 }
 
-local function build_iclight_json(uploaded_name, ckpt, prompt, negative, seed, multiplier)
+function build_iclight_json(uploaded_name, ckpt, prompt, negative, seed, multiplier)
   local esc_ckpt = json_escape(ckpt)
   local esc_prompt = json_escape(prompt)
   local esc_neg = json_escape(negative)
@@ -4117,7 +4117,7 @@ end
 -- node which takes supir_model and sdxl_model path strings directly,
 -- along with prompt, denoise (control_scale), and sampling parameters.
 
-local function build_supir_json(uploaded_name, supir_model, sdxl_model, prompt, seed, denoise, steps)
+function build_supir_json(uploaded_name, supir_model, sdxl_model, prompt, seed, denoise, steps)
   return string.format([[
 {"prompt":{
   "1":{"class_type":"LoadImage","inputs":{"image":"%s"}},
@@ -4169,7 +4169,7 @@ local SEEDV2R_SCALES = {
   {label = "4x", factor = 4.0},
 }
 
-local function build_seedv2r_json(uploaded_name, upscale_model, ckpt, prompt, negative,
+function build_seedv2r_json(uploaded_name, upscale_model, ckpt, prompt, negative,
                                    seed, denoise, steps, cfg, sampler, scheduler,
                                    scale_factor, orig_w, orig_h)
   local esc_img = shell_esc(uploaded_name)
@@ -4244,7 +4244,7 @@ local status_label
 -- still stack multiple process_* calls before the first one returns.
 local _processing = false
 
-local function acquire_processing_lock()
+function acquire_processing_lock()
   if _processing then
     dt.print(_("A workflow is already running — please wait"))
     return false
@@ -4253,7 +4253,7 @@ local function acquire_processing_lock()
   return true
 end
 
-local function release_processing_lock()
+function release_processing_lock()
   _processing = false
 end
 
@@ -4270,7 +4270,7 @@ end
 --   local path, fname = export_to_temp(dt.database[1])
 --   local resp = curl_upload(..., path, fname)  -- upload to ComfyUI
 -- Filenames are unique: "dt_comfy_<timestamp>_<random>.png" to avoid collisions
-local function export_to_temp(image)
+function export_to_temp(image)
   local dir = tmp_dir()
   local fname = "dt_comfy_" .. os.time() .. "_" .. math.random(10000, 99999) .. ".png"
   local path = dir .. sep .. fname
@@ -4296,7 +4296,7 @@ end
 -- Locates splash.py relative to this Lua plugin directory.
 -- On Windows: uses pythonw (no console window) + start /B (background process)
 -- On Unix: uses python3 + & (background shell process)
-local function launch_splash()
+function launch_splash()
   local lock_file = tmp_dir() .. sep .. "comfyui_splash_" .. os.time() .. "_" .. math.random(1000,9999) .. ".lock"
   local f = io.open(lock_file, "w")
   if f then f:write("1"); f:close() end
@@ -4318,7 +4318,7 @@ end
 -- Signal the splash screen process to exit by deleting the lock file.
 -- The splash Python process checks for file existence in a loop.
 -- @param lock_file : path to lock file created by launch_splash()
-local function kill_splash(lock_file)
+function kill_splash(lock_file)
   if lock_file then
     os.remove(lock_file)
   end
@@ -4351,7 +4351,7 @@ end
 --   3. Filter to .png / .jpg extensions only
 --   4. If any found, return list
 --   5. Otherwise sleep 2s and retry
-local function wait_result(prompt_id, timeout_override)
+function wait_result(prompt_id, timeout_override)
   local server = get_server()
   local timeout = timeout_override or dt.preferences.read(MODULE_NAME, "timeout", "integer")
   local deadline = os.time() + timeout
@@ -4384,7 +4384,7 @@ end
 -- @param prompt_id : UUID from /prompt endpoint
 -- @param timeout_override : max seconds to wait (default 600s = 10min for video)
 -- @return table or nil : array of {filename, subfolder} dicts or nil on timeout
-local function wait_result_all(prompt_id, timeout_override)
+function wait_result_all(prompt_id, timeout_override)
   local server = get_server()
   local timeout = timeout_override or 600
   local deadline = os.time() + timeout
@@ -4442,7 +4442,7 @@ end
 --
 -- On any error: dt.print() error message and early return (no crash)
 --
-local function process_image(image, preset, prompt, negative, lora_name, lora_strength,
+function process_image(image, preset, prompt, negative, lora_name, lora_strength,
                               cn_mode, cn_strength, cn_preprocessor, cn_model,
                               turbo_config)
   local server = get_server()
@@ -4500,7 +4500,7 @@ local function process_image(image, preset, prompt, negative, lora_name, lora_st
 end
 
 -- ── Face swap (saved model) processing ──────────────────────────────────
-local function process_faceswap_model(image, face_model_name, swap_model)
+function process_faceswap_model(image, face_model_name, swap_model)
   local server = get_server()
 
   dt.print(_("Exporting for face swap..."))
@@ -4538,7 +4538,7 @@ end
 -- Exports the selected image, uploads it, builds a face model from it,
 -- and saves the model on the ComfyUI server as a .safetensors file.
 
-local function process_save_face_model(image, model_name, overwrite)
+function process_save_face_model(image, model_name, overwrite)
   local server = get_server()
 
   dt.print(_("Exporting face for model building..."))
@@ -4568,7 +4568,7 @@ end
 -- One-click background removal. No scaling, no presets — operates at
 -- original resolution for best edge accuracy.
 
-local function process_rembg(image)
+function process_rembg(image)
   local server = get_server()
 
   dt.print(_("Exporting for background removal..."))
@@ -4600,7 +4600,7 @@ local function process_rembg(image)
 end
 
 -- ── Upscale 4x processing ──────────────────────────────────────────────
-local function process_upscale(image, upscale_model_file)
+function process_upscale(image, upscale_model_file)
   local server = get_server()
 
   dt.print(_("Exporting for upscale..."))
@@ -4632,7 +4632,7 @@ local function process_upscale(image, upscale_model_file)
 end
 
 -- ── Object Removal (LaMa) processing ──────────────────────────────────
-local function process_lama(image, mask_path)
+function process_lama(image, mask_path)
   local server = get_server()
 
   dt.print(_("Exporting for LaMa inpaint..."))
@@ -4679,7 +4679,7 @@ end
 -- server-side via SAM3). When both are set, SAM3 wins because typing
 -- a prompt is the explicit "I don't want to deal with mask files"
 -- gesture. Either-or is enforced in the canonical builder.
-local function process_klein_inpaint(image, mask_path, klein_model_label,
+function process_klein_inpaint(image, mask_path, klein_model_label,
                                       prompt, denoise, sam3_prompt)
   local server = get_server()
 
@@ -4738,7 +4738,7 @@ end
 -- The legacy build_lama_json + process_lama path requires a mask file.
 -- This canonical path accepts a SAM3 prompt instead, so the user can
 -- type "the trash can" and never leave Darktable.
-local function process_lama_canon(image, mask_path, sam3_prompt)
+function process_lama_canon(image, mask_path, sam3_prompt)
   local server = get_server()
 
   dt.print(_("Exporting for LaMa removal..."))
@@ -4782,7 +4782,7 @@ end
 -- structure is preserved as a soft guide while the prompt drives the
 -- new pose / framing. Lower denoise = closer to the original;
 -- higher denoise = freer reinterpretation.
-local function process_klein_repose(image, klein_model_label, prompt, denoise)
+function process_klein_repose(image, klein_model_label, prompt, denoise)
   local server = get_server()
 
   dt.print(_("Exporting for Klein re-pose..."))
@@ -4823,7 +4823,7 @@ end
 -- chained inside spellcaster_core.workflows.build_klein_headswap so we
 -- just hand it both filenames + the model key. ``source`` is the face
 -- to insert; ``target`` is the photo whose head gets replaced.
-local function process_klein_headswap(image, source_path, klein_model_label,
+function process_klein_headswap(image, source_path, klein_model_label,
                                        prompt, denoise)
   local server = get_server()
 
@@ -4864,7 +4864,7 @@ end
 -- the input itself — soft style/lighting/structure guidance from a
 -- separate photo while editing the main image. ref_strength 1.0 =
 -- strong influence, 0.4 = subtle nudge.
-local function process_klein_img2img_ref(image, ref_path, klein_model_label,
+function process_klein_img2img_ref(image, ref_path, klein_model_label,
                                           prompt, denoise, ref_strength)
   local server = get_server()
 
@@ -4951,7 +4951,7 @@ end
 -- when one model is sharp-but-crunchy (e.g. RealESRGAN) and the other
 -- is smooth-but-soft (e.g. Remacri) — the blend gives a tunable
 -- middle ground.
-local function process_upscale_blend(image, model_a_file, model_b_file,
+function process_upscale_blend(image, model_a_file, model_b_file,
                                       blend_factor, scale_by)
   local server = get_server()
 
@@ -4991,7 +4991,7 @@ end
 -- Optional sam3_prompt scopes the change to a SAM3-segmented region
 -- (the same plumbing the Klein flows use). Optional ckpt override lets
 -- the user point at a different ZIT checkpoint than the AIO default.
-local function process_zit_img2img(image, prompt, negative, denoise,
+function process_zit_img2img(image, prompt, negative, denoise,
                                     quality, fast_mode, sam3_prompt,
                                     ckpt_override, lora_name, lora_strength)
   local server = get_server()
@@ -5058,7 +5058,7 @@ local function process_zit_img2img(image, prompt, negative, denoise,
 end
 
 -- ── Color Grading / LUT processing ────────────────────────────────────
-local function process_lut(image, lut_file, strength)
+function process_lut(image, lut_file, strength)
   local server = get_server()
 
   dt.print(_("Exporting for LUT grading..."))
@@ -5090,7 +5090,7 @@ local function process_lut(image, lut_file, strength)
 end
 
 -- ── Outpaint / Extend Canvas processing ───────────────────────────────
-local function process_outpaint(image, preset, prompt, negative,
+function process_outpaint(image, preset, prompt, negative,
                                  pad_left, pad_right, pad_top, pad_bottom)
   local server = get_server()
 
@@ -5129,7 +5129,7 @@ local function process_outpaint(image, preset, prompt, negative,
 end
 
 -- ── Style Transfer (IPAdapter) processing ─────────────────────────────
-local function process_style_transfer(image, style_ref_path, ckpt, prompt, negative, strength)
+function process_style_transfer(image, style_ref_path, ckpt, prompt, negative, strength)
   local server = get_server()
 
   dt.print(_("Exporting for style transfer..."))
@@ -5171,7 +5171,7 @@ local function process_style_transfer(image, style_ref_path, ckpt, prompt, negat
 end
 
 -- ── Face Restore processing ──────────────────────────────────────────────
-local function process_face_restore(image, model, visibility, codeformer_weight)
+function process_face_restore(image, model, visibility, codeformer_weight)
   local server = get_server()
 
   dt.print(_("Exporting for face restore..."))
@@ -5203,7 +5203,7 @@ local function process_face_restore(image, model, visibility, codeformer_weight)
 end
 
 -- ── Photo Restoration Pipeline processing ────────────────────────────────
-local function process_photo_restore(image, upscale_model, face_model, sharpen_alpha)
+function process_photo_restore(image, upscale_model, face_model, sharpen_alpha)
   local server = get_server()
 
   dt.print(_("Exporting for photo restoration..."))
@@ -5235,7 +5235,7 @@ local function process_photo_restore(image, upscale_model, face_model, sharpen_a
 end
 
 -- ── Detail Hallucination processing ──────────────────────────────────────
-local function process_detail_hallucinate(image, ckpt, prompt, negative, cfg, denoise)
+function process_detail_hallucinate(image, ckpt, prompt, negative, cfg, denoise)
   local server = get_server()
 
   dt.print(_("Exporting for detail hallucination..."))
@@ -5268,7 +5268,7 @@ local function process_detail_hallucinate(image, ckpt, prompt, negative, cfg, de
 end
 
 -- ── Colorize B&W processing ──────────────────────────────────────────────
-local function process_colorize(image, ckpt, controlnet_name, prompt, negative, strength, denoise)
+function process_colorize(image, ckpt, controlnet_name, prompt, negative, strength, denoise)
   local server = get_server()
 
   dt.print(_("Exporting for colorization..."))
@@ -5306,7 +5306,7 @@ end
 -- video_presets.wan_turbo_kwargs so this plugin tracks the canon
 -- automatically. The old hand-rolled JSON (build_wan_i2v_json) is left in
 -- the file as an emergency escape hatch but is no longer called.
-local function process_wan_i2v(image, wan_preset_idx, prompt, negative,
+function process_wan_i2v(image, wan_preset_idx, prompt, negative,
                                 width, height, length, steps, cfg, shift, second_step,
                                 loras, accel_enabled, accel_strength,
                                 upscale, upscale_factor, interpolate, pingpong, fps,
@@ -5438,7 +5438,7 @@ local function process_wan_i2v(image, wan_preset_idx, prompt, negative,
 end
 
 -- ── Klein Flux2 processing ──────────────────────────────────────────────
-local function process_klein(image, klein_model, prompt, steps, guidance)
+function process_klein(image, klein_model, prompt, steps, guidance)
   local server = get_server()
 
   dt.print(string.format(_("Exporting for Klein %s..."), klein_model.label))
@@ -5475,7 +5475,7 @@ local function process_klein(image, klein_model, prompt, steps, guidance)
 end
 
 -- ── PuLID Flux processing ───────────────────────────────────────────────
-local function process_pulid_flux(image, face_source_path, prompt, strength, steps, guidance)
+function process_pulid_flux(image, face_source_path, prompt, strength, steps, guidance)
   local server = get_server()
 
   dt.print(_("Exporting for PuLID Flux..."))
@@ -5517,7 +5517,7 @@ local function process_pulid_flux(image, face_source_path, prompt, strength, ste
 end
 
 -- ── Face swap (direct/ReActor) processing ───────────────────────────────
-local function process_faceswap_direct(image, source_path, swap_model)
+function process_faceswap_direct(image, source_path, swap_model)
   local server = get_server()
 
   dt.print(_("Exporting for direct face swap..."))
@@ -5556,7 +5556,7 @@ local function process_faceswap_direct(image, source_path, swap_model)
 end
 
 -- ── FaceID (IPAdapter) processing ────────────────────────────────────────
-local function process_faceid(image, preset, face_ref_path, prompt, negative,
+function process_faceid(image, preset, face_ref_path, prompt, negative,
                                weight, weight_v2, denoise_override)
   local server = get_server()
 
@@ -5599,7 +5599,7 @@ local function process_faceid(image, preset, face_ref_path, prompt, negative,
 end
 
 -- ── Klein + Reference processing ────────────────────────────────────────
-local function process_klein_ref(image, ref_path, klein_model, prompt, steps, guidance)
+function process_klein_ref(image, ref_path, klein_model, prompt, steps, guidance)
   local server = get_server()
 
   dt.print(string.format(_("Exporting for Klein+Ref %s..."), klein_model.label))
@@ -5640,7 +5640,7 @@ local function process_klein_ref(image, ref_path, klein_model, prompt, steps, gu
 end
 
 -- ── Inpaint processing ──────────────────────────────────────────────────
-local function process_inpaint(image, preset, mask_path, prompt, negative, loras,
+function process_inpaint(image, preset, mask_path, prompt, negative, loras,
                                 cn_mode, cn_strength, cn_preprocessor, cn_model)
   local server = get_server()
 
@@ -5689,7 +5689,7 @@ local function process_inpaint(image, preset, mask_path, prompt, negative, loras
 end
 
 -- ── Batch Variations processing ──────────────────────────────────────────
-local function process_batch_variations(preset, prompt, negative, lora_name, lora_strength, width, height, batch_count)
+function process_batch_variations(preset, prompt, negative, lora_name, lora_strength, width, height, batch_count)
   local server = get_server()
 
   local seed = math.random(0, 2^31 - 1)
@@ -5716,7 +5716,7 @@ end
 --  integrated into img2img and inpaint via cn_guide_selector widget)
 
 -- ── IC-Light Relighting processing ───────────────────────────────────────
-local function process_iclight(image, prompt, negative, multiplier)
+function process_iclight(image, prompt, negative, multiplier)
   local server = get_server()
 
   -- IC-Light only works with SD1.5 models
@@ -5752,7 +5752,7 @@ local function process_iclight(image, prompt, negative, multiplier)
 end
 
 -- ── SUPIR AI Restoration processing ──────────────────────────────────────
-local function process_supir(image, supir_model, sdxl_model, prompt, steps, denoise)
+function process_supir(image, supir_model, sdxl_model, prompt, steps, denoise)
   local server = get_server()
 
   dt.print(_("Exporting for SUPIR restoration..."))
@@ -5785,7 +5785,7 @@ local function process_supir(image, supir_model, sdxl_model, prompt, steps, deno
 end
 
 -- ── SeedV2R Upscaler processing ────────────────────────────────────────
-local function process_seedv2r(image, upscale_model, ckpt, prompt, negative,
+function process_seedv2r(image, upscale_model, ckpt, prompt, negative,
                                 denoise, steps, cfg, sampler, scheduler,
                                 scale_factor)
   local server = get_server()
@@ -5834,7 +5834,7 @@ end
 local USER_PRESETS_PATH = dt.configuration.config_dir .. "/lua/contrib/spellcaster_presets.lua"
 
 -- Read the entire preset file and return the top-level table, or {}.
-local function load_presets_from_file(section)
+function load_presets_from_file(section)
   local f = io.open(USER_PRESETS_PATH, "r")
   if not f then return {} end
   local content = f:read("*a")
@@ -5851,7 +5851,7 @@ local function load_presets_from_file(section)
 end
 
 -- Serialize a single Lua value (string, number, boolean) for writing.
-local function serialize_value(v)
+function serialize_value(v)
   if type(v) == "string" then
     return string.format("%q", v)
   elseif type(v) == "number" then
@@ -5865,7 +5865,7 @@ end
 
 -- Write presets for one section back to the shared file, preserving
 -- other sections that may already be stored there.
-local function save_presets_to_file(section, presets)
+function save_presets_to_file(section, presets)
   -- Load the existing file so we keep other sections intact
   local all = {}
   local f = io.open(USER_PRESETS_PATH, "r")
@@ -5912,7 +5912,7 @@ end
 --
 -- Returns: preset_combo, load_btn, save_btn, delete_btn
 -- (caller places them in the module_widget layout)
-local function make_preset_widgets(section_key, collect_fn, apply_fn)
+function make_preset_widgets(section_key, collect_fn, apply_fn)
   local presets = load_presets_from_file(section_key)
 
   local combo_init = {
@@ -6024,7 +6024,7 @@ end
 -- set of controls. All sections share the max_res_slider for resolution.
 
 -- Build combobox with all model presets
-local model_selector = dt.new_widget("combobox") {
+model_selector = dt.new_widget("combobox") {
   label = _("Model"),
   tooltip = _("Select a model preset with tuned settings"),
   selected = 1,
@@ -6062,20 +6062,20 @@ local model_selector = dt.new_widget("combobox") {
   end,
 }
 
-local prompt_entry = dt.new_widget("entry"){
+prompt_entry = dt.new_widget("entry"){
   tooltip = _("Positive prompt (model hint is prepended automatically)"),
   text = "",
   editable = true,
 }
 
-local negative_entry = dt.new_widget("entry"){
+negative_entry = dt.new_widget("entry"){
   tooltip = _("Negative prompt (model hint is prepended automatically)"),
   text = "",
   editable = true,
 }
 
 -- Scene preset selector — populated dynamically by refresh_scene_selector()
-local scene_selector = dt.new_widget("combobox") {
+scene_selector = dt.new_widget("combobox") {
   label = _("Scene Preset"),
   tooltip = _("Pick a scene template to auto-fill the prompt fields"),
   selected = 1,
@@ -6150,7 +6150,7 @@ function refresh_scene_selector()
   scene_selector.selected = 1
 end
 
-local denoise_slider = dt.new_widget("slider"){
+denoise_slider = dt.new_widget("slider"){
   label = _("Denoise override"),
   tooltip = _("Override preset denoise (0 = use preset default)"),
   soft_min = 0,
@@ -6162,14 +6162,14 @@ local denoise_slider = dt.new_widget("slider"){
   value = 0,
 }
 
-local lora_selector = dt.new_widget("combobox") {
+lora_selector = dt.new_widget("combobox") {
   label = _("LoRA"),
   tooltip = _("Select a compatible LoRA (click Fetch first)"),
   selected = 1,
   "(none)",
 }
 
-local lora_strength_slider = dt.new_widget("slider"){
+lora_strength_slider = dt.new_widget("slider"){
   label = _("LoRA strength"),
   tooltip = _("Strength for both model and CLIP"),
   soft_min = -2,
@@ -6201,7 +6201,7 @@ function refresh_lora_selector()
   lora_selector.selected = 1
 end
 
-local fetch_lora_btn = dt.new_widget("button") {
+fetch_lora_btn = dt.new_widget("button") {
   label = _("Fetch LoRAs"),
   tooltip = _("Fetch LoRAs from ComfyUI (filtered by model architecture). Also refreshes the dedicated Z-Image-Turbo LoRA picker further down."),
   clicked_callback = function()
@@ -6235,7 +6235,7 @@ local fetch_lora_btn = dt.new_widget("button") {
   end
 }
 
-local turbo_check = dt.new_widget("check_button") {
+turbo_check = dt.new_widget("check_button") {
   label = _("⚡ Turbo (Hyper-SD 8-step)"),
   tooltip = _("Turbo Mode — Hyper-SD accelerator LoRA for ~3x faster generation.\n\n"
     .. "ON:  8 steps with specialized CFG-preserving turbo LoRA.\n"
@@ -6257,7 +6257,7 @@ max_res_slider = dt.new_widget("slider") {
 
 status_label = dt.new_widget("label") { label = _("Ready") }
 
-local test_btn = dt.new_widget("button") {
+test_btn = dt.new_widget("button") {
   label = _("Test Connection"),
   clicked_callback = function()
     local r = curl_get(get_server() .. "/system_stats")
@@ -6276,14 +6276,14 @@ local test_btn = dt.new_widget("button") {
 -- run at button-click time, so the upvalue will be populated by then.
 local resolve_cn_params
 
-local img2img_runs_slider = dt.new_widget("slider") {
+img2img_runs_slider = dt.new_widget("slider") {
   label = _("Runs"),
   tooltip = _("Number of times to generate. Each run uses a fresh seed."),
   soft_min = 1, soft_max = 20, hard_min = 1, hard_max = 99,
   step = 1, digits = 0, value = 1,
 }
 
-local send_btn = dt.new_widget("button") {
+send_btn = dt.new_widget("button") {
   label = _("Process with Spellcaster"),
   tooltip = _("Process selected images with the chosen model preset"),
   clicked_callback = function()
@@ -6361,7 +6361,7 @@ local send_btn = dt.new_widget("button") {
   end
 }
 
-local upload_btn = dt.new_widget("button") {
+upload_btn = dt.new_widget("button") {
   label = _("Upload Only (no processing)"),
   tooltip = _("Upload selected images to ComfyUI input folder for custom workflows"),
   clicked_callback = function()
@@ -6380,7 +6380,7 @@ local upload_btn = dt.new_widget("button") {
 }
 
 -- Preset info label (updates on selection change)
-local info_label = dt.new_widget("label") {
+info_label = dt.new_widget("label") {
   label = _("Select a model to see its settings")
 }
 
@@ -6388,21 +6388,21 @@ local info_label = dt.new_widget("label") {
 -- Face Swap GUI widgets
 -- ═══════════════════════════════════════════════════════════════════════
 
-local face_model_selector = dt.new_widget("combobox") {
+face_model_selector = dt.new_widget("combobox") {
   label = _("Face Model"),
   tooltip = _("Saved face model from ComfyUI ReActor"),
   selected = 1,
   "(none — click Fetch)",
 }
 
-local swap_model_selector = dt.new_widget("combobox") {
+swap_model_selector = dt.new_widget("combobox") {
   label = _("Swap Engine"),
   tooltip = _("Face swap model engine"),
   selected = 1,
   "inswapper_128.onnx",
 }
 
-local fetch_face_btn = dt.new_widget("button") {
+fetch_face_btn = dt.new_widget("button") {
   label = _("Fetch Face Models"),
   tooltip = _("Fetch saved face models and swap engines from the server"),
   clicked_callback = function()
@@ -6441,7 +6441,7 @@ local fetch_face_btn = dt.new_widget("button") {
   end
 }
 
-local faceswap_btn = dt.new_widget("button") {
+faceswap_btn = dt.new_widget("button") {
   label = _("Face Swap (Model)"),
   tooltip = _("Swap face using a saved face model from the server"),
   clicked_callback = function()
@@ -6470,20 +6470,20 @@ local faceswap_btn = dt.new_widget("button") {
 -- Save Face Model GUI widgets
 -- ═══════════════════════════════════════════════════════════════════════
 
-local save_face_model_name_entry = dt.new_widget("entry") {
+save_face_model_name_entry = dt.new_widget("entry") {
   text = "",
   placeholder = _("my_face_model"),
   tooltip = _("Name for the saved face model (without .safetensors extension)"),
   editable = true,
 }
 
-local save_face_model_overwrite_check = dt.new_widget("check_button") {
+save_face_model_overwrite_check = dt.new_widget("check_button") {
   label = _("Overwrite existing"),
   tooltip = _("If checked, overwrite an existing face model with the same name"),
   value = false,
 }
 
-local save_face_model_btn = dt.new_widget("button") {
+save_face_model_btn = dt.new_widget("button") {
   label = _("Save Face Model"),
   tooltip = _("Build and save a face model from the selected image to the ComfyUI server"),
   clicked_callback = function()
@@ -6517,14 +6517,14 @@ local save_face_model_btn = dt.new_widget("button") {
 
 local mtb_source_path = ""
 
-local mtb_source_entry = dt.new_widget("entry") {
+mtb_source_entry = dt.new_widget("entry") {
   text = "",
   placeholder = _("Path to source face image..."),
   tooltip = _("Full path to the face image to swap onto the target"),
   editable = true,
 }
 
-local mtb_source_btn = dt.new_widget("button") {
+mtb_source_btn = dt.new_widget("button") {
   label = _("Browse Source Face..."),
   tooltip = _("Select a source face image file"),
   clicked_callback = function()
@@ -6533,28 +6533,28 @@ local mtb_source_btn = dt.new_widget("button") {
   end
 }
 
-local mtb_analysis_selector = dt.new_widget("combobox") {
+mtb_analysis_selector = dt.new_widget("combobox") {
   label = _("Analysis Model"),
   tooltip = _("Face analysis model for detection"),
   selected = 1,
   "buffalo_l", "antelopev2", "buffalo_m", "buffalo_sc",
 }
 
-local mtb_swap_selector = dt.new_widget("combobox") {
+mtb_swap_selector = dt.new_widget("combobox") {
   label = _("Swap Model"),
   tooltip = _("Face swap model (inswapper)"),
   selected = 1,
   "inswapper_128.onnx", "inswapper_128_fp16.onnx",
 }
 
-local mtb_face_idx_entry = dt.new_widget("entry") {
+mtb_face_idx_entry = dt.new_widget("entry") {
   text = "0",
   placeholder = "0",
   tooltip = _("Face index (0 = first detected face)"),
   editable = true,
 }
 
-local mtb_swap_btn = dt.new_widget("button") {
+mtb_swap_btn = dt.new_widget("button") {
   label = _("Face Swap (mtb)"),
   tooltip = _("Swap face using mtb facetools with a source image"),
   clicked_callback = function()
@@ -6596,7 +6596,7 @@ local mtb_swap_btn = dt.new_widget("button") {
 -- frame count, dual-step scheduling, acceleration LoRAs, post-processing
 -- (upscale + interpolation), VACE end-image mode, and crop region.
 
-local wan_model_selector = dt.new_widget("combobox") {
+wan_model_selector = dt.new_widget("combobox") {
   label = _("Wan Model"),
   tooltip = _("Select a Wan 2.2 video model pair (high + low noise)"),
   selected = 1,
@@ -6613,13 +6613,13 @@ end
 
 local wan_video_preset_selector  -- forward declaration
 
-local wan_prompt_entry = dt.new_widget("entry") {
+wan_prompt_entry = dt.new_widget("entry") {
   tooltip = _("Prompt for video generation"),
   text = "",
   editable = true,
 }
 
-local wan_neg_entry = dt.new_widget("entry") {
+wan_neg_entry = dt.new_widget("entry") {
   tooltip = _("Negative prompt for video generation"),
   text = "blurry, distorted, low quality",
   editable = true,
@@ -6636,7 +6636,7 @@ do
   wan_video_preset_selector = dt.new_widget("combobox")(init)
 end
 
-local wan_frames_slider = dt.new_widget("slider") {
+wan_frames_slider = dt.new_widget("slider") {
   label = _("Frames"),
   tooltip = _("Number of frames (81 = ~5s at 16fps)"),
   soft_min = 17, soft_max = 257,
@@ -6644,7 +6644,7 @@ local wan_frames_slider = dt.new_widget("slider") {
   step = 4, digits = 0, value = 81,
 }
 
-local wan_steps_slider = dt.new_widget("slider") {
+wan_steps_slider = dt.new_widget("slider") {
   label = _("Steps"),
   tooltip = _("Sampling steps"),
   soft_min = 10, soft_max = 50,
@@ -6652,7 +6652,7 @@ local wan_steps_slider = dt.new_widget("slider") {
   step = 1, digits = 0, value = 30,
 }
 
-local wan_cfg_slider = dt.new_widget("slider") {
+wan_cfg_slider = dt.new_widget("slider") {
   label = _("CFG"),
   tooltip = _("Classifier free guidance scale (5.0 recommended for fatberg_slim)"),
   soft_min = 1, soft_max = 15,
@@ -6660,7 +6660,7 @@ local wan_cfg_slider = dt.new_widget("slider") {
   step = 0.5, digits = 1, value = 5.0,
 }
 
-local wan_shift_slider = dt.new_widget("slider") {
+wan_shift_slider = dt.new_widget("slider") {
   label = _("Shift"),
   tooltip = _("Noise shift (8.0 recommended for fatberg_slim)"),
   soft_min = 1, soft_max = 20,
@@ -6668,7 +6668,7 @@ local wan_shift_slider = dt.new_widget("slider") {
   step = 0.5, digits = 1, value = 8.0,
 }
 
-local wan_second_step_slider = dt.new_widget("slider") {
+wan_second_step_slider = dt.new_widget("slider") {
   label = _("Switch Step"),
   tooltip = _("Step at which sampling switches from high-noise to low-noise model"),
   soft_min = 5, soft_max = 40,
@@ -6676,13 +6676,13 @@ local wan_second_step_slider = dt.new_widget("slider") {
   step = 1, digits = 0, value = 20,
 }
 
-local wan_upscale_check = dt.new_widget("check_button") {
+wan_upscale_check = dt.new_widget("check_button") {
   label = _("RTX Upscale"),
   tooltip = _("Apply RTXVideoSuperResolution upscale after generation"),
   value = true,
 }
 
-local wan_upscale_factor_slider = dt.new_widget("slider") {
+wan_upscale_factor_slider = dt.new_widget("slider") {
   label = _("RTX Scale"),
   tooltip = _("RTX upscale factor (e.g. 1.5 = 50% larger)"),
   soft_min = 1.0, soft_max = 4.0,
@@ -6690,25 +6690,25 @@ local wan_upscale_factor_slider = dt.new_widget("slider") {
   step = 0.25, digits = 2, value = 1.5,
 }
 
-local wan_interpolate_check = dt.new_widget("check_button") {
+wan_interpolate_check = dt.new_widget("check_button") {
   label = _("RIFE 2x Interpolation"),
   tooltip = _("Apply RIFE VFI 2x frame interpolation (doubles FPS)"),
   value = true,
 }
 
-local wan_pingpong_check = dt.new_widget("check_button") {
+wan_pingpong_check = dt.new_widget("check_button") {
   label = _("Ping Pong"),
   tooltip = _("Play video forward then backward for seamless looping"),
   value = false,
 }
 
-local wan_accel_check = dt.new_widget("check_button") {
+wan_accel_check = dt.new_widget("check_button") {
   label = _("Acceleration LoRA"),
   tooltip = _("Apply preset-specific speed LoRAs (e.g. LightX2V) for ~4x faster inference.\nDisable for full-quality slow generation."),
   value = true,
 }
 
-local wan_accel_strength_slider = dt.new_widget("slider") {
+wan_accel_strength_slider = dt.new_widget("slider") {
   label = _("Accel Strength"),
   tooltip = _("Accelerator LoRA strength (1.0 = default, lower = slower but potentially higher quality)"),
   soft_min = 0, soft_max = 2,
@@ -6723,7 +6723,7 @@ local wan_accel_strength_slider = dt.new_widget("slider") {
 --   index 3 "Off"   → force-disable
 -- The Guild's scaffold/video_workflow_dispatch.py forwards these overrides
 -- to the canonical build_wan_video.
-local function _wan_tri_combo(label, tooltip)
+function _wan_tri_combo(label, tooltip)
   return dt.new_widget("combobox") {
     label = _(label),
     tooltip = _(tooltip),
@@ -6744,7 +6744,7 @@ local wan_slg_combo = _wan_tri_combo("SLG (Skip Layer Guidance)",
 local wan_nag_combo = _wan_tri_combo("NAG (Negative Attention)",
   "WanVideoNAG — Normalized Attention Guidance for sharper motion, less drift.\nRequires Kijai's WanVideoWrapper pack.")
 
-local function _tri_combo_to_str(combo)
+function _tri_combo_to_str(combo)
   local idx = combo.selected or 1
   if idx == 2 then return "on" end
   if idx == 3 then return "off" end
@@ -6790,19 +6790,19 @@ end
 -- Explicit High Noise / Low Noise LoRA pair selectors (3 slots).
 -- Each slot has independent high/low combos because many Wan LoRAs
 -- come as noise-specific pairs that must go to the correct UNET.
-local wan_lora_high_1 = dt.new_widget("combobox") {
+wan_lora_high_1 = dt.new_widget("combobox") {
   label = _("Pair 1 — High Noise"),
   tooltip = _("LoRA for the high-noise UNET model (click Fetch first)"),
   selected = 1,
   "(none)",
 }
-local wan_lora_low_1 = dt.new_widget("combobox") {
+wan_lora_low_1 = dt.new_widget("combobox") {
   label = _("Pair 1 — Low Noise"),
   tooltip = _("LoRA for the low-noise UNET model (click Fetch first)"),
   selected = 1,
   "(none)",
 }
-local wan_lora_str_slider_1 = dt.new_widget("slider") {
+wan_lora_str_slider_1 = dt.new_widget("slider") {
   label = _("Pair 1 Strength"),
   tooltip = _("LoRA pair 1 strength"),
   soft_min = -2, soft_max = 2,
@@ -6810,19 +6810,19 @@ local wan_lora_str_slider_1 = dt.new_widget("slider") {
   step = 0.05, digits = 2, value = 1.0,
 }
 
-local wan_lora_high_2 = dt.new_widget("combobox") {
+wan_lora_high_2 = dt.new_widget("combobox") {
   label = _("Pair 2 — High Noise"),
   tooltip = _("LoRA for the high-noise UNET model (click Fetch first)"),
   selected = 1,
   "(none)",
 }
-local wan_lora_low_2 = dt.new_widget("combobox") {
+wan_lora_low_2 = dt.new_widget("combobox") {
   label = _("Pair 2 — Low Noise"),
   tooltip = _("LoRA for the low-noise UNET model (click Fetch first)"),
   selected = 1,
   "(none)",
 }
-local wan_lora_str_slider_2 = dt.new_widget("slider") {
+wan_lora_str_slider_2 = dt.new_widget("slider") {
   label = _("Pair 2 Strength"),
   tooltip = _("LoRA pair 2 strength"),
   soft_min = -2, soft_max = 2,
@@ -6830,19 +6830,19 @@ local wan_lora_str_slider_2 = dt.new_widget("slider") {
   step = 0.05, digits = 2, value = 1.0,
 }
 
-local wan_lora_high_3 = dt.new_widget("combobox") {
+wan_lora_high_3 = dt.new_widget("combobox") {
   label = _("Pair 3 — High Noise"),
   tooltip = _("LoRA for the high-noise UNET model (click Fetch first)"),
   selected = 1,
   "(none)",
 }
-local wan_lora_low_3 = dt.new_widget("combobox") {
+wan_lora_low_3 = dt.new_widget("combobox") {
   label = _("Pair 3 — Low Noise"),
   tooltip = _("LoRA for the low-noise UNET model (click Fetch first)"),
   selected = 1,
   "(none)",
 }
-local wan_lora_str_slider_3 = dt.new_widget("slider") {
+wan_lora_str_slider_3 = dt.new_widget("slider") {
   label = _("Pair 3 Strength"),
   tooltip = _("LoRA pair 3 strength"),
   soft_min = -2, soft_max = 2,
@@ -6857,7 +6857,7 @@ local wan_lora_pair_rows = {
   {wan_lora_high_3, wan_lora_low_3, wan_lora_str_slider_3},
 }
 
-local function refresh_wan_lora_combos()
+function refresh_wan_lora_combos()
   -- Filter cached loras by the currently selected model preset
   local wan_idx = wan_model_selector.selected
   local wan_preset = WAN_I2V_MODELS[wan_idx]
@@ -6890,7 +6890,7 @@ wan_model_selector.changed_callback = function()
   end
 end
 
-local fetch_wan_lora_btn = dt.new_widget("button") {
+fetch_wan_lora_btn = dt.new_widget("button") {
   label = _("Fetch LoRAs"),
   tooltip = _("Fetch Wan LoRAs from the server (filtered by selected model variant)"),
   clicked_callback = function()
@@ -6900,12 +6900,12 @@ local fetch_wan_lora_btn = dt.new_widget("button") {
 }
 
 -- End image file picker for VACE start→end mode
-local wan_end_image_entry = dt.new_widget("entry") {
+wan_end_image_entry = dt.new_widget("entry") {
   tooltip = _("Path to end image file (leave empty for start-image-only mode)"),
   text = "",
   placeholder = _("(none — start image only)"),
 }
-local wan_end_image_browse_btn = dt.new_widget("button") {
+wan_end_image_browse_btn = dt.new_widget("button") {
   label = _("Browse End Image..."),
   tooltip = _("Select an end image to interpolate between start and end frames (VACE)"),
   clicked_callback = function()
@@ -6916,7 +6916,7 @@ local wan_end_image_browse_btn = dt.new_widget("button") {
     dt.print(_("Type or paste the end image file path into the entry above"))
   end
 }
-local wan_vace_strength_slider = dt.new_widget("slider") {
+wan_vace_strength_slider = dt.new_widget("slider") {
   label = _("VACE Strength"),
   tooltip = _("VACE conditioning strength (1.0 = full guidance, lower = more creative freedom)"),
   soft_min = 0, soft_max = 2,
@@ -6925,28 +6925,28 @@ local wan_vace_strength_slider = dt.new_widget("slider") {
 }
 
 -- Crop region sliders for selection mode (pixel coordinates in source image)
-local wan_crop_x_slider = dt.new_widget("slider") {
+wan_crop_x_slider = dt.new_widget("slider") {
   label = _("Crop X"),
   tooltip = _("Left edge of crop region in pixels from the source image"),
   soft_min = 0, soft_max = 4096,
   hard_min = 0, hard_max = 8192,
   step = 8, digits = 0, value = 0,
 }
-local wan_crop_y_slider = dt.new_widget("slider") {
+wan_crop_y_slider = dt.new_widget("slider") {
   label = _("Crop Y"),
   tooltip = _("Top edge of crop region in pixels from the source image"),
   soft_min = 0, soft_max = 4096,
   hard_min = 0, hard_max = 8192,
   step = 8, digits = 0, value = 0,
 }
-local wan_crop_w_slider = dt.new_widget("slider") {
+wan_crop_w_slider = dt.new_widget("slider") {
   label = _("Crop Width"),
   tooltip = _("Width of crop region in pixels (0 = full width from X)"),
   soft_min = 0, soft_max = 4096,
   hard_min = 0, hard_max = 8192,
   step = 8, digits = 0, value = 0,
 }
-local wan_crop_h_slider = dt.new_widget("slider") {
+wan_crop_h_slider = dt.new_widget("slider") {
   label = _("Crop Height"),
   tooltip = _("Height of crop region in pixels (0 = full height from Y)"),
   soft_min = 0, soft_max = 4096,
@@ -6957,7 +6957,7 @@ local wan_crop_h_slider = dt.new_widget("slider") {
 -- Shared helper: collect all Wan I2V parameters from UI widgets into a table.
 -- Used by both the "Whole Image" and "Selection" send buttons to avoid
 -- duplicating the parameter-gathering logic.
-local function collect_wan_i2v_params()
+function collect_wan_i2v_params()
   local params = {}
   params.wan_idx = wan_model_selector.selected
   params.prompt = wan_prompt_entry.text or ""
@@ -7015,14 +7015,14 @@ local function collect_wan_i2v_params()
   return params
 end
 
-local wan_runs_slider = dt.new_widget("slider") {
+wan_runs_slider = dt.new_widget("slider") {
   label = _("Runs"),
   tooltip = _("Number of times to generate. Each run uses a fresh seed."),
   soft_min = 1, soft_max = 20, hard_min = 1, hard_max = 99,
   step = 1, digits = 0, value = 1,
 }
 
-local wan_send_full_btn = dt.new_widget("button") {
+wan_send_full_btn = dt.new_widget("button") {
   label = _("Wan I2V (Whole Image)"),
   tooltip = _("Generate video from the entire image using Wan 2.2"),
   clicked_callback = function()
@@ -7056,7 +7056,7 @@ local wan_send_full_btn = dt.new_widget("button") {
   end
 }
 
-local wan_send_sel_btn = dt.new_widget("button") {
+wan_send_sel_btn = dt.new_widget("button") {
   label = _("Wan I2V (Selection)"),
   tooltip = _("Generate video from a cropped region of the image.\nSet Crop X/Y/Width/Height above to define the region."),
   clicked_callback = function()
@@ -7189,7 +7189,7 @@ local LTX_SCENE_TEMPLATES = {
   { label = "NSFW: Bedroom — Morning Light", prompt = "A woman wakes slowly in warm morning light, stretching languidly across rumpled white sheets. Her loose nightgown slides off one shoulder, her hair is tousled from sleep. A sleepy smile, eyes barely open, the whole scene bathed in soft golden window light. Sensory intimate cinematography, shallow depth of field, bedside lamp adding warm contrast." },
 }
 
-local ltx_scene_selector = dt.new_widget("combobox") {
+ltx_scene_selector = dt.new_widget("combobox") {
   label = _("LTX Scene Template"),
   tooltip = _("Pick a pre-tuned cinematic prompt template.\n"
            .. "LTX 2.3 rewards long cinematic descriptions — these fill\n"
@@ -7211,7 +7211,7 @@ for i = 2, #LTX_SCENE_TEMPLATES do
   ltx_scene_selector[i] = LTX_SCENE_TEMPLATES[i].label
 end
 
-local ltx_mode_selector = dt.new_widget("combobox") {
+ltx_mode_selector = dt.new_widget("combobox") {
   label = _("LTX Mode"),
   tooltip = _("Distilled: 8 steps, fastest (~60s on RTX 5060 Ti).\n"
            .. "Full 30-step: higher quality, slower.\n"
@@ -7222,13 +7222,13 @@ local ltx_mode_selector = dt.new_widget("combobox") {
   LTX_MODES[3].label, LTX_MODES[4].label,
 }
 
-local ltx_prompt_entry = dt.new_widget("entry") {
+ltx_prompt_entry = dt.new_widget("entry") {
   tooltip = _("LTX 2.3 generation prompt. Descriptive, cinematic language works best."),
   text = "",
   placeholder = _("e.g. a cat sitting on a windowsill, soft afternoon light, slight breeze"),
 }
 
-local ltx_neg_entry = dt.new_widget("entry") {
+ltx_neg_entry = dt.new_widget("entry") {
   tooltip = _("Optional negative prompt. Leave empty to auto-inject the\n"
            .. "subtitle-burn-in blocker (LTX's training corpus includes\n"
            .. "subtitled video — canon negative blocks it)."),
@@ -7236,35 +7236,35 @@ local ltx_neg_entry = dt.new_widget("entry") {
   placeholder = _("(auto: blocks subtitles/watermarks)"),
 }
 
-local ltx_width_slider = dt.new_widget("slider") {
+ltx_width_slider = dt.new_widget("slider") {
   label = _("LTX Width"),
   tooltip = _("Output width (multiple of 32). 768 is the canon sweet-spot."),
   soft_min = 256, soft_max = 1280, hard_min = 128, hard_max = 1920,
   step = 32, digits = 0, value = 768,
 }
 
-local ltx_height_slider = dt.new_widget("slider") {
+ltx_height_slider = dt.new_widget("slider") {
   label = _("LTX Height"),
   tooltip = _("Output height (multiple of 32). 512 is the canon sweet-spot."),
   soft_min = 256, soft_max = 1280, hard_min = 128, hard_max = 1920,
   step = 32, digits = 0, value = 512,
 }
 
-local ltx_frames_slider = dt.new_widget("slider") {
+ltx_frames_slider = dt.new_widget("slider") {
   label = _("LTX Frames"),
   tooltip = _("Number of frames. 25 = 1 sec at 25fps. 121 = ~5 sec."),
   soft_min = 9, soft_max = 121, hard_min = 1, hard_max = 257,
   step = 8, digits = 0, value = 25,
 }
 
-local ltx_fps_slider = dt.new_widget("slider") {
+ltx_fps_slider = dt.new_widget("slider") {
   label = _("LTX FPS"),
   tooltip = _("Output frame rate. LTX 2.3 native is 25fps; 24fps also common."),
   soft_min = 12, soft_max = 30, hard_min = 1, hard_max = 60,
   step = 1, digits = 0, value = 25,
 }
 
-local ltx_i2v_strength_slider = dt.new_widget("slider") {
+ltx_i2v_strength_slider = dt.new_widget("slider") {
   label = _("LTX I2V Strength"),
   tooltip = _("Only used in I2V mode. How strongly the ref image drives the video.\n"
            .. "0.85-0.90 is the sweet spot."),
@@ -7281,7 +7281,7 @@ local ltx_cfg_zero_combo = _wan_tri_combo("LTX CFG Zero★",
   "CFG Zero Star — CFG=0 on first step, reduces burn-in. Only takes effect\n"
   .. "when cfg > 1 (distilled mode at cfg=1 is auto-skipped).")
 
-local ltx_sampler_combo = dt.new_widget("combobox") {
+ltx_sampler_combo = dt.new_widget("combobox") {
   label = _("LTX Sampler"),
   tooltip = _("Sampler name. Canon 'euler' matches the LTX team reference.\n"
            .. "Distilled mode is tuned for euler; other samplers usually\n"
@@ -7290,7 +7290,7 @@ local ltx_sampler_combo = dt.new_widget("combobox") {
   "euler", "euler_ancestral", "dpmpp_2m", "dpmpp_2m_sde", "heun", "uni_pc",
 }
 
-local function collect_ltx_params()
+function collect_ltx_params()
   local idx = ltx_mode_selector.selected or 1
   local mode = LTX_MODES[idx] or LTX_MODES[1]
   local sampler_idx = ltx_sampler_combo.selected or 1
@@ -7315,7 +7315,7 @@ end
 -- Route an LTX generation through the Guild shot API. Uses the same
 -- guild_create_shot / guild_attach_reference helpers as the WAN path
 -- (CLAUDE.md §16.4 rule #4: no plugin hand-rolls LTX workflow JSON).
-local function process_ltx_video(image)
+function process_ltx_video(image)
   local guild = get_guild_url()
   if not guild or guild == "" then
     dt.print(_("Wizard Guild URL not configured — preferences → Wizard Guild URL"))
@@ -7387,7 +7387,7 @@ local function process_ltx_video(image)
   dt.print(string.format(_("LTX video saved: %s"), saved_path))
 end
 
-local ltx_send_t2v_btn = dt.new_widget("button") {
+ltx_send_t2v_btn = dt.new_widget("button") {
   label = _("LTX: Text-to-Video"),
   tooltip = _("Generate video from the prompt alone (no image ref)."),
   clicked_callback = function()
@@ -7396,7 +7396,7 @@ local ltx_send_t2v_btn = dt.new_widget("button") {
   end
 }
 
-local ltx_send_i2v_btn = dt.new_widget("button") {
+ltx_send_i2v_btn = dt.new_widget("button") {
   label = _("LTX: Image-to-Video"),
   tooltip = _("Generate video starting from the first selected Darktable image.\n"
            .. "Make sure the LTX Mode is set to 'I2V'."),
@@ -7412,7 +7412,7 @@ local ltx_send_i2v_btn = dt.new_widget("button") {
 -- Klein Flux2 GUI widgets
 -- ═══════════════════════════════════════════════════════════════════════
 
-local klein_model_selector = dt.new_widget("combobox") {
+klein_model_selector = dt.new_widget("combobox") {
   label = _("Klein Model"),
   tooltip = _("Select a Klein Flux2 distilled model"),
   selected = 1,
@@ -7421,13 +7421,13 @@ local klein_model_selector = dt.new_widget("combobox") {
   KLEIN_MODELS[3].label,
 }
 
-local klein_prompt_entry = dt.new_widget("entry") {
+klein_prompt_entry = dt.new_widget("entry") {
   tooltip = _("Prompt for Klein Flux2 generation"),
   text = "",
   editable = true,
 }
 
-local klein_steps_slider = dt.new_widget("slider") {
+klein_steps_slider = dt.new_widget("slider") {
   label = _("Steps"),
   tooltip = _("Sampling steps (distilled model works well with 4)"),
   soft_min = 1, soft_max = 20,
@@ -7435,7 +7435,7 @@ local klein_steps_slider = dt.new_widget("slider") {
   step = 1, digits = 0, value = 4,
 }
 
-local klein_guidance_slider = dt.new_widget("slider") {
+klein_guidance_slider = dt.new_widget("slider") {
   label = _("Guidance"),
   tooltip = _("CFG guidance scale (1.0 for Flux 2)"),
   soft_min = 1, soft_max = 10,
@@ -7443,14 +7443,14 @@ local klein_guidance_slider = dt.new_widget("slider") {
   step = 0.5, digits = 1, value = 1.0,
 }
 
-local klein_runs_slider = dt.new_widget("slider") {
+klein_runs_slider = dt.new_widget("slider") {
   label = _("Runs"),
   tooltip = _("Number of times to generate. Each run uses a fresh seed."),
   soft_min = 1, soft_max = 20, hard_min = 1, hard_max = 99,
   step = 1, digits = 0, value = 1,
 }
 
-local klein_send_btn = dt.new_widget("button") {
+klein_send_btn = dt.new_widget("button") {
   label = _("Send to Klein Flux2"),
   tooltip = _("Process selected images with Klein Flux2 distilled architecture"),
   clicked_callback = function()
@@ -7487,20 +7487,20 @@ local klein_send_btn = dt.new_widget("button") {
 -- PuLID Flux GUI widgets
 -- ═══════════════════════════════════════════════════════════════════════
 
-local pulid_prompt_entry = dt.new_widget("entry") {
+pulid_prompt_entry = dt.new_widget("entry") {
   tooltip = _("Prompt for PuLID Flux generation"),
   text = "",
   editable = true,
 }
 
-local pulid_face_entry = dt.new_widget("entry") {
+pulid_face_entry = dt.new_widget("entry") {
   text = "",
   placeholder = _("Path to face reference image..."),
   tooltip = _("Full path to the face image whose identity will be transferred"),
   editable = true,
 }
 
-local pulid_strength_slider = dt.new_widget("slider") {
+pulid_strength_slider = dt.new_widget("slider") {
   label = _("Face Strength"),
   tooltip = _("How strongly to apply the face identity (0.0–1.0)"),
   soft_min = 0, soft_max = 1,
@@ -7508,7 +7508,7 @@ local pulid_strength_slider = dt.new_widget("slider") {
   step = 0.05, digits = 2, value = 0.9,
 }
 
-local pulid_steps_slider = dt.new_widget("slider") {
+pulid_steps_slider = dt.new_widget("slider") {
   label = _("Steps"),
   tooltip = _("Sampling steps"),
   soft_min = 1, soft_max = 20,
@@ -7516,7 +7516,7 @@ local pulid_steps_slider = dt.new_widget("slider") {
   step = 1, digits = 0, value = 4,
 }
 
-local pulid_guidance_slider = dt.new_widget("slider") {
+pulid_guidance_slider = dt.new_widget("slider") {
   label = _("Guidance"),
   tooltip = _("CFG guidance scale"),
   soft_min = 1, soft_max = 10,
@@ -7524,7 +7524,7 @@ local pulid_guidance_slider = dt.new_widget("slider") {
   step = 0.5, digits = 1, value = 3.5,
 }
 
-local pulid_send_btn = dt.new_widget("button") {
+pulid_send_btn = dt.new_widget("button") {
   label = _("Send to PuLID Flux"),
   tooltip = _("Transfer face identity onto selected images using PuLID Flux"),
   clicked_callback = function()
@@ -7561,21 +7561,21 @@ local pulid_send_btn = dt.new_widget("button") {
 -- Face Swap Direct (ReActor with source image) GUI widgets
 -- ═══════════════════════════════════════════════════════════════════════
 
-local fsd_source_entry = dt.new_widget("entry") {
+fsd_source_entry = dt.new_widget("entry") {
   text = "",
   placeholder = _("Path to source face image..."),
   tooltip = _("Full path to the face image to swap onto the target"),
   editable = true,
 }
 
-local fsd_swap_selector = dt.new_widget("combobox") {
+fsd_swap_selector = dt.new_widget("combobox") {
   label = _("Swap Engine"),
   tooltip = _("Face swap model engine"),
   selected = 1,
   "inswapper_128.onnx",
 }
 
-local fsd_send_btn = dt.new_widget("button") {
+fsd_send_btn = dt.new_widget("button") {
   label = _("Face Swap (Direct/ReActor)"),
   tooltip = _("Swap face from source image onto selected targets using ReActor"),
   clicked_callback = function()
@@ -7609,7 +7609,7 @@ local fsd_send_btn = dt.new_widget("button") {
 -- FaceID (IPAdapter) GUI widgets
 -- ═══════════════════════════════════════════════════════════════════════
 
-local faceid_preset_selector = dt.new_widget("combobox") {
+faceid_preset_selector = dt.new_widget("combobox") {
   label = _("FaceID Preset"),
   tooltip = _("Select a checkpoint preset for FaceID processing"),
   selected = 1,
@@ -7620,26 +7620,26 @@ local faceid_preset_selector = dt.new_widget("combobox") {
   FACEID_PRESETS[5].label,
 }
 
-local faceid_face_entry = dt.new_widget("entry") {
+faceid_face_entry = dt.new_widget("entry") {
   text = "",
   placeholder = _("Path to face reference image..."),
   tooltip = _("Full path to the face image whose identity will be applied"),
   editable = true,
 }
 
-local faceid_prompt_entry = dt.new_widget("entry") {
+faceid_prompt_entry = dt.new_widget("entry") {
   tooltip = _("Positive prompt for FaceID generation"),
   text = "",
   editable = true,
 }
 
-local faceid_neg_entry = dt.new_widget("entry") {
+faceid_neg_entry = dt.new_widget("entry") {
   tooltip = _("Negative prompt for FaceID generation"),
   text = "blurry, deformed, bad anatomy",
   editable = true,
 }
 
-local faceid_weight_slider = dt.new_widget("slider") {
+faceid_weight_slider = dt.new_widget("slider") {
   label = _("FaceID Weight"),
   tooltip = _("Weight for face identity preservation"),
   soft_min = 0, soft_max = 1.5,
@@ -7647,7 +7647,7 @@ local faceid_weight_slider = dt.new_widget("slider") {
   step = 0.05, digits = 2, value = 0.85,
 }
 
-local faceid_weight_v2_slider = dt.new_widget("slider") {
+faceid_weight_v2_slider = dt.new_widget("slider") {
   label = _("FaceID V2 Weight"),
   tooltip = _("Weight for FaceID v2 features"),
   soft_min = 0, soft_max = 1.5,
@@ -7655,7 +7655,7 @@ local faceid_weight_v2_slider = dt.new_widget("slider") {
   step = 0.05, digits = 2, value = 1.0,
 }
 
-local faceid_denoise_slider = dt.new_widget("slider") {
+faceid_denoise_slider = dt.new_widget("slider") {
   label = _("Denoise"),
   tooltip = _("Denoise strength (0 = use preset default)"),
   soft_min = 0, soft_max = 1,
@@ -7663,7 +7663,7 @@ local faceid_denoise_slider = dt.new_widget("slider") {
   step = 0.05, digits = 2, value = 0,
 }
 
-local faceid_send_btn = dt.new_widget("button") {
+faceid_send_btn = dt.new_widget("button") {
   label = _("Send to FaceID"),
   tooltip = _("Apply face identity from reference onto selected images"),
   clicked_callback = function()
@@ -7709,7 +7709,7 @@ local faceid_send_btn = dt.new_widget("button") {
 -- Klein Flux2 + Reference GUI widgets
 -- ═══════════════════════════════════════════════════════════════════════
 
-local kleinref_model_selector = dt.new_widget("combobox") {
+kleinref_model_selector = dt.new_widget("combobox") {
   label = _("Klein Model"),
   tooltip = _("Select a Klein Flux2 model for reference-guided editing"),
   selected = 1,
@@ -7718,20 +7718,20 @@ local kleinref_model_selector = dt.new_widget("combobox") {
   KLEIN_MODELS[3].label,
 }
 
-local kleinref_prompt_entry = dt.new_widget("entry") {
+kleinref_prompt_entry = dt.new_widget("entry") {
   tooltip = _("Prompt for Klein+Reference generation"),
   text = "",
   editable = true,
 }
 
-local kleinref_ref_entry = dt.new_widget("entry") {
+kleinref_ref_entry = dt.new_widget("entry") {
   text = "",
   placeholder = _("Path to reference/style image..."),
   tooltip = _("Full path to the reference image (style/structure source)"),
   editable = true,
 }
 
-local kleinref_steps_slider = dt.new_widget("slider") {
+kleinref_steps_slider = dt.new_widget("slider") {
   label = _("Steps"),
   tooltip = _("Sampling steps"),
   soft_min = 1, soft_max = 20,
@@ -7739,7 +7739,7 @@ local kleinref_steps_slider = dt.new_widget("slider") {
   step = 1, digits = 0, value = 4,
 }
 
-local kleinref_guidance_slider = dt.new_widget("slider") {
+kleinref_guidance_slider = dt.new_widget("slider") {
   label = _("Guidance"),
   tooltip = _("CFG guidance scale (1.0 for Flux 2)"),
   soft_min = 1, soft_max = 10,
@@ -7747,7 +7747,7 @@ local kleinref_guidance_slider = dt.new_widget("slider") {
   step = 0.5, digits = 1, value = 1.0,
 }
 
-local kleinref_send_btn = dt.new_widget("button") {
+kleinref_send_btn = dt.new_widget("button") {
   label = _("Send to Klein+Reference"),
   tooltip = _("Edit selected images using Klein Flux2 with a reference image for style guidance"),
   clicked_callback = function()
@@ -7787,7 +7787,7 @@ local kleinref_send_btn = dt.new_widget("button") {
 -- Inpaint GUI widgets
 -- ═══════════════════════════════════════════════════════════════════════
 
-local inpaint_model_selector = dt.new_widget("combobox") {
+inpaint_model_selector = dt.new_widget("combobox") {
   label = _("Inpaint Model"),
   tooltip = _("Select a model preset for inpainting"),
   changed_callback = function() end,
@@ -7821,7 +7821,7 @@ for i, ref in ipairs(INPAINT_REFINEMENTS) do
   inpaint_refinement_labels[i] = ref.label
 end
 
-local inpaint_refinement_selector = dt.new_widget("combobox") {
+inpaint_refinement_selector = dt.new_widget("combobox") {
   label = _("Body Part / Refinement"),
   tooltip = _("Select a body part preset to auto-fill prompt, negative, denoise, and LoRA settings"),
   changed_callback = function(self)
@@ -7849,21 +7849,21 @@ local inpaint_refinement_selector = dt.new_widget("combobox") {
   table.unpack(inpaint_refinement_labels),
 }
 
-local inpaint_mask_entry = dt.new_widget("entry") {
+inpaint_mask_entry = dt.new_widget("entry") {
   tooltip = _("Full path to a grayscale mask PNG (white = inpaint area, black = keep)"),
   placeholder = _("/path/to/mask.png"),
 }
 
-local inpaint_prompt_entry = dt.new_widget("entry") {
+inpaint_prompt_entry = dt.new_widget("entry") {
   tooltip = _("Prompt describing what to generate in the masked area"),
 }
 
-local inpaint_negative_entry = dt.new_widget("entry") {
+inpaint_negative_entry = dt.new_widget("entry") {
   tooltip = _("Negative prompt for inpainting"),
   text = "lowres, bad anatomy, worst quality, blurry",
 }
 
-local inpaint_denoise_slider = dt.new_widget("slider") {
+inpaint_denoise_slider = dt.new_widget("slider") {
   label = _("Denoise"),
   tooltip = _("Denoising strength (higher = more change in masked area)"),
   soft_min = 0.1, soft_max = 1.0,
@@ -7872,14 +7872,14 @@ local inpaint_denoise_slider = dt.new_widget("slider") {
   value = 0.75,
 }
 
-local inpaint_runs_slider = dt.new_widget("slider") {
+inpaint_runs_slider = dt.new_widget("slider") {
   label = _("Runs"),
   tooltip = _("Number of times to generate. Each run uses a fresh seed."),
   soft_min = 1, soft_max = 20, hard_min = 1, hard_max = 99,
   step = 1, digits = 0, value = 1,
 }
 
-local inpaint_send_btn = dt.new_widget("button") {
+inpaint_send_btn = dt.new_widget("button") {
   label = _("Send to Inpaint"),
   tooltip = _("Inpaint the masked area of selected images using the chosen model"),
   clicked_callback = function()
@@ -7950,7 +7950,7 @@ local inpaint_send_btn = dt.new_widget("button") {
 -- Upscale 4x GUI widgets
 -- ═══════════════════════════════════════════════════════════════════════
 
-local upscale_model_selector = dt.new_widget("combobox") {
+upscale_model_selector = dt.new_widget("combobox") {
   label = _("Upscale Model"),
   tooltip = _("Select a 4x upscale model"),
   selected = 1,
@@ -7961,7 +7961,7 @@ local upscale_model_selector = dt.new_widget("combobox") {
   UPSCALE_MODELS[5].label,
 }
 
-local upscale_send_btn = dt.new_widget("button") {
+upscale_send_btn = dt.new_widget("button") {
   label = _("Upscale 4x"),
   tooltip = _("Upscale selected images 4x using the chosen model"),
   clicked_callback = function()
@@ -7987,14 +7987,14 @@ local upscale_send_btn = dt.new_widget("button") {
 -- Object Removal (LaMa) GUI widgets
 -- ═══════════════════════════════════════════════════════════════════════
 
-local lama_mask_entry = dt.new_widget("entry") {
+lama_mask_entry = dt.new_widget("entry") {
   text = "",
   placeholder = _("Path to mask image (white=remove)..."),
   tooltip = _("Full path to a mask image where white areas mark objects to remove (alpha channel used)"),
   editable = true,
 }
 
-local lama_send_btn = dt.new_widget("button") {
+lama_send_btn = dt.new_widget("button") {
   label = _("Remove Objects (LaMa)"),
   tooltip = _("Remove masked objects from the selected image using LaMa inpainting"),
   clicked_callback = function()
@@ -8029,7 +8029,7 @@ local lama_send_btn = dt.new_widget("button") {
 -- Darktable for free. KLEIN_MODELS is the local model table (line ~2830)
 -- that already drives the existing Klein img2img controls.
 
-local klein_model_selector = dt.new_widget("combobox") {
+klein_model_selector = dt.new_widget("combobox") {
   label = _("Klein Model"),
   tooltip = _("9B = best quality, more VRAM. 4B fp8 = faster, fits 12GB."),
   selected = 1,
@@ -8038,21 +8038,21 @@ local klein_model_selector = dt.new_widget("combobox") {
 }
 
 -- Klein Inpaint controls
-local klein_inpaint_mask_entry = dt.new_widget("entry") {
+klein_inpaint_mask_entry = dt.new_widget("entry") {
   text = "",
   placeholder = _("Path to mask image (white=inpaint area)..."),
   tooltip = _("Full path to a mask PNG — white pixels mark the area Klein will regenerate"),
   editable = true,
 }
 
-local klein_inpaint_prompt_entry = dt.new_widget("entry") {
+klein_inpaint_prompt_entry = dt.new_widget("entry") {
   text = "",
   placeholder = _("What should appear in the masked area..."),
   tooltip = _("Klein uses natural language — 'a vintage brass lamp' beats 'lamp, vintage, brass'"),
   editable = true,
 }
 
-local klein_inpaint_denoise_slider = dt.new_widget("slider") {
+klein_inpaint_denoise_slider = dt.new_widget("slider") {
   label = _("Denoise"),
   tooltip = _("How strongly the masked area is regenerated. 0.6 = subtle fix, 0.92 = full replace."),
   soft_min = 0.30, soft_max = 1.00,
@@ -8065,14 +8065,14 @@ local klein_inpaint_denoise_slider = dt.new_widget("slider") {
 -- path is ignored: SAM3 builds the mask server-side from the text. UX
 -- win: photographers describe what to mask in plain English instead of
 -- bouncing to GIMP to draw a PNG.
-local klein_sam3_prompt_entry = dt.new_widget("entry") {
+klein_sam3_prompt_entry = dt.new_widget("entry") {
   text = "",
   placeholder = _("...or SAM3 mask prompt: 'the sky', 'her face', 'the trash can'..."),
   tooltip = _("Type what you want masked. SAM3 segments the image server-side. Leave empty to fall back to the mask path above."),
   editable = true,
 }
 
-local klein_inpaint_send_btn = dt.new_widget("button") {
+klein_inpaint_send_btn = dt.new_widget("button") {
   label = _("Klein Inpaint"),
   tooltip = _("Regenerate the masked region with Flux 2 Klein. Use SAM3 prompt for hands-free masking, or supply a mask file."),
   clicked_callback = function()
@@ -8110,7 +8110,7 @@ local klein_inpaint_send_btn = dt.new_widget("button") {
 -- user types the target object once and can run either Klein Inpaint
 -- (regenerate) or LaMa Remove (deterministic erase) against the same
 -- mask description.
-local lama_sam3_send_btn = dt.new_widget("button") {
+lama_sam3_send_btn = dt.new_widget("button") {
   label = _("LaMa Remove (SAM3)"),
   tooltip = _("Erase the SAM3-described region with LaMa. Deterministic, no diffusion — best for small objects."),
   clicked_callback = function()
@@ -8135,14 +8135,14 @@ local lama_sam3_send_btn = dt.new_widget("button") {
 -- mask prompt + a fixed Klein Inpaint refinement to give photographers
 -- workflow buttons rather than tool buttons. Internally identical to a
 -- normal Klein Inpaint with the values pre-filled.
-local function _smart_klein_inpaint(image, sam3_target, refinement_prompt, denoise)
+function _smart_klein_inpaint(image, sam3_target, refinement_prompt, denoise)
   local model_idx = klein_model_selector.selected or 1
   local model_label = KLEIN_MODELS[model_idx] and KLEIN_MODELS[model_idx].label or "Klein 9B"
   return process_klein_inpaint(image, "", model_label, refinement_prompt,
                                 denoise, sam3_target)
 end
 
-local smart_skin_btn = dt.new_widget("button") {
+smart_skin_btn = dt.new_widget("button") {
   label = _("✨ Smooth Skin"),
   tooltip = _("Auto-mask all visible skin via SAM3, then run Klein with the skin-texture refinement."),
   clicked_callback = function()
@@ -8158,7 +8158,7 @@ local smart_skin_btn = dt.new_widget("button") {
   end
 }
 
-local smart_eyes_btn = dt.new_widget("button") {
+smart_eyes_btn = dt.new_widget("button") {
   label = _("✨ Brighten Eyes"),
   tooltip = _("Auto-mask the eyes via SAM3, then run Klein with the iris-detail refinement."),
   clicked_callback = function()
@@ -8177,7 +8177,7 @@ local smart_eyes_btn = dt.new_widget("button") {
 -- The sky button takes the prompt entry's contents to drive the new sky
 -- (defaulting to a dramatic stormy sky). It's the one smart action that
 -- benefits from a knob; the others have a single canonical refinement.
-local smart_sky_btn = dt.new_widget("button") {
+smart_sky_btn = dt.new_widget("button") {
   label = _("✨ Replace Sky"),
   tooltip = _("Auto-mask the sky via SAM3, then run Klein Inpaint with the prompt above (defaults to a dramatic sky)."),
   clicked_callback = function()
@@ -8196,7 +8196,7 @@ local smart_sky_btn = dt.new_widget("button") {
   end
 }
 
-local smart_bg_remove_btn = dt.new_widget("button") {
+smart_bg_remove_btn = dt.new_widget("button") {
   label = _("✨ Remove Background"),
   tooltip = _("Auto-mask the main subject via SAM3 (inverted), then erase the background with LaMa."),
   clicked_callback = function()
@@ -8214,14 +8214,14 @@ local smart_bg_remove_btn = dt.new_widget("button") {
 }
 
 -- Klein Re-pose controls
-local klein_repose_prompt_entry = dt.new_widget("entry") {
+klein_repose_prompt_entry = dt.new_widget("entry") {
   text = "",
   placeholder = _("Describe the new pose / camera angle / framing..."),
   tooltip = _("Natural language prompt — 'three-quarter portrait turned to the right, looking at camera'"),
   editable = true,
 }
 
-local klein_repose_denoise_slider = dt.new_widget("slider") {
+klein_repose_denoise_slider = dt.new_widget("slider") {
   label = _("Denoise"),
   tooltip = _("How far the result drifts from the source. 0.4 = subtle nudge, 0.85 = bold reinterpretation."),
   soft_min = 0.30, soft_max = 0.95,
@@ -8229,7 +8229,7 @@ local klein_repose_denoise_slider = dt.new_widget("slider") {
   step = 0.02, digits = 2, value = 0.65,
 }
 
-local klein_repose_send_btn = dt.new_widget("button") {
+klein_repose_send_btn = dt.new_widget("button") {
   label = _("Klein Re-pose"),
   tooltip = _("Change pose / angle / framing while keeping the subject's identity (canonical workflow via the Guild)"),
   clicked_callback = function()
@@ -8252,21 +8252,21 @@ local klein_repose_send_btn = dt.new_widget("button") {
 }
 
 -- Klein Head Swap controls
-local klein_headswap_source_entry = dt.new_widget("entry") {
+klein_headswap_source_entry = dt.new_widget("entry") {
   text = "",
   placeholder = _("Path to source face image..."),
   tooltip = _("PNG/JPG of the face you want to swap INTO the selected target image"),
   editable = true,
 }
 
-local klein_headswap_prompt_entry = dt.new_widget("entry") {
+klein_headswap_prompt_entry = dt.new_widget("entry") {
   text = "",
   placeholder = _("Optional refinement prompt (e.g. 'natural skin, studio lighting')..."),
   tooltip = _("Klein refinement prompt — leave empty for a neutral blend"),
   editable = true,
 }
 
-local klein_headswap_denoise_slider = dt.new_widget("slider") {
+klein_headswap_denoise_slider = dt.new_widget("slider") {
   label = _("Refine denoise"),
   tooltip = _("Klein refinement strength after ReActor swap. 0.20 = subtle blend, 0.45 = stronger smoothing."),
   soft_min = 0.10, soft_max = 0.60,
@@ -8274,7 +8274,7 @@ local klein_headswap_denoise_slider = dt.new_widget("slider") {
   step = 0.02, digits = 2, value = 0.35,
 }
 
-local klein_headswap_send_btn = dt.new_widget("button") {
+klein_headswap_send_btn = dt.new_widget("button") {
   label = _("Klein Head Swap"),
   tooltip = _("ReActor face swap + Klein refinement (canonical workflow via the Guild)"),
   clicked_callback = function()
@@ -8299,21 +8299,21 @@ local klein_headswap_send_btn = dt.new_widget("button") {
 }
 
 -- Klein img2img with reference controls
-local klein_img2img_ref_path_entry = dt.new_widget("entry") {
+klein_img2img_ref_path_entry = dt.new_widget("entry") {
   text = "",
   placeholder = _("Path to reference image (lighting / mood / style guide)..."),
   tooltip = _("PNG/JPG used as soft style + structure guidance via Klein's ReferenceLatent"),
   editable = true,
 }
 
-local klein_img2img_ref_prompt_entry = dt.new_widget("entry") {
+klein_img2img_ref_prompt_entry = dt.new_widget("entry") {
   text = "",
   placeholder = _("Edit prompt (what should change in the main image)..."),
   tooltip = _("Klein img2img with reference — natural language prompt"),
   editable = true,
 }
 
-local klein_img2img_ref_denoise_slider = dt.new_widget("slider") {
+klein_img2img_ref_denoise_slider = dt.new_widget("slider") {
   label = _("Denoise"),
   tooltip = _("How far the result drifts from the input. 0.4 = subtle, 0.8 = bold."),
   soft_min = 0.30, soft_max = 0.95,
@@ -8321,7 +8321,7 @@ local klein_img2img_ref_denoise_slider = dt.new_widget("slider") {
   step = 0.02, digits = 2, value = 0.65,
 }
 
-local klein_img2img_ref_strength_slider = dt.new_widget("slider") {
+klein_img2img_ref_strength_slider = dt.new_widget("slider") {
   label = _("Reference strength"),
   tooltip = _("How strongly the reference influences the output. 1.0 = strong guide, 0.4 = soft hint."),
   soft_min = 0.20, soft_max = 1.50,
@@ -8329,7 +8329,7 @@ local klein_img2img_ref_strength_slider = dt.new_widget("slider") {
   step = 0.05, digits = 2, value = 1.0,
 }
 
-local klein_img2img_ref_send_btn = dt.new_widget("button") {
+klein_img2img_ref_send_btn = dt.new_widget("button") {
   label = _("Klein img2img + Ref"),
   tooltip = _("Edit while matching a reference image's lighting/structure (canonical workflow via the Guild)"),
   clicked_callback = function()
@@ -8359,7 +8359,7 @@ local klein_img2img_ref_send_btn = dt.new_widget("button") {
 -- Hybrid Upscale Blend controls
 -- Reuses the existing UPSCALE_MODELS table (line ~2033). Two combos
 -- for the two models, one slider for the mix.
-local upscale_blend_model_a_selector = dt.new_widget("combobox") {
+upscale_blend_model_a_selector = dt.new_widget("combobox") {
   label = _("Upscale model A"),
   tooltip = _("First upscaler — typically the sharper one"),
   selected = 1,
@@ -8370,7 +8370,7 @@ local upscale_blend_model_a_selector = dt.new_widget("combobox") {
   UPSCALE_MODELS[5].label,
 }
 
-local upscale_blend_model_b_selector = dt.new_widget("combobox") {
+upscale_blend_model_b_selector = dt.new_widget("combobox") {
   label = _("Upscale model B"),
   tooltip = _("Second upscaler — typically the smoother one"),
   selected = 4,
@@ -8381,7 +8381,7 @@ local upscale_blend_model_b_selector = dt.new_widget("combobox") {
   UPSCALE_MODELS[5].label,
 }
 
-local upscale_blend_factor_slider = dt.new_widget("slider") {
+upscale_blend_factor_slider = dt.new_widget("slider") {
   label = _("Blend (A→B)"),
   tooltip = _("0.0 = pure A, 1.0 = pure B, 0.5 = even mix"),
   soft_min = 0.0, soft_max = 1.0,
@@ -8389,7 +8389,7 @@ local upscale_blend_factor_slider = dt.new_widget("slider") {
   step = 0.05, digits = 2, value = 0.5,
 }
 
-local upscale_blend_scale_slider = dt.new_widget("slider") {
+upscale_blend_scale_slider = dt.new_widget("slider") {
   label = _("Scale by"),
   tooltip = _("Final downscale relative to the upscaler's native output. 1.0 keeps the full 4x; 0.5 halves it."),
   soft_min = 0.25, soft_max = 1.0,
@@ -8404,7 +8404,7 @@ local upscale_blend_scale_slider = dt.new_widget("slider") {
 -- surgical-edit that uses normal-map ControlNet (CLAUDE.md §25 / the
 -- "Normal Map (use existing layer)" CN mode). No dialog — just runs
 -- at a sensible default max_res tied to the exported image size.
-local normal_map_btn = dt.new_widget("button") {
+normal_map_btn = dt.new_widget("button") {
   label = _("💎 3D Normal Map (NormalCrafter)"),
   tooltip = _("Generate a 3D surface normal map for the selected image via the canonical build_normal_map builder. "
               .. "Useful for relighting + ControlNet normal guidance. "
@@ -8430,7 +8430,7 @@ local normal_map_btn = dt.new_widget("button") {
   end
 }
 
-local upscale_blend_send_btn = dt.new_widget("button") {
+upscale_blend_send_btn = dt.new_widget("button") {
   label = _("Hybrid Upscale (Blend)"),
   tooltip = _("Run two upscalers in parallel and blend the outputs (canonical workflow via the Guild)"),
   clicked_callback = function()
@@ -8460,28 +8460,28 @@ local upscale_blend_send_btn = dt.new_widget("button") {
 -- + parameter packaging. PAG / SkipLayerGuidanceDiT / TeaCache
 -- selection happens in spellcaster_core.workflows so any future tuning
 -- reaches Darktable for free.
-local zit_ckpt_entry = dt.new_widget("entry") {
+zit_ckpt_entry = dt.new_widget("entry") {
   text = "ZIT\\gonzalomoZpop_v30AIO.safetensors",
   placeholder = _("ZIT checkpoint path on the ComfyUI server..."),
   tooltip = _("Full path of the Z-Image-Turbo checkpoint as ComfyUI sees it. Defaults to the GonzaloMo Zpop AIO."),
   editable = true,
 }
 
-local zit_prompt_entry = dt.new_widget("entry") {
+zit_prompt_entry = dt.new_widget("entry") {
   text = "",
   placeholder = _("Edit prompt (Z-Image-Turbo prefers short, plain language)..."),
   tooltip = _("ZIT is distilled — short, focused prompts beat long tag spam. cfg is fixed low (~2.0) by the canonical builder."),
   editable = true,
 }
 
-local zit_negative_entry = dt.new_widget("entry") {
+zit_negative_entry = dt.new_widget("entry") {
   text = "",
   placeholder = _("Negative prompt (optional)..."),
   tooltip = _("Optional negative. Keep it minimal on distilled models."),
   editable = true,
 }
 
-local zit_denoise_slider = dt.new_widget("slider") {
+zit_denoise_slider = dt.new_widget("slider") {
   label = _("Denoise"),
   tooltip = _("How far the result drifts from the source. 0.4 = subtle, 0.85 = bold."),
   soft_min = 0.20, soft_max = 0.95,
@@ -8489,7 +8489,7 @@ local zit_denoise_slider = dt.new_widget("slider") {
   step = 0.02, digits = 2, value = 0.55,
 }
 
-local zit_quality_selector = dt.new_widget("combobox") {
+zit_quality_selector = dt.new_widget("combobox") {
   label = _("Quality"),
   tooltip = _("balanced = PAG + SLG (recommended). max = also enables FreeU/SLG cap. fast = no boosters (raw 6-step)."),
   selected = 2,
@@ -8498,7 +8498,7 @@ local zit_quality_selector = dt.new_widget("combobox") {
   "max",
 }
 
-local zit_fast_check = dt.new_widget("check_button") {
+zit_fast_check = dt.new_widget("check_button") {
   label = _("⚡ TeaCache (fast_mode)"),
   tooltip = _("Wraps the model in ApplyTeaCachePatch (rel_l1_thresh=0.3 for ZIT). Bigger win on batches than single shots; needs the ComfyUI-TeaCache custom pack."),
   value = false,
@@ -8511,14 +8511,14 @@ local zit_fast_check = dt.new_widget("check_button") {
 -- existing Fetch LoRAs button (no separate fetch needed).
 local cached_zit_loras = {}
 
-local zit_lora_selector = dt.new_widget("combobox") {
+zit_lora_selector = dt.new_widget("combobox") {
   label = _("ZIT LoRA"),
   tooltip = _("Pick a Z-Image-Turbo LoRA from your ComfyUI server. Click 'Fetch LoRAs' above first to populate."),
   selected = 1,
   "(none)",
 }
 
-local zit_lora_strength_slider = dt.new_widget("slider") {
+zit_lora_strength_slider = dt.new_widget("slider") {
   label = _("ZIT LoRA strength"),
   tooltip = _("Strength applied to both model and CLIP. 1.0 = full effect, 0.5 = subtle."),
   soft_min = -2, soft_max = 2,
@@ -8546,7 +8546,7 @@ function refresh_zit_lora_selector()
   zit_lora_selector.selected = 1
 end
 
-local zit_send_btn = dt.new_widget("button") {
+zit_send_btn = dt.new_widget("button") {
   label = _("✨ Z-Image-Turbo Generate"),
   tooltip = _("img2img with the full Z-Image-Turbo quality stack (canonical build_img2img via the Guild). Reuses the SAM3 prompt entry above when you want to scope the edit."),
   clicked_callback = function()
@@ -8590,7 +8590,7 @@ local zit_send_btn = dt.new_widget("button") {
 -- Color Grading / LUT GUI widgets
 -- ═══════════════════════════════════════════════════════════════════════
 
-local lut_selector = dt.new_widget("combobox") {
+lut_selector = dt.new_widget("combobox") {
   label = _("LUT Preset"),
   tooltip = _("Select a cinematic LUT for color grading"),
   selected = 1,
@@ -8600,7 +8600,7 @@ local lut_selector = dt.new_widget("combobox") {
   LUT_PRESETS[4].label,
 }
 
-local lut_strength_slider = dt.new_widget("slider") {
+lut_strength_slider = dt.new_widget("slider") {
   label = _("LUT Strength"),
   tooltip = _("Blend strength between original and graded image"),
   soft_min = 0, soft_max = 1,
@@ -8608,7 +8608,7 @@ local lut_strength_slider = dt.new_widget("slider") {
   step = 0.05, digits = 2, value = 0.7,
 }
 
-local lut_send_btn = dt.new_widget("button") {
+lut_send_btn = dt.new_widget("button") {
   label = _("Apply LUT"),
   tooltip = _("Apply the selected LUT color grade to selected images"),
   clicked_callback = function()
@@ -8636,7 +8636,7 @@ local lut_send_btn = dt.new_widget("button") {
 -- Outpaint / Extend Canvas GUI widgets
 -- ═══════════════════════════════════════════════════════════════════════
 
-local outpaint_pad_left_slider = dt.new_widget("slider") {
+outpaint_pad_left_slider = dt.new_widget("slider") {
   label = _("Pad Left"),
   tooltip = _("Pixels to extend on the left side"),
   soft_min = 0, soft_max = 512,
@@ -8644,7 +8644,7 @@ local outpaint_pad_left_slider = dt.new_widget("slider") {
   step = 8, digits = 0, value = 0,
 }
 
-local outpaint_pad_right_slider = dt.new_widget("slider") {
+outpaint_pad_right_slider = dt.new_widget("slider") {
   label = _("Pad Right"),
   tooltip = _("Pixels to extend on the right side"),
   soft_min = 0, soft_max = 512,
@@ -8652,7 +8652,7 @@ local outpaint_pad_right_slider = dt.new_widget("slider") {
   step = 8, digits = 0, value = 0,
 }
 
-local outpaint_pad_top_slider = dt.new_widget("slider") {
+outpaint_pad_top_slider = dt.new_widget("slider") {
   label = _("Pad Top"),
   tooltip = _("Pixels to extend on the top side"),
   soft_min = 0, soft_max = 512,
@@ -8660,7 +8660,7 @@ local outpaint_pad_top_slider = dt.new_widget("slider") {
   step = 8, digits = 0, value = 0,
 }
 
-local outpaint_pad_bottom_slider = dt.new_widget("slider") {
+outpaint_pad_bottom_slider = dt.new_widget("slider") {
   label = _("Pad Bottom"),
   tooltip = _("Pixels to extend on the bottom side"),
   soft_min = 0, soft_max = 512,
@@ -8668,26 +8668,26 @@ local outpaint_pad_bottom_slider = dt.new_widget("slider") {
   step = 8, digits = 0, value = 0,
 }
 
-local outpaint_prompt_entry = dt.new_widget("entry") {
+outpaint_prompt_entry = dt.new_widget("entry") {
   tooltip = _("Describe what to generate in the extended area"),
   text = "",
   editable = true,
 }
 
-local outpaint_negative_entry = dt.new_widget("entry") {
+outpaint_negative_entry = dt.new_widget("entry") {
   tooltip = _("Negative prompt for outpaint generation"),
   text = "blurry, deformed, low quality",
   editable = true,
 }
 
-local outpaint_runs_slider = dt.new_widget("slider") {
+outpaint_runs_slider = dt.new_widget("slider") {
   label = _("Runs"),
   tooltip = _("Number of times to generate. Each run uses a fresh seed."),
   soft_min = 1, soft_max = 20, hard_min = 1, hard_max = 99,
   step = 1, digits = 0, value = 1,
 }
 
-local outpaint_send_btn = dt.new_widget("button") {
+outpaint_send_btn = dt.new_widget("button") {
   label = _("Outpaint / Extend"),
   tooltip = _("Extend the canvas of the selected image and inpaint the new area"),
   clicked_callback = function()
@@ -8726,20 +8726,20 @@ local outpaint_send_btn = dt.new_widget("button") {
 -- Style Transfer (IPAdapter) GUI widgets
 -- ═══════════════════════════════════════════════════════════════════════
 
-local style_ref_entry = dt.new_widget("entry") {
+style_ref_entry = dt.new_widget("entry") {
   text = "",
   placeholder = _("Path to style reference image..."),
   tooltip = _("Full path to an image whose artistic style will be transferred"),
   editable = true,
 }
 
-local style_prompt_entry = dt.new_widget("entry") {
+style_prompt_entry = dt.new_widget("entry") {
   tooltip = _("Optional prompt to guide the style transfer"),
   text = "",
   editable = true,
 }
 
-local style_strength_slider = dt.new_widget("slider") {
+style_strength_slider = dt.new_widget("slider") {
   label = _("Style Strength"),
   tooltip = _("How strongly to apply the reference style"),
   soft_min = 0, soft_max = 1.5,
@@ -8747,14 +8747,14 @@ local style_strength_slider = dt.new_widget("slider") {
   step = 0.05, digits = 2, value = 0.8,
 }
 
-local style_runs_slider = dt.new_widget("slider") {
+style_runs_slider = dt.new_widget("slider") {
   label = _("Runs"),
   tooltip = _("Number of times to generate. Each run uses a fresh seed."),
   soft_min = 1, soft_max = 20, hard_min = 1, hard_max = 99,
   step = 1, digits = 0, value = 1,
 }
 
-local style_send_btn = dt.new_widget("button") {
+style_send_btn = dt.new_widget("button") {
   label = _("Apply Style Transfer"),
   tooltip = _("Transfer artistic style from a reference image onto selected images"),
   clicked_callback = function()
@@ -8798,7 +8798,7 @@ local style_send_btn = dt.new_widget("button") {
 -- Face Restore GUI widgets
 -- ═══════════════════════════════════════════════════════════════════════
 
-local face_restore_model_selector = dt.new_widget("combobox") {
+face_restore_model_selector = dt.new_widget("combobox") {
   label = _("Face Restore Model"),
   tooltip = _("Select a face restoration model"),
   selected = 1,
@@ -8810,7 +8810,7 @@ local face_restore_model_selector = dt.new_widget("combobox") {
   FACE_RESTORE_MODELS[6].label,
 }
 
-local face_restore_visibility_slider = dt.new_widget("slider") {
+face_restore_visibility_slider = dt.new_widget("slider") {
   label = _("Visibility"),
   tooltip = _("Blend between original and restored face (0=original, 1=fully restored)"),
   soft_min = 0, soft_max = 1,
@@ -8818,7 +8818,7 @@ local face_restore_visibility_slider = dt.new_widget("slider") {
   step = 0.05, digits = 2, value = 1.0,
 }
 
-local face_restore_codeformer_slider = dt.new_widget("slider") {
+face_restore_codeformer_slider = dt.new_widget("slider") {
   label = _("CodeFormer Weight"),
   tooltip = _("CodeFormer fidelity weight (lower=quality, higher=fidelity). Only affects CodeFormer model."),
   soft_min = 0, soft_max = 1,
@@ -8826,7 +8826,7 @@ local face_restore_codeformer_slider = dt.new_widget("slider") {
   step = 0.05, digits = 2, value = 0.5,
 }
 
-local face_restore_send_btn = dt.new_widget("button") {
+face_restore_send_btn = dt.new_widget("button") {
   label = _("Restore Faces"),
   tooltip = _("Restore faces in selected images using the chosen model"),
   clicked_callback = function()
@@ -8855,7 +8855,7 @@ local face_restore_send_btn = dt.new_widget("button") {
 -- Photo Restoration Pipeline GUI widgets
 -- ═══════════════════════════════════════════════════════════════════════
 
-local photo_restore_upscale_selector = dt.new_widget("combobox") {
+photo_restore_upscale_selector = dt.new_widget("combobox") {
   label = _("Upscale Model"),
   tooltip = _("Select an upscale model for the restoration pipeline"),
   selected = 1,
@@ -8865,7 +8865,7 @@ local photo_restore_upscale_selector = dt.new_widget("combobox") {
   PHOTO_RESTORE_UPSCALE_MODELS[4].label,
 }
 
-local photo_restore_sharpen_slider = dt.new_widget("slider") {
+photo_restore_sharpen_slider = dt.new_widget("slider") {
   label = _("Sharpen Strength"),
   tooltip = _("Sharpening alpha (0=none, 2=maximum)"),
   soft_min = 0, soft_max = 2,
@@ -8873,7 +8873,7 @@ local photo_restore_sharpen_slider = dt.new_widget("slider") {
   step = 0.05, digits = 2, value = 0.5,
 }
 
-local photo_restore_send_btn = dt.new_widget("button") {
+photo_restore_send_btn = dt.new_widget("button") {
   label = _("Full Photo Restore"),
   tooltip = _("Upscale + Face Restore + Sharpen selected images in one pass"),
   clicked_callback = function()
@@ -8905,7 +8905,7 @@ local photo_restore_send_btn = dt.new_widget("button") {
 -- Detail Hallucination / Seed2VR GUI widgets
 -- ═══════════════════════════════════════════════════════════════════════
 
-local detail_level_selector = dt.new_widget("combobox") {
+detail_level_selector = dt.new_widget("combobox") {
   label = _("Detail Level"),
   tooltip = _("How much AI detail to hallucinate (higher = more creative, less faithful)"),
   selected = 1,
@@ -8915,20 +8915,20 @@ local detail_level_selector = dt.new_widget("combobox") {
   DETAIL_HALLUCINATE_LEVELS[4].label,
 }
 
-local detail_prompt_entry = dt.new_widget("entry") {
+detail_prompt_entry = dt.new_widget("entry") {
   tooltip = _("Prompt to guide detail hallucination"),
   text = "ultra detailed, sharp focus, high resolution, intricate details",
   editable = true,
 }
 
-local detail_runs_slider = dt.new_widget("slider") {
+detail_runs_slider = dt.new_widget("slider") {
   label = _("Runs"),
   tooltip = _("Number of times to generate. Each run uses a fresh seed."),
   soft_min = 1, soft_max = 20, hard_min = 1, hard_max = 99,
   step = 1, digits = 0, value = 1,
 }
 
-local detail_send_btn = dt.new_widget("button") {
+detail_send_btn = dt.new_widget("button") {
   label = _("Hallucinate Detail"),
   tooltip = _("Upscale and add AI-hallucinated detail to selected images"),
   clicked_callback = function()
@@ -8968,7 +8968,7 @@ local detail_send_btn = dt.new_widget("button") {
 -- Colorize B&W Photo GUI widgets
 -- ═══════════════════════════════════════════════════════════════════════
 
-local colorize_strength_slider = dt.new_widget("slider") {
+colorize_strength_slider = dt.new_widget("slider") {
   label = _("ControlNet Strength"),
   tooltip = _("How strongly the lineart structure guides colorization"),
   soft_min = 0.5, soft_max = 1.0,
@@ -8976,7 +8976,7 @@ local colorize_strength_slider = dt.new_widget("slider") {
   step = 0.05, digits = 2, value = 0.85,
 }
 
-local colorize_denoise_slider = dt.new_widget("slider") {
+colorize_denoise_slider = dt.new_widget("slider") {
   label = _("Denoise"),
   tooltip = _("Generation strength (higher = more creative color, less faithful to structure)"),
   soft_min = 0.4, soft_max = 0.7,
@@ -8984,26 +8984,26 @@ local colorize_denoise_slider = dt.new_widget("slider") {
   step = 0.05, digits = 2, value = 0.55,
 }
 
-local colorize_prompt_entry = dt.new_widget("entry") {
+colorize_prompt_entry = dt.new_widget("entry") {
   tooltip = _("Prompt to guide colorization"),
   text = "vivid natural colors, photorealistic, color photograph, warm tones, lifelike colors",
   editable = true,
 }
 
-local colorize_negative_entry = dt.new_widget("entry") {
+colorize_negative_entry = dt.new_widget("entry") {
   tooltip = _("Negative prompt for colorization"),
   text = "black and white, grayscale, monochrome, desaturated, sepia, low quality",
   editable = true,
 }
 
-local colorize_runs_slider = dt.new_widget("slider") {
+colorize_runs_slider = dt.new_widget("slider") {
   label = _("Runs"),
   tooltip = _("Number of times to generate. Each run uses a fresh seed."),
   soft_min = 1, soft_max = 20, hard_min = 1, hard_max = 99,
   step = 1, digits = 0, value = 1,
 }
 
-local colorize_send_btn = dt.new_widget("button") {
+colorize_send_btn = dt.new_widget("button") {
   label = _("Colorize B&W"),
   tooltip = _("Add color to black & white photos using ControlNet-guided img2img"),
   clicked_callback = function()
@@ -9048,7 +9048,7 @@ local colorize_send_btn = dt.new_widget("button") {
 }
 
 -- ── Batch Variations widgets ─────────────────────────────────────────────
-local batch_count_slider = dt.new_widget("slider") {
+batch_count_slider = dt.new_widget("slider") {
   label = _("Batch Count"),
   tooltip = _("Number of variations to generate in one pass (txt2img)"),
   soft_min = 2, soft_max = 8,
@@ -9056,7 +9056,7 @@ local batch_count_slider = dt.new_widget("slider") {
   step = 1, digits = 0, value = 4,
 }
 
-local batch_width_slider = dt.new_widget("slider") {
+batch_width_slider = dt.new_widget("slider") {
   label = _("Width"),
   tooltip = _("Output image width (multiple of 8)"),
   soft_min = 512, soft_max = 2048,
@@ -9064,7 +9064,7 @@ local batch_width_slider = dt.new_widget("slider") {
   step = 64, digits = 0, value = 1024,
 }
 
-local batch_height_slider = dt.new_widget("slider") {
+batch_height_slider = dt.new_widget("slider") {
   label = _("Height"),
   tooltip = _("Output image height (multiple of 8)"),
   soft_min = 512, soft_max = 2048,
@@ -9072,14 +9072,14 @@ local batch_height_slider = dt.new_widget("slider") {
   step = 64, digits = 0, value = 1024,
 }
 
-local batch_runs_slider = dt.new_widget("slider") {
+batch_runs_slider = dt.new_widget("slider") {
   label = _("Runs"),
   tooltip = _("Number of times to generate the full batch. Each run uses fresh seeds."),
   soft_min = 1, soft_max = 20, hard_min = 1, hard_max = 99,
   step = 1, digits = 0, value = 1,
 }
 
-local batch_send_btn = dt.new_widget("button") {
+batch_send_btn = dt.new_widget("button") {
   label = _("Generate Batch"),
   tooltip = _("Generate multiple txt2img variations using the selected model preset"),
   clicked_callback = function()
@@ -9143,7 +9143,7 @@ local batch_send_btn = dt.new_widget("button") {
 -- mode selector and strength slider are placed in the img2img section and
 -- their values are read by both the img2img and inpaint button handlers.
 
-local cn_guide_selector = dt.new_widget("combobox") {
+cn_guide_selector = dt.new_widget("combobox") {
   label = _("ControlNet Guide"),
   tooltip = _("Structure-guided generation: extract edges/depth/pose from source image"),
   selected = 1,
@@ -9151,7 +9151,7 @@ local cn_guide_selector = dt.new_widget("combobox") {
   "OpenPose (body)", "Scribble (sketch)", "Tile (detail)",
 }
 
-local cn_strength_slider = dt.new_widget("slider") {
+cn_strength_slider = dt.new_widget("slider") {
   label = _("CN Strength"),
   tooltip = _("How strongly the structure guide influences generation"),
   soft_min = 0.0, soft_max = 1.5, hard_min = 0.0, hard_max = 2.0,
@@ -9176,7 +9176,7 @@ resolve_cn_params = function(preset)
 end
 
 -- ── IC-Light Relighting widgets ──────────────────────────────────────────
-local iclight_preset_selector = dt.new_widget("combobox") {
+iclight_preset_selector = dt.new_widget("combobox") {
   label = _("Lighting Preset"),
   tooltip = _("Select a lighting direction/mood preset"),
   selected = 1,
@@ -9192,7 +9192,7 @@ local iclight_preset_selector = dt.new_widget("combobox") {
   ICLIGHT_PRESETS[10].label,
 }
 
-local iclight_multiplier_slider = dt.new_widget("slider") {
+iclight_multiplier_slider = dt.new_widget("slider") {
   label = _("Multiplier"),
   tooltip = _("IC-Light conditioning multiplier (lower=subtle, higher=stronger)"),
   soft_min = 0.0, soft_max = 1.0,
@@ -9200,14 +9200,14 @@ local iclight_multiplier_slider = dt.new_widget("slider") {
   step = 0.02, digits = 2, value = 0.18,
 }
 
-local iclight_runs_slider = dt.new_widget("slider") {
+iclight_runs_slider = dt.new_widget("slider") {
   label = _("Runs"),
   tooltip = _("Number of times to generate. Each run uses a fresh seed."),
   soft_min = 1, soft_max = 20, hard_min = 1, hard_max = 99,
   step = 1, digits = 0, value = 1,
 }
 
-local iclight_send_btn = dt.new_widget("button") {
+iclight_send_btn = dt.new_widget("button") {
   label = _("Relight with IC-Light"),
   tooltip = _("Relight selected images using IC-Light (SD1.5 only)"),
   clicked_callback = function()
@@ -9241,7 +9241,7 @@ local iclight_send_btn = dt.new_widget("button") {
 }
 
 -- ── SUPIR AI Restoration widgets ─────────────────────────────────────────
-local supir_denoise_slider = dt.new_widget("slider") {
+supir_denoise_slider = dt.new_widget("slider") {
   label = _("Denoise"),
   tooltip = _("SUPIR denoising strength (lower=preserve detail, higher=more restoration)"),
   soft_min = 0.1, soft_max = 1.0,
@@ -9249,7 +9249,7 @@ local supir_denoise_slider = dt.new_widget("slider") {
   step = 0.05, digits = 2, value = 0.3,
 }
 
-local supir_steps_slider = dt.new_widget("slider") {
+supir_steps_slider = dt.new_widget("slider") {
   label = _("Steps"),
   tooltip = _("Number of sampling steps for SUPIR restoration"),
   soft_min = 10, soft_max = 50,
@@ -9257,7 +9257,7 @@ local supir_steps_slider = dt.new_widget("slider") {
   step = 1, digits = 0, value = 20,
 }
 
-local supir_prompt_entry = dt.new_widget("entry") {
+supir_prompt_entry = dt.new_widget("entry") {
   tooltip = _("Positive prompt for SUPIR restoration (describes desired output quality)"),
   text = "high quality, detailed, sharp",
   editable = true,
@@ -9273,7 +9273,7 @@ for _, mp in ipairs(MODEL_PRESETS) do
   end
 end
 
-local supir_model_selector = dt.new_widget("combobox") {
+supir_model_selector = dt.new_widget("combobox") {
   label = _("SDXL Model"),
   tooltip = _("SDXL checkpoint for SUPIR restoration backbone"),
   selected = 1,
@@ -9283,14 +9283,14 @@ for i, label in ipairs(supir_sdxl_models) do
   supir_model_selector[i] = label
 end
 
-local supir_runs_slider = dt.new_widget("slider") {
+supir_runs_slider = dt.new_widget("slider") {
   label = _("Runs"),
   tooltip = _("Number of times to generate. Each run uses a fresh seed."),
   soft_min = 1, soft_max = 20, hard_min = 1, hard_max = 99,
   step = 1, digits = 0, value = 1,
 }
 
-local supir_send_btn = dt.new_widget("button") {
+supir_send_btn = dt.new_widget("button") {
   label = _("Restore with SUPIR"),
   tooltip = _("AI restoration using SUPIR (requires SUPIR model + SDXL checkpoint)"),
   clicked_callback = function()
@@ -9338,7 +9338,7 @@ for _, p in ipairs(SEEDV2R_PRESETS) do
   table.insert(seedv2r_preset_labels, p.label)
 end
 
-local seedv2r_hallucination_combo = dt.new_widget("combobox") {
+seedv2r_hallucination_combo = dt.new_widget("combobox") {
   label = _("Hallucination Level"),
   tooltip = _("Controls how much detail the AI invents vs preserves from the original"),
   selected = 2,
@@ -9360,7 +9360,7 @@ for _, s in ipairs(SEEDV2R_SCALES) do
   table.insert(seedv2r_scale_labels, s.label)
 end
 
-local seedv2r_scale_combo = dt.new_widget("combobox") {
+seedv2r_scale_combo = dt.new_widget("combobox") {
   label = _("Scale"),
   tooltip = _("Upscale factor (1x = enhance only, no size change)"),
   selected = 3,  -- default 2x
@@ -9384,7 +9384,7 @@ for _, m in ipairs(SEEDV2R_UPSCALE_MODELS) do
   table.insert(seedv2r_upscale_model_files, m.file)
 end
 
-local seedv2r_upscale_model_combo = dt.new_widget("combobox") {
+seedv2r_upscale_model_combo = dt.new_widget("combobox") {
   label = _("Upscale Model"),
   tooltip = _("Neural upscale model (all are 4x; output is rescaled to target)"),
   selected = 1,
@@ -9403,7 +9403,7 @@ for _, mp in ipairs(MODEL_PRESETS) do
   end
 end
 
-local seedv2r_ckpt_combo = dt.new_widget("combobox") {
+seedv2r_ckpt_combo = dt.new_widget("combobox") {
   label = _("Refinement Checkpoint"),
   tooltip = _("SDXL checkpoint used for KSampler detail refinement pass"),
   selected = 1,
@@ -9424,14 +9424,14 @@ seedv2r_negative_entry = dt.new_widget("entry") {
   editable = true,
 }
 
-local seedv2r_runs_slider = dt.new_widget("slider") {
+seedv2r_runs_slider = dt.new_widget("slider") {
   label = _("Runs"),
   tooltip = _("Number of times to generate. Each run uses a fresh seed."),
   soft_min = 1, soft_max = 20, hard_min = 1, hard_max = 99,
   step = 1, digits = 0, value = 1,
 }
 
-local seedv2r_send_btn = dt.new_widget("button") {
+seedv2r_send_btn = dt.new_widget("button") {
   label = _("Upscale with SeedV2R"),
   tooltip = _("AI upscale using upscale model + KSampler detail refinement"),
   clicked_callback = function()
@@ -9484,7 +9484,7 @@ local seedv2r_send_btn = dt.new_widget("button") {
 -- ═══════════════════════════════════════════════════════════════════════
 
 -- ── img2img presets ─────────────────────────────────────────────────
-local img2img_preset_combo, img2img_preset_load, img2img_preset_save, img2img_preset_delete =
+img2img_preset_combo, img2img_preset_load, img2img_preset_save, img2img_preset_delete =
   make_preset_widgets("img2img",
     function()  -- collect
       return {
@@ -9510,7 +9510,7 @@ local img2img_preset_combo, img2img_preset_load, img2img_preset_save, img2img_pr
     end)
 
 -- ── Wan I2V presets ─────────────────────────────────────────────────
-local wan_preset_combo, wan_preset_load, wan_preset_save, wan_preset_delete =
+wan_preset_combo, wan_preset_load, wan_preset_save, wan_preset_delete =
   make_preset_widgets("wan_i2v",
     function()
       return {
@@ -9548,7 +9548,7 @@ local wan_preset_combo, wan_preset_load, wan_preset_save, wan_preset_delete =
     end)
 
 -- ── Klein Flux2 presets ─────────────────────────────────────────────
-local klein_preset_combo, klein_preset_load, klein_preset_save, klein_preset_delete =
+klein_preset_combo, klein_preset_load, klein_preset_save, klein_preset_delete =
   make_preset_widgets("klein",
     function()
       return {
@@ -9566,7 +9566,7 @@ local klein_preset_combo, klein_preset_load, klein_preset_save, klein_preset_del
     end)
 
 -- ── Inpaint presets ─────────────────────────────────────────────────
-local inpaint_preset_combo, inpaint_preset_load, inpaint_preset_save, inpaint_preset_delete =
+inpaint_preset_combo, inpaint_preset_load, inpaint_preset_save, inpaint_preset_delete =
   make_preset_widgets("inpaint",
     function()
       return {
@@ -9586,7 +9586,7 @@ local inpaint_preset_combo, inpaint_preset_load, inpaint_preset_save, inpaint_pr
     end)
 
 -- ── IC-Light presets ────────────────────────────────────────────────
-local iclight_preset_combo, iclight_preset_load, iclight_preset_save, iclight_preset_delete =
+iclight_preset_combo, iclight_preset_load, iclight_preset_save, iclight_preset_delete =
   make_preset_widgets("iclight",
     function()
       return {
@@ -9602,7 +9602,7 @@ local iclight_preset_combo, iclight_preset_load, iclight_preset_save, iclight_pr
     end)
 
 -- ── Outpaint presets ────────────────────────────────────────────────
-local outpaint_preset_combo, outpaint_preset_load, outpaint_preset_save, outpaint_preset_delete =
+outpaint_preset_combo, outpaint_preset_load, outpaint_preset_save, outpaint_preset_delete =
   make_preset_widgets("outpaint",
     function()
       return {
@@ -9624,7 +9624,7 @@ local outpaint_preset_combo, outpaint_preset_load, outpaint_preset_save, outpain
     end)
 
 -- ── Style Transfer presets ──────────────────────────────────────────
-local style_preset_combo, style_preset_load, style_preset_save, style_preset_delete =
+style_preset_combo, style_preset_load, style_preset_save, style_preset_delete =
   make_preset_widgets("style_transfer",
     function()
       return {
@@ -9640,7 +9640,7 @@ local style_preset_combo, style_preset_load, style_preset_save, style_preset_del
     end)
 
 -- ── Colorize presets ────────────────────────────────────────────────
-local colorize_preset_combo, colorize_preset_load, colorize_preset_save, colorize_preset_delete =
+colorize_preset_combo, colorize_preset_load, colorize_preset_save, colorize_preset_delete =
   make_preset_widgets("colorize",
     function()
       return {
@@ -9665,13 +9665,13 @@ local colorize_preset_combo, colorize_preset_load, colorize_preset_save, coloriz
 -- but invisible, so re-showing is instant without re-registration.
 
 -- Server URL entry (editable directly in the panel, syncs with preferences)
-local server_url_entry = dt.new_widget("entry") {
+server_url_entry = dt.new_widget("entry") {
   tooltip = _("ComfyUI server URL. Change this and press Enter to save.\nAlso configurable in Darktable Preferences > Lua tab."),
   text = dt.preferences.read(MODULE_NAME, "server_url", "string"),
   editable = true,
 }
 
-local server_save_btn = dt.new_widget("button") {
+server_save_btn = dt.new_widget("button") {
   label = _("Save Server URL"),
   tooltip = _("Save the server URL to Darktable preferences so it persists across sessions."),
   clicked_callback = function()
@@ -9722,7 +9722,7 @@ local _ARCH_SENTINELS = {
 -- Module-level cache: fills after first probe or on Refresh click.
 local _capabilities_cache = nil   -- { arch_label -> true/false }
 
-local function _probe_comfyui_capabilities()
+function _probe_comfyui_capabilities()
   local server = get_server()
   if not server or server == "" then
     dt.print(_("💎 Capabilities: no server URL configured."))
@@ -9756,7 +9756,7 @@ local function _probe_comfyui_capabilities()
   return caps
 end
 
-local function _check_capabilities()
+function _check_capabilities()
   local caps = _probe_comfyui_capabilities()
   if not caps then return end
   -- Build a sorted report: available first, missing second.
@@ -9789,7 +9789,7 @@ local function _check_capabilities()
   dt.print(table.concat(lines, "\n"))
 end
 
-local capabilities_btn = dt.new_widget("button") {
+capabilities_btn = dt.new_widget("button") {
   label = _("💎 Check Capabilities"),
   tooltip = _("Probe the connected ComfyUI's node catalog and report which Spellcaster architectures are installed. Use before picking a preset to avoid silent render failures."),
   clicked_callback = _check_capabilities,
@@ -9800,7 +9800,7 @@ local capabilities_btn = dt.new_widget("button") {
 -- import via Darktable's native Import panel. Uses GET /api/darktable
 -- /inbox?consume=1 (mailbox fanout from event bus routes
 -- darktable.asset.* events to darktable's mailbox automatically).
-local function _inbox_dir()
+function _inbox_dir()
   -- Prefer OS-standard Pictures dir + Spellcaster-Inbox subfolder.
   -- Fall back to tmp_dir() if HOME isn't set.
   local home = os.getenv("USERPROFILE") or os.getenv("HOME")
@@ -9828,7 +9828,7 @@ end
 -- The manual "Check Inbox" button passes silent=false — it prints a
 -- one-line summary and leaves auto-import off so users can still
 -- review files before adding them.
-local function _drain_spellcaster_inbox(silent)
+function _drain_spellcaster_inbox(silent)
   local res = { status = "ok", downloaded = 0, failed = 0, imported = 0, dir = nil }
   local guild = get_guild_url()
   if not guild or guild == "" then
@@ -9911,7 +9911,7 @@ local function _drain_spellcaster_inbox(silent)
   return res
 end
 
-local function _check_spellcaster_inbox()
+function _check_spellcaster_inbox()
   local res = _drain_spellcaster_inbox(false)
   if res.status == "no_guild" then
     dt.print(_("💎 Inbox: no Guild URL configured — set Server in Spellcaster panel."))
@@ -9930,7 +9930,7 @@ local function _check_spellcaster_inbox()
     res.downloaded, res.dir or _inbox_dir()))
 end
 
-local inbox_btn = dt.new_widget("button") {
+inbox_btn = dt.new_widget("button") {
   label = _("💎 Check Spellcaster Inbox"),
   tooltip = _("Pull any assets other Spellcaster apps have sent to Darktable. Downloads go to Pictures/Spellcaster-Inbox; import via Darktable's native Import panel."),
   clicked_callback = _check_spellcaster_inbox,
@@ -9965,7 +9965,7 @@ function _peer_online_tristate(target_key)
   return "unknown"
 end
 
-local function _cross_send_active_image(target, friendly)
+function _cross_send_active_image(target, friendly)
   local sel = dt.gui.selection() or {}
   local image = sel[1] or dt.gui.act_image
   if not image then
@@ -9998,21 +9998,21 @@ local function _cross_send_active_image(target, friendly)
   end
 end
 
-local send_to_resolve_btn = dt.new_widget("button") {
+send_to_resolve_btn = dt.new_widget("button") {
   label = _("💎 Send to DaVinci Resolve"),
   tooltip = _("Publish the selected image to Resolve's Media Pool via the Spellcaster Bridge"),
   clicked_callback = function()
     _cross_send_active_image("resolve", "DaVinci Resolve")
   end,
 }
-local send_to_gimp_btn = dt.new_widget("button") {
+send_to_gimp_btn = dt.new_widget("button") {
   label = _("💎 Send to GIMP"),
   tooltip = _("Publish the selected image to GIMP's inbox (GIMP: Spellcaster > Cross-App > Check Inbox)"),
   clicked_callback = function()
     _cross_send_active_image("gimp", "GIMP")
   end,
 }
-local send_to_sillytavern_btn = dt.new_widget("button") {
+send_to_sillytavern_btn = dt.new_widget("button") {
   label = _("💎 Send to SillyTavern"),
   tooltip = _("Publish the selected image to SillyTavern as a character / scene asset"),
   clicked_callback = function()
@@ -10020,7 +10020,7 @@ local send_to_sillytavern_btn = dt.new_widget("button") {
   end,
 }
 
-local module_widget = dt.new_widget("box") {
+module_widget = dt.new_widget("box") {
   orientation = "vertical",
   dt.new_widget("label") { label = _("\xe2\x9c\xa8 Spellcaster \xe2\x80\x94 AI Superpowers — Uncensored") },
   dt.new_widget("label") { label = _("Server:") },
@@ -10594,7 +10594,7 @@ local module_installed = false
 -- all workflow controls. The panel is expandable and resetable (collapse/restore).
 --
 -- @see module_widget for the UI container (created above)
-local function install_module()
+function install_module()
   if not module_installed then
     dt.register_lib(
       MODULE_NAME,                                          -- internal key ("comfyui_connector")
@@ -10612,13 +10612,13 @@ end
 
 -- Hide the module (called when user disables via preferences).
 -- Uses "hide" strategy (keep in memory) rather than delete, so re-enabling is instant.
-local function destroy()
+function destroy()
   dt.gui.libs[MODULE_NAME].visible = false
 end
 
 -- Show the module (called when user re-enables via preferences).
 -- Instant because widgets are still in memory.
-local function restart()
+function restart()
   dt.gui.libs[MODULE_NAME].visible = true
 end
 
@@ -10715,7 +10715,7 @@ end
 -- The entire check runs inside pcall() so network failures never
 -- prevent the plugin from loading. The --max-time flags on curl
 -- ensure the check doesn't block plugin startup for more than ~10s.
-local function spellcaster_auto_update()
+function spellcaster_auto_update()
   local sep = package.config:sub(1,1)           -- '\' on Windows, '/' on Unix
   local mv  = (sep == "\\") and "move /y" or "mv -f"  -- platform-appropriate rename
   local plugin_dir = debug.getinfo(1, "S").source:sub(2):match("(.*[/\\])") or ("." .. sep)
@@ -10893,7 +10893,7 @@ pcall(spellcaster_auto_update)
 -- Copies spellcaster-darktable.css to the Darktable themes directory
 -- so the user can select it from Preferences > General > Theme.
 -- Non-destructive: only copies if the file is newer or missing.
-local function install_spellcaster_theme()
+function install_spellcaster_theme()
   local plugin_dir = dt.configuration.config_dir .. "/lua/"
   -- Find the CSS file next to this Lua script
   local css_candidates = {

@@ -2337,11 +2337,29 @@ def _add_mask_mode_checkbox(dialog, box):
     box.pack_start(dialog._mask_mode_check, False, False, 0)
 
 
-def _apply_mask_mode(server, image, img_data, layer_name, mask_enabled):
-    """Import image data as layer, optionally with background removed.
+def _apply_mask_mode(server, image, img_data, layer_name, mask_enabled,
+                      keep_size=False):
+    """Import image data as a layer, optionally with background removed.
 
-    If mask_enabled is True, runs rembg on the result first to produce
-    a transparent PNG, then imports that as the layer.
+    Args:
+        server, image, img_data, layer_name: standard result-import
+            chain inputs.
+        mask_enabled: when True, runs rembg on the result first to
+            produce a transparent PNG, then imports that as the layer.
+        keep_size: forwarded to :func:`_import_result_as_layer` so
+            callers that have already matched the canvas dimensions
+            (SAM3 extract, inpaint, normal-map auto-gen, etc.) can
+            insert the layer at natural size without a fit-to-canvas
+            scale pass. Optional, default False (canvas-fit).
+
+    Note on positional args: three handlers (img2img, inpaint,
+    outpaint) call ``_apply_mask_mode(srv, image, data, label,
+    mask_mode, False)`` with 6 positional args, where the 6th was
+    intended as ``keep_size`` but previously wasn't in the signature.
+    That TypeError was silently caught by each handler's outer
+    try/except and surfaced only as "Inpaint Error: ..." Gimp.message
+    with no visible result import. Accepting ``keep_size`` here makes
+    those call sites work as originally intended.
 
     Returns True if successful.
     """
@@ -2363,7 +2381,8 @@ def _apply_mask_mode(server, image, img_data, layer_name, mask_enabled):
         except Exception:
             pass  # rembg failed — import as-is
 
-    _import_result_as_layer(image, img_data, layer_name)
+    _import_result_as_layer(image, img_data, layer_name,
+                              keep_size=keep_size)
     return True
 
 
