@@ -76,6 +76,44 @@ def _require_build_deps() -> None:
         sys.exit(3)
 
 
+def _find_tcl_tk_dirs() -> list[tuple[Path, str]]:
+    """Locate the interpreter's Tcl + Tk data directories so we can
+    bundle them explicitly. PyInstaller's tkinter hook usually handles
+    this, but on non-standard interpreters (embedded Python, vendored
+    installs where TCL_LIBRARY isn't set) the theme .tcl scripts get
+    missed and ttk widgets fall back to a Motif-looking default.
+
+    Returns a list of (source_dir, dest_rel_dir) tuples suitable for
+    --add-data. Empty list on failure (PyInstaller's hook is the
+    fallback in that case; we're belt-and-suspenders)."""
+    result: list[tuple[Path, str]] = []
+    # Common layouts:
+    #   Windows python.org: C:/Python312/tcl/tcl8.6, .../tcl/tk8.6
+    #   macOS framework:    /Library/Frameworks/Python.framework/.../tcl-tk/...
+    #   Linux system:       /usr/lib/tcl8.6, /usr/lib/tk8.6
+    prefix = Path(sys.prefix)
+    candidate_roots = [
+        prefix / "tcl",             # standard Windows layout
+        prefix / "lib" / "tcl",     # some Unix layouts
+    ]
+    for root in candidate_roots:
+        if not root.is_dir():
+            continue
+        # Each interesting subdir inside `tcl/` or `lib/tcl/` becomes
+        # a bundled folder at the same relative path so Tk resolves
+        # them the same way it does in dev.
+        for child in root.iterdir():
+            if not child.is_dir():
+                continue
+            # tcl8.6, tk8.6, tcl8, tk8, tkdnd2.8, ... — all welcome.
+            lowered = child.name.lower()
+            if (lowered.startswith("tcl") or lowered.startswith("tk")
+                    or "themes" in lowered):
+                dest = f"tcl/{child.name}"
+                result.append((child, dest))
+    return result
+
+
 def main() -> int:
     _require_build_deps()
     out_name = _out_name()
@@ -123,10 +161,18 @@ def main() -> int:
         "--collect-submodules", "scaffold",
         "--collect-submodules", "spellcaster_core",
         # Tkinter — PyInstaller does NOT auto-bundle Tcl/Tk; the
-        # first-run shortcut dialog needs it. --collect-all ensures
-        # the _tkinter C extension + the tcl/tk runtime DLLs land in
-        # the onefile bundle.
+        # first-run shortcut dialog + splash need it. --collect-all
+        # ensures the _tkinter C extension + the tcl/tk runtime DLLs
+        # land in the onefile bundle. --collect-data grabs the
+        # theme .tcl scripts (vistaTheme.tcl, xpTheme.tcl) PyInstaller's
+        # static analyser otherwise misses — without those Tk falls
+        # back to a Motif-looking default that made the antenna look
+        # "ugly as fuck" on fresh Windows machines.
         "--collect-all", "tkinter",
+        "--collect-data", "tkinter",
+        "--hidden-import", "tkinter",
+        "--hidden-import", "tkinter.ttk",
+        "--hidden-import", "tkinter.font",
         # Pystray + PIL — the tray icon. --hidden-import of the
         # per-platform backend wasn't enough because pystray's top-
         # level __init__ pulls Win32 COM stubs at import time that
@@ -149,6 +195,13 @@ def main() -> int:
         "--add-data", (f"{REPO_ROOT / 'antenna' / 'assets' / 'antenna_logo.png'}"
                         f"{os.pathsep}antenna/assets"),
     ]
+
+    # Explicit Tcl/Tk directory bundling — belt-and-suspenders against
+    # PyInstaller's tkinter hook missing the theme .tcl scripts on
+    # non-standard interpreters. See _find_tcl_tk_dirs() for rationale.
+    for src, dest in _find_tcl_tk_dirs():
+        cmd += ["--add-data", f"{src}{os.pathsep}{dest}"]
+        print(f"[antenna-build] Tcl/Tk bundle: {src} -> {dest}")
     # Windows: tray-only (--noconsole). Use build_antenna_exe_debug.py
     # if you need a console build for troubleshooting; the shipped
     # binary should always be windowless so the user sees the tray

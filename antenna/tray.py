@@ -56,6 +56,19 @@ except Exception:  # noqa: BLE001
 from . import agent, config, heartbeat, service_launcher
 from . import detect, pairing
 
+
+def _firewall_label() -> str:
+    """Dynamic label for the tray menu's firewall entry — flips to a
+    green-check wording once the rule exists so the user knows LAN
+    connectivity is unblocked at a glance."""
+    try:
+        from . import firewall as _fw
+        if _fw.rule_exists():
+            return "Firewall rule: ✓ installed (re-check)"
+        return "Add Windows Firewall rule (allow LAN inbound)"
+    except Exception:  # noqa: BLE001
+        return "Add Windows Firewall rule (allow LAN inbound)"
+
 # ── Icon rendering ─────────────────────────────────────────────────────
 
 _ICON_SIZE = 64
@@ -307,6 +320,48 @@ class _TrayState:
                                  if _shc.current_status().get("startup")
                                  else "Enable run-at-Windows-startup"),
                     _toggle_startup))
+
+                # Firewall rule — retry / re-check entry. If the first-
+                # run dialog's firewall step failed (user declined UAC,
+                # netsh access denied, etc.), the antenna is unreachable
+                # from the LAN and the sidebar chips on the Guild never
+                # go green. This tray item lets the user retry without
+                # hunting for an admin cmd prompt.
+                def _configure_firewall(_i=None, _it=None):
+                    def worker():
+                        try:
+                            from . import firewall as _fw
+                        except Exception as e:  # noqa: BLE001
+                            agent.notify("Firewall module missing",
+                                          f"{type(e).__name__}: {e}",
+                                          level="warn")
+                            return
+                        try:
+                            r = _fw.ensure_inbound_rule()
+                        except Exception as e:  # noqa: BLE001
+                            agent.notify("Firewall setup errored",
+                                          f"{type(e).__name__}: {e}",
+                                          level="warn")
+                            return
+                        if r.get("existed"):
+                            agent.notify("Firewall already configured",
+                                          f'"{r.get("cmd_hint","")[:80]}"',
+                                          level="info")
+                        elif r.get("created"):
+                            agent.notify("Firewall rule added",
+                                          "LAN clients can now reach port 7334"
+                                          + (" (elevated)" if r.get("elevated") else ""),
+                                          level="success")
+                        else:
+                            agent.notify("Firewall NOT configured",
+                                          (r.get("error") or "unknown") +
+                                          " — run this in admin cmd: " +
+                                          (r.get("cmd_hint") or ""),
+                                          level="warn")
+                    threading.Thread(target=worker, daemon=True).start()
+                items.append(pystray.MenuItem(
+                    lambda _i: _firewall_label(),
+                    _configure_firewall))
         items.append(pystray.MenuItem(
             "Open antenna folder",
             lambda icon, _item: _open_folder(os.path.dirname(
