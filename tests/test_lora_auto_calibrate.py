@@ -39,6 +39,7 @@ from spellcaster_core.lora_knowledge import (  # noqa: E402,F401
 )
 from spellcaster_core import lora_calibration_store as store  # noqa: E402
 from spellcaster_core import lora_scorer as scorer  # noqa: E402
+from spellcaster_core import faceswap_health as fsh  # noqa: E402
 
 
 # ── Fakes / helpers ────────────────────────────────────────────────────
@@ -768,6 +769,100 @@ def case_sweep_runs_when_weight_is_heuristic():
         lk.get_knowledge = orig_get
 
 
+# ── Faceswap guard (env + config opt-out, probe offline) ──────────────
+
+def case_faceswap_guard_default_is_pass_through():
+    """With no env var and no config override, guard_faceswap is a no-op
+    — the workflow builder proceeds as usual."""
+    fsh.set_config_lookup(None)
+    old_env = os.environ.pop("SPELLCASTER_FACESWAP_DISABLED", None)
+    try:
+        fsh.guard_faceswap("test")    # should not raise
+    finally:
+        if old_env is not None:
+            os.environ["SPELLCASTER_FACESWAP_DISABLED"] = old_env
+
+
+def case_faceswap_guard_env_override_raises():
+    fsh.set_config_lookup(None)
+    os.environ["SPELLCASTER_FACESWAP_DISABLED"] = "1"
+    try:
+        raised = False
+        try:
+            fsh.guard_faceswap("test")
+        except fsh.FaceswapDisabledError as e:
+            raised = True
+            assert "test" in str(e)
+            assert "SPELLCASTER_FACESWAP_DISABLED" in str(e)
+        assert raised
+    finally:
+        os.environ.pop("SPELLCASTER_FACESWAP_DISABLED", None)
+
+
+def case_faceswap_guard_config_override_raises():
+    """Injected config lookup returning `faceswap_disabled: true`
+    should fire the guard."""
+    os.environ.pop("SPELLCASTER_FACESWAP_DISABLED", None)
+    fsh.set_config_lookup(lambda: {"faceswap_disabled": True})
+    try:
+        raised = False
+        try:
+            fsh.guard_faceswap("klein_headswap")
+        except fsh.FaceswapDisabledError as e:
+            raised = True
+            assert "klein_headswap" in str(e)
+            assert "guild_config.json" in str(e)
+        assert raised
+    finally:
+        fsh.set_config_lookup(None)
+
+
+def case_faceswap_probe_offline_reports_unreachable():
+    h = fsh.probe_faceswap_nodes("http://127.0.0.1:59998", timeout=1.0, force=True)
+    assert h.reachable is False
+    assert h.nodes_ok is False
+    assert h.registered == []
+    assert "unreachable" in h.error or "HTTP" in h.error
+
+
+def case_faceswap_probe_classifies_object_info_response():
+    """Hit a fake ComfyUI via stdlib HTTPServer. The probe should
+    classify which node classes are registered vs missing."""
+    import threading as _th
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a, **kw): pass
+        def do_GET(self):
+            body = json.dumps({
+                "CheckpointLoaderSimple": {},
+                "KSampler": {},
+                "ReActorFaceSwap": {},
+                "Face Swap": {},
+                # Missing: ReActorRestoreFace, Load Face Analysis Model, etc.
+            }).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    srv = HTTPServer(("127.0.0.1", 0), H)
+    port = srv.server_address[1]
+    t = _th.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    try:
+        h = fsh.probe_faceswap_nodes(f"http://127.0.0.1:{port}",
+                                      timeout=3.0, force=True)
+        assert h.reachable is True
+        assert "ReActorFaceSwap" in h.registered
+        assert "Face Swap" in h.registered
+        assert "ReActorRestoreFace" in h.missing
+        assert h.nodes_ok is True
+    finally:
+        srv.shutdown()
+
+
 def case_recipe_graceful_fallback_on_knowledge_error():
     """Forcing a knowledge error should degrade cleanly, not crash."""
     from scaffold.lora_grouping import resolve_shootout_recipe_for_lora
@@ -838,6 +933,12 @@ CASES = [
     ("multi-seed: picks median score, flags unstable",  case_multi_seed_stability_picks_median_score),
     ("sweep: skipped when Civitai weight present",      case_sweep_skipped_when_civitai_weight_present),
     ("sweep: runs when weight is heuristic",            case_sweep_runs_when_weight_is_heuristic),
+
+    ("faceswap-guard: default pass-through",            case_faceswap_guard_default_is_pass_through),
+    ("faceswap-guard: env var triggers guard",          case_faceswap_guard_env_override_raises),
+    ("faceswap-guard: config flag triggers guard",      case_faceswap_guard_config_override_raises),
+    ("faceswap-probe: offline returns unreachable",     case_faceswap_probe_offline_reports_unreachable),
+    ("faceswap-probe: classifies /object_info result",  case_faceswap_probe_classifies_object_info_response),
 ]
 
 
