@@ -1,0 +1,2604 @@
+[
+  {
+    "label": "(none — no LoRA preset)",
+    "prompt": "",
+    "negative": "",
+    "denoise": null,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "",
+    "loras": {}
+  },
+  {
+    "label": "✦ LoRA: 80sFantasyMovieMJ7Flux  [flux1dev]",
+    "prompt": "A photograph featuring cinematic composition with film grain with color-graded with widescreen framing, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux1dev",
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\Style\\80sFantasyMovieMJ7Flux.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Aesthetic Texture Enhancer  [flux1dev]",
+    "prompt": "A photograph featuring rich material texture with realistic fabric detail with tactile surface, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux1dev",
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\Detail\\Aesthetic texture enhancer.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: aidmaFeetFix FLUX  [flux1dev]",
+    "prompt": "A photograph featuring aidmafeetfix flux with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux1dev",
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\aidmaFeetFix-FLUX-V0.1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: aidmaMJ6.1 FLUX  [flux1dev]",
+    "prompt": "A photograph featuring aidmamj6.1 flux with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux1dev",
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\Style\\aidmaMJ6.1-FLUX-v0.5.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Cinematicstyleflux  [flux1dev]",
+    "prompt": "A photograph featuring distinctive artistic style with cohesive aesthetic with refined composition, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux1dev",
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\Style\\CinematicStyleFlux_v1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Ck Shadow Circuit 000021  [flux1dev]",
+    "prompt": "A photograph featuring ck shadow circuit 000021 with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux1dev",
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\Style\\ck-shadow-circuit-000021.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Ctai Hand And Foot Details  [flux1dev]",
+    "prompt": "A photograph featuring ultra detailed with sharp focus with intricate details with fine texture, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux1dev",
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\CTAI- Hand and foot details v1.0.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Detail Enhancer Flux  [flux1dev]",
+    "prompt": "A photograph featuring ultra detailed with sharp focus with intricate details with fine texture, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux1dev",
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\detail_enhancer_flux_v1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Detailed Skin Pore Style  [flux1dev]",
+    "prompt": "A photograph featuring ultra detailed with sharp focus with intricate details with fine texture, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux1dev",
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\Detail\\detailed skin pore style v2.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Detailed V2 Flux  [flux1dev]",
+    "prompt": "A photograph featuring ultra detailed with sharp focus with intricate details with fine texture, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux1dev",
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\Detail\\detailed_v2_flux_ntc.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Devbon Flux V2 000025  [flux1dev]",
+    "prompt": "A photograph featuring devbon flux v2 000025 with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux1dev",
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\devbon-flux-v2-000025.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: DSL Two  [flux1dev]",
+    "prompt": "A photograph featuring dsl two with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux1dev",
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\Style\\DSL_Two.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Dynamic Poses  [flux1dev]",
+    "prompt": "A photograph featuring dynamic poses with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux1dev",
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\Pose\\Dynamic_Poses_V2.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Flacs Enhancer  [flux1dev]",
+    "prompt": "A photograph featuring ultra high resolution with crystal clear detail with professional quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux1dev",
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\Flacs_Enhancer_v2.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Freckles Flux  [flux1dev]",
+    "prompt": "A photograph featuring realistic skin texture with visible pores with natural skin detail with photographic, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux1dev",
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\Detail\\freckles_flux_v1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Gothicdarkfantasymovieflux  [flux1dev]",
+    "prompt": "A photograph featuring cinematic composition with film grain with color-graded with widescreen framing, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux1dev",
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\Style\\GothicDarkFantasyMovieFlux.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Portrait Engine  [flux1dev]",
+    "prompt": "A photograph featuring professional portrait photograph with sharp eyes with soft studio lighting, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux1dev",
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\Style\\Portrait_Engine v2.0.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Refcontrol Pose  [flux1dev]",
+    "prompt": "A photograph featuring refcontrol pose with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux1dev",
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\refcontrol_pose.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Rmada Enhance Beta2  [flux1dev]",
+    "prompt": "A photograph featuring ultra high resolution with crystal clear detail with professional quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux1dev",
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\rMada - Enhance - beta2.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Royo Flux  [flux1dev]",
+    "prompt": "A photograph featuring royo flux with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux1dev",
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\Style\\Royo_flux_v4.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: SEXGOD FemaleNudity Klein9b  [flux1dev]",
+    "prompt": "A photograph featuring sexgod femalenudity klein9b with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux1dev",
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\SEXGOD_FemaleNudity_Klein9b_v2.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Skin Texture Style  [flux1dev]",
+    "prompt": "A photograph featuring realistic skin texture with visible pores with natural skin detail with photographic, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux1dev",
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\Detail\\skin texture style v5.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Ultrarealphoto  [flux1dev]",
+    "prompt": "A photograph featuring photorealistic with DSLR photograph with natural lighting with 8k, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux1dev",
+    "loras": {
+      "flux1dev": [
+        [
+          "Flux-1-Dev\\Style\\UltraRealPhoto.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: 1A Back Pose Enhancer  [flux2klein]",
+    "prompt": "A photograph featuring ultra high resolution with crystal clear detail with professional quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\Character\\1A_Back_Pose_Enhancer.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Asura  [flux2klein]",
+    "prompt": "A photograph featuring asura with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\Asura.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Bfs Head V1 Flux Klein 9B Rank128  [flux2klein]",
+    "prompt": "A photograph featuring bfs head v1 flux klein 9b rank128 with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\BFS_head_v1_flux-klein_9b_rank128.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Clothesonoff  [flux2klein]",
+    "prompt": "A photograph featuring clothesonoff with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\clothesonoffv2.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Colortone Standard  [flux2klein]",
+    "prompt": "A photograph featuring refined color palette with harmonious tones with professional color grade, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\Sliders\\ColorTone_Standard.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Cum On Face  [flux2klein]",
+    "prompt": "A photograph featuring professional portrait photograph with sharp eyes with soft studio lighting, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\cum_on_face_v2.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Detail Slider Klein 9B  [flux2klein]",
+    "prompt": "A photograph featuring ultra detailed with sharp focus with intricate details with fine texture, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\Sliders\\detail_slider_klein_9b.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: F2K Anything2Real A Patched  [flux2klein]",
+    "prompt": "A photograph featuring f2k anything2real a patched with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\Character\\f2k_anything2real_a_patched.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: F2K Consist  [flux2klein]",
+    "prompt": "A photograph featuring f2k consist with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\f2k_consist_20260225.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: F2K9B Spreadeagle Spr34Deagle V1E10  [flux2klein]",
+    "prompt": "A photograph featuring f2k9b spreadeagle spr34deagle v1e10 with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\F2K9B_spreadeagle_spr34deagle_V1E10.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Femaleasshole F2 Klein 9B Musubituner  [flux2klein]",
+    "prompt": "A photograph featuring femaleasshole f2 klein 9b musubituner with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\femaleasshole-f2-klein-9b-musubituner.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Fk Povfootjobfront  [flux2klein]",
+    "prompt": "A photograph featuring fk povfootjobfront with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\FK_povfootjobfront.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: FK4B Image Repair  [flux2klein]",
+    "prompt": "A photograph featuring fk4b image repair with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\FK4B_Image_Repair_V1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Flux2Klein Anythingtorealcharacters  [flux2klein]",
+    "prompt": "A photograph featuring flux2klein anythingtorealcharacters with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\Character\\Flux2Klein_AnythingtoRealCharacters.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Flux2Klein Vulva And Anus From Behind  [flux2klein]",
+    "prompt": "A photograph featuring flux2klein vulva and anus from behind with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\flux2klein_vulva_and_anus_from_behind_v1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Footjob Ab F2K9B 1  [flux2klein]",
+    "prompt": "A photograph featuring footjob ab f2k9b 1 with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\footjob_ab_f2k9b_1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: FTextureTransfer F29B  [flux2klein]",
+    "prompt": "A photograph featuring rich material texture with realistic fabric detail with tactile surface, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\FTextureTransfer_F29B_V2.1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Hipoly 3Dcg V7 Epoch 000012  [flux2klein]",
+    "prompt": "A photograph featuring hipoly 3dcg v7 epoch 000012 with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\hipoly_3dcg_v7-epoch-000012.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: K9bSh4rpD3tails  [flux2klein]",
+    "prompt": "A photograph featuring k9bsh4rpd3tails with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\K9bSh4rpD3tails.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: K9bSR3al  [flux2klein]",
+    "prompt": "A photograph featuring k9bsr3al with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\K9bSR3al.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Klein 4B Turbo R128  [flux2klein]",
+    "prompt": "A photograph featuring klein 4b turbo r128 with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\Turbo\\klein_4b_turbo_r128.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Klein Anatomy Male  [flux2klein]",
+    "prompt": "A photograph featuring klein anatomy male with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\Character\\Klein_Anatomy_Male.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Klein Blowbang 6Epoc K3Nk  [flux2klein]",
+    "prompt": "A photograph featuring klein blowbang 6epoc k3nk with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\klein-blowbang-6epoc-k3nk.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Klein Deepthroat 15Epoc K3Nk  [flux2klein]",
+    "prompt": "A photograph featuring klein deepthroat 15epoc k3nk with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\klein-deepthroat-15epoc-k3nk.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Klein Slider Anatomy 9B  [flux2klein]",
+    "prompt": "A photograph featuring klein slider anatomy 9b with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\Sliders\\klein_slider_anatomy_9B_v1.5.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Klein Slider Bodyweight  [flux2klein]",
+    "prompt": "A photograph featuring klein slider bodyweight with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\Sliders\\klein_slider_bodyweight.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Klein Slider Detail  [flux2klein]",
+    "prompt": "A photograph featuring ultra detailed with sharp focus with intricate details with fine texture, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\Sliders\\klein_slider_detail.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Klein Slider Glow  [flux2klein]",
+    "prompt": "A photograph featuring klein slider glow with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\Sliders\\klein_slider_glow.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Klein Snofs V1 1  [flux2klein]",
+    "prompt": "A photograph featuring klein snofs v1 1 with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\klein_snofs_v1_1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: KLEIN Unchained  [flux2klein]",
+    "prompt": "A photograph featuring klein unchained with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\KLEIN-Unchained-V1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Klein4B Slider Anatomy  [flux2klein]",
+    "prompt": "A photograph featuring klein4b slider anatomy with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\Sliders\\klein4B_slider_anatomy.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Lenovo Flux Klein9B  [flux2klein]",
+    "prompt": "A photograph featuring lenovo flux klein9b with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\lenovo_flux_klein9b.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Lenovo Flux2  [flux2klein]",
+    "prompt": "A photograph featuring lenovo flux2 with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\lenovo_flux2.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Nicegirls Flux Klein9B  [flux2klein]",
+    "prompt": "A photograph featuring nicegirls flux klein9b with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\Character\\nicegirls_flux_klein9b.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Pornmaster Cum Flux 2 Klein 9B  [flux2klein]",
+    "prompt": "A photograph featuring pornmaster cum flux 2 klein 9b with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\PornMaster_cum_flux-2-klein-9b_V1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: QwenVaeFix  [flux2klein]",
+    "prompt": "A photograph featuring qwenvaefix with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\QwenVaeFix_V1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Spread Legs Beta1  [flux2klein]",
+    "prompt": "A photograph featuring spread legs beta1 with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\spread_legs_beta1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Tentacle V2  [flux2klein]",
+    "prompt": "A photograph featuring tentacle v2 with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\Tentacle v2_000002000.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: The Body Version A Flux2.k.9B  [flux2klein]",
+    "prompt": "A photograph featuring the body version a flux2.k.9b with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\Character\\The_Body_Version_A_Flux2.k.9B.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Thick Cum V1 F2K 9B  [flux2klein]",
+    "prompt": "A photograph featuring thick cum v1 f2k 9b with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\thick_cum_v1_f2k_9b_000002750.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: THTUbeta  [flux2klein]",
+    "prompt": "A photograph featuring thtubeta with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\THTUbetav2.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Ultra Real  [flux2klein]",
+    "prompt": "A photograph featuring ultra real with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\ultra_real_v2.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Upscale Portrait 9Bklein  [flux2klein]",
+    "prompt": "A photograph featuring professional portrait photograph with sharp eyes with soft studio lighting, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux2klein",
+    "loras": {
+      "flux2klein": [
+        [
+          "Flux-2-Klein\\upscale_portrait_9bklein.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: High Detail  [flux_kontext]",
+    "prompt": "A photograph featuring ultra detailed with sharp focus with intricate details with fine texture, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux_kontext",
+    "loras": {
+      "flux_kontext": [
+        [
+          "Flux-1-Kontext\\high_detail.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: HXHY RealisticKontextLoRA1.6  [flux_kontext]",
+    "prompt": "A photograph featuring photorealistic with DSLR photograph with natural lighting with 8k, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux_kontext",
+    "loras": {
+      "flux_kontext": [
+        [
+          "Flux-1-Kontext\\HXHY-RealisticKontextLoRA1.6.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Spray Thick Milk  [flux_kontext]",
+    "prompt": "A photograph featuring spray thick milk with detailed with high quality, masterpiece.",
+    "negative": "",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "flux_kontext",
+    "loras": {
+      "flux_kontext": [
+        [
+          "Flux-1-Kontext\\Spray thick milk.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Beautiful Female Model Face Ill  [illustrious]",
+    "prompt": "masterpiece, best quality, professional portrait photograph, sharp eyes, soft studio lighting",
+    "negative": "worst quality, low quality, jpeg artifacts, blurry, lowres, bad anatomy, watermark, text",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "illustrious",
+    "loras": {
+      "illustrious": [
+        [
+          "Illustrious\\model adjust\\Beautiful_female_model_face_-_ILL.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Chiaroscuro Film Style Pony  [illustrious]",
+    "prompt": "masterpiece, best quality, distinctive artistic style, cohesive aesthetic, refined composition",
+    "negative": "worst quality, low quality, jpeg artifacts, blurry, lowres, bad anatomy, watermark, text",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "illustrious",
+    "loras": {
+      "illustrious": [
+        [
+          "Illustrious-Pony\\Chiaroscuro  film style pony v1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Cinematic Photography Detailed Illu Xl  [illustrious]",
+    "prompt": "masterpiece, best quality, ultra detailed, sharp focus, intricate details, fine texture",
+    "negative": "worst quality, low quality, jpeg artifacts, blurry, lowres, bad anatomy, watermark, text",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "illustrious",
+    "loras": {
+      "illustrious": [
+        [
+          "Illustrious-Pony\\cinematic photography detailed illu xl v5.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Cinematic Photography Style Pony  [illustrious]",
+    "prompt": "masterpiece, best quality, distinctive artistic style, cohesive aesthetic, refined composition",
+    "negative": "worst quality, low quality, jpeg artifacts, blurry, lowres, bad anatomy, watermark, text",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "illustrious",
+    "loras": {
+      "illustrious": [
+        [
+          "Illustrious-Pony\\Cinematic Photography Style pony v1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Detailed Foot Focus Style Illustriousxl  [illustrious]",
+    "prompt": "masterpiece, best quality, ultra detailed, sharp focus, intricate details, fine texture",
+    "negative": "worst quality, low quality, jpeg artifacts, blurry, lowres, bad anatomy, watermark, text",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "illustrious",
+    "loras": {
+      "illustrious": [
+        [
+          "Illustrious-Pony\\detailed foot focus style illustriousXL v1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Detailed Realistic Eyes Pony  [illustrious]",
+    "prompt": "masterpiece, best quality, ultra detailed, sharp focus, intricate details, fine texture",
+    "negative": "worst quality, low quality, jpeg artifacts, blurry, lowres, bad anatomy, watermark, text",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "illustrious",
+    "loras": {
+      "illustrious": [
+        [
+          "Illustrious\\model adjust\\detailed_realistic_eyes-pony.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Ethereal Gothic Elegance  [illustrious]",
+    "prompt": "masterpiece, best quality, ethereal gothic elegance, detailed, high quality",
+    "negative": "worst quality, low quality, jpeg artifacts, blurry, lowres, bad anatomy, watermark, text",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "illustrious",
+    "loras": {
+      "illustrious": [
+        [
+          "Illustrious-Pony\\Ethereal_Gothic_Elegance.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Hyperdetailedrealismmj7Pony  [illustrious]",
+    "prompt": "masterpiece, best quality, ultra detailed, sharp focus, intricate details, fine texture",
+    "negative": "worst quality, low quality, jpeg artifacts, blurry, lowres, bad anatomy, watermark, text",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "illustrious",
+    "loras": {
+      "illustrious": [
+        [
+          "Illustrious-Pony\\HyperdetailedRealismMJ7Pony.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Metallicgoldsilver Skinbody Paint 000019  [illustrious]",
+    "prompt": "masterpiece, best quality, realistic skin texture, visible pores, natural skin detail, photographic",
+    "negative": "worst quality, low quality, jpeg artifacts, blurry, lowres, bad anatomy, watermark, text",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "illustrious",
+    "loras": {
+      "illustrious": [
+        [
+          "Illustrious-Pony\\MetallicGoldSilver_skinbody_paint-000019.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Perfect Sclera Eye Style Pony  [illustrious]",
+    "prompt": "masterpiece, best quality, distinctive artistic style, cohesive aesthetic, refined composition",
+    "negative": "worst quality, low quality, jpeg artifacts, blurry, lowres, bad anatomy, watermark, text",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "illustrious",
+    "loras": {
+      "illustrious": [
+        [
+          "Illustrious-Pony\\perfect sclera eye style pony v1.3.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: PerkyCTits Pony  [illustrious]",
+    "prompt": "masterpiece, best quality, perkyctits pony, detailed, high quality",
+    "negative": "worst quality, low quality, jpeg artifacts, blurry, lowres, bad anatomy, watermark, text",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "illustrious",
+    "loras": {
+      "illustrious": [
+        [
+          "Illustrious-Pony\\PerkyCTits_Pony.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Princess Jasmine  [illustrious]",
+    "prompt": "masterpiece, best quality, princess jasmine, detailed, high quality",
+    "negative": "worst quality, low quality, jpeg artifacts, blurry, lowres, bad anatomy, watermark, text",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "illustrious",
+    "loras": {
+      "illustrious": [
+        [
+          "Illustrious-Pony\\Princess_Jasmine.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Sinozick Style XL Pony  [illustrious]",
+    "prompt": "masterpiece, best quality, distinctive artistic style, cohesive aesthetic, refined composition",
+    "negative": "worst quality, low quality, jpeg artifacts, blurry, lowres, bad anatomy, watermark, text",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "illustrious",
+    "loras": {
+      "illustrious": [
+        [
+          "Illustrious-Pony\\Sinozick_Style_XL_Pony.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Sts Ponyxl Detail Slider V1.4 Iteration 3  [illustrious]",
+    "prompt": "masterpiece, best quality, ultra detailed, sharp focus, intricate details, fine texture",
+    "negative": "worst quality, low quality, jpeg artifacts, blurry, lowres, bad anatomy, watermark, text",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "illustrious",
+    "loras": {
+      "illustrious": [
+        [
+          "Illustrious-Pony\\StS_PonyXL_Detail_Slider_v1.4_iteration_3.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Amateur Style V1 Pony  [pony]",
+    "prompt": "masterpiece, best quality, distinctive artistic style, cohesive aesthetic, refined composition",
+    "negative": "worst quality, low quality, jpeg artifacts, blurry, lowres, bad anatomy, watermark, text",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "pony",
+    "loras": {
+      "pony": [
+        [
+          "Pony\\Style\\amateur_style_v1_pony.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Igbaddie Pn  [pony]",
+    "prompt": "masterpiece, best quality, igbaddie pn, detailed, high quality",
+    "negative": "worst quality, low quality, jpeg artifacts, blurry, lowres, bad anatomy, watermark, text",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "pony",
+    "loras": {
+      "pony": [
+        [
+          "Pony\\Style\\igbaddie-PN.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: MoriiMee Gothic Niji Style Pony LoRA  [pony]",
+    "prompt": "masterpiece, best quality, distinctive artistic style, cohesive aesthetic, refined composition",
+    "negative": "worst quality, low quality, jpeg artifacts, blurry, lowres, bad anatomy, watermark, text",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "pony",
+    "loras": {
+      "pony": [
+        [
+          "Pony\\Style\\MoriiMee_Gothic_Niji_Style__Pony_LoRA.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Pony Realism Slider  [pony]",
+    "prompt": "masterpiece, best quality, pony realism slider, detailed, high quality",
+    "negative": "worst quality, low quality, jpeg artifacts, blurry, lowres, bad anatomy, watermark, text",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "pony",
+    "loras": {
+      "pony": [
+        [
+          "Pony\\Slider\\Pony Realism Slider.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Skin Color Alpha1.0 Rank4 Noxattn 250Steps  [pony]",
+    "prompt": "masterpiece, best quality, realistic skin texture, visible pores, natural skin detail, photographic",
+    "negative": "worst quality, low quality, jpeg artifacts, blurry, lowres, bad anatomy, watermark, text",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "pony",
+    "loras": {
+      "pony": [
+        [
+          "Pony\\Slider\\Skin Color_alpha1.0_rank4_noxattn_250steps.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Thicc V1.4 Pony Done  [pony]",
+    "prompt": "masterpiece, best quality, thicc v1.4 pony done, detailed, high quality",
+    "negative": "worst quality, low quality, jpeg artifacts, blurry, lowres, bad anatomy, watermark, text",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "pony",
+    "loras": {
+      "pony": [
+        [
+          "Pony\\Body\\thicc_v1.4-pony_done.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Aliens AILF SDXL  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, aliens ailf sdxl, detailed, high quality",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Concept\\Aliens_AILF_SDXL.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Arobotgirls Concept 12  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, arobotgirls concept 12, detailed, high quality",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Concept\\ARobotGirls_Concept-12.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Asian Beauty XL  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, subtle makeup, natural beauty, soft flattering light",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Style\\Asian_Beauty XL.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Body Type Slider Illustrious Alpha1.0 Rank4 Noxattn Last  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, body type slider illustrious alpha1.0 rank4 noxattn last, detailed, high quality",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Slider\\Body Type Slider - Illustrious_alpha1.0_rank4_noxattn_last.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Dark  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, dark, detailed, high quality",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Style\\dark.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Dmd2 Sdxl 4Step Lora  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, dmd2 sdxl 4step lora, detailed, high quality",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\dmd2_sdxl_4step_lora.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Dramatic Lighting Slider  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, dramatic cinematic lighting, volumetric light, rim light, professional photography",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Slider\\Dramatic Lighting Slider.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Dynamic Poses SDXL  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, dynamic poses sdxl, detailed, high quality",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Dynamic_Poses_SDXL.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Epicnewphoto  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, photorealistic, DSLR photograph, natural lighting, 8k",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Style\\epicNewPhoto.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: epiCPhotoXL Derp2  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, photorealistic, DSLR photograph, natural lighting, 8k",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Style\\epiCPhotoXL-Derp2.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: epiCRealnessRC1  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, epicrealnessrc1, detailed, high quality",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Style\\epiCRealnessRC1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Err0Rf  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, err0rf, detailed, high quality",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Concept\\err0rFv1.6.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Expressive H 000001  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, expressive h 000001, detailed, high quality",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Style\\Expressive_H-000001.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Expressiveh Incase Mixed Style  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, distinctive artistic style, cohesive aesthetic, refined composition",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Style\\ExpressiveH__Incase_Mixed_Style_.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Eyes High Definition 000007  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, detailed eyes, crisp iris detail, natural catchlights, lifelike gaze",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Detail\\Eyes_High_Definition-000007.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Feet  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, feet, detailed, high quality",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\realistic\\feet v3.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Ghibli Last  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, ghibli last, detailed, high quality",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Style\\ghibli_last.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Green Slime Wam Gunge Wet And Messy Sploshing Splosh  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, green slime wam gunge wet and messy sploshing splosh, detailed, high quality",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Green_Slime_WAM_Gunge_Wet_and_Messy_Sploshing_Splosh.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Hand 5.5  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, anatomically correct hands, proper finger count, natural pose",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Body\\hand 5.5.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: HandFineTuning XL  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, anatomically correct hands, proper finger count, natural pose",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Body\\HandFineTuning_XL.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Kneehighfishnetcutoutfrilledsocksill  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, kneehighfishnetcutoutfrilledsocksill, detailed, high quality",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Clothing\\KneehighFishnetCutoutFrilledSocksILL.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: MoriiMee Gothic Niji Style Pony LoRA V1 Redux  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, distinctive artistic style, cohesive aesthetic, refined composition",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Style\\MoriiMee_Gothic_Niji_Style__Pony_LoRA_V1_Redux.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Oily Skin Style Xl  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, realistic skin texture, visible pores, natural skin detail, photographic",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Oily skin style xl v1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Perfect Booty XL  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, perfect booty xl, detailed, high quality",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Body\\Perfect_Booty_XL_V1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Polyhedron All Sdxl 000004  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, polyhedron all sdxl 000004, detailed, high quality",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\polyhedron_all_sdxl-000004.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: RawCam 250  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, rawcam 250, detailed, high quality",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Style\\RawCam_250_v1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Rdtdrp  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, rdtdrp, detailed, high quality",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Detail\\rdtdrp.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: RealSkin xxXL  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, realistic skin texture, visible pores, natural skin detail, photographic",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Detail\\RealSkin_xxXL_v1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Sd Xl Offset Example Lora 1.0  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, sd xl offset example lora 1.0, detailed, high quality",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Style\\sd_xl_offset_example-lora_1.0.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: SDXLFaeTastic2400  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, sdxlfaetastic2400, detailed, high quality",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Style\\SDXLFaeTastic2400.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Skin Color Slider Illustrious Alpha1.0 Rank4 Noxattn Last  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, realistic skin texture, visible pores, natural skin detail, photographic",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Slider\\Skin color slider - Illustrious_alpha1.0_rank4_noxattn_last.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Skin Texture Style  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, realistic skin texture, visible pores, natural skin detail, photographic",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Detail\\skin texture style v4.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Space Ship Concept  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, space ship concept, detailed, high quality",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Concept\\Space_ship_concept.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Sweating My Balls Of Mate  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, sweating my balls of mate, detailed, high quality",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Sweating my balls of mate.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Teefs 000007  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, teefs 000007, detailed, high quality",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Detail\\Teefs-000007.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Thicc V1.2 Illu Done  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, thicc v1.2 illu done, detailed, high quality",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Body\\thicc_v1.2-illu_done.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Wonderful Details Xl  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, ultra detailed, sharp focus, intricate details, fine texture",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Detail\\Wonderful_Details_XL_V1a.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: XL DarkSkinAnyRaceR12  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, realistic skin texture, visible pores, natural skin detail, photographic",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\XL_DarkSkinAnyRaceR12.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Zy Amateurstyle  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, distinctive artistic style, cohesive aesthetic, refined composition",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Style\\zy_AmateurStyle_v2.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: 绮儿 厚涂构图光影质感增强  [sdxl]",
+    "prompt": "masterpiece, best quality, sharp focus, 绮儿 厚涂构图光影质感增强, detailed, high quality",
+    "negative": "blurry, low quality, soft, out of focus, artifacts, watermark, text, bad anatomy",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "sdxl",
+    "loras": {
+      "sdxl": [
+        [
+          "SDXL\\Style\\绮儿 厚涂构图光影质感增强V3.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: 2B NierA  [zit]",
+    "prompt": "2b niera",
+    "negative": "blurry, low quality, artifacts, watermark",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "zit",
+    "loras": {
+      "zit": [
+        [
+          "Z-Image-Turbo\\Character\\2B_NierA_v1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: 600Mm Lens V2 Triggeris 600Mm  [zit]",
+    "prompt": "600mm lens v2 triggeris 600mm",
+    "negative": "blurry, low quality, artifacts, watermark",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "zit",
+    "loras": {
+      "zit": [
+        [
+          "Z-Image-Turbo\\Style\\600mm_Lens-V2_TriggerIs_600mm.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: 93PXB5SENBFN8NEYSRYZA1DVX0 Chrome skin  [zit]",
+    "prompt": "realistic skin texture",
+    "negative": "blurry, low quality, artifacts, watermark",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "zit",
+    "loras": {
+      "zit": [
+        [
+          "Z-Image-Turbo\\Effect\\93PXB5SENBFN8NEYSRYZA1DVX0-Chrome skin.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: EFFECTSp001 zit  [zit]",
+    "prompt": "effectsp001 zit",
+    "negative": "blurry, low quality, artifacts, watermark",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "zit",
+    "loras": {
+      "zit": [
+        [
+          "Z-Image-Turbo\\Effect\\EFFECTSp001_zit.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Feet  [zit]",
+    "prompt": "feet",
+    "negative": "blurry, low quality, artifacts, watermark",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "zit",
+    "loras": {
+      "zit": [
+        [
+          "Z-Image-Turbo\\feet v2.1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Oiledskin Zit Turbo  [zit]",
+    "prompt": "realistic skin texture",
+    "negative": "blurry, low quality, artifacts, watermark",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "zit",
+    "loras": {
+      "zit": [
+        [
+          "Z-Image-Turbo\\Effect\\OiledSkin_Zit_Turbo_V1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: SonyAlpha ZImage  [zit]",
+    "prompt": "sonyalpha zimage",
+    "negative": "blurry, low quality, artifacts, watermark",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "zit",
+    "loras": {
+      "zit": [
+        [
+          "Z-Image-Turbo\\Style\\SonyAlpha_ZImage.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Tentacled  [zit]",
+    "prompt": "tentacled",
+    "negative": "blurry, low quality, artifacts, watermark",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "zit",
+    "loras": {
+      "zit": [
+        [
+          "Z-Image-Turbo\\Effect\\Tentacledv1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Water Droplet Effect Zit  [zit]",
+    "prompt": "water droplet effect zit",
+    "negative": "blurry, low quality, artifacts, watermark",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "zit",
+    "loras": {
+      "zit": [
+        [
+          "Z-Image-Turbo\\Effect\\water_droplet_effect_zit_v1.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Z Cyborg  [zit]",
+    "prompt": "z cyborg",
+    "negative": "blurry, low quality, artifacts, watermark",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "zit",
+    "loras": {
+      "zit": [
+        [
+          "Z-Image-Turbo\\Effect\\Z-cyborg.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Z Image Illustria 01  [zit]",
+    "prompt": "z image illustria 01",
+    "negative": "blurry, low quality, artifacts, watermark",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "zit",
+    "loras": {
+      "zit": [
+        [
+          "Z-Image-Turbo\\Style\\z-image-illustria-01.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Z Image Professional Photographer 3500  [zit]",
+    "prompt": "photorealistic",
+    "negative": "blurry, low quality, artifacts, watermark",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "zit",
+    "loras": {
+      "zit": [
+        [
+          "Z-Image-Turbo\\Style\\Z-Image-Professional_Photographer_3500.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Z TURBO Photography 35mmPhoto 1536  [zit]",
+    "prompt": "photorealistic",
+    "negative": "blurry, low quality, artifacts, watermark",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "zit",
+    "loras": {
+      "zit": [
+        [
+          "Z-Image-Turbo\\Style\\Z-TURBO_Photography_35mmPhoto_1536.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Zitd3Tailed4Nime  [zit]",
+    "prompt": "zitd3tailed4nime",
+    "negative": "blurry, low quality, artifacts, watermark",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "zit",
+    "loras": {
+      "zit": [
+        [
+          "Z-Image-Turbo\\Style\\ZiTD3tailed4nime.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  },
+  {
+    "label": "✦ LoRA: Zy Cinematicshot Zit  [zit]",
+    "prompt": "cinematic composition",
+    "negative": "blurry, low quality, artifacts, watermark",
+    "denoise": 0.4,
+    "cfg_boost": 0,
+    "steps_override": null,
+    "arch": "zit",
+    "loras": {
+      "zit": [
+        [
+          "Z-Image-Turbo\\Style\\zy_CinematicShot_zit.safetensors",
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  }
+]
