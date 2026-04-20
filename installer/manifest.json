@@ -1393,13 +1393,52 @@
             "url": "https://huggingface.co/lllyasviel/ic-light/resolve/main/iclight_sd15_fc.safetensors",
             "size_mb": 1719,
             "optional": false,
-            "note": "IC-Light SD1.5 model"
+            "note": "IC-Light SD1.5 FC model (foreground-only; base relighting)"
+          },
+          {
+            "path": "unet/iclight_sd15_fbc.safetensors",
+            "url": "https://huggingface.co/lllyasviel/ic-light/resolve/main/iclight_sd15_fbc.safetensors",
+            "size_mb": 1719,
+            "optional": true,
+            "note": "IC-Light SD1.5 FBC model (foreground + background/normal-map; enables 3D-aware relighting)"
           }
         ],
-        "note": "Requires a SD1.5 checkpoint (from img2img feature)."
+        "note": "Requires a SD1.5 checkpoint (from img2img feature). The FBC variant is auto-selected by build_iclight when a normal map is provided (see 'normal_map' feature for the normal-map CN + NormalCrafter setup)."
       },
       "custom_nodes": [
         "ComfyUI-IC-Light"
+      ]
+    },
+    "normal_map": {
+      "vram_min_gb": 4,
+      "label": "3D Normal Map (NormalCrafter + surface-aware ControlNet)",
+      "description": "Generate 3D surface normal maps for relighting, ControlNet normal guidance, and IC-Light FBC surface-aware relighting. Enables 'Enhance > 3D Normal Map' + the 'Normal Map' ControlNet modes in GIMP (img2img/inpaint/outpaint) and the 'Spellcaster > 3D / RELIGHTING' button in Darktable.",
+      "plugins": [
+        "gimp",
+        "darktable"
+      ],
+      "models": {
+        "controlnet": [
+          {
+            "path": "controlnet/control_v11p_sd15_normalbae.pth",
+            "url": "https://huggingface.co/lllyasviel/ControlNet-v1-1/resolve/main/control_v11p_sd15_normalbae.pth",
+            "size_mb": 1450,
+            "optional": false,
+            "note": "SD1.5 Normal BAE ControlNet. Required for the GIMP 'Normal Map' CN modes on SD1.5 checkpoints."
+          },
+          {
+            "path": "controlnet/SDXL/controlnet-union-sdxl-1.0.safetensors",
+            "url": "https://huggingface.co/xinsir/controlnet-union-sdxl-1.0/resolve/main/diffusion_pytorch_model_promax.safetensors",
+            "size_mb": 2502,
+            "optional": true,
+            "note": "Xinsir Union ControlNet (promax) for SDXL + Illustrious — supports the 'normal' mode among canny/depth/pose/tile/blur/gray. Only needed if you use Normal-Map CN on SDXL-family checkpoints; Flux-dev and Z-Image-Turbo have their own Union CNs shipped by the flux/zit features."
+          }
+        ],
+        "note": "NormalCrafter itself is a custom node (see custom_nodes.ComfyUI-NormalCrafter). Flux.1-dev + Z-Image-Turbo use their Union CNs (already installed with those feature packs) so they don't need separate normal-map CN files."
+      },
+      "custom_nodes": [
+        "ComfyUI-NormalCrafter",
+        "comfyui-controlnet-aux"
       ]
     },
     "supir": {
