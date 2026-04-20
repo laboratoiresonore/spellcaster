@@ -4397,7 +4397,8 @@ local function process_wan_i2v(image, wan_preset_idx, prompt, negative,
                                 width, height, length, steps, cfg, shift, second_step,
                                 loras, accel_enabled, accel_strength,
                                 upscale, upscale_factor, interpolate, pingpong, fps,
-                                crop_region, end_image_path, vace_strength)
+                                crop_region, end_image_path, vace_strength,
+                                advanced)
   local guild = get_guild_url()
   if not guild or guild == "" then
     dt.print(_("Wizard Guild URL not configured — preferences → Wizard Guild URL"))
@@ -4452,6 +4453,20 @@ local function process_wan_i2v(image, wan_preset_idx, prompt, negative,
     overrides.end_image_path = end_image_path
   end
   if vace_strength then overrides.vace_strength = vace_strength end
+
+  -- Advanced WAN 2.2 quality / speed patches (CLAUDE.md §16.2). Each value
+  -- is a tri-state string: "auto" (defer to server probe), "on" (force),
+  -- or "off" (force). The scaffold dispatcher only forwards non-"auto"
+  -- values so the canonical builder's server-probe default stays intact.
+  if advanced then
+    local function _fwd(key)
+      local v = advanced[key]
+      if v and v ~= "auto" then overrides[key] = v end
+    end
+    _fwd("teacache"); _fwd("sage"); _fwd("cfg_zero"); _fwd("slg"); _fwd("nag")
+    if advanced.sampler_name then overrides.sampler_name = advanced.sampler_name end
+    if advanced.scheduler    then overrides.scheduler    = advanced.scheduler end
+  end
 
   local title = string.format("Darktable: %s", (image and image.filename) or "frame")
   dt.print(_("Creating shot in the Wizard Guild..."))
@@ -5767,6 +5782,41 @@ local wan_accel_strength_slider = dt.new_widget("slider") {
   step = 0.05, digits = 2, value = 1.0,
 }
 
+-- Advanced WAN 2.2 quality / speed patches (CLAUDE.md §16.2). Each combobox
+-- is tri-state:
+--   index 1 "Auto"  → defer to the Guild server probe (enable if node exists)
+--   index 2 "On"    → force-enable (fails validation if server lacks node)
+--   index 3 "Off"   → force-disable
+-- The Guild's scaffold/video_workflow_dispatch.py forwards these overrides
+-- to the canonical build_wan_video.
+local function _wan_tri_combo(label, tooltip)
+  return dt.new_widget("combobox") {
+    label = _(label),
+    tooltip = _(tooltip),
+    selected = 1,
+    _("Auto"), _("On"), _("Off"),
+  }
+end
+local wan_teacache_combo = _wan_tri_combo("TeaCache",
+  "TeaCache cross-step cache — 30-40% speedup on full-step (30-step) runs.\n"
+  .. "Auto: on for full-step, off for turbo.\nOn/Off: force the choice.")
+local wan_sage_combo = _wan_tri_combo("SAGE Attention",
+  "SageAttention kernel — 50-100% sampler speedup on RTX 40/50xx, neutral quality.\n"
+  .. "Requires ComfyUI-KJNodes (PatchSageAttentionKJ).")
+local wan_cfg_zero_combo = _wan_tri_combo("CFG Zero★",
+  "CFG Zero Star — CFG=0 on the first sampling step to reduce burn-in.\nSmall quality win at zero cost. Requires recent ComfyUI.")
+local wan_slg_combo = _wan_tri_combo("SLG (Skip Layer Guidance)",
+  "SkipLayerGuidanceSD3 — skips layers 7/8/9 during CFG for cleaner motion.\nCore ComfyUI node.")
+local wan_nag_combo = _wan_tri_combo("NAG (Negative Attention)",
+  "WanVideoNAG — Normalized Attention Guidance for sharper motion, less drift.\nRequires Kijai's WanVideoWrapper pack.")
+
+local function _tri_combo_to_str(combo)
+  local idx = combo.selected or 1
+  if idx == 2 then return "on" end
+  if idx == 3 then return "off" end
+  return "auto"
+end
+
 -- Wire up the video preset changed callback now that all widgets exist
 wan_video_preset_selector.changed_callback = function(self)
   local idx = self.selected
@@ -5991,6 +6041,15 @@ local function collect_wan_i2v_params()
   params.pingpong = wan_pingpong_check.value
   params.fps = 16
 
+  -- Advanced quality / speed patches (tri-state): "auto"/"on"/"off". "auto"
+  -- defers to the Guild's server probe — forwarded as overrides so the
+  -- canonical build_wan_video sees the exact user intent.
+  params.teacache = _tri_combo_to_str(wan_teacache_combo)
+  params.sage     = _tri_combo_to_str(wan_sage_combo)
+  params.cfg_zero = _tri_combo_to_str(wan_cfg_zero_combo)
+  params.slg      = _tri_combo_to_str(wan_slg_combo)
+  params.nag      = _tri_combo_to_str(wan_nag_combo)
+
   -- Collect up to 3 explicit LoRA pairs (high noise + low noise per slot)
   local loras = {}
   for _, row in ipairs(wan_lora_pair_rows) do
@@ -6051,7 +6110,9 @@ local wan_send_full_btn = dt.new_widget("button") {
                         vid_w, vid_h, p.length, p.steps, p.cfg, p.shift, p.second_step,
                         p.loras, p.accel_enabled, p.accel_strength,
                         p.upscale, p.upscale_factor, p.interpolate, p.pingpong, p.fps,
-                        nil, p.end_image_path, p.vace_strength)  -- no crop
+                        nil, p.end_image_path, p.vace_strength,
+                        {teacache = p.teacache, sage = p.sage, cfg_zero = p.cfg_zero,
+                         slg = p.slg, nag = p.nag})  -- no crop
         if not ok then
           dt.print(_("Error: ") .. tostring(err))
           dt.print_error("Spellcaster Wan I2V error: " .. tostring(err))
@@ -6094,7 +6155,9 @@ local wan_send_sel_btn = dt.new_widget("button") {
                         vid_w, vid_h, p.length, p.steps, p.cfg, p.shift, p.second_step,
                         p.loras, p.accel_enabled, p.accel_strength,
                         p.upscale, p.upscale_factor, p.interpolate, p.pingpong, p.fps,
-                        crop, p.end_image_path, p.vace_strength)
+                        crop, p.end_image_path, p.vace_strength,
+                        {teacache = p.teacache, sage = p.sage, cfg_zero = p.cfg_zero,
+                         slg = p.slg, nag = p.nag})
         if not ok then
           dt.print(_("Error: ") .. tostring(err))
           dt.print_error("Spellcaster Wan I2V error: " .. tostring(err))
@@ -8206,6 +8269,12 @@ local module_widget = dt.new_widget("box") {
   wan_pingpong_check,
   wan_accel_check,
   wan_accel_strength_slider,
+  dt.new_widget("label") { label = _("\xe2\x9c\xa6 ADVANCED QUALITY / SPEED PATCHES") },
+  wan_teacache_combo,
+  wan_sage_combo,
+  wan_cfg_zero_combo,
+  wan_slg_combo,
+  wan_nag_combo,
   fetch_wan_lora_btn,
   wan_lora_high_1,
   wan_lora_low_1,
