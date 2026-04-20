@@ -36,6 +36,7 @@
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--2.0-7c3aed?style=flat"/></a>
   <a href="https://github.com/laboratoiresonore/spellcaster/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/laboratoiresonore/spellcaster?style=flat&color=7c3aed"/></a>
   <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest"><img alt="Downloads" src="https://img.shields.io/github/downloads/laboratoiresonore/spellcaster/total?color=7c3aed"/></a>
+  <a href="https://patreon.com/LeLaboratoireSonore"><img alt="Support on Patreon" src="https://img.shields.io/badge/Patreon-Tip_the_lab-F96854?style=flat&logo=patreon&logoColor=white"/></a>
 </p>
 
 <p align="center">
@@ -361,8 +362,15 @@ Spellcaster is 100% free, 100% open-source, and 0% funded. If it saves you a day
 - 📣 **Post a screenshot** of your first 5-click result with `#Spellcaster` on your favourite network
 - 🧙 **Show a friend** who spends too long on ComfyUI noodle graphs — 30 seconds to install, they'll thank you
 - 🐛 **Open an issue** if it broke, a PR if you fixed it, or a [discussion](https://github.com/laboratoiresonore/spellcaster/discussions) if you just want to show off what you made
+- ☕ **Tip the lab** on [Patreon](https://patreon.com/LeLaboratoireSonore) if Spellcaster earned you an afternoon of sanity — it funds the next GPU and the next 5 a.m. debugging session
 
 Word of mouth is the entire marketing budget. Make us famous.
+
+<p align="center">
+  <a href="https://patreon.com/LeLaboratoireSonore">
+    <img alt="Become a Patron" src="https://img.shields.io/badge/Patreon-Become_a_Patron-F96854?style=for-the-badge&logo=patreon&logoColor=white"/>
+  </a>
+</p>
 
 ---
 
