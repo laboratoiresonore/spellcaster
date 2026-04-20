@@ -667,15 +667,24 @@
         sample.strength = res.strength; sample.image_b64 = res.image_b64;
         sample.ok = res.ok; sample.error = res.error || '';
         sample.subject = res.subject || subject;
+        // HTML-escape for attacker-reachable strings landing in innerHTML.
+        const _escH = s => String(s == null ? '' : s)
+            .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+            .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
         if (res.ok && res.image_b64) {
-          wrap.innerHTML = `<img src="data:image/png;base64,${res.image_b64}" alt="${displayName}">`;
+          // image_b64 is base64 (no HTML-special chars by spec) but
+          // displayName is user-facing LoRA name — always escape.
+          wrap.innerHTML = `<img src="data:image/png;base64,${res.image_b64}" alt="${_escH(displayName)}">`;
         } else {
-          wrap.innerHTML = `<div class="sc-tile-error">${res.error || 'no image'}</div>`;
+          wrap.innerHTML = `<div class="sc-tile-error">${_escH(res.error || 'no image')}</div>`;
         }
         slider.value = res.strength.toFixed(2);
         sliderVal.textContent = res.strength.toFixed(2);
       } catch (e) {
-        wrap.innerHTML = `<div class="sc-tile-error">resample failed: ${e.message}</div>`;
+        const _escH = s => String(s == null ? '' : s)
+            .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+            .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+        wrap.innerHTML = `<div class="sc-tile-error">resample failed: ${_escH(e.message)}</div>`;
       } finally {
         tile.querySelectorAll('.sc-tile-btn').forEach(b => b.disabled = false);
       }
