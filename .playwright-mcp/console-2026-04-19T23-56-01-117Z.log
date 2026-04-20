@@ -3,3 +3,25 @@
 [    3749ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5001/api/tags:0
 [    4013ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5001/api/v1/model:0
 [   50185ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:7777/static/guild.html?v=20260419d:0
+[  111849ms] [WARNING] GSAP target #splash-ring-outer not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  111850ms] [WARNING] GSAP target #splash-ring-inner not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  111850ms] [WARNING] GSAP target #splash-star not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  111850ms] [WARNING] GSAP target #splash-star not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  111850ms] [WARNING] GSAP target #splash-eye not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  111850ms] [WARNING] GSAP target #splash-pupil not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  111989ms] [LOG] [Guild] Synced 43 pre-generated assets from server @ http://127.0.0.1:7777/app.js:305
+[  111998ms] [LOG] [Guild] Synced 105 identity field(s) from server @ http://127.0.0.1:7777/app.js:333
+[  126101ms] [ERROR] Failed to generate details: TypeError: Failed to fetch
+    at llmGenerate (http://127.0.0.1:7777/app.js:126:27)
+    at generateNamesForCharacters (http://127.0.0.1:7777/app.js:2949:36)
+    at checkLlmAndGenerateNames (http://127.0.0.1:7777/app.js:2824:23)
+    at async initialize (http://127.0.0.1:7777/app.js:2038:5)
+    at async boot (http://127.0.0.1:7777/app.js:6622:5) @ http://127.0.0.1:7777/app.js:2969
+[  126637ms] [WARNING] GSAP target #splash-ring-outer not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  126637ms] [WARNING] GSAP target #splash-ring-inner not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  126637ms] [WARNING] GSAP target #splash-star not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  126638ms] [WARNING] GSAP target #splash-star not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  126638ms] [WARNING] GSAP target #splash-eye not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  126638ms] [WARNING] GSAP target #splash-pupil not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  128381ms] [LOG] [Guild] Synced 43 pre-generated assets from server @ http://127.0.0.1:7777/app.js:305
+[  128388ms] [LOG] [Guild] Synced 105 identity field(s) from server @ http://127.0.0.1:7777/app.js:333

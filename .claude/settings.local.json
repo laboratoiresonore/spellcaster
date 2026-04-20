@@ -60,7 +60,14 @@
       "Bash(grep -iE \"session_state|user_presets|\\\\.update$|\\\\.tmp$|\\\\.bak$\")",
       "Bash(git rm *)",
       "Bash(/c/Users/redacted/AppData/Local/ms-playwright/ffmpeg-1011/ffmpeg-win64.exe -y -i /tmp/sc_in.mp4 -vf fps=12,scale=320:-1:flags=lanczos,palettegen=max_colors=128 /tmp/sc_palette.png)",
-      "Bash(/c/Users/redacted/AppData/Local/ms-playwright/ffmpeg-1011/ffmpeg-win64.exe -y -i c:/tmp/sc/in.mp4 -vf fps=12,scale=320:-1:flags=lanczos,palettegen=max_colors=128 c:/tmp/sc/palette.png)"
+      "Bash(/c/Users/redacted/AppData/Local/ms-playwright/ffmpeg-1011/ffmpeg-win64.exe -y -i c:/tmp/sc/in.mp4 -vf fps=12,scale=320:-1:flags=lanczos,palettegen=max_colors=128 c:/tmp/sc/palette.png)",
+      "Bash(/c/Users/redacted/AppData/Local/ms-playwright/ffmpeg-1011/ffmpeg-win64.exe -formats)",
+      "Bash(/c/Users/redacted/AppData/Local/Programs/Python/Python312/Lib/site-packages/imageio_ffmpeg/binaries/ffmpeg-win-x86_64-v7.1.exe -y -i c:/tmp/sc/in.mp4 -vf fps=12,scale=320:-1:flags=lanczos,palettegen=max_colors=160 c:/tmp/sc/palette.png)",
+      "Bash(/c/Users/redacted/AppData/Local/Programs/Python/Python312/Lib/site-packages/imageio_ffmpeg/binaries/ffmpeg-win-x86_64-v7.1.exe -i c:/tmp/sc/in.mp4)",
+      "Bash(python -c \"import json; d=json.load\\(open\\('C:/Users/redacted/.spellcaster/antenna_config.json'\\)\\); print\\('port:', d.get\\('port'\\), 'bind:', d.get\\('bind'\\)\\)\")",
+      "Bash(curl -sk --max-time 3 https://127.0.0.1:7334/status -o /dev/null -w \"status: %{http_code}\\\\n\")",
+      "Bash(taskkill /F /IM \"spellcaster-antenna-windows.exe\")",
+      "Bash(cmd //c \"taskkill /F /IM spellcaster-antenna-windows.exe\")"
     ],
     "additionalDirectories": [
       "\\tmp",
