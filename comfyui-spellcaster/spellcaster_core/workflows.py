@@ -1621,7 +1621,8 @@ def build_detail_hallucinate(image_filename, upscale_model, preset,
                               controlnet=None, controlnet_2=None,
                               guide_modes=None,
                               sam3_prompt=None, sam3_invert=False,
-                              sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
+                              sam3_confidence=0.6, sam3_expand=4, sam3_blur=4,
+                              enhance=True):
     """Super-resolution with detail hallucination via img2img diffusion.
 
     When sam3_prompt is set, the transform is composited back onto the original
@@ -1731,10 +1732,13 @@ def build_detail_hallucinate(image_filename, upscale_model, preset,
     if is_klein:
         ref_pos = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="60")
         ref_neg = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="61")
-        guider_id = nf.cfg_guider(model_ref, [ref_pos, 0], [ref_neg, 0],
+        guider_model = (_klein_enhance_model(nf, model_ref, [pos_id, 0],
+                                              node_base_id=780)
+                        if enhance else model_ref)
+        guider_id = nf.cfg_guider(guider_model, [ref_pos, 0], [ref_neg, 0],
                                   cfg, node_id="62")
         sampler_sel = nf.ksampler_select("euler", node_id="63")
-        sched_id = nf.basic_scheduler(model_ref, steps or preset.get("steps", 20),
+        sched_id = nf.basic_scheduler(guider_model, steps or preset.get("steps", 20),
                                        denoise, scheduler="simple", node_id="64")
         noise_id = nf.random_noise(seed, node_id="65")
         samp_id = nf.sampler_custom_advanced(
@@ -1795,7 +1799,8 @@ def build_colorize(image_filename, preset, prompt_text, negative_text, seed,
                     controlnet_2=None, guide_modes=None, loras=None,
                     lineart_models=None,
                     sam3_prompt=None, sam3_invert=False,
-                    sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
+                    sam3_confidence=0.6, sam3_expand=4, sam3_blur=4,
+                    enhance=True):
     """Colorize B&W photo. Drop-in for _build_colorize().
 
     lineart_models: CONTROLNET_LINEART_MODELS dict from main plugin.
@@ -1853,10 +1858,13 @@ def build_colorize(image_filename, preset, prompt_text, negative_text, seed,
     if is_klein:
         ref_pos = nf.reference_latent([cn_apply_id, 0], [enc_id, 0], node_id="60")
         ref_neg = nf.reference_latent([cn_apply_id, 1], [enc_id, 0], node_id="61")
-        guider_id = nf.cfg_guider(model_ref, [ref_pos, 0], [ref_neg, 0],
+        guider_model = (_klein_enhance_model(nf, model_ref, [pos_id, 0],
+                                              node_base_id=790)
+                        if enhance else model_ref)
+        guider_id = nf.cfg_guider(guider_model, [ref_pos, 0], [ref_neg, 0],
                                   cfg or preset.get("cfg", 1.0), node_id="62")
         sampler_sel = nf.ksampler_select("euler", node_id="63")
-        sched_id = nf.basic_scheduler(model_ref, steps or preset.get("steps", 20),
+        sched_id = nf.basic_scheduler(guider_model, steps or preset.get("steps", 20),
                                        denoise, scheduler="simple", node_id="64")
         noise_id = nf.random_noise(seed, node_id="65")
         samp_id = nf.sampler_custom_advanced(
@@ -1902,7 +1910,7 @@ def build_colorize(image_filename, preset, prompt_text, negative_text, seed,
 def build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
                           preset, prompt, negative, seed, width, height,
                           steps, cfg, sampler, scheduler, cn_strength=0.8,
-                          loras=None):
+                          loras=None, enhance=True):
     """Text-to-image generation with ControlNet spatial constraint.
 
     Generates an image from scratch (empty latent) with spatial guidance from
@@ -1992,10 +2000,13 @@ def build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
     empty_id = nf.empty_latent_image(width, height, 1, node_id="8")
     is_klein = preset.get("arch") == "flux2klein"
     if is_klein:
-        guider_id = nf.cfg_guider(model_ref, [cn_apply_id, 0], [cn_apply_id, 1],
+        guider_model = (_klein_enhance_model(nf, model_ref, [pos_id, 0],
+                                              node_base_id=800)
+                        if enhance else model_ref)
+        guider_id = nf.cfg_guider(guider_model, [cn_apply_id, 0], [cn_apply_id, 1],
                                   cfg, node_id="60")
         sampler_sel = nf.ksampler_select("euler", node_id="61")
-        sched_id = nf.basic_scheduler(model_ref, steps, 1.0,
+        sched_id = nf.basic_scheduler(guider_model, steps, 1.0,
                                        scheduler="simple", node_id="62")
         noise_id = nf.random_noise(seed, node_id="63")
         samp_id = nf.sampler_custom_advanced(
@@ -2713,7 +2724,7 @@ def build_faceid_img2img(target_filename, face_ref_filename, preset,
                           faceid_preset="FACEID PLUS V2",
                           lora_strength=0.6, weight=0.85, weight_v2=1.0,
                           denoise=None, steps=None, cfg=None,
-                          loras=None):
+                          loras=None, enhance=True):
     """IPAdapter FaceID img2img. Drop-in for _build_faceid_img2img().
 
     preset: dict with ckpt, arch, width, height, steps, cfg, denoise, sampler, scheduler.
@@ -2755,10 +2766,15 @@ def build_faceid_img2img(target_filename, face_ref_filename, preset,
     if is_klein:
         ref_pos = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="60")
         ref_neg = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="61")
-        guider_id = nf.cfg_guider([faceid_id, 0], [ref_pos, 0], [ref_neg, 0],
+        # Wrap the IPAdapter-patched model with the Klein enhancer so the
+        # final MODEL seen by the guider/scheduler is: FaceID → enhancer.
+        guider_model = (_klein_enhance_model(nf, [faceid_id, 0], [pos_id, 0],
+                                              node_base_id=810)
+                        if enhance else [faceid_id, 0])
+        guider_id = nf.cfg_guider(guider_model, [ref_pos, 0], [ref_neg, 0],
                                   cfg, node_id="62")
         sampler_sel = nf.ksampler_select("euler", node_id="63")
-        sched_id = nf.basic_scheduler([faceid_id, 0], steps, denoise,
+        sched_id = nf.basic_scheduler(guider_model, steps, denoise,
                                        scheduler="simple", node_id="64")
         noise_id = nf.random_noise(seed, node_id="65")
         samp_id = nf.sampler_custom_advanced(
@@ -4032,7 +4048,8 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
                           controlnet=None, controlnet_2=None,
                           guide_modes=None,
                           sam3_prompt=None, sam3_invert=False,
-                          sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
+                          sam3_confidence=0.6, sam3_expand=4, sam3_blur=4,
+                          enhance=True):
     """Style transfer via IPAdapter. Drop-in for _build_style_transfer().
 
     Pipeline: model stack → IPAdapterUnifiedLoader → IPAdapterAdvanced(style transfer)
@@ -4085,10 +4102,14 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
     if is_klein:
         ref_pos = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="60")
         ref_neg = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="61")
-        guider_id = nf.cfg_guider([ipa_id, 0], [ref_pos, 0], [ref_neg, 0],
+        # Wrap the IPAdapter-patched model: style reference → enhancer.
+        guider_model = (_klein_enhance_model(nf, [ipa_id, 0], [pos_id, 0],
+                                              node_base_id=820)
+                        if enhance else [ipa_id, 0])
+        guider_id = nf.cfg_guider(guider_model, [ref_pos, 0], [ref_neg, 0],
                                   preset.get("cfg", 1.0), node_id="62")
         sampler_sel = nf.ksampler_select("euler", node_id="63")
-        sched_id = nf.basic_scheduler([ipa_id, 0], preset.get("steps", 20),
+        sched_id = nf.basic_scheduler(guider_model, preset.get("steps", 20),
                                        denoise, scheduler="simple", node_id="64")
         noise_id = nf.random_noise(seed, node_id="65")
         samp_id = nf.sampler_custom_advanced(
@@ -4147,7 +4168,7 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
 def build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_text,
                    seed, denoise, cfg, steps, scale_factor, orig_width, orig_height,
                    controlnet=None, controlnet_2=None, guide_modes=None,
-                   loras=None):
+                   loras=None, enhance=True):
     """SeedV2R: upscale + img2img. Drop-in for _build_seedv2r().
 
     For scale > 1x: upscale with model to target factor, then img2img.
@@ -4191,10 +4212,13 @@ def build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_t
     if is_klein:
         ref_pos = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="60")
         ref_neg = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="61")
-        guider_id = nf.cfg_guider(model_ref, [ref_pos, 0], [ref_neg, 0],
+        guider_model = (_klein_enhance_model(nf, model_ref, [pos_id, 0],
+                                              node_base_id=830)
+                        if enhance else model_ref)
+        guider_id = nf.cfg_guider(guider_model, [ref_pos, 0], [ref_neg, 0],
                                   cfg, node_id="62")
         sampler_sel = nf.ksampler_select("euler", node_id="63")
-        sched_id = nf.basic_scheduler(model_ref, steps, denoise,
+        sched_id = nf.basic_scheduler(guider_model, steps, denoise,
                                        scheduler="simple", node_id="64")
         noise_id = nf.random_noise(seed, node_id="65")
         samp_id = nf.sampler_custom_advanced(

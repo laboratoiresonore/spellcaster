@@ -220,6 +220,195 @@ def case_outpaint_klein_still_enhanced():
     assert guider_model_ref(g) == [anchor, 0]
 
 
+# --- Tier 2: Klein-branch builders that also now auto-enhance -------------
+# Each of these builders already had a full Klein dispatch
+# (reference_latent + cfg_guider + sampler_custom_advanced) but was not
+# feeding the model through the enhancer. The fix mirrors the pattern in
+# build_img2img / build_outpaint.
+
+def _enh_id_set(base):
+    return {str(base), str(base + 1), str(base + 2)}
+
+
+def case_detail_hallucinate_klein_enhanced():
+    g = workflows.build_detail_hallucinate(
+        "in.png", "4x-UltraSharp.pth", KLEIN_PRESET,
+        "detail", "", 1, denoise=0.4, cfg=1.0, enhance=True,
+    )
+    ids = enhancer_node_ids(g)
+    assert ids == _enh_id_set(780), f"detail_hallucinate IDs wrong: {sorted(ids)}"
+    anchor = color_anchor_id(g)
+    assert guider_model_ref(g) == [anchor, 0]
+    assert_unique_ids(g, "detail_hallucinate Klein enhance=True")
+
+
+def case_detail_hallucinate_klein_bypass():
+    g = workflows.build_detail_hallucinate(
+        "in.png", "4x-UltraSharp.pth", KLEIN_PRESET,
+        "detail", "", 1, denoise=0.4, cfg=1.0, enhance=False,
+    )
+    assert not enhancer_node_ids(g)
+
+
+def case_colorize_klein_enhanced():
+    g = workflows.build_colorize(
+        "in.png", KLEIN_PRESET, "colorful photo", "", 5,
+        controlnet_strength=0.8, denoise=0.55, enhance=True,
+    )
+    ids = enhancer_node_ids(g)
+    assert ids == _enh_id_set(790), f"colorize IDs wrong: {sorted(ids)}"
+    anchor = color_anchor_id(g)
+    assert guider_model_ref(g) == [anchor, 0]
+    assert_unique_ids(g, "colorize Klein enhance=True")
+
+
+def case_colorize_klein_bypass():
+    g = workflows.build_colorize(
+        "in.png", KLEIN_PRESET, "colorful", "", 5,
+        controlnet_strength=0.8, denoise=0.55, enhance=False,
+    )
+    assert not enhancer_node_ids(g)
+
+
+def case_controlnet_gen_klein_enhanced():
+    g = workflows.build_controlnet_gen(
+        "in.png", "CannyEdgePreprocessor",
+        "Z-Image-Turbo-Fun-Controlnet-Union.safetensors",
+        KLEIN_PRESET, "a castle", "", 9,
+        width=1024, height=1024, steps=6, cfg=1.0,
+        sampler="euler", scheduler="simple", enhance=True,
+    )
+    ids = enhancer_node_ids(g)
+    assert ids == _enh_id_set(800), f"controlnet_gen IDs wrong: {sorted(ids)}"
+    anchor = color_anchor_id(g)
+    assert guider_model_ref(g) == [anchor, 0]
+    assert_unique_ids(g, "controlnet_gen Klein enhance=True")
+
+
+def case_controlnet_gen_klein_bypass():
+    g = workflows.build_controlnet_gen(
+        "in.png", "CannyEdgePreprocessor",
+        "Z-Image-Turbo-Fun-Controlnet-Union.safetensors",
+        KLEIN_PRESET, "a castle", "", 9,
+        width=1024, height=1024, steps=6, cfg=1.0,
+        sampler="euler", scheduler="simple", enhance=False,
+    )
+    assert not enhancer_node_ids(g)
+
+
+def case_faceid_klein_enhanced_chain_order():
+    """The enhancer must chain AFTER the IPAdapter FaceID patch, so the
+    guider sees: loader -> FaceID -> Enhancer -> guider.
+    """
+    g = workflows.build_faceid_img2img(
+        "target.png", "face.png", KLEIN_PRESET,
+        "a portrait", "", 7, denoise=0.6, steps=6, cfg=1.0,
+        enhance=True,
+    )
+    ids = enhancer_node_ids(g)
+    assert ids == _enh_id_set(810), f"faceid IDs wrong: {sorted(ids)}"
+    anchor = color_anchor_id(g)
+    assert guider_model_ref(g) == [anchor, 0]
+
+    # Chain-order check: the FIRST enhancer node (RefLatentController)
+    # should draw its model input from the IPAdapter node (node "4"),
+    # not from the raw UNET loader.
+    ref_ctrl_id = str(810)
+    assert ref_ctrl_id in g, f"missing enhancer head node {ref_ctrl_id}"
+    model_in = g[ref_ctrl_id]["inputs"]["model"]
+    assert model_in == ["4", 0], (
+        f"enhancer head should chain from IPAdapter (node 4); got {model_in}")
+    assert_unique_ids(g, "faceid Klein enhance=True")
+
+
+def case_faceid_klein_bypass():
+    g = workflows.build_faceid_img2img(
+        "target.png", "face.png", KLEIN_PRESET,
+        "a portrait", "", 7, denoise=0.6, steps=6, cfg=1.0,
+        enhance=False,
+    )
+    assert not enhancer_node_ids(g)
+    # Guider must see the IPAdapter node directly, not an enhancer.
+    assert guider_model_ref(g) == ["4", 0]
+
+
+def case_style_transfer_klein_enhanced_chain_order():
+    g = workflows.build_style_transfer(
+        "target.png", "style.png", KLEIN_PRESET,
+        "match style", "", 11, weight=0.8, denoise=0.6, enhance=True,
+    )
+    ids = enhancer_node_ids(g)
+    assert ids == _enh_id_set(820), f"style_transfer IDs wrong: {sorted(ids)}"
+    anchor = color_anchor_id(g)
+    assert guider_model_ref(g) == [anchor, 0]
+
+    ref_ctrl_id = str(820)
+    assert ref_ctrl_id in g
+    model_in = g[ref_ctrl_id]["inputs"]["model"]
+    assert model_in == ["4", 0], (
+        f"enhancer head should chain from IPAdapter (node 4); got {model_in}")
+    assert_unique_ids(g, "style_transfer Klein enhance=True")
+
+
+def case_style_transfer_klein_bypass():
+    g = workflows.build_style_transfer(
+        "target.png", "style.png", KLEIN_PRESET,
+        "match style", "", 11, weight=0.8, denoise=0.6, enhance=False,
+    )
+    assert not enhancer_node_ids(g)
+    assert guider_model_ref(g) == ["4", 0]
+
+
+def case_seedv2r_klein_enhanced():
+    g = workflows.build_seedv2r(
+        "in.png", "4x-UltraSharp.pth", KLEIN_PRESET,
+        "sharp", "", 13,
+        denoise=0.5, cfg=1.0, steps=6,
+        scale_factor=2.0, orig_width=512, orig_height=512,
+        enhance=True,
+    )
+    ids = enhancer_node_ids(g)
+    assert ids == _enh_id_set(830), f"seedv2r IDs wrong: {sorted(ids)}"
+    anchor = color_anchor_id(g)
+    assert guider_model_ref(g) == [anchor, 0]
+    assert_unique_ids(g, "seedv2r Klein enhance=True")
+
+
+def case_seedv2r_klein_bypass():
+    g = workflows.build_seedv2r(
+        "in.png", "4x-UltraSharp.pth", KLEIN_PRESET,
+        "sharp", "", 13,
+        denoise=0.5, cfg=1.0, steps=6,
+        scale_factor=2.0, orig_width=512, orig_height=512,
+        enhance=False,
+    )
+    assert not enhancer_node_ids(g)
+
+
+def case_enhancer_node_ids_disjoint_across_builders():
+    """When the same workflow file imports multiple enhanced builders,
+    each uses a disjoint node-id base so there is no collision if a
+    future meta-builder were to merge graphs.
+    """
+    bases = {
+        "txt2img": 870,
+        "img2img": 880,
+        "inpaint": 890,
+        "detail_hallucinate": 780,
+        "colorize": 790,
+        "controlnet_gen": 800,
+        "faceid_img2img": 810,
+        "style_transfer": 820,
+        "seedv2r": 830,
+    }
+    all_ids = set()
+    for _, base in bases.items():
+        for i in range(3):
+            nid = str(base + i)
+            assert nid not in all_ids, f"enhancer node-id collision at {nid}"
+            all_ids.add(nid)
+
+
 # --- Runner ---------------------------------------------------------------
 
 CASES = [
@@ -234,6 +423,24 @@ CASES = [
     ("build_inpaint  | sdxl + enhance flag",    case_inpaint_sdxl_flag_ignored),
     ("regression: klein_img2img opt-out",       case_klein_img2img_enhance_opt_out),
     ("regression: outpaint Klein stays wired",  case_outpaint_klein_still_enhanced),
+
+    ("build_detail_hallucinate | klein + enhance", case_detail_hallucinate_klein_enhanced),
+    ("build_detail_hallucinate | klein + bypass",  case_detail_hallucinate_klein_bypass),
+    ("build_colorize            | klein + enhance", case_colorize_klein_enhanced),
+    ("build_colorize            | klein + bypass",  case_colorize_klein_bypass),
+    ("build_controlnet_gen      | klein + enhance", case_controlnet_gen_klein_enhanced),
+    ("build_controlnet_gen      | klein + bypass",  case_controlnet_gen_klein_bypass),
+    ("build_faceid_img2img      | klein + IPA chain order",
+        case_faceid_klein_enhanced_chain_order),
+    ("build_faceid_img2img      | klein + bypass",  case_faceid_klein_bypass),
+    ("build_style_transfer      | klein + IPA chain order",
+        case_style_transfer_klein_enhanced_chain_order),
+    ("build_style_transfer      | klein + bypass",  case_style_transfer_klein_bypass),
+    ("build_seedv2r             | klein + enhance", case_seedv2r_klein_enhanced),
+    ("build_seedv2r             | klein + bypass",  case_seedv2r_klein_bypass),
+
+    ("invariant: enhancer IDs are disjoint across builders",
+        case_enhancer_node_ids_disjoint_across_builders),
 ]
 
 
