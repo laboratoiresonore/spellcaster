@@ -5330,10 +5330,10 @@ document.getElementById('avatar-generate-now').addEventListener('click', async (
         const data = await response.json();
         if (data.avatar_url) {
             const char = characters.find(c => c.id === activeCharacterId);
-            const refreshUrl = data.avatar_url + "&t=" + new Date().getTime();
-            char.avatar_url = refreshUrl;
+            char.avatar_url = data.avatar_url;
             saveIdentity(char);
-            activeAvatar.style.backgroundImage = `url('${char.avatar_url}')`;
+            const sep = data.avatar_url.includes('?') ? '&' : '?';
+            activeAvatar.style.backgroundImage = `url('${data.avatar_url}${sep}t=${Date.now()}')`;
             renderSidebar(searchInput.value);
             addSystemMessage(`<strong>Avatar Updated!</strong><br>Generated new ${styleKey.replace('_', ' ')} avatar for ${char.name}.`);
         } else if (data.error) {
@@ -5444,12 +5444,12 @@ batchGenerateBtn.addEventListener('click', async () => {
                         if(result.status === 'ok' && result.avatar_url) {
                             const char = characters.find(c => c.id === result.id);
                             if(char && !char._batch_applied) {
-                                const refreshUrl = result.avatar_url + "&t=" + new Date().getTime();
-                                char.avatar_url = refreshUrl;
+                                char.avatar_url = result.avatar_url;
                                 char._batch_applied = true;
                                 saveIdentity(char);
                                 if(char.id === activeCharacterId) {
-                                    activeAvatar.style.backgroundImage = `url('${char.avatar_url}')`;
+                                    const sep = result.avatar_url.includes('?') ? '&' : '?';
+                                    activeAvatar.style.backgroundImage = `url('${result.avatar_url}${sep}t=${Date.now()}')`;
                                 }
                                 renderSidebar(searchInput.value);
                             }
@@ -6096,10 +6096,10 @@ summonCreate.addEventListener('click', async () => {
                 });
                 const aData = await avatarRes.json();
                 if (aData.avatar_url) {
-                    const refreshUrl = aData.avatar_url + "&t=" + new Date().getTime();
-                    newChar.avatar_url = refreshUrl;
+                    newChar.avatar_url = aData.avatar_url;
                     saveIdentity(newChar);
-                    activeAvatar.style.backgroundImage = `url('${newChar.avatar_url}')`;
+                    const sep = aData.avatar_url.includes('?') ? '&' : '?';
+                    activeAvatar.style.backgroundImage = `url('${aData.avatar_url}${sep}t=${Date.now()}')`;
                     renderSidebar(searchInput.value);
                     addSystemMessage(`<strong>Avatar Conjured!</strong><br>${name}'s portrait has been rendered.`);
                 }
