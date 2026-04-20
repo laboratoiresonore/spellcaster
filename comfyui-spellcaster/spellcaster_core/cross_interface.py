@@ -299,6 +299,95 @@ class CrossInterfaceClient:
         except Exception:
             return None
 
+    # ── ComfyUI blob bus (Guild-less asset transport) ────────────────
+    #
+    # The Guild's AssetGallery is the canonical persistent store, but
+    # every plugin also talks to ComfyUI directly. When the Guild is
+    # down OR when the transport shouldn't go through the Guild at all
+    # (LAN handoff between plugins on different machines), use these
+    # helpers — they put bytes on ComfyUI's /spellcaster/blob/* routes
+    # instead. TTL-based eviction keeps the store bounded (1 h default,
+    # 24 h max per blob). Returns {hash, url, …} on success.
+
+    def blob_put(self, comfy_url: str, data: bytes, *,
+                 kind: str = "generation", ttl_s: Optional[float] = None,
+                 timeout: float = 30.0) -> Optional[dict]:
+        """POST bytes to a ComfyUI's blob bus. Returns the record dict
+        (hash, url, size, kind, origin, mime, expires_at) or None on
+        failure. Use the returned `url` — it's absolute and LAN-
+        reachable so peers on other machines can GET it directly."""
+        if not data or not comfy_url:
+            return None
+        url = f"{comfy_url.rstrip('/')}/spellcaster/blob/put"
+        # We build a minimal multipart body by hand to avoid pulling
+        # in requests/aiohttp. The boundary is random-ish per call.
+        import os as _os
+        boundary = "----spellcasterBlob" + _os.urandom(8).hex()
+        parts: list[bytes] = []
+
+        def _field(name: str, value: str):
+            parts.append(f"--{boundary}\r\n".encode())
+            parts.append(
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode())
+            parts.append(value.encode("utf-8"))
+            parts.append(b"\r\n")
+
+        _field("kind", kind)
+        _field("origin", self.key)
+        if ttl_s is not None:
+            _field("ttl_s", str(float(ttl_s)))
+        # File part
+        parts.append(f"--{boundary}\r\n".encode())
+        parts.append(
+            b'Content-Disposition: form-data; name="file"; filename="blob.bin"\r\n'
+            b'Content-Type: application/octet-stream\r\n\r\n')
+        parts.append(bytes(data))
+        parts.append(b"\r\n")
+        parts.append(f"--{boundary}--\r\n".encode())
+        body = b"".join(parts)
+        req = urllib.request.Request(
+            url, data=body, method="POST",
+            headers={
+                "Content-Type": f"multipart/form-data; boundary={boundary}",
+                "Content-Length": str(len(body)),
+            })
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except Exception:
+            return None
+
+    def blob_get(self, url: str,
+                 timeout: float = 30.0) -> Optional[bytes]:
+        """GET raw bytes from a blob bus URL. The URL is typically
+        returned by blob_put and points at a ComfyUI instance (not the
+        Guild). Returns None on failure."""
+        if not url:
+            return None
+        try:
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.read()
+        except Exception:
+            return None
+
+    def blob_list(self, comfy_url: str,
+                  timeout: float = 3.0) -> list[dict]:
+        """List every live blob on a ComfyUI's bus. Useful for UIs
+        that want to show 'recent cross-app assets in flight'."""
+        if not comfy_url:
+            return []
+        url = f"{comfy_url.rstrip('/')}/spellcaster/blob/list"
+        try:
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            if isinstance(data, dict):
+                return list(data.get("blobs", []))
+        except Exception:
+            pass
+        return []
+
     # ── Introspection ────────────────────────────────────────────────
 
     def active_interfaces(self) -> list[str]:
