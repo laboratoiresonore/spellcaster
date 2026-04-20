@@ -454,16 +454,34 @@ function init(router) {
     router.post('/scene', async (req, res) => {
         try {
             const { description, width, height, style } = req.body;
-            const model = await detectBestModel();
-            if (!model) return res.status(500).json({ error: 'No checkpoint models found on ComfyUI' });
-            const prompt = `${description}, cinematic scene, atmospheric, professional photography, 8k, detailed environment`;
+            // Klein scene prompts are natural language; no quality-tag
+            // boilerplate (Klein penalises it). SDXL keeps the tags so
+            // ordinary checkpoints still produce cinematic output.
+            const kleinPrompt = `${description}, cinematic scene, atmospheric, detailed environment`;
+            const sdxlPrompt  = `${description}, cinematic scene, atmospheric, professional photography, 8k, detailed environment`;
             const negative = 'people, characters, faces, text, watermark, blurry, low quality';
-            const workflow = buildTxt2ImgWorkflow(
-                prompt, negative,
-                width || 1280, height || 720,
-                Math.floor(Math.random() * 2147483647),
-                model
-            );
+
+            // Pick engine: Klein > Kontext > SDXL. Klein and Kontext
+            // share the detector with /edit.
+            const engine = await detectEditEngine();
+            let workflow = null;
+            let usedEngine = engine;
+            if (engine === "klein") {
+                workflow = buildKleinTxt2ImgWorkflow(kleinPrompt, {
+                    width:  _roundMod(width  || 1280, 16, 256),
+                    height: _roundMod(height || 720,  16, 256),
+                });
+            } else {
+                const model = await detectBestModel();
+                if (!model) return res.status(500).json({ error: 'No checkpoint models found on ComfyUI' });
+                usedEngine = "sdxl";
+                workflow = buildTxt2ImgWorkflow(
+                    sdxlPrompt, negative,
+                    width || 1280, height || 720,
+                    Math.floor(Math.random() * 2147483647),
+                    model,
+                );
+            }
             const result = await dispatchWorkflow(workflow);
 
             // Save as background file if BG_DIR is set
@@ -476,6 +494,7 @@ function init(router) {
 
             res.json({
                 status: 'ok',
+                engine: usedEngine,
                 images: result.images.map(i => ({ base64: i.base64, filename: i.filename })),
                 bg_filename: bgFilename,
             });
@@ -746,19 +765,39 @@ function init(router) {
     router.post('/portrait', async (req, res) => {
         try {
             const { description, width, height } = req.body;
-            const model = await detectBestModel();
-            if (!model) return res.status(500).json({ error: 'No checkpoint models found on ComfyUI' });
-            const prompt = `${description}, portrait photograph, 85mm lens, shallow depth of field, studio lighting, professional headshot, detailed face, 8k`;
+            // Klein portrait prompts are conversational; SDXL gets the
+            // photographic-studio tag trailer it needs.
+            const kleinPrompt = `${description}, portrait photograph, 85mm lens, shallow depth of field, studio lighting, detailed face`;
+            const sdxlPrompt  = `${description}, portrait photograph, 85mm lens, shallow depth of field, studio lighting, professional headshot, detailed face, 8k`;
             const negative = 'blurry, distorted, deformed, low quality, cartoon, watermark';
-            const workflow = buildTxt2ImgWorkflow(
-                prompt, negative,
-                width || 400, height || 600,
-                Math.floor(Math.random() * 2147483647),
-                model
-            );
+
+            // Default portrait size is 400×600 — tiny for Klein, which
+            // wants ~1 MP. Upscale the request to 640×960 for Klein
+            // (mod-16, ~0.6 MP, close to Klein's sweet spot) so output
+            // is actually detailed.
+            const engine = await detectEditEngine();
+            let workflow = null;
+            let usedEngine = engine;
+            if (engine === "klein") {
+                workflow = buildKleinTxt2ImgWorkflow(kleinPrompt, {
+                    width:  _roundMod(width  || 640, 16, 256),
+                    height: _roundMod(height || 960, 16, 256),
+                });
+            } else {
+                const model = await detectBestModel();
+                if (!model) return res.status(500).json({ error: 'No checkpoint models found on ComfyUI' });
+                usedEngine = "sdxl";
+                workflow = buildTxt2ImgWorkflow(
+                    sdxlPrompt, negative,
+                    width || 400, height || 600,
+                    Math.floor(Math.random() * 2147483647),
+                    model,
+                );
+            }
             const result = await dispatchWorkflow(workflow);
             res.json({
                 status: 'ok',
+                engine: usedEngine,
                 images: result.images.map(i => ({ base64: i.base64, filename: i.filename })),
             });
         } catch (e) {
@@ -1180,6 +1219,70 @@ function buildBodyWorkflow(avatarImageName, bodyPrompt, _unusedModelName) {
             "images": ["60", 0],
         }},
     };
+}
+
+/**
+ * Klein 2 text-to-image — the canonical Spellcaster txt2img engine
+ * when Klein 9B / 4B is installed. Pure EmptyLatent path (no input
+ * image), same CFGGuider + BasicScheduler + SamplerCustomAdvanced
+ * spine as build_klein_img2img. Steps default to 4 per
+ * architectures.py's flux2klein registration — Klein is distilled
+ * to 4 steps by design. CFG=1.0 always; Klein is CFG-free.
+ *
+ * Dimensions must be mod-16. Klein's native training resolution is
+ * 1024×1024; callers should round to the nearest mod-16 variant.
+ */
+function buildKleinTxt2ImgWorkflow(prompt, opts = {}) {
+    const {
+        width = 1024, height = 1024, steps = 4, guidance = 1.0,
+    } = opts;
+    const seed = Math.floor(Math.random() * 2147483647);
+    return {
+        "1":  { "class_type": "UNETLoader", "inputs": {
+            "unet_name": KLEIN_UNET, "weight_dtype": "default",
+        }},
+        "2":  { "class_type": "CLIPLoader", "inputs": {
+            "clip_name": KLEIN_CLIP, "type": "flux2", "device": "default",
+        }},
+        "3":  { "class_type": "VAELoader", "inputs": { "vae_name": FLUX2_VAE }},
+        "4":  { "class_type": "CLIPTextEncode", "inputs": {
+            "text": prompt, "clip": ["2", 0],
+        }},
+        "5":  { "class_type": "ConditioningZeroOut", "inputs": {
+            "conditioning": ["4", 0],
+        }},
+        "10": { "class_type": "EmptyLatentImage", "inputs": {
+            "width": width, "height": height, "batch_size": 1,
+        }},
+        "30": { "class_type": "CFGGuider", "inputs": {
+            "model": ["1", 0], "positive": ["4", 0], "negative": ["5", 0],
+            "cfg": guidance,
+        }},
+        "31": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "euler" }},
+        "32": { "class_type": "BasicScheduler", "inputs": {
+            "model": ["1", 0], "scheduler": "simple",
+            "steps": steps, "denoise": 1.0,
+        }},
+        "33": { "class_type": "RandomNoise", "inputs": { "noise_seed": seed }},
+        "40": { "class_type": "SamplerCustomAdvanced", "inputs": {
+            "noise": ["33", 0], "guider": ["30", 0], "sampler": ["31", 0],
+            "sigmas": ["32", 0], "latent_image": ["10", 0],
+        }},
+        "50": { "class_type": "VAEDecode", "inputs": {
+            "samples": ["40", 0], "vae": ["3", 0],
+        }},
+        "9":  { "class_type": "SaveImage", "inputs": {
+            "filename_prefix": "Spellcaster_klein_t2i",
+            "images": ["50", 0],
+        }},
+    };
+}
+
+// Round to nearest mod-N. Klein + Flux need mod-16 dims; SDXL
+// tolerates mod-8. Used by the endpoint-level dim normalizers.
+function _roundMod(n, mod = 16, minV = 64) {
+    const r = Math.max(minV, Math.round(n / mod) * mod);
+    return r;
 }
 
 // ═══════════════════════════════════════════════════════════════════
