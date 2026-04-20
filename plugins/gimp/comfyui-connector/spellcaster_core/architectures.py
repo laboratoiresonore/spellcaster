@@ -127,26 +127,6 @@ class ArchConfig:
         "extra",
     )
 
-# Canonical method names used by `supported_methods`. Workflow builders
-# and UI scaffolds check membership to decide whether to expose a given
-# action for a model. Keep this list in sync with the builder set in
-# `workflows.py` — unknown names are harmless (they just never match).
-IMAGE_METHODS = (
-    "txt2img", "img2img", "inpaint", "outpaint",
-    "upscale", "detail_hallucinate", "seedv2r",
-    "face_restore", "faceswap", "photobooth",
-    "controlnet_gen", "colorize", "style_transfer",
-    "relight", "reimagine",
-)
-VIDEO_METHODS = (
-    "video_gen", "video_img2video", "video_upscale",
-)
-KLEIN_METHODS = (
-    "klein_edit", "klein_headswap", "klein_repose",
-    "klein_refine", "klein_inpaint",
-)
-ALL_IMAGE_METHODS = IMAGE_METHODS + KLEIN_METHODS
-
     def __init__(self, key, **kw):
         self.key = key
         self.loader = kw.get("loader", "checkpoint")
@@ -703,6 +683,8 @@ _reg("flux2klein",
      default_denoise=0.65,
      default_sampler="euler",
      default_scheduler="simple",
+     # Klein owns the klein_* family of methods on top of the base image set.
+     supported_methods=ALL_IMAGE_METHODS,
      lora_prefixes=["Flux-2-Klein\\"],
      turbo_config=None,  # Already 4 steps
      prompt_style="natural",

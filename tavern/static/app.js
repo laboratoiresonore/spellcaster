@@ -1711,11 +1711,11 @@ async function initialize() {
             if (p.cls) btn.classList.add(p.cls);
             window.generationPreset = p.key;
             try { localStorage.setItem('guild_preset', p.key); } catch (e) {}
-            if (persist) _persistUserSetting('guild_preset', p.key);
-            // Push to the Guild's in-memory quality-mode state so every
-            // WAN + LTX workflow (shot creation, avatar bake, retry)
-            // picks it up immediately. Intentionally non-persistent
-            // server-side — resets to turbo on Guild restart.
+            // Single write covers both concerns: POST
+            // /api/video/quality-mode sets runtime state AND persists
+            // to guild_config.user_settings.guild_preset server-side
+            // (consolidated in the audit-tier cleanup). No separate
+            // /api/user_settings round-trip required.
             if (persist) {
                 fetch('/api/video/quality-mode', {
                     method: 'POST',
