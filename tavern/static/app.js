@@ -1545,10 +1545,19 @@ function subscribeRecentAssetEvents() {
                 } catch (_) {/* no-op */}
             });
         };
+        // Subscribe to every registered-interface asset.uploaded
+        // event. The registry's 8 non-antenna keys: guild + the 7
+        // plugin origins. When a new peer joins the family, add
+        // it here AND to comfyui-spellcaster/spellcaster_core/
+        // interface_registry.py::KNOWN_INTERFACES.
         es.addEventListener('guild.asset.uploaded', handler);
         es.addEventListener('gimp.asset.uploaded', handler);
         es.addEventListener('darktable.asset.uploaded', handler);
         es.addEventListener('resolve.asset.uploaded', handler);
+        es.addEventListener('sillytavern.asset.uploaded', handler);
+        es.addEventListener('blender.asset.uploaded', handler);
+        es.addEventListener('krita.asset.uploaded', handler);
+        es.addEventListener('photoshop.asset.uploaded', handler);
         es.addEventListener('error', () => {
             // EventSource will auto-retry; nothing to do
         });
