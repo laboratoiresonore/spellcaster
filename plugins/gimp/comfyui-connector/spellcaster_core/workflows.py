@@ -312,7 +312,7 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
                   # SAM3Segment on the server (preflight at the caller side).
                   sam3_prompt=None, sam3_invert=False, sam3_confidence=0.6,
                   sam3_expand=4, sam3_blur=4, enhance=True,
-                  quality="balanced"):
+                  quality="balanced", fast_mode=False):
     """Image-to-image generation (standard diffusion variant).
 
     Loads an input image, encodes it to latent space, diffuses it with a prompt,
@@ -420,11 +420,14 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
         # (ModelSamplingFlux + FluxGuidance). No-op on other arches.
         model_ref, pos_ref_boosted = _apply_flux1_boosters(
             nf, model_ref, [pos_id, 0], preset, node_base_id=740)
-        # Generic quality wrapping (PAG, RescaleCFG, FreeU_V2 — gated per arch).
+        # Generic quality wrapping (PAG, RescaleCFG, FreeU_V2, SLG — gated per arch).
         sampler_cfg = preset.get("cfg")
         model_ref = _apply_quality_boost(
             nf, model_ref, arch_key,
             quality=quality, cfg=sampler_cfg, node_base_id=700)
+        # Optional TeaCache speedup (opt-in, Flux1 only).
+        model_ref = _apply_speedup(nf, model_ref, arch_key,
+                                     fast_mode=fast_mode, node_id="560")
         samp_id = _emit_sampler(
             nf, model_ref=model_ref, pos_ref=pos_ref_boosted,
             neg_ref=[neg_id, 0], latent_ref=[enc_id, 0],
@@ -488,7 +491,7 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_txt2img(preset, prompt_text, negative_text, seed, loras=None,
-                   enhance=True, quality="balanced"):
+                   enhance=True, quality="balanced", fast_mode=False):
     """Text-to-image generation (from scratch).
 
     Generates an image entirely from a text prompt by starting with an empty
@@ -558,6 +561,8 @@ def build_txt2img(preset, prompt_text, negative_text, seed, loras=None,
         model_ref = _apply_quality_boost(
             nf, model_ref, arch_key,
             quality=quality, cfg=preset.get("cfg"), node_base_id=705)
+        model_ref = _apply_speedup(nf, model_ref, arch_key,
+                                     fast_mode=fast_mode, node_id="561")
         samp_id = _emit_sampler(
             nf, model_ref=model_ref, pos_ref=pos_ref_boosted,
             neg_ref=[neg_id, 0], latent_ref=[empty_id, 0],
@@ -1124,6 +1129,7 @@ def _klein_enhance_model(nf, model_ref, conditioning_ref,
 _QUALITY_ARCHES_PAG = {"sdxl", "illustrious", "flux1dev", "chroma", "flux_kontext"}
 _QUALITY_ARCHES_RESCALE = {"sd15", "sdxl", "illustrious"}
 _QUALITY_ARCHES_FREEU = {"sdxl"}  # not illustrious — FreeU hurts anime
+_QUALITY_ARCHES_SLG = {"flux1dev", "flux_kontext"}  # DiT architectures only
 
 
 def _apply_quality_boost(nf, model_ref, arch_key, *,
@@ -1164,7 +1170,32 @@ def _apply_quality_boost(nf, model_ref, arch_key, *,
         model_ref = [fu, 0]
         nid += 1
 
+    if quality == "max" and arch_key in _QUALITY_ARCHES_SLG:
+        slg = nf.skip_layer_guidance_dit(model_ref, node_id=str(nid))
+        model_ref = [slg, 0]
+        nid += 1
+
     return model_ref
+
+
+def _apply_speedup(nf, model_ref, arch_key, *, fast_mode=False, node_id=None):
+    """Wire TeaCache on the model when fast_mode=True AND the arch
+    benefits. Currently limited to flux1dev / flux_kontext — TeaCache
+    on SDXL/SD1.5 works but the quality trade at rel_l1_thresh=0.4 is
+    more noticeable there (PAG hides its artefacts on Flux).
+
+    The caller MUST have the ComfyUI-TeaCache custom pack installed or
+    the workflow fails at submit with "unknown class_type
+    ApplyTeaCachePatch". Opt-in — default False preserves previous
+    behaviour.
+    """
+    if not fast_mode:
+        return model_ref
+    if arch_key not in ("flux1dev", "flux_kontext"):
+        return model_ref
+    tc = nf.apply_tea_cache_patch(model_ref, rel_l1_thresh=0.4,
+                                    node_id=node_id)
+    return [tc, 0]
 
 
 _AYS_ARCHES = {"sd15", "sdxl", "illustrious"}
@@ -1935,12 +1966,14 @@ def build_detail_hallucinate(image_filename, upscale_model, preset,
         model_ref = _apply_quality_boost(
             nf, model_ref, arch_key,
             quality=quality, cfg=cfg, node_base_id=600)
-        samp_id = nf.ksampler(
-            model_ref,
-            pos_boosted, [neg_id, 0], [enc_id, 0],
-            seed, steps or preset["steps"], cfg,
-            preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
-            denoise, node_id="8",
+        samp_id = _emit_sampler(
+            nf, model_ref=model_ref, pos_ref=pos_boosted,
+            neg_ref=[neg_id, 0], latent_ref=[enc_id, 0],
+            seed=seed, steps=steps or preset["steps"], cfg=cfg,
+            sampler=preset.get("sampler", "euler"),
+            scheduler=preset.get("scheduler", "normal"),
+            denoise=denoise, node_id="8",
+            arch_key=arch_key, quality=quality, ays_node_base=500,
         )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="9")
     # img_ref is the POST-UPSCALE image, which matches the sampler output
@@ -2069,12 +2102,15 @@ def build_colorize(image_filename, preset, prompt_text, negative_text, seed,
             nf, model_ref, arch_key,
             quality=quality, cfg=cfg or preset.get("cfg"),
             node_base_id=605)
-        samp_id = nf.ksampler(
-            model_ref,
-            pos_boosted, [cn_apply_id, 1], [enc_id, 0],
-            seed, steps or preset["steps"], cfg or preset["cfg"],
-            preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
-            denoise, node_id="9",
+        samp_id = _emit_sampler(
+            nf, model_ref=model_ref, pos_ref=pos_boosted,
+            neg_ref=[cn_apply_id, 1], latent_ref=[enc_id, 0],
+            seed=seed, steps=steps or preset["steps"],
+            cfg=cfg or preset["cfg"],
+            sampler=preset.get("sampler", "euler"),
+            scheduler=preset.get("scheduler", "normal"),
+            denoise=denoise, node_id="9",
+            arch_key=arch_key, quality=quality, ays_node_base=505,
         )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="10")
     # Colorize keeps dimensions — no resize needed.
@@ -2217,10 +2253,13 @@ def build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
         model_ref = _apply_quality_boost(
             nf, model_ref, arch_key,
             quality=quality, cfg=cfg, node_base_id=610)
-        samp_id = nf.ksampler(
-            model_ref,
-            pos_boosted, [cn_apply_id, 1], [empty_id, 0],
-            seed, steps, cfg, sampler, scheduler, 1.0, node_id="9",
+        samp_id = _emit_sampler(
+            nf, model_ref=model_ref, pos_ref=pos_boosted,
+            neg_ref=[cn_apply_id, 1], latent_ref=[empty_id, 0],
+            seed=seed, steps=steps, cfg=cfg,
+            sampler=sampler, scheduler=scheduler, denoise=1.0,
+            node_id="9",
+            arch_key=arch_key, quality=quality, ays_node_base=510,
         )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="10")
     nf.save_image([dec_id, 0], "spellcaster_controlnet", node_id="11")
@@ -2595,7 +2634,7 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
                    controlnet=None, controlnet_2=None, guide_modes=None,
                    sam3_prompt=None, sam3_invert=False,
                    sam3_confidence=0.6, sam3_expand=4, sam3_blur=4,
-                   enhance=True, quality="balanced"):
+                   enhance=True, quality="balanced", fast_mode=False):
     """Inpainting: regenerate masked region using diffusion.
 
     Selectively regenerates only the masked area of an image while preserving
@@ -2734,6 +2773,8 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
         model_ref = _apply_quality_boost(
             nf, model_ref, arch_key,
             quality=quality, cfg=preset.get("cfg"), node_base_id=710)
+        model_ref = _apply_speedup(nf, model_ref, arch_key,
+                                     fast_mode=fast_mode, node_id="562")
         samp_id = _emit_sampler(
             nf, model_ref=model_ref, pos_ref=pos_ref_boosted,
             neg_ref=[neg_id, 0], latent_ref=[masked_id, 0],
@@ -2781,7 +2822,8 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
 
 def build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
                     left, top, right, bottom, feathering, loras=None,
-                    controlnet=None, guide_modes=None, quality="balanced"):
+                    controlnet=None, guide_modes=None, quality="balanced",
+                    fast_mode=False):
     """Canvas extension via outpainting.
 
     Extends an image beyond its original boundaries by generating new content
@@ -2914,6 +2956,8 @@ def build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
         model_ref = _apply_quality_boost(
             nf, model_ref, arch_key,
             quality=quality, cfg=preset.get("cfg"), node_base_id=715)
+        model_ref = _apply_speedup(nf, model_ref, arch_key,
+                                     fast_mode=fast_mode, node_id="563")
         samp_id = _emit_sampler(
             nf, model_ref=model_ref, pos_ref=pos_ref_boosted,
             neg_ref=[neg_id, 0], latent_ref=[masked_id, 0],
@@ -3018,10 +3062,13 @@ def build_faceid_img2img(target_filename, face_ref_filename, preset,
         model_for_sampler = _apply_quality_boost(
             nf, model_for_sampler, arch_key,
             quality=quality, cfg=cfg, node_base_id=615)
-        samp_id = nf.ksampler(
-            model_for_sampler,
-            pos_boosted, [neg_id, 0], [enc_id, 0],
-            seed, steps, cfg, sampler, scheduler, denoise, node_id="9",
+        samp_id = _emit_sampler(
+            nf, model_ref=model_for_sampler, pos_ref=pos_boosted,
+            neg_ref=[neg_id, 0], latent_ref=[enc_id, 0],
+            seed=seed, steps=steps, cfg=cfg,
+            sampler=sampler, scheduler=scheduler, denoise=denoise,
+            node_id="9",
+            arch_key=arch_key, quality=quality, ays_node_base=515,
         )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="11")
     nf.save_image([dec_id, 0], "gimp_faceid", node_id="12")
@@ -4368,12 +4415,14 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
         model_for_sampler = _apply_quality_boost(
             nf, model_for_sampler, arch_key,
             quality=quality, cfg=preset.get("cfg"), node_base_id=620)
-        samp_id = nf.ksampler(
-            model_for_sampler,
-            pos_boosted, [neg_id, 0], [enc_id, 0],
-            seed, preset["steps"], preset["cfg"],
-            preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
-            denoise, node_id="9",
+        samp_id = _emit_sampler(
+            nf, model_ref=model_for_sampler, pos_ref=pos_boosted,
+            neg_ref=[neg_id, 0], latent_ref=[enc_id, 0],
+            seed=seed, steps=preset["steps"], cfg=preset["cfg"],
+            sampler=preset.get("sampler", "euler"),
+            scheduler=preset.get("scheduler", "normal"),
+            denoise=denoise, node_id="9",
+            arch_key=arch_key, quality=quality, ays_node_base=520,
         )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="10")
     # Use TARGET image (post-scale if Flux) as compositing "original" — that's
@@ -4482,12 +4531,14 @@ def build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_t
         model_ref = _apply_quality_boost(
             nf, model_ref, arch_key,
             quality=quality, cfg=cfg, node_base_id=625)
-        samp_id = nf.ksampler(
-            model_ref,
-            pos_boosted, [neg_id, 0], [enc_id, 0],
-            seed, steps, cfg,
-            preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
-            denoise, node_id="8",
+        samp_id = _emit_sampler(
+            nf, model_ref=model_ref, pos_ref=pos_boosted,
+            neg_ref=[neg_id, 0], latent_ref=[enc_id, 0],
+            seed=seed, steps=steps, cfg=cfg,
+            sampler=preset.get("sampler", "euler"),
+            scheduler=preset.get("scheduler", "normal"),
+            denoise=denoise, node_id="8",
+            arch_key=arch_key, quality=quality, ays_node_base=525,
         )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="9")
     nf.save_image([dec_id, 0], "spellcaster_seedv2r", node_id="10")

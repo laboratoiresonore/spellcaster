@@ -706,6 +706,36 @@ class NodeFactory:
             "base_shift": base_shift, "width": width, "height": height,
         }, node_id)
 
+    def skip_layer_guidance_dit(self, model_ref, *,
+                                   double_layers="7, 8, 9",
+                                   single_layers="7, 8, 9",
+                                   scale=3.0,
+                                   start_percent=0.01,
+                                   end_percent=0.15,
+                                   rescaling_scale=0.0,
+                                   node_id=None):
+        """SkipLayerGuidanceDiT — SLG for Flux 1 Dev / Kontext / SD3.
+
+        Drops specific transformer blocks from the guidance branch to
+        bias the final output toward cleaner detail / better anatomy.
+        Core ComfyUI since 2024. Only useful on DiT architectures
+        (Flux 1 Dev, Flux Kontext, SD3). Do NOT wire on SD1/SDXL/Klein.
+
+        Community-tested Flux defaults (scale=3.0, layers 7-9, first
+        15% of sampling) are used; all overridable per call site.
+
+        Outputs: [0]=MODEL
+        """
+        return self._add("SkipLayerGuidanceDiT", {
+            "model": model_ref,
+            "double_layers": double_layers,
+            "single_layers": single_layers,
+            "scale": scale,
+            "start_percent": start_percent,
+            "end_percent": end_percent,
+            "rescaling_scale": rescaling_scale,
+        }, node_id)
+
     def align_your_steps_scheduler(self, model_type="SDXL", steps=20,
                                      denoise=1.0, node_id=None):
         """AlignYourStepsScheduler (AYS) — NVIDIA paper sigmas targeted
