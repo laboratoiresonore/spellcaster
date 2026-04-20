@@ -8854,22 +8854,205 @@ _workflow_lock = threading.Lock()
 _workflow_queue_depth = 0  # how many requests are waiting or running
 _cancel_event = threading.Event()  # set when user clicks Cancel in spinner
 
-# ── Spinner status text ─────────────────────────────────────────────
-# Module-level variable that _run_with_spinner polls to update its label.
-# Call _update_spinner_status("...") from _run_* methods instead of
-# Gimp.progress_init / Gimp.progress_set_text so the spinner window
-# shows the current processing phase in real time.
-_spinner_label_text = ""
+# ── Job manager — GIMP status-bar instead of a spinner window ─────
+#
+# Prior design: a singleton Gtk.Window with a spinner, progress bar,
+# and one row per queued job. It worked in happy paths but leaked a
+# new window every time GIMP re-entered a procedure call (module-level
+# _spinner_win guard vs. recursive handler dispatch), and users saw
+# stacked spinners under heavy use.
+#
+# Current design: no spinner window at all. Every job registers with
+# _JOBS (a module-level JobManager) which drives GIMP's built-in status
+# bar via Gimp.progress_init / progress_set_text / progress_pulse. One
+# bar, one homogeneous pipe, regardless of how many jobs are queued.
+# The active-job's phase text is shown, suffixed with queue depth +
+# ComfyUI metrics (GPU, VRAM, elapsed). A dedicated menu entry
+# (`Spellcaster > Cancel All Queued Generations`) sets a cancel flag
+# every cooperating worker polls (see _cancel_event checks in long-
+# running paths).
+#
+# The previous `_update_spinner_status(text)` API still works as a
+# plug-in-scope call; it writes the current job's phase label which
+# feeds the status bar on the next tick. No call-site changes needed
+# elsewhere in the file.
+
+
+class _JobManager:
+    """Module-level singleton tracking every in-flight Spellcaster job.
+
+    One instance lives at module scope. Each call to _run_with_spinner
+    registers a new job and deregisters on completion. Between the two,
+    a 300 ms GLib timeout re-renders the GIMP status bar with the
+    freshest phase text + ComfyUI queue/VRAM snapshot.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        # Each job: {id, label_text, phase_text, start_ts, cancel_flag}.
+        # phase_text is what _update_spinner_status writes to; label_text
+        # is the dialog-provided name (e.g. "Inpaint: processing...").
+        self._jobs: list[dict] = []
+        self._next_id = 1
+        self._timer_id = None
+        self._progress_open = False
+        # Cache the last status line so we don't spam set_text identical
+        # strings every 300 ms.
+        self._last_text = ""
+        # Cached ComfyUI poll (every ~10 ticks = ~3 s)
+        self._poll_counter = 0
+        self._poll_cached: tuple = (0, 0, "", 0, 0)
+
+    # ── Public API ────────────────────────────────────────────────
+
+    def add(self, label_text: str) -> dict:
+        """Register a new job. Returns the job dict (mutable handle)."""
+        with self._lock:
+            jid = self._next_id
+            self._next_id += 1
+            job = {
+                "id": jid,
+                "label_text": label_text,
+                "phase_text": label_text,
+                "start_ts": time.time(),
+                "cancel_flag": False,
+            }
+            self._jobs.append(job)
+            if not self._progress_open:
+                try:
+                    Gimp.progress_init(f"Spellcaster: {label_text}")
+                    self._progress_open = True
+                except Exception:
+                    pass
+            if self._timer_id is None:
+                self._timer_id = GLib.timeout_add(300, self._tick)
+        return job
+
+    def remove(self, job: dict) -> None:
+        """Deregister a finished job. If it was the last one, close the
+        progress bar after a short grace period so rapid-fire sequential
+        jobs don't flicker the bar open-closed-open-closed."""
+        with self._lock:
+            try:
+                self._jobs.remove(job)
+            except ValueError:
+                pass
+            if not self._jobs:
+                # Schedule lazy close — a follow-up job within 2 s
+                # cancels it via _progress_keep_open_id gen counter.
+                GLib.timeout_add(2000, self._close_if_idle)
+
+    def set_phase(self, text: str) -> None:
+        """Update the current (= most recently added) job's phase.
+        Safe to call from any thread."""
+        with self._lock:
+            if self._jobs:
+                self._jobs[-1]["phase_text"] = text
+
+    def cancel_all(self) -> int:
+        """Signal every running job to cancel cooperatively. Cooperating
+        workers poll ``_cancel_event`` or check their job's cancel_flag
+        between steps. Returns the count of jobs signalled."""
+        count = 0
+        with self._lock:
+            for j in self._jobs:
+                j["cancel_flag"] = True
+                count += 1
+        if count:
+            _cancel_event.set()
+        return count
+
+    def is_cancelled(self, job: dict) -> bool:
+        """Worker convenience — returns True when the user hit Cancel
+        All on a specific job OR the global event is set."""
+        return bool(job.get("cancel_flag")) or _cancel_event.is_set()
+
+    def active_count(self) -> int:
+        with self._lock:
+            return len(self._jobs)
+
+    # ── GLib timer — re-renders status bar every 300 ms ───────────
+
+    def _tick(self) -> bool:
+        with self._lock:
+            jobs = list(self._jobs)
+        if not jobs:
+            self._timer_id = None
+            return False  # stop timer — _close_if_idle handles the end
+        # Current job = most recent. Older queued entries show as "(+N waiting)".
+        current = jobs[-1]
+        queued = len(jobs) - 1
+        elapsed = int(time.time() - current["start_ts"])
+        mins, secs = divmod(elapsed, 60)
+        elapsed_str = f"{mins}m {secs:02d}s" if mins else f"{secs}s"
+
+        parts = [current["phase_text"] or current["label_text"]]
+        if queued:
+            parts.append(f"+{queued} queued")
+        # Poll ComfyUI every ~3 s to add queue + VRAM to the status.
+        self._poll_counter += 1
+        if self._poll_counter % 10 == 1:
+            try:
+                cfg = _load_config()
+                srv = cfg.get("server_url", COMFYUI_DEFAULT_URL)
+                self._poll_cached = _fetch_comfy_status(srv)
+            except Exception:
+                pass
+        running, pending, gpu, vt, vf = self._poll_cached
+        if running or pending:
+            parts.append(f"queue {running}+{pending}")
+        if vt > 0 and vf is not None:
+            vram_pct = int((1 - vf / max(vt, 1)) * 100)
+            parts.append(f"VRAM {vram_pct}%")
+        parts.append(elapsed_str)
+        text = "   ·   ".join(parts)
+
+        if text != self._last_text:
+            self._last_text = text
+            try:
+                Gimp.progress_set_text(text)
+            except Exception:
+                pass
+        try:
+            Gimp.progress_pulse()
+        except Exception:
+            pass
+        return True  # keep ticking
+
+    def _close_if_idle(self) -> bool:
+        """Grace-period callback: only actually close if the queue is
+        still empty 2 s later. If a new job was added in the meantime,
+        leave the bar open."""
+        with self._lock:
+            if self._jobs:
+                return False  # new job came in; keep bar open
+            if self._progress_open:
+                try:
+                    Gimp.progress_end()
+                except Exception:
+                    pass
+                self._progress_open = False
+            self._last_text = ""
+        return False  # don't repeat
+
+
+_JOBS = _JobManager()
+
 
 def _update_spinner_status(text):
-    """Set the spinner window's status label from any thread.
+    """Back-compat shim — every call site across the plugin still uses
+    this name. Forwards to the current job's phase text, which the job
+    manager renders into the GIMP status bar on the next tick.
 
-    Only updates the spinner window's job label. GIMP's native status bar
-    is updated exclusively from the spinner's poll timer (_pulse) to
-    prevent flashing between competing update sources.
-    """
-    global _spinner_label_text
-    _spinner_label_text = text
+    Keeping the name unchanged means zero call-site edits; the old
+    "spinner" vocabulary is harmless given the implementation is now a
+    status-bar pipe with queue depth + ComfyUI metrics."""
+    _JOBS.set_phase(text)
+
+
+# Legacy module-level slot — some older paths still read this. Kept so
+# any external callers that import it don't AttributeError.
+_spinner_label_text = ""
 
 
 # ── Mask cache for inpaint ──────────────────────────────────────────
@@ -9163,14 +9346,17 @@ def _make_dialog_banner():
         return _make_banner_image(360)
 
 
-_spinner_win = None        # singleton spinner window
-_spinner_jobs_box = None   # vertical box for job rows
-_spinner_pb = None         # shared progress bar
-_spinner_status_lbl = None # shared status bar (queue info, VRAM, elapsed)
-_spinner_job_count = 0     # how many active jobs
-_spinner_start_time = 0    # when the first job started
-_spinner_cleanup_id = None # GLib source ID for pending delayed cleanup
-_spinner_cleanup_gen = 0   # generation counter to prevent stale cleanup callbacks
+# Dead since the spinner→status-bar migration. Left as None so any
+# external code that imports these names keeps working; nothing inside
+# the plugin touches them any more (the JobManager owns all state).
+_spinner_win = None
+_spinner_jobs_box = None
+_spinner_pb = None
+_spinner_status_lbl = None
+_spinner_job_count = 0
+_spinner_start_time = 0
+_spinner_cleanup_id = None
+_spinner_cleanup_gen = 0
 
 
 def _fetch_comfy_status(server):
@@ -9200,159 +9386,37 @@ def _fetch_comfy_status(server):
 
 
 def _run_with_spinner(label_text, func, *args):
-    """Run func(*args) in a background thread while showing a progress window.
+    """Run func(*args) in a background thread; drive the GIMP status bar.
 
-    Singleton spinner with rich ComfyUI status: queue depth, GPU name,
-    VRAM usage, elapsed time. Multiple jobs stack as rows.
+    Public signature unchanged from the previous singleton-spinner
+    implementation so the ~200 call sites elsewhere in the plugin keep
+    working. Internally this now registers with _JOBS instead of
+    building a Gtk.Window, so:
+
+      * There is only EVER one status-bar line no matter how many
+        generations queue up (the old code occasionally stacked
+        windows under recursive dispatch — gone by construction).
+      * The GIMP status bar shows: phase text · +N queued ·
+        ComfyUI queue · VRAM % · elapsed. Pulsing progress bar too.
+      * The user cancels work via ``Spellcaster > Cancel Queued
+        Generations`` (see _run_cancel_queued) rather than per-row
+        buttons in a spinner window.
+
+    Cancellation is cooperative: workers that poll ``_cancel_event``
+    or ``_JOBS.is_cancelled(job)`` between steps will bail; this
+    helper raises InterruptedError on exit if the job was cancelled.
     """
-    global _spinner_label_text, _spinner_win, _spinner_jobs_box, _spinner_pb
-    global _spinner_status_lbl, _spinner_job_count, _spinner_start_time
-    global _spinner_cleanup_id, _spinner_cleanup_gen
-    _spinner_label_text = ""
+    job = _JOBS.add(label_text)
+    # Reset the global cancel flag only when this is the first job on
+    # the queue; otherwise cancelling a running job would clear the
+    # flag for the still-queued one behind it.
+    if _JOBS.active_count() == 1:
+        _cancel_event.clear()
+
     result_box = [None]
     error_box = [None]
     done_box = [False]
-    cancel_box = [False]
-    _cancel_event.clear()
     loop = GLib.MainLoop()
-
-    # Detect server URL for status polling
-    cfg = _load_config()
-    _status_server = cfg.get("server_url", COMFYUI_DEFAULT_URL)
-
-    # ── Cancel any pending delayed cleanup so it doesn't destroy our
-    #    window mid-job. This is the key fix: without this, a cleanup
-    #    scheduled by the previous job's GLib.timeout_add fires inside
-    #    the NEW job's GLib.MainLoop.run(), destroying the window while
-    #    the current job is actively using it.
-    if _spinner_cleanup_id is not None:
-        GLib.source_remove(_spinner_cleanup_id)
-        _spinner_cleanup_id = None
-        _spinner_cleanup_gen += 1  # invalidate any already-dispatched callback
-
-    # ── Create or reuse the singleton spinner window ────────────────
-    # Strict singleton: if _spinner_win is set, always reuse it.
-    # Only create a new window if _spinner_win is None (destroyed by cleanup).
-    _win_alive = _spinner_win is not None
-    if _win_alive:
-        # Make sure the window is actually visible (it might have been hidden)
-        try:
-            _spinner_win.show_all()
-            _spinner_win.present()
-        except Exception:
-            _win_alive = False
-            _spinner_win = None
-    if not _win_alive:
-        win = Gtk.Window(title="Spellcaster")
-        win.set_default_size(380, -1)
-        win.set_deletable(False)
-        win.set_position(Gtk.WindowPosition.CENTER)
-        win.override_background_color(Gtk.StateFlags.NORMAL,
-                                       __import__('gi.repository.Gdk', fromlist=['Gdk']).RGBA(0.1, 0.1, 0.1, 1))
-
-        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        spinner_img = _make_spinner_image()
-        if spinner_img:
-            vbox.pack_start(spinner_img, False, False, 0)
-        else:
-            banner = _make_banner_image(200, use_hero=True)
-            if banner:
-                vbox.pack_start(banner, False, False, 0)
-
-        pb = Gtk.ProgressBar(); pb.set_pulse_step(0.08)
-        pb.set_margin_start(16); pb.set_margin_end(16)
-        pb.set_margin_top(8)
-        vbox.pack_start(pb, False, False, 0)
-
-        # Status bar — queue info, GPU, VRAM, elapsed
-        status_lbl = Gtk.Label(label="Connecting...")
-        status_lbl.set_margin_start(16); status_lbl.set_margin_end(16)
-        status_lbl.set_margin_top(4)
-        status_lbl.set_xalign(0)
-        status_lbl.set_line_wrap(True)
-        try:
-            status_lbl.set_markup('<span size="small" foreground="#9D8E88">Connecting...</span>')
-        except Exception:
-            pass
-        vbox.pack_start(status_lbl, False, False, 0)
-
-        jobs_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        jobs_box.set_margin_start(16); jobs_box.set_margin_end(16)
-        jobs_box.set_margin_top(8); jobs_box.set_margin_bottom(16)
-        vbox.pack_start(jobs_box, False, False, 0)
-
-        win.add(vbox)
-        _spinner_win = win
-        _spinner_jobs_box = jobs_box
-        _spinner_pb = pb
-        _spinner_status_lbl = status_lbl
-        _spinner_job_count = 0
-        _spinner_start_time = time.time()
-        win.show_all()
-    else:
-        win = _spinner_win
-
-    # ── Add this job's row to the window ──────────────────────────────
-    job_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-    job_label = Gtk.Label(label=label_text, xalign=0)
-    job_label.set_hexpand(True)
-    job_label.set_line_wrap(True)
-    job_row.pack_start(job_label, True, True, 0)
-    cancel_btn = Gtk.Button(label="Cancel")
-    cancel_btn.set_size_request(60, -1)
-    def _on_cancel(_btn):
-        cancel_box[0] = True
-        _cancel_event.set()
-        job_label.set_text("Cancelling...")
-        cancel_btn.set_sensitive(False)
-    cancel_btn.connect("clicked", _on_cancel)
-    job_row.pack_start(cancel_btn, False, False, 0)
-    _spinner_jobs_box.pack_start(job_row, False, False, 0)
-    job_row.show_all()
-    _spinner_job_count += 1
-
-    # Status update counter (poll every ~3 seconds, not every pulse)
-    _status_counter = [0]
-
-    def _pulse():
-        if not done_box[0]:
-            if _spinner_pb:
-                _spinner_pb.pulse()
-            # Update job label with live status from _update_spinner_status
-            live = _spinner_label_text
-            if live and not cancel_box[0]:
-                job_label.set_text(live)
-            # Poll ComfyUI status every ~3s (every 10th pulse at 300ms)
-            # This is the SOLE source of GIMP status bar updates — no other
-            # code path calls Gimp.progress_set_text, preventing flashing.
-            _status_counter[0] += 1
-            if _status_counter[0] % 10 == 0:
-                try:
-                    running, pending, gpu, vt, vf = _fetch_comfy_status(_status_server)
-                    elapsed = int(time.time() - _spinner_start_time)
-                    mins, secs = divmod(elapsed, 60)
-                    parts = []
-                    if running > 0 or pending > 0:
-                        parts.append(f"Queue: {running} running, {pending} pending")
-                    if gpu:
-                        vram_pct = int((1 - vf / max(vt, 1)) * 100) if vt > 0 else 0
-                        parts.append(f"{gpu} — VRAM {vram_pct}%")
-                    parts.append(f"{mins}m {secs:02d}s" if mins else f"{secs}s")
-                    status_text = "  |  ".join(parts)
-                    if _spinner_status_lbl:
-                        _spinner_status_lbl.set_markup(
-                            f'<span size="small" foreground="#9D8E88">{status_text}</span>')
-                    # Mirror to GIMP's native status bar (single source, no flash)
-                    gimp_text = live or status_text
-                    try:
-                        Gimp.progress_set_text(gimp_text)
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
-            return True
-        return False
-    GLib.timeout_add(300, _pulse)
 
     def _worker():
         try:
@@ -9365,43 +9429,12 @@ def _run_with_spinner(label_text, func, *args):
 
     thread = threading.Thread(target=_worker, daemon=True)
     thread.start()
-    loop.run()
-
-    # ── Clean up this job's row ───────────────────────────────────────
-    _spinner_job_count -= 1
     try:
-        job_row.destroy()
-    except Exception:
-        pass
+        loop.run()
+    finally:
+        _JOBS.remove(job)
 
-    if _spinner_job_count <= 0:
-        # Don't destroy immediately — hide and schedule delayed cleanup.
-        # This prevents window flicker when sequential jobs run
-        # (e.g. Body Factory: generate → face swap → rembg).
-        # If a new job starts within 2 seconds, the window is reused
-        # because the new job cancels this cleanup via GLib.source_remove.
-        def _delayed_cleanup():
-            global _spinner_win, _spinner_jobs_box, _spinner_pb, _spinner_status_lbl
-            global _spinner_job_count, _spinner_cleanup_id, _spinner_cleanup_gen
-            # If a new job started and bumped the gen counter, this callback is stale
-            if _my_gen != _spinner_cleanup_gen:
-                return False
-            _spinner_cleanup_id = None
-            if _spinner_job_count <= 0 and _spinner_win is not None:
-                try:
-                    _spinner_win.destroy()
-                except Exception:
-                    pass
-                _spinner_win = None
-                _spinner_jobs_box = None
-                _spinner_pb = None
-                _spinner_status_lbl = None
-                _spinner_job_count = 0
-            return False  # don't repeat
-        _my_gen = _spinner_cleanup_gen
-        _spinner_cleanup_id = GLib.timeout_add(2000, _delayed_cleanup)
-
-    if cancel_box[0]:
+    if _JOBS.is_cancelled(job):
         raise InterruptedError("Generation cancelled by user")
     if error_box[0]:
         raise error_box[0]
@@ -15257,6 +15290,10 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-quick-rembg": "rembg",
             "spellcaster-quick-erase": None,
             "spellcaster-normal-map": None,
+            # Cancel queued generations — signals the JobManager to
+            # cooperatively bail every in-flight job (see
+            # _JobManager.cancel_all + _cancel_event polling in workers).
+            "spellcaster-cancel-queued": None,
             # Re-run Last
             "spellcaster-rerun-last": None,
             # AI Color Match
@@ -15469,6 +15506,12 @@ class Spellcaster(Gimp.PlugIn):
                                           "Select anything and erase it — AI fills in the background seamlessly"),
             "spellcaster-normal-map": ("3D Normal Map (NormalCrafter)...", self._run_normal_map,
                                         "Generate a 3D surface normal map for relighting and reconstruction"),
+            # Cancel queued generations
+            "spellcaster-cancel-queued": ("✕ Cancel Queued Generations",
+                                          self._run_cancel_queued,
+                                          "Cancel every Spellcaster job currently running or queued. "
+                                          "Cooperative: each worker checks between steps, so the current "
+                                          "workflow submit finishes before the queue clears."),
             # Re-run Last
             "spellcaster-rerun-last": ("⚡ Re-run Last...", self._run_rerun_last,
                                         "Repeat your last Spellcaster operation instantly"),
@@ -15582,6 +15625,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-wan-director-trio": f"{_S}/Studios",
 
             # Quick — zero-dialog instant actions
+            "spellcaster-cancel-queued":     f"{_S}/Quick",
             "spellcaster-rerun-last":        f"{_S}/Quick",
             "spellcaster-quick-enhance":     f"{_S}/Quick",
             "spellcaster-quick-inpaint":     f"{_S}/Quick",
@@ -28196,6 +28240,71 @@ class Spellcaster(Gimp.PlugIn):
         except Exception as e:
             Gimp.message(f"Spellcaster Kontext Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    # ══════════════════════════════════════════════════════════════════════
+    #  Cancel Queued Generations
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _run_cancel_queued(self, procedure, run_mode, image, drawables, config, data):
+        """Signal every in-flight Spellcaster job to cancel cooperatively.
+
+        The JobManager flips each job's ``cancel_flag`` and raises the
+        shared ``_cancel_event``. Workers that poll either (every
+        long-running loop does — e.g., ``_wait_for_prompt``,
+        ``_run_comfyui_workflow``, the Guild inbox drainer) bail at
+        the next step boundary. Currently-in-flight ComfyUI /prompt
+        submissions complete on the server because we don't call the
+        server's /interrupt endpoint — that would risk corrupting the
+        queue for other clients. Jobs that DO cancel raise
+        InterruptedError in ``_run_with_spinner`` and the caller's
+        try/except converts that to a cancelled-by-user result.
+
+        Also best-effort cancels the server-side queue_pending entries
+        so we don't burn VRAM rendering things the user no longer
+        wants. This uses ComfyUI's ``POST /queue {clear: true}`` which
+        preserves the running job but drops pending ones.
+        """
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        try:
+            GimpUi.init("spellcaster")
+        except Exception:
+            pass
+
+        n_local = _JOBS.cancel_all()
+        # Also clear ComfyUI's own pending queue so server-side work
+        # stops on the next tick. Best-effort; silent on failure.
+        n_server = 0
+        try:
+            cfg = _load_config()
+            srv = cfg.get("server_url", COMFYUI_DEFAULT_URL).rstrip("/")
+            req = urllib.request.Request(
+                f"{srv}/queue", method="POST",
+                data=json.dumps({"clear": True}).encode("utf-8"),
+                headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=3.0) as r:
+                r.read()
+                n_server = 1
+        except Exception:
+            pass
+
+        if n_local == 0 and n_server == 0:
+            Gimp.message(
+                "No Spellcaster jobs are currently running or queued.")
+        else:
+            parts = []
+            if n_local:
+                parts.append(f"{n_local} local job(s) signalled to cancel")
+            if n_server:
+                parts.append("ComfyUI pending queue cleared")
+            Gimp.message(
+                "Cancel Queued: " + ". ".join(parts) + ".\n\n"
+                "Running jobs stop at the next safe step; already-"
+                "submitted ComfyUI prompts finish on the server but "
+                "subsequent queued work is dropped.")
+        return procedure.new_return_values(
+            Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
     # ══════════════════════════════════════════════════════════════════════
     #  F2: Re-run Last
