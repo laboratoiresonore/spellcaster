@@ -1,0 +1,72 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - img "Loading Sigil" [ref=e4]
+    - heading "The Wizard Guild" [level=1] [ref=e5]
+    - paragraph [ref=e6]: The Guild awaits...
+  - generic [ref=e9]:
+    - complementary [ref=e10]:
+      - generic [ref=e11]:
+        - heading "The Wizard Guild" [level=2] [ref=e12]
+        - radiogroup "Primary LLM backend" [ref=e13]:
+          - button "🎨 ComfyUI" [ref=e14] [cursor=pointer]
+          - button "🦙 Ollama" [ref=e15] [cursor=pointer]
+          - button "📜 Kobold" [ref=e16] [cursor=pointer]
+        - generic [ref=e18]:
+          - generic [ref=e19]: VRAM 7.6/15.9
+          - generic [ref=e22]: RAM 56.9/63.8
+          - generic [ref=e25]: Cache 1.3/5.1
+        - generic [ref=e28]:
+          - generic [ref=e29]:
+            - text: Antennas
+            - button "+ Pair new" [ref=e30] [cursor=pointer]
+          - generic [ref=e32]: no antennas paired yet
+        - generic [ref=e33]:
+          - generic [ref=e34]: Recent across apps
+          - generic [ref=e35]:
+            - 'generic "Wizard Guild · direct cast: comfyui_SDXL_Cartoon-3D_novaCartoonXL_v60_safetensors" [ref=e36] [cursor=pointer]':
+              - generic: 💬
+            - generic "Wizard Guild · An enchanted forest hot spring clearing, bioluminescent flowers and aphrodisiac pollen drifting in the air. Steaming turquoise pools with glowing runes shimmer under moonbeams on glistening wet stone. Scattered silk robes lie on mossy rocks as fireflies dance above. Privacy wards pulse softly between ancient trees, casting ethereal glows. Wide angle shot captures a detailed environment concept art scene, rich with fantasy illustration atmosphere and high quality lighting., photorealistic, highly detailed, sharp focus, professional photograph, 8K UHD, natural lighting, depth of field" [ref=e37] [cursor=pointer]:
+              - generic: 💬
+            - generic "Wizard Guild · An enchanted forge transformed into a lush pleasure den, glowing with warm ember light and shimmering hammered copper art installations. A steaming bath filled with enchanted water lies scattered with sparkling metalwork jewellery. Fur-draped anvils stand in the corner, adding to the intimate warmth of this detailed fantasy environment concept art. Wide-angle shot captures atmospheric lighting that enhances every detail., photorealistic, highly detailed, sharp focus, professional photograph, 8K UHD, natural lighting, depth of field" [ref=e38] [cursor=pointer]:
+              - generic: 💬
+        - textbox "Search Wizard" [ref=e40]
+      - generic [ref=e42]:
+        - button "✨ Animate All Avatars" [disabled] [ref=e43]
+        - generic "Include the Guild's shipped wizards (Imaginus, Videomancer, Restorix, Spellcaster…). Off by default — their core portraits don't usually need re-animating." [ref=e44] [cursor=pointer]:
+          - checkbox "Include built-in wizards" [ref=e45]
+          - generic [ref=e46]: Include built-in wizards
+        - link "🧙 Travelling Wizard" [ref=e47] [cursor=pointer]:
+          - /url: /static/guild.html
+        - button "⚙️ Settings" [ref=e48] [cursor=pointer]
+        - button "⏻ Exit" [ref=e49] [cursor=pointer]
+    - main [ref=e50]:
+      - generic [ref=e51]:
+        - generic [ref=e54]:
+          - heading "Loading..." [level=2] [ref=e55]
+          - paragraph [ref=e56]: Connecting to guild...
+        - generic [ref=e57]:
+          - button "Rename Wizard" [ref=e58] [cursor=pointer]
+          - button "Generate Background" [ref=e59] [cursor=pointer]
+          - button "Avatar Icon Generate Avatar" [ref=e60] [cursor=pointer]:
+            - img "Avatar Icon" [ref=e61]
+            - text: Generate Avatar
+          - button "Enchantments" [ref=e62] [cursor=pointer]
+          - button "Reset Icon Reset Memory" [ref=e63] [cursor=pointer]:
+            - img "Reset Icon" [ref=e64]
+            - text: Reset Memory
+          - button "Batch Icon Generate All" [ref=e65] [cursor=pointer]:
+            - img "Batch Icon" [ref=e66]
+            - text: Generate All
+      - generic [ref=e68]:
+        - button "⚡ Turbo" [ref=e69] [cursor=pointer]
+        - button "⚔ Shootouts 34" [ref=e70] [cursor=pointer]:
+          - text: ⚔ Shootouts
+          - generic [ref=e71]: "34"
+      - generic [ref=e73]:
+        - button "📎" [ref=e74] [cursor=pointer]
+        - textbox "Just talk to it..." [ref=e75]
+        - button "🎙️" [ref=e76] [cursor=pointer]
+        - button "Summon Wizard" [ref=e77] [cursor=pointer]:
+          - img "Summon Wizard" [ref=e78]
+        - button "🎬" [ref=e79] [cursor=pointer]
+        - button "✨" [ref=e80] [cursor=pointer]

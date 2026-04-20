@@ -4169,7 +4169,12 @@ function addAIMessage(text, opts = {}) {
 
     let bubbleHTML = '';
     if (prose) {
-        bubbleHTML += `<p>${prose}</p>`;
+        // LLM replies arrive in markdown — **bold**, `code`, bullet
+        // lists, headings. Render them through the Archivist's markdown
+        // helper so the chat bubble doesn't show literal asterisks and
+        // hash marks. _renderSimpleMarkdown HTML-escapes first so the
+        // raw LLM text can't inject tags.
+        bubbleHTML += `<div class="ai-markdown">${_renderSimpleMarkdown(prose)}</div>`;
     }
     if (options.length > 0) {
         bubbleHTML += '<div class="option-buttons">';

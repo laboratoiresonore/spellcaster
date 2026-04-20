@@ -1,0 +1,61 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - img "Loading Sigil" [ref=e4]
+    - heading "The Wizard Guild" [level=1] [ref=e5]
+    - paragraph [ref=e6]: The Guild awaits...
+  - generic [ref=e9]:
+    - complementary [ref=e10]:
+      - generic [ref=e11]:
+        - heading "The Wizard Guild" [level=2] [ref=e12]
+        - radiogroup "Primary LLM backend" [ref=e13]:
+          - button "🎨 ComfyUI" [ref=e14] [cursor=pointer]
+          - button "🦙 Ollama" [ref=e15] [cursor=pointer]
+          - button "📜 Kobold" [ref=e16] [cursor=pointer]
+        - generic [ref=e18]:
+          - generic [ref=e19]: VRAM 6.3/15.9
+          - generic [ref=e22]: RAM 60.5/63.8
+          - generic [ref=e25]: Cache 1.9/6.8
+        - generic [ref=e29]:
+          - text: Antennas
+          - button "+ Pair new" [ref=e30] [cursor=pointer]
+        - textbox "Search Wizard" [ref=e32]
+      - generic [ref=e34]:
+        - button "✨ Animate All Avatars" [disabled] [ref=e35]
+        - generic "Include the Guild's shipped wizards (Imaginus, Videomancer, Restorix, Spellcaster…). Off by default — their core portraits don't usually need re-animating." [ref=e36] [cursor=pointer]:
+          - checkbox "Include built-in wizards" [ref=e37]
+          - generic [ref=e38]: Include built-in wizards
+        - link "🧙 Travelling Wizard" [ref=e39] [cursor=pointer]:
+          - /url: /static/guild.html
+        - button "⚙️ Settings" [ref=e40] [cursor=pointer]
+        - button "⏻ Exit" [ref=e41] [cursor=pointer]
+    - main [ref=e42]:
+      - generic [ref=e43]:
+        - generic [ref=e46]:
+          - heading "Loading..." [level=2] [ref=e47]
+          - paragraph [ref=e48]: Connecting to guild...
+        - generic [ref=e49]:
+          - button "Rename Wizard" [ref=e50] [cursor=pointer]
+          - button "Generate Background" [ref=e51] [cursor=pointer]
+          - button "Avatar Icon Generate Avatar" [ref=e52] [cursor=pointer]:
+            - img "Avatar Icon" [ref=e53]
+            - text: Generate Avatar
+          - button "Enchantments" [ref=e54] [cursor=pointer]
+          - button "Reset Icon Reset Memory" [ref=e55] [cursor=pointer]:
+            - img "Reset Icon" [ref=e56]
+            - text: Reset Memory
+          - button "Batch Icon Generate All" [ref=e57] [cursor=pointer]:
+            - img "Batch Icon" [ref=e58]
+            - text: Generate All
+      - generic [ref=e60]:
+        - button "⚡ Turbo" [ref=e61] [cursor=pointer]
+        - button "⚔ Shootouts 34" [ref=e62] [cursor=pointer]:
+          - text: ⚔ Shootouts
+          - generic [ref=e63]: "34"
+      - generic [ref=e65]:
+        - button "📎" [ref=e66] [cursor=pointer]
+        - textbox "Just talk to it..." [ref=e67]
+        - button "🎙️" [ref=e68] [cursor=pointer]
+        - button "Summon Wizard" [ref=e69] [cursor=pointer]:
+          - img "Summon Wizard" [ref=e70]
+        - button "🎬" [ref=e71] [cursor=pointer]
+        - button "✨" [ref=e72] [cursor=pointer]

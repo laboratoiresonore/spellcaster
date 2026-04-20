@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>The Wizard Guild</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=20260420a">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
 </head>
 <body class="dark-theme" style="overflow:hidden;">
@@ -489,12 +489,16 @@
 
     <!-- GSAP — the one ring to rule all animations -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
-    <script src="starter_chips.js"></script>
-    <script src="app.js"></script>
-    <script src="video_chat.js"></script>
-    <script src="feedback.js"></script>
-    <script src="lora_shootout.js"></script>
-    <script src="spellcaster_actions.js"></script>
-    <script src="setup_wizard.js"></script>
+    <!-- ?v=… cache-bust — rotate whenever any of the scripts below
+         meaningfully changes. Without it, Chrome's HTTP cache serves
+         stale JS for minutes after a deploy. Bumping the tag forces a
+         revalidation on every reload. -->
+    <script src="starter_chips.js?v=20260420a"></script>
+    <script src="app.js?v=20260420a"></script>
+    <script src="video_chat.js?v=20260420a"></script>
+    <script src="feedback.js?v=20260420a"></script>
+    <script src="lora_shootout.js?v=20260420a"></script>
+    <script src="spellcaster_actions.js?v=20260420a"></script>
+    <script src="setup_wizard.js?v=20260420a"></script>
 </body>
 </html>

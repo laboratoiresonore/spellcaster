@@ -809,6 +809,68 @@ body.is-generating .health-stats .meter-fill {
     border-bottom-left-radius: 4px;
 }
 
+/* Markdown rendering inside AI bubbles — the LLM replies arrive with
+   **bold**, lists, and headings; _renderSimpleMarkdown turns them into
+   real HTML and we style them modestly here so they read well without
+   blowing up bubble size. */
+.ai-message .ai-markdown > *:first-child { margin-top: 0; }
+.ai-message .ai-markdown > *:last-child { margin-bottom: 0; }
+.ai-message .ai-markdown p { margin: 0 0 8px 0; }
+.ai-message .ai-markdown p + p { margin-top: 8px; }
+.ai-message .ai-markdown strong { color: #fff; font-weight: 600; }
+.ai-message .ai-markdown em { font-style: italic; opacity: 0.9; }
+.ai-message .ai-markdown code {
+    background: rgba(178, 70, 242, 0.15);
+    border: 1px solid rgba(178, 70, 242, 0.25);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.92em;
+}
+.ai-message .ai-markdown pre {
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(178, 70, 242, 0.25);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin: 8px 0;
+    overflow-x: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.88em;
+    line-height: 1.45;
+}
+.ai-message .ai-markdown pre code {
+    background: transparent; border: none; padding: 0;
+}
+.ai-message .ai-markdown ul,
+.ai-message .ai-markdown ol {
+    margin: 6px 0 8px 22px;
+    padding: 0;
+}
+.ai-message .ai-markdown li { margin: 2px 0; }
+.ai-message .ai-markdown h1,
+.ai-message .ai-markdown h2,
+.ai-message .ai-markdown h3 {
+    font-size: 1.02em;
+    font-weight: 700;
+    color: #fff;
+    margin: 10px 0 6px 0;
+    letter-spacing: 0.01em;
+}
+.ai-message .ai-markdown a {
+    color: #c9a2ff;
+    text-decoration: underline;
+    text-decoration-color: rgba(201, 162, 255, 0.35);
+    transition: text-decoration-color 0.2s;
+}
+.ai-message .ai-markdown a:hover {
+    text-decoration-color: rgba(201, 162, 255, 1);
+}
+.ai-message .ai-markdown img {
+    max-width: 100%;
+    border-radius: 6px;
+    margin: 6px 0;
+}
+
 /* System message sparkle border */
 .ai-message .bubble.system-bubble {
     background: rgba(178, 70, 242, 0.08);
