@@ -2339,11 +2339,95 @@ def _add_normal_map_selector(dialog, box, image):
     # Grey out combo when checkbox unchecked
     dialog._normal_combo.set_sensitive(found_normal)
     def _on_toggle(cb):
-        dialog._normal_combo.set_sensitive(cb.get_active())
+        dialog._normal_combo.set_sensitive(
+            cb.get_active() and getattr(dialog, "_normal_arch_ok", True))
     dialog._normal_enabled.connect("toggled", _on_toggle)
 
     frame.add(fbox)
     box.pack_start(frame, False, False, 0)
+
+    # Arch-compatibility gate. The canonical build_* workflows skip
+    # ControlNet injection entirely for flux2klein / flux_kontext /
+    # chroma — so offering the normal-map picker on those archs was
+    # a false promise: users would fill in the form, submit, and see
+    # the generation happen but with no 3D guidance (or, in the
+    # earlier broken state, get a "not supported on this architecture"
+    # message AT submit time — too late).
+    #
+    # This resolver disables the entire frame + swaps the headline to
+    # a clear explanation whenever the currently-selected checkpoint
+    # belongs to an incompatible arch. Re-evaluated whenever the
+    # user changes the model dropdown.
+    dialog._normal_arch_ok = True  # re-set by the resolver below
+
+    def _apply_arch_gate(_caller=None):
+        arch = "sdxl"
+        try:
+            if hasattr(dialog, "_current_preset_arch"):
+                arch = dialog._current_preset_arch() or "sdxl"
+        except Exception:
+            arch = "sdxl"
+        compatible = arch not in _CN_INCOMPATIBLE_ARCHS
+        dialog._normal_arch_ok = compatible
+
+        # Force the master switch off FIRST when incompatible so the
+        # sensitivity loop below reflects the final state — otherwise
+        # the combo would be greyed-or-not based on the PRE-toggle
+        # active state and flicker once we then toggle.
+        if not compatible:
+            try:
+                dialog._normal_enabled.set_active(False)
+            except Exception:
+                pass
+
+        enabled = compatible and dialog._normal_enabled.get_active()
+        # Every control in the frame tracks the compatibility flag so
+        # the disabled state is visually unambiguous. Combo is extra-
+        # gated on the master switch (grey when enable=Off, even on
+        # compatible archs).
+        for w in (dialog._normal_enabled, dialog._normal_auto_gen,
+                   gen_btn, gen_status):
+            try:
+                w.set_sensitive(compatible)
+            except Exception:
+                pass
+        try:
+            dialog._normal_combo.set_sensitive(enabled)
+        except Exception:
+            pass
+
+        if not compatible:
+            dialog._normal_headline.set_markup(
+                f'<small>⚠ 3D normal-map guidance is <b>not supported</b> '
+                f'on this architecture (<tt>{arch}</tt>) — Flux 2 Klein, '
+                f'Flux Kontext and Chroma don\'t accept ControlNet '
+                f'conditioning. Pick an SD 1.5 / SDXL / Illustrious / '
+                f'Flux.1-dev / Z-Image-Turbo checkpoint if you need 3D '
+                f'guidance.</small>')
+        else:
+            # Restore the contextual headline based on whether the
+            # image already has a normal-map layer.
+            if normal_layers:
+                dialog._normal_headline.set_markup(
+                    '<small>✓ Found a normal-map layer in this image — '
+                    'it will guide the AI. No ControlNet tweaking needed.'
+                    '</small>')
+            else:
+                dialog._normal_headline.set_markup(
+                    '<small>A 3D normal map will be generated '
+                    'automatically when you click OK. No ControlNet '
+                    'tweaking needed — untick <i>Use 3D normal map</i> '
+                    'below to skip.</small>')
+
+    # Initial gate application
+    _apply_arch_gate()
+    # Re-apply whenever the preset dropdown changes — catches both
+    # model swaps and arch-switches through the same handler.
+    try:
+        if hasattr(dialog, "preset_combo"):
+            dialog.preset_combo.connect("changed", _apply_arch_gate)
+    except Exception:
+        pass
 
 
 def _export_normal_map_layer(image, layer_ref):
