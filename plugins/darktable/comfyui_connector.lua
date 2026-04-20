@@ -6180,6 +6180,86 @@ local LTX_MODES = {
   { label = "I2V (image-to-video)",     preset = "ltx2_image_to_video" },
 }
 
+-- LTX scene template library (CLAUDE.md §16.3). LTX 2.3 rewards long
+-- cinematic prompts — these are pre-tuned 80-150 word descriptions that
+-- play to LTX's strengths: camera moves, VFX, weather, lighting,
+-- portraits, sci-fi. Pick one to auto-fill the prompt; user can still
+-- edit after selection.
+-- NSFW_LTX_SCENES_INJECTION_POINT --
+local LTX_SCENE_TEMPLATES = {
+  { label = "(custom — manual prompt)", prompt = "" },
+  { label = "Cinematic Pan — Golden Hour",
+    prompt = "A slow cinematic camera pan across a vast rolling landscape at golden hour. Warm amber sunlight rakes across distant hills, volumetric fog drifts through the valley, wildflowers sway in foreground breeze. Shallow depth of field, anamorphic lens flare, 35mm film grain, cinematic colour grading. Steady dolly movement." },
+  { label = "Dolly-In — Establishing Shot",
+    prompt = "Slow cinematic dolly push-in toward a lone figure at the edge of a cliff. The camera glides forward at a steady pace revealing the vastness of the mountain range behind. Dramatic cloud cover, soft backlighting, atmospheric haze. The figure remains perfectly still as the world moves around them. Cinematic 2.39:1 framing." },
+  { label = "Orbital Tracking — Subject",
+    prompt = "Smooth orbital camera movement around a central subject, lens holding focus as the background blurs into painterly swirl. Cinematic 360-degree tracking shot, stable gimbal movement, shallow depth of field. The subject remains in sharp detail throughout the rotation, lit by soft key light." },
+  { label = "Explosion — Slow-mo Fireball",
+    prompt = "A massive fireball explosion erupts in slow motion. Orange and yellow flames billow outward in a mushroom shape, dense black smoke curls at the edges, debris and embers scatter through the air, shockwave visible in surrounding dust. Photorealistic particle physics, high-dynamic-range lighting, 240fps-feel slow motion, cinematic 2.39:1 framing." },
+  { label = "Fire Close-up — Dancing Flames",
+    prompt = "Extreme macro close-up of dancing flames. Every individual flame tongue writhes and curls against black background, glowing orange and yellow at the core with blue-white highlights at the base. Embers rise and flicker, smoke wisps drift upward. Hyperreal fire physics, deep HDR contrast, cinematic crawl speed." },
+  { label = "Lightning Strike — Storm",
+    prompt = "Dramatic lightning bolt cracks across a turbulent stormy sky. Multiple branching forks illuminate dark clouds from within, casting brief harsh shadows. Rain streaks diagonally across the frame. The lightning flashes last a fraction of a second each, leaving vivid after-images. Cinematic wide shot, electric white bursts." },
+  { label = "Sparks Shower — Metal",
+    prompt = "Extreme close-up of sparks flying from a grinding wheel striking metal. Thousands of glowing orange and yellow particles arc through dark space, each leaving a brief bright trail before cooling to ember red. The camera holds still as the shower builds and fades. Hyperreal particle physics, deep black background." },
+  { label = "Magic Spell — Energy Burst",
+    prompt = "A wizard's hands glow with swirling magical energy, arcane symbols rotating around the palms. Crackling blue-white electric tendrils reach outward, casting shifting highlights across the sorcerer's face. A sudden burst of energy releases forward, lighting up surrounding darkness. Fantasy VFX, high-contrast rim lighting, smoke and ember particles." },
+  { label = "Smoke Drift — Volumetric",
+    prompt = "Slow cinematic shot of thick volumetric smoke curling through a beam of golden light. The smoke swirls in organic vortices, revealing and concealing shapes within it. Dust motes catch the light and shimmer briefly before drifting into shadow. Deep atmospheric depth, high contrast between illuminated smoke and black background." },
+  { label = "Heavy Rain — Window View",
+    prompt = "Rain pours against a window pane in cinematic close-up. Each droplet traces a glistening path downward, refracting the warm interior light. Beyond the window, a blurred city at night glows in soft amber and electric blue. The rhythm of the rain is hypnotic, rivulets merging and splitting. Film-noir lighting." },
+  { label = "Snow Fall — Quiet Forest",
+    prompt = "Gentle snowfall in a silent pine forest. Thousands of fat snowflakes drift lazily downward, catching pale blue winter light. The boughs of evergreens are already laden with powder, deadening all sound. A slight breeze ripples the surface of the snow. Serene, meditative atmosphere, cold colour palette." },
+  { label = "Fog Rolling — Valley",
+    prompt = "Thick fog rolls slowly through a mountain valley at dawn. The mist curls around jagged rock formations, revealing and swallowing trees in turn. First light of day cuts golden shafts through gaps in the fog. Atmospheric, cinematic, vast scale." },
+  { label = "Water Splash — Macro Slow-mo",
+    prompt = "Extreme macro slow-motion shot of a single water droplet striking a still surface. The impact sends a perfect crown of splash droplets upward, each catching light like liquid diamonds. Concentric ripples expand outward. Hyperreal fluid physics, cinematic high-speed photography look, dramatic side lighting." },
+  { label = "Wave Crash — Coastal",
+    prompt = "A massive ocean wave rises, curls, and crashes against jagged coastal rocks in cinematic slow motion. The crest turns translucent turquoise where the sun shines through, spray explodes upward in a white sheet, foam cascades over rocks. Moody overcast sky, cinematic widescreen framing." },
+  { label = "Pour Shot — Coffee/Liquid",
+    prompt = "Hyperreal close-up of hot coffee being poured into a white ceramic cup. The dark liquid streams in a steady ribbon, catching warm overhead light, steam curling upward in delicate ribbons. Bubbles form and pop on the surface, crema swirls into a fractal pattern. Shallow depth of field, sensory commercial aesthetic." },
+  { label = "Golden Hour Portrait",
+    prompt = "A close-up portrait during golden hour. Soft amber sunlight rakes across the subject's face from the side, creating warm highlights and deep amber-tinted shadows. The subject's hair catches the light like spun copper. Micro-expressions flicker naturally, subtle blink, slight breath. Cinematic shallow depth of field, creamy bokeh." },
+  { label = "Neon Cyberpunk — Rainy Street",
+    prompt = "A rain-slicked city street at night, reflecting neon signs in hot pink, electric blue, and acid green. Steam rises from grates in the road, a lone figure in a long coat walks through puddles. Cyberpunk aesthetic, Blade Runner colour palette, volumetric lighting, anamorphic lens flares from every neon source." },
+  { label = "Moonlit Forest — Atmospheric",
+    prompt = "A deep forest at night under a full moon. Silver-blue moonlight filters through the canopy in ethereal shafts, pooling on the forest floor. A light mist drifts between the trunks. Fireflies blink occasionally in the middle distance. Fantasy atmosphere, muted cool palette with tiny warm highlights, cinematic long take." },
+  { label = "Hologram Interface — Sci-fi",
+    prompt = "A translucent blue holographic interface materialises in mid air, rotating 3D data visualisations spinning slowly in volumetric light. Grid lines and glowing text scroll across the projected surface, occasional glitch artifacts flicker. A hand enters and interacts with the projection, triggering rippling light cascades. Clean sci-fi aesthetic, electric-blue palette." },
+  { label = "Laser Beam — Sci-fi Combat",
+    prompt = "A brilliant red laser beam streaks through a dark environment, cutting a line of incandescent light across the frame. Dust and smoke swirl in its wake, the beam leaves a brief afterglow, heat distortion shimmers along its path. Deep black background, saturated red palette, cinematic sci-fi atmosphere." },
+  { label = "Energy Aura — Power-up",
+    prompt = "A character stands with arms outstretched as a swirling aura of golden and violet energy builds around them. Particles rise from the ground, electric arcs crackle between palms, cloth and hair billow in an aura-induced wind. The power peaks in a brilliant flash. Anime-style VFX, cinematic low-angle shot, rim lighting from the aura itself." },
+  { label = "Particle Swarm — Abstract",
+    prompt = "Thousands of luminous particles swirl through dark space in fluid organic patterns, forming and dissolving into shapes — spirals, waves, constellations — driven by invisible forces. Each particle trails a short tail of light, the whole swarm behaves like a living fluid. Motion-graphics aesthetic, saturated cyan and magenta." },
+  { label = "Cinemagraph — Coffee Steam",
+    prompt = "Seamless cinemagraph loop: a steaming cup of coffee sits perfectly still on a wooden table. Only the steam moves, curling upward in endless hypnotic patterns. Warm morning light from the side, shallow depth of field, everything else frozen in time. Cinematic still-life meets subtle motion." },
+  { label = "Product Turntable — 360°",
+    prompt = "A premium product rotates 360 degrees on a pristine turntable. Clean gradient background, three-point studio lighting with strong key, soft fill, and back light accentuating the product's silhouette. Smooth constant rotation speed, razor-sharp detail throughout. Premium commercial photography aesthetic." },
+}
+
+local ltx_scene_selector = dt.new_widget("combobox") {
+  label = _("LTX Scene Template"),
+  tooltip = _("Pick a pre-tuned cinematic prompt template.\n"
+           .. "LTX 2.3 rewards long cinematic descriptions — these fill\n"
+           .. "the prompt field with 80-150 word scenes tuned to LTX's\n"
+           .. "strengths. Edit after selecting for your own twist."),
+  selected = 1,
+  LTX_SCENE_TEMPLATES[1].label,  -- at least one required at construction
+  changed_callback = function(self)
+    local idx = self.selected
+    if idx < 1 or idx > #LTX_SCENE_TEMPLATES then return end
+    local tpl = LTX_SCENE_TEMPLATES[idx]
+    if tpl.prompt and tpl.prompt ~= "" then
+      ltx_prompt_entry.text = tpl.prompt
+    end
+  end,
+}
+-- Populate remaining template labels (same pattern as refresh_scene_selector).
+for i = 2, #LTX_SCENE_TEMPLATES do
+  ltx_scene_selector[i] = LTX_SCENE_TEMPLATES[i].label
+end
+
 local ltx_mode_selector = dt.new_widget("combobox") {
   label = _("LTX Mode"),
   tooltip = _("Distilled: 8 steps, fastest (~60s on RTX 5060 Ti).\n"
@@ -8514,6 +8594,7 @@ local module_widget = dt.new_widget("box") {
 
   -- LTX 2.3 Video section (CLAUDE.md §16.3)
   dt.new_widget("label") { label = _("\xe2\x9c\xa6 LTX 2.3 VIDEO") },
+  ltx_scene_selector,
   ltx_mode_selector,
   dt.new_widget("label") { label = _("Prompt:") },
   ltx_prompt_entry,
