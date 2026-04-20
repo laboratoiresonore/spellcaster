@@ -3978,14 +3978,21 @@ _WAN_PATCH_PROBE_CACHE = {}
 
 
 def _wan_quality_patches_available(server):
-    """Probe the server for optional Wan 2.2 quality patches.
+    """Probe the server for optional Wan 2.2 quality + speed patches.
 
-    Returns a dict {"slg": bool, "nag": bool}:
-      - slg  — SkipLayerGuidanceSD3, core ComfyUI (present on any
-               reasonably-recent server; cleaner motion during CFG).
-      - nag  — WanVideoNAG, ships with Kijai's WanVideoWrapper pack.
-               Wraps each branch's attention with the negative conditioning
-               for sharper motion and less drift.
+    Returns a dict with four bool keys:
+      - slg       — SkipLayerGuidanceSD3, core ComfyUI (present on any
+                    reasonably-recent server; cleaner motion during CFG).
+      - nag       — WanVideoNAG, ships with Kijai's WanVideoWrapper pack.
+                    Wraps each branch's attention with the negative
+                    conditioning for sharper motion and less drift.
+      - sage      — PatchSageAttentionKJ, ships with ComfyUI-KJNodes.
+                    Rewires attention to use the SageAttention kernel —
+                    50-100% sampler speedup on RTX 40/50xx, neutral
+                    quality.
+      - cfg_zero  — CFGZeroStar, core ComfyUI on recent builds. Sets
+                    CFG=0 for the first sampling step to reduce
+                    burn-in artifacts. Small quality win at zero cost.
 
     Cached per-server so we don't hammer /object_info on every tool run.
     Imports of the Wan 2.2 quality patches are based on xb1n0ry's WAN 2.2
@@ -3993,17 +4000,19 @@ def _wan_quality_patches_available(server):
     """
     if server in _WAN_PATCH_PROBE_CACHE:
         return _WAN_PATCH_PROBE_CACHE[server]
-    result = {"slg": False, "nag": False}
-    try:
-        _api_get(server, "/object_info/SkipLayerGuidanceSD3")
-        result["slg"] = True
-    except Exception:
-        pass
-    try:
-        _api_get(server, "/object_info/WanVideoNAG")
-        result["nag"] = True
-    except Exception:
-        pass
+    result = {"slg": False, "nag": False, "sage": False, "cfg_zero": False}
+    probes = [
+        ("slg",      "/object_info/SkipLayerGuidanceSD3"),
+        ("nag",      "/object_info/WanVideoNAG"),
+        ("sage",     "/object_info/PatchSageAttentionKJ"),
+        ("cfg_zero", "/object_info/CFGZeroStar"),
+    ]
+    for key, path in probes:
+        try:
+            _api_get(server, path)
+            result[key] = True
+        except Exception:
+            pass
     _WAN_PATCH_PROBE_CACHE[server] = result
     return result
 
@@ -5529,10 +5538,14 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
             ip_adapter_image = None
     enable_slg = False
     enable_nag = False
+    enable_sage = False
+    enable_cfg_zero = False
     if server_url:
         probe = _wan_quality_patches_available(server_url)
         enable_slg = probe["slg"]
         enable_nag = probe["nag"]
+        enable_sage = probe["sage"]
+        enable_cfg_zero = probe["cfg_zero"]
 
     # Canon: apply the turbo/full-step schedule when the caller did not
     # override it explicitly. Caller's own steps/cfg/second_step win.
@@ -5561,7 +5574,8 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
                            motion_mask=motion_mask,
                            pingpong=pingpong, fps=fps,
                            end_image_filename=end_image_filename,
-                           enable_slg=enable_slg, enable_nag=enable_nag)
+                           enable_slg=enable_slg, enable_nag=enable_nag,
+                           enable_sage=enable_sage, enable_cfg_zero=enable_cfg_zero)
 
 def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negative_text, seed,
                     width=832, height=480, length=81,
