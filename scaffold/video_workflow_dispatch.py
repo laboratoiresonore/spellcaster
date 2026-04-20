@@ -509,12 +509,26 @@ def build_native_workflow(preset_key: str, *, prompt: str,
                            face_swap: bool = False,
                            interpolate: bool = False,
                            rtx_scale: float = 1.0,
-                           teacache: bool = False,
+                           teacache: Optional[bool] = None,
                            tiled_vae: bool = False,
                            ip_adapter_image: Optional[str] = None,
                            ip_adapter_weight: float = 0.5,
                            motion_mask: Optional[str] = None,
                            pingpong: bool = False,
+                           # Optional quality + speed patches (auto-probed
+                           # by the GIMP wrapper; plumbed here so Guild /
+                           # Resolve / SillyTavern / Darktable can opt in
+                           # too). None = let the canonical builder decide
+                           # (usually disabled unless the caller explicitly
+                           # wants the patch). See CLAUDE.md §16.2.
+                           enable_slg: Optional[bool] = None,
+                           enable_nag: Optional[bool] = None,
+                           enable_sage: Optional[bool] = None,
+                           enable_cfg_zero: Optional[bool] = None,
+                           # Sampler override (default euler/simple in the
+                           # canonical builder — Kijai reference schedule).
+                           sampler_name: Optional[str] = None,
+                           scheduler: Optional[str] = None,
                            ) -> Tuple[Optional[dict], Optional[str]]:
     """Build a ComfyUI workflow dict for `preset_key`.
 
@@ -718,6 +732,17 @@ def build_native_workflow(preset_key: str, *, prompt: str,
                 ip_adapter_image=ip_adapter_image,
                 ip_adapter_weight=ip_adapter_weight,
                 motion_mask=motion_mask, pingpong=pingpong,
+                # Optional quality + speed patches. Only forward when
+                # the caller explicitly set them (None means "let the
+                # canonical builder's default decide"). This keeps the
+                # canonical builder's auto-logic intact for
+                # teacache/sage/etc.
+                **({"enable_slg": enable_slg} if enable_slg is not None else {}),
+                **({"enable_nag": enable_nag} if enable_nag is not None else {}),
+                **({"enable_sage": enable_sage} if enable_sage is not None else {}),
+                **({"enable_cfg_zero": enable_cfg_zero} if enable_cfg_zero is not None else {}),
+                **({"sampler_name": sampler_name} if sampler_name else {}),
+                **({"scheduler": scheduler} if scheduler else {}),
             )
     except Exception as e:  # noqa: BLE001
         return None, f"wan22 builder raised: {e}"
