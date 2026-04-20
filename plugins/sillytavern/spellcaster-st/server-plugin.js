@@ -174,16 +174,73 @@ async function dispatchWorkflow(workflow, timeoutMs = 180000) {
     throw new Error('Timeout waiting for ComfyUI');
 }
 
+// Validate image bytes by magic-header sniffing. Node doesn't ship
+// an image decoder, but every modern image format has a deterministic
+// header — enough to catch the "SillyTavern sent us HTML or a
+// truncated base64 string" case before it burns 40 s of WAN model
+// load on an eventual LoadImage failure.
+//
+// Returns { ok, kind, mime, reason } — ok=false bubbles up to the
+// caller as an HTTP 400. kind is 'png'|'jpeg'|'webp'|'gif'|'bmp'|'tiff'.
+function _sniffImage(buf) {
+    if (!buf || buf.length < 16) {
+        return { ok: false, reason: `empty or truncated (${buf ? buf.length : 0} bytes)` };
+    }
+    const b = buf;
+    // PNG: 89 50 4E 47 0D 0A 1A 0A
+    if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) {
+        return { ok: true, kind: 'png', mime: 'image/png' };
+    }
+    // JPEG: FF D8 FF
+    if (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) {
+        return { ok: true, kind: 'jpeg', mime: 'image/jpeg' };
+    }
+    // WebP: "RIFF....WEBP"
+    if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46
+        && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) {
+        return { ok: true, kind: 'webp', mime: 'image/webp' };
+    }
+    // GIF: "GIF87a" / "GIF89a"
+    if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) {
+        return { ok: true, kind: 'gif', mime: 'image/gif' };
+    }
+    // BMP: "BM"
+    if (b[0] === 0x42 && b[1] === 0x4D) {
+        return { ok: true, kind: 'bmp', mime: 'image/bmp' };
+    }
+    // TIFF: "II*\0" (little-endian) or "MM\0*" (big-endian)
+    if ((b[0] === 0x49 && b[1] === 0x49 && b[2] === 0x2A && b[3] === 0x00)
+        || (b[0] === 0x4D && b[1] === 0x4D && b[2] === 0x00 && b[3] === 0x2A)) {
+        return { ok: true, kind: 'tiff', mime: 'image/tiff' };
+    }
+    const head = Array.from(b.slice(0, 8))
+        .map(n => n.toString(16).padStart(2, '0')).join(' ');
+    return { ok: false, reason: `unrecognised magic bytes (${head})` };
+}
+
 /**
  * Upload an image to ComfyUI's input folder.
+ *
+ * Validates the buffer is an image before upload — WAN's LoadImage
+ * would otherwise silently accept any bytes and crash mid-render
+ * inside the 14B model load. TIFF/BMP/GIF/WebP/JPEG/PNG all pass
+ * through with their proper mime type so ComfyUI's Pillow-based
+ * LoadImage can decode them.
+ *
+ * Throws a specific Error on bad bytes so the caller can surface a
+ * "not an image" message to the SillyTavern user.
  */
 async function uploadToComfyUI(imageBuffer, filename) {
+    const sniff = _sniffImage(imageBuffer);
+    if (!sniff.ok) {
+        throw new Error(`Upload rejected: ${filename} is not an image — ${sniff.reason}`);
+    }
     const boundary = '----SpellcasterUpload' + Date.now();
     const body = Buffer.concat([
         Buffer.from(
             `--${boundary}\r\n` +
             `Content-Disposition: form-data; name="image"; filename="${filename}"\r\n` +
-            `Content-Type: image/png\r\n\r\n`
+            `Content-Type: ${sniff.mime}\r\n\r\n`
         ),
         imageBuffer,
         Buffer.from(`\r\n--${boundary}--\r\n`),
