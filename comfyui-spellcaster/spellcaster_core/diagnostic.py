@@ -463,48 +463,30 @@ def run_diagnostic(server, callback=None, interactive=False):
 
 
 def _build_wan_test(models, server, test_img):
-    """Build a minimal WAN I2V test workflow."""
+    """Build a minimal WAN I2V test workflow.
+
+    Uses the canonical detect_wan_preset + wan_turbo_kwargs helpers so the
+    diagnostic probes the same code path the real app uses. Without this,
+    a hand-rolled preset can pass diagnostic while real generation fails
+    (different VAE pairing, different UNET family filter, different accel
+    LoRA selection, etc.). See CLAUDE.md §16.4 rule #1 — no parallel
+    detection.
+    """
     if "wan" not in models:
         return None
-    wan_models = models["wan"]
-    high = next((m for m in wan_models if "i2v" in m.lower() and "high" in m.lower()), None)
-    low = next((m for m in wan_models if "i2v" in m.lower() and "low" in m.lower()), high)
-    if not high:
+    from . import video_presets as _vp
+    preset = _vp.detect_wan_preset(server)
+    if not preset:
         return None
-
-    # Find supporting models
-    def _opts(node, field):
-        try:
-            r = urllib.request.urlopen(f"{server}/object_info/{node}", timeout=5)
-            d = json.loads(r.read())
-            s = d[node]["input"]["required"][field]
-            return s[0] if isinstance(s[0], list) else s[1].get("options", [])
-        except:
-            return []
-
-    clips = _opts("CLIPLoaderGGUF", "clip_name")
-    vaes = _opts("VAELoader", "vae_name")
-    loras = _opts("LoraLoaderModelOnly", "lora_name")
-
-    clip = next((c for c in clips if "umt5" in c.lower()), "")
-    vae = next((v for v in vaes if "wan" in v.lower()), "")
-    accel_h = next((l for l in loras if "lightx2v" in l.lower() and "high" in l.lower()), "")
-    accel_l = next((l for l in loras if "lightx2v" in l.lower() and "low" in l.lower()), "")
-
-    if not clip or not vae:
-        return None
-
-    preset = {
-        "high_model": high, "low_model": low or high,
-        "clip": clip, "clip_is_gguf": clip.endswith(".gguf"),
-        "vae": vae, "steps": 6, "cfg": 1.0, "shift": 8.0, "second_step": 3,
-        "high_accel_lora": accel_h, "low_accel_lora": accel_l,
-        "accel_strength": 1.5, "ip_adapter_model": "",
-    }
+    # Diagnostic is a turbo smoke test — shortest possible render that
+    # exercises the full accel-LoRA path when available. Pair with
+    # wan_turbo_kwargs per canon rule #2.
+    _canon = _vp.wan_turbo_kwargs(True)
     return build_wan_video(
         test_img, preset, "test motion", "blurry", random.randint(1, 2**31),
         width=384, height=256, length=9, turbo=True,
-        rtx_scale=0, interpolate=False, face_swap=False, fps=8)
+        rtx_scale=0, interpolate=False, face_swap=False, fps=8,
+        **_canon)
 
 
 def _build_ltx_test(models, server):

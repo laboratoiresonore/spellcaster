@@ -556,81 +556,67 @@ def wf_composite_actor(bg_upload, actor_upload, denoise=0.15):
     }
 
 
-def wf_wan_i2v(image_name, prompt, negative="", length=49, steps=20,
-               second_step=10, cfg=1.0, shift=8.0, accel_strength=1.5):
-    """Act V: Wan 2.2 I2V — dual-model GGUF with lightx2v turbo LoRAs.
+def wf_wan_i2v(image_name, prompt, negative="", length=49, steps=None,
+               second_step=None, cfg=None, shift=None, accel_strength=None,
+               comfy_url=None):
+    """Act V: Wan 2.2 I2V — canonical path via spellcaster_core.
 
-    Uses the GIMP plugin's proven settings:
-      steps=20, second_step=10, cfg=1, accel_strength=1.5
-    The lightx2v 4-step LoRAs at 1.5 strength need fewer total steps.
+    Delegates to the single canonical builder (CLAUDE.md §16.4). The live
+    ComfyUI server is probed via detect_wan_preset so model filenames, VAE
+    pairing, CLIP choice, and accel LoRAs track the canon.
+
+    Legacy kwargs (steps/cfg/second_step/accel_strength/shift) are accepted
+    for backwards compat but only override when explicitly set — otherwise
+    the canonical turbo schedule drives the run.
     """
+    import sys as _sys, os as _os
+    _here = _os.path.dirname(_os.path.abspath(__file__))
+    _root = _os.path.dirname(_here)
+    _cs_path = _os.path.join(_root, "comfyui-spellcaster")
+    if _cs_path not in _sys.path:
+        _sys.path.insert(0, _cs_path)
+    from spellcaster_core import video_presets as _vp
+    from spellcaster_core import workflows as _wf
+
+    # Tool reads COMFY from module global when unset.
+    _comfy = comfy_url or globals().get("COMFY") or "http://127.0.0.1:8188"
+    preset = _vp.detect_wan_preset(_comfy)
+    if preset is None:
+        raise RuntimeError(
+            f"No WAN I2V preset detected on {_comfy}. "
+            "Install Wan 2.2 14B I2V UNETs + umt5-xxl CLIP + wan_2.1_vae.")
+
     s = random_seed()
-    return {
-        "1": {"class_type": "CLIPLoaderGGUF",
-              "inputs": {"clip_name": "umt5-xxl-encoder-Q8_0.gguf", "type": "wan"}},
-        "2": {"class_type": "UnetLoaderGGUF",
-              "inputs": {"unet_name": "Wan\\wan2.2_i2v_high_noise_14B_Q4_K_S.gguf"}},
-        "3": {"class_type": "UnetLoaderGGUF",
-              "inputs": {"unet_name": "Wan\\wan2.2_i2v_low_noise_14B_Q4_K_S.gguf"}},
-        "4": {"class_type": "VAELoader",
-              "inputs": {"vae_name": "wan_2.1_vae.safetensors"}},
-        "5": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": prompt, "clip": ["1", 0]}},
-        "6": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": negative, "clip": ["1", 0]}},
-        "7": {"class_type": "LoadImage",
-              "inputs": {"image": image_name}},
-        "8": {"class_type": "ImageScale",
-              "inputs": {"image": ["7", 0], "upscale_method": "lanczos",
-                         "width": 832, "height": 480, "crop": "disabled"}},
-        # Accelerator LoRAs (lightx2v 4-step — strength 1.5 for aggressive accel)
-        "100": {"class_type": "LoraLoaderModelOnly",
-                "inputs": {"model": ["2", 0],
-                            "lora_name": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
-                            "strength_model": accel_strength}},
-        "120": {"class_type": "LoraLoaderModelOnly",
-                "inputs": {"model": ["3", 0],
-                            "lora_name": "WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
-                            "strength_model": accel_strength}},
-        # ModelSamplingSD3 shift
-        "30": {"class_type": "ModelSamplingSD3",
-               "inputs": {"model": ["100", 0], "shift": shift}},
-        "31": {"class_type": "ModelSamplingSD3",
-               "inputs": {"model": ["120", 0], "shift": shift}},
-        # WanImageToVideo conditioning
-        "40": {"class_type": "WanImageToVideo",
-               "inputs": {"width": 832, "height": 480, "length": length,
-                           "batch_size": 1,
-                           "positive": ["5", 0], "negative": ["6", 0],
-                           "vae": ["4", 0], "start_image": ["8", 0]}},
-        # Pass 1: high-noise model
-        "50": {"class_type": "KSamplerAdvanced",
-               "inputs": {"model": ["30", 0],
-                           "positive": ["40", 0], "negative": ["40", 1],
-                           "latent_image": ["40", 2],
-                           "add_noise": "enable", "noise_seed": s,
-                           "steps": steps, "cfg": cfg,
-                           "sampler_name": "euler_ancestral", "scheduler": "simple",
-                           "start_at_step": 0, "end_at_step": second_step,
-                           "return_with_leftover_noise": "enable"}},
-        # Pass 2: low-noise model
-        "51": {"class_type": "KSamplerAdvanced",
-               "inputs": {"model": ["31", 0],
-                           "positive": ["40", 0], "negative": ["40", 1],
-                           "latent_image": ["50", 0],
-                           "add_noise": "disable", "noise_seed": s,
-                           "steps": steps, "cfg": 1.0,
-                           "sampler_name": "euler_ancestral", "scheduler": "simple",
-                           "start_at_step": second_step, "end_at_step": 10000,
-                           "return_with_leftover_noise": "disable"}},
-        "60": {"class_type": "VAEDecode",
-               "inputs": {"samples": ["51", 0], "vae": ["4", 0]}},
-        "70": {"class_type": "VHS_VideoCombine",
-               "inputs": {"images": ["60", 0], "frame_rate": 16.0,
-                           "loop_count": 0, "filename_prefix": "wt_director",
-                           "format": "image/gif", "pingpong": False,
-                           "save_output": True}},
-    }
+    # Walkthrough act V defaults to turbo (accel LoRAs applied via canon).
+    canon_kwargs = _vp.wan_turbo_kwargs(True)
+    if steps is not None:         canon_kwargs["steps"] = steps
+    if cfg is not None:           canon_kwargs["cfg"] = cfg
+    if second_step is not None:   canon_kwargs["second_step"] = second_step
+    if shift is not None:         canon_kwargs["shift"] = shift
+
+    # Per-shot accel_strength override lives on the preset dict.
+    if accel_strength is not None:
+        preset = dict(preset)
+        preset["accel_strength"] = accel_strength
+
+    wf = _wf.build_wan_video(
+        image_filename=image_name,
+        preset=preset,
+        prompt_text=prompt, negative_text=negative, seed=s,
+        width=832, height=480, length=length,
+        turbo=True,
+        rtx_scale=0, interpolate=False, face_swap=False,
+        save_raw=False, fps=16, pingpong=False,
+        **canon_kwargs,
+    )
+
+    # Walkthrough expects GIF output labelled wt_director.
+    for nid, node in wf.items():
+        if node.get("class_type") == "VHS_VideoCombine":
+            node["inputs"]["format"] = "image/gif"
+            node["inputs"]["filename_prefix"] = "wt_director"
+            break
+    return wf
 
 
 # ─── Pipeline orchestration ─────────────────────────────────────────────────

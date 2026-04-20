@@ -121,114 +121,67 @@ def rembg_wf(src_image_path):
 
 
 def wan_i2v(image_name, prompt, negative="", seed=-1, width=832, height=480,
-            length=81, steps=30, second_step=20, cfg=5.0, shift=8.0,
-            high_model="Wan\\wan2.2_i2v_high_noise_14B_Q4_K_S.gguf",
-            low_model="Wan\\wan2.2_i2v_low_noise_14B_Q4_K_S.gguf",
-            clip="umt5-xxl-encoder-Q8_0.gguf",
-            vae="wan_2.1_vae.safetensors",
-            high_accel_lora="WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
-            low_accel_lora="WAN\\wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
-            accel_strength=1.0,
-            fps=16, format_type="image/gif"):
-    """Wan 2.2 Image-to-Video — dual-model GGUF with turbo accelerator LoRAs.
+            length=81, steps=None, cfg=None, second_step=None,
+            turbo=None, fps=16, format_type="image/gif",
+            comfy_url="http://127.0.0.1:8188",
+            **_legacy):
+    """Wan 2.2 Image-to-Video — canonical path via spellcaster_core.
 
-    Two-pass pipeline matching the GIMP plugin's _build_wan_i2v:
-      CLIPLoaderGGUF + UnetLoaderGGUF x2 (high/low noise)
-      LoRA chains: accelerator LoRAs (lightx2v ~4x speed-up)
-      ModelSamplingSD3 (shift) on both models
-      WanImageToVideo → conditioning + latent
-      KSamplerAdvanced pass 1 (high noise, steps 0→second_step)
-      KSamplerAdvanced pass 2 (low noise, steps second_step→end, cfg=1.0)
-      VAEDecode → VHS_VideoCombine (GIF output)
+    Delegates to the single canonical builder (CLAUDE.md §16.4). Detects
+    the right UNET family / VAE / accel LoRAs against the live ComfyUI,
+    applies wan_turbo_kwargs for the turbo/full-step schedule, and calls
+    build_wan_video. No more hand-rolled JSON that drifts from the canon.
+
+    Legacy kwargs are accepted for backwards compat:
+      - If the caller passes explicit steps/cfg/second_step, we treat it
+        as full-step (turbo=False) and let those overrides pass through.
+      - Otherwise we default to turbo=True — fast lightning preset.
     """
-    s = seed if seed > 0 else int.from_bytes(os.urandom(4), 'big')
-    is_gguf_high = high_model.endswith(".gguf")
-    is_gguf_low = low_model.endswith(".gguf")
+    import sys as _sys, os as _os
+    _here = _os.path.dirname(_os.path.abspath(__file__))
+    _root = _os.path.dirname(_here)
+    _cs_path = _os.path.join(_root, "comfyui-spellcaster")
+    if _cs_path not in _sys.path:
+        _sys.path.insert(0, _cs_path)
+    from spellcaster_core import video_presets as _vp
+    from spellcaster_core import workflows as _wf
 
-    wf = {
-        "1": {"class_type": "CLIPLoaderGGUF",
-              "inputs": {"clip_name": clip, "type": "wan"}},
-        "2": {"class_type": "UnetLoaderGGUF" if is_gguf_high else "UNETLoader",
-              "inputs": {"unet_name": high_model}},
-        "3": {"class_type": "UnetLoaderGGUF" if is_gguf_low else "UNETLoader",
-              "inputs": {"unet_name": low_model}},
-        "4": {"class_type": "VAELoader",
-              "inputs": {"vae_name": vae}},
-        "5": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": prompt, "clip": ["1", 0]}},
-        "6": {"class_type": "CLIPTextEncode",
-              "inputs": {"text": negative, "clip": ["1", 0]}},
-        "7": {"class_type": "LoadImage",
-              "inputs": {"image": image_name}},
-        "8": {"class_type": "ImageScale",
-              "inputs": {"image": ["7", 0], "upscale_method": "lanczos",
-                         "width": width, "height": height, "crop": "disabled"}},
-        # ModelSamplingSD3 shift on both models (after LoRA chains)
-        "30": {"class_type": "ModelSamplingSD3",
-               "inputs": {"model": ["2", 0], "shift": shift}},
-        "31": {"class_type": "ModelSamplingSD3",
-               "inputs": {"model": ["3", 0], "shift": shift}},
-        # WanImageToVideo conditioning
-        "40": {"class_type": "WanImageToVideo",
-               "inputs": {"width": width, "height": height, "length": length,
-                           "batch_size": 1,
-                           "positive": ["5", 0], "negative": ["6", 0],
-                           "vae": ["4", 0], "start_image": ["8", 0]}},
-        # Pass 1: high-noise model
-        "50": {"class_type": "KSamplerAdvanced",
-               "inputs": {"model": ["30", 0],
-                           "positive": ["40", 0], "negative": ["40", 1],
-                           "latent_image": ["40", 2],
-                           "add_noise": "enable", "noise_seed": s,
-                           "steps": steps, "cfg": cfg,
-                           "sampler_name": "euler_ancestral", "scheduler": "simple",
-                           "start_at_step": 0, "end_at_step": second_step,
-                           "return_with_leftover_noise": "enable"}},
-        # Pass 2: low-noise model
-        "51": {"class_type": "KSamplerAdvanced",
-               "inputs": {"model": ["31", 0],
-                           "positive": ["40", 0], "negative": ["40", 1],
-                           "latent_image": ["50", 0],
-                           "add_noise": "disable", "noise_seed": s,
-                           "steps": steps, "cfg": 1.0,
-                           "sampler_name": "euler_ancestral", "scheduler": "simple",
-                           "start_at_step": second_step, "end_at_step": 10000,
-                           "return_with_leftover_noise": "disable"}},
-        # Decode
-        "60": {"class_type": "VAEDecode",
-               "inputs": {"samples": ["51", 0], "vae": ["4", 0]}},
-        # Video output
-        "70": {"class_type": "VHS_VideoCombine",
-               "inputs": {"images": ["60", 0], "frame_rate": float(fps),
-                           "loop_count": 0, "filename_prefix": "showcase_wan",
-                           "format": format_type, "pingpong": False,
-                           "save_output": True}},
-    }
+    preset = _vp.detect_wan_preset(comfy_url)
+    if preset is None:
+        raise RuntimeError(
+            f"No WAN I2V preset detected on {comfy_url}. "
+            "Install Wan 2.2 14B I2V UNETs + umt5-xxl CLIP + wan_2.1_vae.")
 
-    if not is_gguf_high:
-        wf["2"]["inputs"]["weight_dtype"] = "default"
-    if not is_gguf_low:
-        wf["3"]["inputs"]["weight_dtype"] = "default"
+    # Legacy callers (pre-canon) passed explicit steps=30 cfg=5.0 to mean
+    # full-step. Honor that by flipping to turbo=False when they did.
+    if turbo is None:
+        turbo = not any(v is not None for v in (steps, cfg, second_step))
 
-    # Accelerator LoRA chains (lightx2v ~4x speed-up)
-    high_ref = ["2", 0]
-    low_ref = ["3", 0]
-    if high_accel_lora:
-        wf["100"] = {"class_type": "LoraLoaderModelOnly",
-                     "inputs": {"model": high_ref,
-                                "lora_name": high_accel_lora,
-                                "strength_model": accel_strength}}
-        high_ref = ["100", 0]
-    if low_accel_lora:
-        wf["120"] = {"class_type": "LoraLoaderModelOnly",
-                     "inputs": {"model": low_ref,
-                                "lora_name": low_accel_lora,
-                                "strength_model": accel_strength}}
-        low_ref = ["120", 0]
-    # Rewire ModelSamplingSD3 to use LoRA-enhanced models
-    wf["30"]["inputs"]["model"] = high_ref
-    wf["31"]["inputs"]["model"] = low_ref
+    s = seed if seed > 0 else int.from_bytes(_os.urandom(4), 'big')
 
+    # Canon defaults fill whatever the caller didn't override.
+    canon_kwargs = _vp.wan_turbo_kwargs(bool(turbo))
+    if steps is not None:        canon_kwargs["steps"] = steps
+    if cfg is not None:          canon_kwargs["cfg"] = cfg
+    if second_step is not None:  canon_kwargs["second_step"] = second_step
+
+    wf = _wf.build_wan_video(
+        image_filename=image_name,
+        preset=preset,
+        prompt_text=prompt, negative_text=negative, seed=s,
+        width=width, height=height, length=length,
+        turbo=bool(turbo),
+        rtx_scale=0, interpolate=False, face_swap=False,
+        save_raw=False, fps=fps, pingpong=False,
+        **canon_kwargs,
+    )
+
+    # Flip the output format to GIF if requested (canon default is MP4).
+    for nid, node in wf.items():
+        if node.get("class_type") == "VHS_VideoCombine":
+            node["inputs"]["format"] = format_type
+            node["inputs"]["filename_prefix"] = "showcase_wan"
+            break
     return wf
 
 
