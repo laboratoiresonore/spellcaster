@@ -17213,12 +17213,15 @@ class Spellcaster(Gimp.PlugIn):
                                                  "image by skipping the re-export; clearing it restores a "
                                                  "stricter privacy posture at the cost of one re-upload the "
                                                  "next time you send that image."),
-            "spellcaster-test-harness": ("Run test harness (batch only)",
+            "spellcaster-test-harness": ("\U0001F50D Run Diagnostics\u2026",
                                           self._run_test_harness,
-                                          "End-to-end test harness for tests/gimp_batch.py. "
-                                          "Does nothing when invoked from the menu \u2014 only runs "
-                                          "in GIMP batch mode (-idf + NONINTERACTIVE). Writes a "
-                                          "JSONL report to $SPELLCASTER_TEST_REPORT."),
+                                          "End-to-end sanity check of your Spellcaster install: "
+                                          "plugin registration integrity, canvas helpers, ComfyUI "
+                                          "reachability, required node packs (SAM3, BiRefNet, "
+                                          "IC-Light, NormalCrafter, rembg), and Wizard Guild. "
+                                          "FAIL lines show actionable next steps \u2014 copy the "
+                                          "report when asking for help. Also runnable in batch "
+                                          "mode via tests/gimp_batch.py."),
             "spellcaster-sam3-select": ("AI Select by Description...", self._run_sam3_select,
                                          "Type what to select (person, shirt, hair) — AI creates the selection automatically"),
             "spellcaster-sam3-extract": ("AI Extract Subject...", self._run_sam3_extract,
@@ -29947,91 +29950,58 @@ class Spellcaster(Gimp.PlugIn):
     # ══════════════════════════════════════════════════════════════════════
 
     def _run_test_harness(self, procedure, run_mode, image, drawables, config, data):
-        """End-to-end test harness runnable from GIMP batch mode.
+        """End-to-end diagnostics \u2014 runnable interactively OR in
+        GIMP batch mode.
 
-        Invoked by ``tests/gimp_batch.py`` via:
-            gimp -idf -b "(gimp-pdb-run-procedure \"spellcaster-test-harness\" '())"
+        Interactive (menu \u2192 Tools \u2192 Run Diagnostics...):
+          Opens a dialog that runs each test live, showing PASS/FAIL
+          with per-case timing and detail. On FAIL the full traceback
+          is revealed so the user can screenshot and share. Buttons:
+          Copy report, Save report, Re-run.
 
-        Writes a JSONL report to ``$SPELLCASTER_TEST_REPORT`` (default
-        ``<tmp>/spellcaster-test-report.jsonl``). Each line is one test
-        case: ``{"name": ..., "status": "PASS"|"FAIL", "detail": ...}``.
+        Batch (``gimp -idf -b ... --quit``):
+          Writes a JSONL report to ``$SPELLCASTER_TEST_REPORT``
+          (default ``<tmp>/spellcaster-test-report.jsonl``). Called
+          from ``tests/gimp_batch.py``.
 
-        Runs without a display (``-idf`` mode): no Gtk widget creation,
-        no dialogs, no ComfyUI submit. Exercises the parts of the
-        plugin that can be tested against a synthetic in-memory
-        canvas \u2014 namely the workflow builders, fingerprint +
-        upload-cache helpers, result-import roundtrip, and
-        registration integrity.
-
-        Test cases:
-          * ``plugin_imports``       \u2014 module loaded without
-                                        exception.
-          * ``registry_shapes``      \u2014 _PROC_FEATURES / menu_map /
-                                        _menu_paths have matching keys.
-          * ``fingerprint_stable``   \u2014 _image_fingerprint returns
-                                        the same value on identical
-                                        canvas state.
-          * ``normal_layer_finder``  \u2014 _find_normal_layer detects a
-                                        "Normal Map (auto)"-named
-                                        layer.
-          * ``blank_rembg_detector`` \u2014 _looks_like_blank_rembg
-                                        classifies synthetic blank PNGs.
-          * ``uniform_mask_detector`` \u2014 _looks_like_uniform_mask on
-                                        synthetic monochrome PNGs.
-          * ``build_iclight_cn``     \u2014 build_iclight routes normal
-                                        map through ControlNetLoader.
-          * ``build_img2img``        \u2014 _build_img2img compiles a
-                                        valid workflow dict.
-          * ``import_layer``         \u2014 _import_result_as_layer adds
-                                        a new layer to a fresh image.
+        Both paths run the SAME case list, generated by
+        ``_collect_diagnostic_cases``. Adding a case once shows up in
+        both surfaces.
         """
-        if run_mode != Gimp.RunMode.NONINTERACTIVE:
-            Gimp.message(
-                "Test harness is for batch mode only. Run via:\n\n"
-                "python tests/gimp_batch.py")
-            return procedure.new_return_values(
-                Gimp.PDBStatusType.CANCEL, GLib.Error())
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return self._run_diagnostics_batch(procedure)
+        return self._run_diagnostics_dialog(procedure)
 
-        report_path = os.environ.get(
-            "SPELLCASTER_TEST_REPORT",
-            os.path.join(tempfile.gettempdir(),
-                         "spellcaster-test-report.jsonl"))
-        results: list[dict] = []
+    # ── Case catalogue (shared between batch + dialog paths) ─────────
 
-        def _case(name: str, fn) -> None:
-            t0 = time.time()
-            try:
-                detail = fn() or ""
-                status = "PASS"
-            except AssertionError as ae:
-                status, detail = "FAIL", str(ae)
-            except Exception as e:
-                import traceback
-                status = "FAIL"
-                detail = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
-            results.append({
-                "name": name, "status": status, "detail": detail,
-                "elapsed_ms": int((time.time() - t0) * 1000),
-            })
+    def _collect_diagnostic_cases(self, test_img):
+        """Return ``[(name, category, fn), ...]`` for all diagnostic
+        checks. ``fn`` takes no args; raises ``AssertionError`` with
+        a user-facing message on failure OR returns a detail string
+        on success.
 
-        # ── Case: plugin_imports ──────────────────────────────
-        _case("plugin_imports", lambda: (
-            "_spellcaster_main loaded OK "
-            f"(__file__={os.path.basename(__file__)})"))
+        Categories are shown as headings in the dialog and as section
+        dividers in the batch report. Current groups:
+          * "Plugin"       \u2014 module load + registration integrity
+          * "Canvas"       \u2014 image fingerprint, layer helpers
+          * "Guards"       \u2014 blank/uniform classifiers
+          * "Workflows"    \u2014 compile-time shape checks
+          * "Connectivity" \u2014 ComfyUI + Guild reachability,
+                                  required node-pack presence
+        """
+        cases: "list[tuple[str, str, object]]" = []
 
-        # ── Case: registry_shapes ─────────────────────────────
-        def _registry_shapes() -> str:
-            proc = {
-                "_PROC_FEATURES": None,  # filled below via introspection
-            }
-            # Load the source + AST-walk to get the three dicts.
+        # ── Plugin ────────────────────────────────────────────
+        def _plugin_imports():
+            return (f"_spellcaster_main loaded OK "
+                    f"(__file__={os.path.basename(__file__)})")
+        cases.append(("plugin_imports", "Plugin", _plugin_imports))
+
+        def _registry_shapes():
             import ast as _ast
-            try:
-                with open(__file__, encoding="utf-8") as f:
-                    src = f.read()
-                tree = _ast.parse(src)
-            except Exception as e:
-                raise AssertionError(f"AST parse failed: {e}")
+            with open(__file__, encoding="utf-8") as f:
+                src = f.read()
+            tree = _ast.parse(src)
 
             def _dict_keys(name):
                 for node in _ast.walk(tree):
@@ -30042,7 +30012,8 @@ class Spellcaster(Gimp.PlugIn):
                                 return {k.value for k in node.value.keys
                                         if isinstance(k, _ast.Constant)
                                         and isinstance(k.value, str)}
-                            if (isinstance(tgt, _ast.Attribute) and tgt.attr == name
+                            if (isinstance(tgt, _ast.Attribute)
+                                    and tgt.attr == name
                                     and isinstance(node.value, _ast.Dict)):
                                 return {k.value for k in node.value.keys
                                         if isinstance(k, _ast.Constant)
@@ -30057,34 +30028,18 @@ class Spellcaster(Gimp.PlugIn):
             assert pk == mk, f"features/menu mismatch: {pk ^ mk}"
             assert pk == pa, f"features/paths mismatch: {pk ^ pa}"
             return f"{len(pk)} procedures aligned across 3 dicts"
-        _case("registry_shapes", _registry_shapes)
+        cases.append(("registry_shapes", "Plugin", _registry_shapes))
 
-        # Create a fresh 256x256 RGB image to exercise canvas-level APIs.
-        test_img = Gimp.Image.new(
-            256, 256, Gimp.ImageBaseType.RGB)
-        # Fill with a flat colour via a new layer so fingerprint has
-        # real pixels to hash.
-        white_layer = Gimp.Layer.new(
-            test_img, "Canvas", 256, 256,
-            Gimp.ImageType.RGBA_IMAGE, 100.0,
-            Gimp.LayerMode.NORMAL)
-        test_img.insert_layer(white_layer, None, 0)
-        try:
-            white_layer.fill(Gimp.FillType.WHITE)
-        except Exception:
-            pass
-
-        # ── Case: fingerprint_stable ──────────────────────────
-        def _fp_stable() -> str:
+        # ── Canvas helpers ────────────────────────────────────
+        def _fp_stable():
             fp1 = _image_fingerprint(test_img)
             fp2 = _image_fingerprint(test_img)
             assert fp1 == fp2, f"fingerprint not stable: {fp1} vs {fp2}"
             assert len(fp1) >= 16, f"fingerprint too short: {fp1!r}"
             return f"fp={fp1[:12]}\u2026 stable across 2 calls"
-        _case("fingerprint_stable", _fp_stable)
+        cases.append(("fingerprint_stable", "Canvas", _fp_stable))
 
-        # ── Case: normal_layer_finder ─────────────────────────
-        def _nm_finder() -> str:
+        def _nm_finder():
             nm_layer = Gimp.Layer.new(
                 test_img, "Normal Map (auto)", 256, 256,
                 Gimp.ImageType.RGBA_IMAGE, 100.0,
@@ -30097,74 +30052,89 @@ class Spellcaster(Gimp.PlugIn):
                     f"wrong layer: {found.get_name()!r}")
                 return f"found '{found.get_name()}'"
             finally:
-                # Leave the image clean for subsequent cases.
-                try:
-                    test_img.remove_layer(nm_layer)
-                except Exception:
-                    pass
+                try: test_img.remove_layer(nm_layer)
+                except Exception: pass
+        cases.append(("normal_layer_finder", "Canvas", _nm_finder))
 
-        _case("normal_layer_finder", _nm_finder)
+        def _import_layer():
+            import struct, zlib, binascii
+            w = h = 64
+            ihdr = struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)
+            def _c(tag, data):
+                crc = binascii.crc32(tag + data) & 0xFFFFFFFF
+                return (struct.pack(">I", len(data)) + tag + data
+                        + struct.pack(">I", crc))
+            row = b"\x00" + bytes([64, 128, 200, 255]) * w
+            idat = zlib.compress(row * h)
+            data_bytes = (b"\x89PNG\r\n\x1a\n" + _c(b"IHDR", ihdr)
+                          + _c(b"IDAT", idat) + _c(b"IEND", b""))
+            before = len(test_img.get_layers())
+            _import_result_as_layer(test_img, data_bytes,
+                                     "Diag Import Test",
+                                     keep_size=True)
+            after = len(test_img.get_layers())
+            assert after == before + 1, (
+                f"layer count {before} \u2192 {after}, expected +1")
+            # Clean up the test layer so subsequent runs don't stack.
+            try:
+                added = test_img.get_layers()[0]
+                test_img.remove_layer(added)
+            except Exception:
+                pass
+            return f"layers {before} \u2192 {after}"
+        cases.append(("import_layer", "Canvas", _import_layer))
 
-        # ── Case: blank_rembg_detector ────────────────────────
-        def _blank_rembg() -> str:
+        # ── Guards (segmentation / rembg classifiers) ─────────
+        def _blank_rembg():
             import struct, zlib, binascii
             def _png(w, h, color_type, fill=255, alpha=255):
-                channels = {0:1, 2:3, 4:2, 6:4}[color_type]
                 ihdr = struct.pack(">IIBBBBB", w, h, 8, color_type, 0, 0, 0)
-                def chunk(tag, data):
+                def _c(tag, data):
                     crc = binascii.crc32(tag + data) & 0xFFFFFFFF
                     return (struct.pack(">I", len(data)) + tag + data
                             + struct.pack(">I", crc))
-                if color_type == 6:
-                    px = bytes([fill, 0, 0, alpha])
-                elif color_type == 4:
-                    px = bytes([fill, alpha])
-                elif color_type == 2:
-                    px = bytes([fill, 0, 0])
-                else:
-                    px = bytes([fill])
+                if color_type == 6: px = bytes([fill, 0, 0, alpha])
+                elif color_type == 4: px = bytes([fill, alpha])
+                elif color_type == 2: px = bytes([fill, 0, 0])
+                else: px = bytes([fill])
                 row = b"\x00" + px * w
-                raw = row * h
-                idat = zlib.compress(raw)
-                return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr)
-                        + chunk(b"IDAT", idat) + chunk(b"IEND", b""))
+                idat = zlib.compress(row * h)
+                return (b"\x89PNG\r\n\x1a\n" + _c(b"IHDR", ihdr)
+                        + _c(b"IDAT", idat) + _c(b"IEND", b""))
             assert _looks_like_blank_rembg(b""), "empty bytes"
-            assert _looks_like_blank_rembg(_png(16, 16, 6, alpha=0)), "RGBA alpha=0"
-            assert not _looks_like_blank_rembg(_png(16, 16, 6, alpha=255)), "RGBA alpha=255 opaque"
-            assert _looks_like_blank_rembg(_png(16, 16, 2)), "RGB (no alpha)"
+            assert _looks_like_blank_rembg(_png(16, 16, 6, alpha=0)), (
+                "RGBA alpha=0 should be blank")
+            assert not _looks_like_blank_rembg(_png(16, 16, 6, alpha=255)), (
+                "RGBA alpha=255 should NOT be blank")
+            assert _looks_like_blank_rembg(_png(16, 16, 2)), (
+                "RGB (no alpha) should be blank")
             return "4/4 cases"
-        _case("blank_rembg_detector", _blank_rembg)
+        cases.append(("blank_rembg_detector", "Guards", _blank_rembg))
 
-        # ── Case: build_iclight_cn ────────────────────────────
-        def _iclight_cn() -> str:
+        # ── Workflows (compile-time shape) ────────────────────
+        def _iclight_cn():
             from spellcaster_core.workflows import build_iclight
             wf = build_iclight(
                 image_filename="test.png",
                 ckpt_name="SD-1.5\\v1-5-pruned-emaonly.safetensors",
-                prompt="studio light",
-                negative="",
-                seed=42,
-                normal_map_filename="nm.png",
+                prompt="studio light", negative="",
+                seed=42, normal_map_filename="nm.png",
             )
             classes = {n.get("class_type") for n in wf.values()
                        if isinstance(n, dict)}
             assert "ControlNetLoader" in classes, (
                 f"no CN loader; classes={sorted(classes)}")
             assert "ControlNetApplyAdvanced" in classes
-            # No fbc model regression
             assert not any(
                 "iclight_sd15_fbc" in json.dumps(n.get("inputs") or {})
                 for n in wf.values() if isinstance(n, dict)
-            ), "iclight_sd15_fbc leaked back in"
+            ), "iclight_sd15_fbc leaked back in (Bug B)"
             return f"{len(wf)} nodes, CN chain present"
-        _case("build_iclight_cn", _iclight_cn)
+        cases.append(("build_iclight_cn", "Workflows", _iclight_cn))
 
-        # ── Case: build_img2img ───────────────────────────────
-        def _build_img2img_case() -> str:
-            # Pick the first SDXL preset (commonest arch).
+        def _build_img2img_case():
             sdxl_preset = next(
-                (p for p in MODEL_PRESETS
-                 if p.get("arch") == "sdxl"),
+                (p for p in MODEL_PRESETS if p.get("arch") == "sdxl"),
                 MODEL_PRESETS[0] if MODEL_PRESETS else None)
             assert sdxl_preset is not None, "no MODEL_PRESETS loaded"
             wf = _build_img2img(
@@ -30174,39 +30144,158 @@ class Spellcaster(Gimp.PlugIn):
             assert isinstance(wf, dict) and wf, "workflow empty"
             classes = {n.get("class_type") for n in wf.values()
                        if isinstance(n, dict)}
-            expected_any = {"KSampler", "SamplerCustomAdvanced",
-                            "KSamplerAdvanced"}
-            assert classes & expected_any, (
+            samplers = {"KSampler", "SamplerCustomAdvanced",
+                        "KSamplerAdvanced"}
+            assert classes & samplers, (
                 f"no sampler node; classes={sorted(classes)}")
             return f"{len(wf)} nodes, arch={sdxl_preset.get('arch')}"
-        _case("build_img2img", _build_img2img_case)
+        cases.append(("build_img2img", "Workflows", _build_img2img_case))
 
-        # ── Case: import_layer ────────────────────────────────
-        def _import_layer() -> str:
-            import struct, zlib, binascii
-            # Small opaque RGBA PNG
-            w = h = 64
-            ihdr = struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)
-            def chunk(tag, data):
-                crc = binascii.crc32(tag + data) & 0xFFFFFFFF
-                return (struct.pack(">I", len(data)) + tag + data
-                        + struct.pack(">I", crc))
-            row = b"\x00" + bytes([64, 128, 200, 255]) * w
-            raw = row * h
-            idat = zlib.compress(raw)
-            data_bytes = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr)
-                          + chunk(b"IDAT", idat) + chunk(b"IEND", b""))
-            before = len(test_img.get_layers())
-            _import_result_as_layer(test_img, data_bytes,
-                                     "Harness Import Test",
-                                     keep_size=True)
-            after = len(test_img.get_layers())
-            assert after == before + 1, (
-                f"layer count {before} \u2192 {after}, expected +1")
-            return f"layers {before} \u2192 {after}"
-        _case("import_layer", _import_layer)
+        # ── Connectivity (needs ComfyUI) ──────────────────────
+        # Always included; each case self-guards against unreachable
+        # server and raises an AssertionError with actionable copy.
+        srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
 
-        # Write report.
+        def _comfyui_reachable():
+            try:
+                import urllib.request as _u
+                with _u.urlopen(
+                        f"{srv.rstrip('/')}/system_stats", timeout=4) as r:
+                    if r.status != 200:
+                        raise AssertionError(
+                            f"ComfyUI at {srv} returned HTTP {r.status}. "
+                            f"Check that ComfyUI is running.")
+                    return f"HTTP 200 from {srv}"
+            except AssertionError:
+                raise
+            except Exception as e:
+                raise AssertionError(
+                    f"Cannot reach ComfyUI at {srv}: "
+                    f"{type(e).__name__}: {e}. "
+                    f"Set the URL in Spellcaster \u2192 Settings.")
+        cases.append(("comfyui_reachable", "Connectivity", _comfyui_reachable))
+
+        def _node_installed(node_name: str, human: str, needed_for: str):
+            def _fn():
+                try:
+                    nodes = _probe_comfyui_nodes(srv) or set()
+                except Exception as e:
+                    raise AssertionError(
+                        f"Could not query {srv}/object_info: {e}")
+                if node_name not in nodes:
+                    raise AssertionError(
+                        f"{human} not installed. Needed for: "
+                        f"{needed_for}. Install via ComfyUI Manager, "
+                        f"search for '{node_name}', then restart ComfyUI.")
+                return f"{human} present"
+            return _fn
+
+        cases.append(("sam3_installed", "Connectivity",
+                      _node_installed(
+                          "SAM3Segment", "SAM3",
+                          "AI Select / Extract / Anything But / Magic Eraser")))
+        cases.append(("birefnet_installed", "Connectivity",
+                      _node_installed(
+                          "BiRefNetRMBG", "BiRefNet RMBG",
+                          "BiRefNet background removal (falls back to rembg if missing)")))
+        cases.append(("iclight_node", "Connectivity",
+                      _node_installed(
+                          "LoadAndApplyICLightUnet", "IC-Light",
+                          "IC-Light Relighting")))
+        cases.append(("normalcrafter_node", "Connectivity",
+                      _node_installed(
+                          "NormalCrafterNode", "NormalCrafter",
+                          "Auto-generate 3D Normal Map for IC-Light and img2img")))
+        cases.append(("rembg_node", "Connectivity",
+                      _node_installed(
+                          "Image Rembg (Remove Background)", "rembg",
+                          "Fast background removal, transparent-mask mode")))
+
+        def _guild_reachable():
+            try:
+                from spellcaster_core.cross_interface import resolve_guild_url
+                g_url = resolve_guild_url()
+            except Exception:
+                g_url = "http://127.0.0.1:7777"
+            try:
+                import urllib.request as _u
+                with _u.urlopen(
+                        f"{g_url.rstrip('/')}/api/llm_status", timeout=3) as r:
+                    if r.status == 200:
+                        return f"Wizard Guild reachable at {g_url}"
+                    raise AssertionError(
+                        f"Guild returned HTTP {r.status}")
+            except AssertionError:
+                raise
+            except Exception as e:
+                raise AssertionError(
+                    f"Wizard Guild not running at {g_url}. Optional: "
+                    f"enables LoRA knowledge, cross-plugin send. "
+                    f"({type(e).__name__}: {e})")
+        cases.append(("guild_reachable", "Connectivity", _guild_reachable))
+
+        return cases
+
+    # ── Case runner (shared infrastructure) ─────────────────────────
+
+    def _run_single_diagnostic(self, fn):
+        """Execute one case, return ``(status, detail, elapsed_ms)``.
+
+        AssertionError -> FAIL with the user-facing message.
+        Any other exception -> FAIL with type + traceback (dialog hides
+        the traceback by default; users expand it with the arrow).
+        """
+        t0 = time.time()
+        try:
+            detail = fn() or ""
+            status = "PASS"
+        except AssertionError as ae:
+            status, detail = "FAIL", str(ae)
+        except Exception as e:
+            import traceback
+            status = "FAIL"
+            detail = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+        return status, detail, int((time.time() - t0) * 1000)
+
+    def _make_diagnostic_sandbox_image(self):
+        """Create the 256\u00d7256 white-filled Gimp.Image the test cases
+        mutate. Returns the image; caller is responsible for deleting it.
+        Only INTERACTIVE paths call Gimp.displays_flush afterwards; the
+        sandbox never reaches a display."""
+        test_img = Gimp.Image.new(
+            256, 256, Gimp.ImageBaseType.RGB)
+        white_layer = Gimp.Layer.new(
+            test_img, "Diag Canvas", 256, 256,
+            Gimp.ImageType.RGBA_IMAGE, 100.0,
+            Gimp.LayerMode.NORMAL)
+        test_img.insert_layer(white_layer, None, 0)
+        try:
+            white_layer.fill(Gimp.FillType.WHITE)
+        except Exception:
+            pass
+        return test_img
+
+    # ── Batch path (JSONL) ──────────────────────────────────────────
+
+    def _run_diagnostics_batch(self, procedure):
+        report_path = os.environ.get(
+            "SPELLCASTER_TEST_REPORT",
+            os.path.join(tempfile.gettempdir(),
+                         "spellcaster-test-report.jsonl"))
+        test_img = self._make_diagnostic_sandbox_image()
+        results: list[dict] = []
+        try:
+            for name, category, fn in self._collect_diagnostic_cases(test_img):
+                status, detail, elapsed_ms = self._run_single_diagnostic(fn)
+                results.append({
+                    "name": name, "category": category,
+                    "status": status, "detail": detail,
+                    "elapsed_ms": elapsed_ms,
+                })
+        finally:
+            try: test_img.delete()
+            except Exception: pass
+
         try:
             os.makedirs(os.path.dirname(report_path) or ".", exist_ok=True)
             with open(report_path, "w", encoding="utf-8") as f:
@@ -30215,25 +30304,238 @@ class Spellcaster(Gimp.PlugIn):
         except Exception as e:
             import traceback
             traceback.print_exc()
-            Gimp.message(f"Test harness: report write failed: {e}")
+            Gimp.message(f"Diagnostics: report write failed: {e}")
             return procedure.new_return_values(
                 Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
-
-        # Clean up temp image.
-        try:
-            test_img.delete()
-        except Exception:
-            pass
 
         n_pass = sum(1 for r in results if r["status"] == "PASS")
         n_fail = len(results) - n_pass
-        print(f"[Spellcaster] test harness: {n_pass} PASS / "
+        print(f"[Spellcaster] diagnostics: {n_pass} PASS / "
               f"{n_fail} FAIL \u2192 {report_path}")
-        # Return EXECUTION_ERROR when any case failed so the driver
-        # can trust the exit code as a pre-report signal.
         if n_fail:
             return procedure.new_return_values(
                 Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+        return procedure.new_return_values(
+            Gimp.PDBStatusType.SUCCESS, GLib.Error())
+
+    # ── Interactive dialog path ─────────────────────────────────────
+
+    def _run_diagnostics_dialog(self, procedure):
+        """Gtk dialog that runs each case live + shows results in a
+        scrollable text panel. No background thread \u2014 each case
+        runs on the main loop and the UI is pumped between them via
+        ``Gtk.events_pending`` so the results appear one at a time.
+        Keeps the implementation simple + deadlock-free on GIMP's
+        single-threaded GTK context."""
+        try:
+            GimpUi.init("spellcaster")
+        except Exception:
+            pass
+        dlg = Gtk.Dialog(title="Spellcaster \u2014 Diagnostics")
+        dlg.set_default_size(640, 480)
+        dlg.add_button("_Close", Gtk.ResponseType.CLOSE)
+        bx = dlg.get_content_area()
+        bx.set_spacing(8)
+        bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(12); bx.set_margin_bottom(12)
+
+        # Header label explains what this is + what to do with FAILs.
+        hdr = Gtk.Label(xalign=0.0)
+        hdr.set_markup(
+            "<b>Spellcaster Diagnostics</b>\n"
+            "<small>Verifies your plugin install, ComfyUI connection, "
+            "and required node packs. Copy any FAIL lines and share "
+            "them when asking for help.</small>")
+        hdr.set_line_wrap(True)
+        bx.pack_start(hdr, False, False, 0)
+
+        # Progress bar drives visual feedback while cases run.
+        progress = Gtk.ProgressBar()
+        progress.set_show_text(True)
+        progress.set_text("Preparing\u2026")
+        bx.pack_start(progress, False, False, 0)
+
+        # TextView for live results. Uses tags for colour + weight so
+        # the user can scan the output at a glance.
+        sw = Gtk.ScrolledWindow()
+        sw.set_hexpand(True); sw.set_vexpand(True)
+        tv = Gtk.TextView()
+        tv.set_editable(False)
+        tv.set_cursor_visible(False)
+        tv.set_monospace(True)
+        buf = tv.get_buffer()
+        buf.create_tag("pass", foreground="#2da160", weight=600)
+        buf.create_tag("fail", foreground="#d14848", weight=700)
+        buf.create_tag("warn", foreground="#d19435", weight=600)
+        buf.create_tag("heading", weight=700, scale=1.15,
+                       pixels_above_lines=8)
+        buf.create_tag("detail", foreground="#888888")
+        buf.create_tag("trace", foreground="#c04848",
+                       family="monospace", scale=0.9)
+        sw.add(tv)
+        bx.pack_start(sw, True, True, 0)
+
+        # Action row: Copy / Save / Re-run.
+        action_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        btn_copy = Gtk.Button(label="Copy report")
+        btn_save = Gtk.Button(label="Save report\u2026")
+        btn_rerun = Gtk.Button(label="Re-run")
+        action_row.pack_start(btn_copy, False, False, 0)
+        action_row.pack_start(btn_save, False, False, 0)
+        action_row.pack_end(btn_rerun, False, False, 0)
+        bx.pack_start(action_row, False, False, 0)
+
+        # Summary lives in a status label at the bottom.
+        summary_lbl = Gtk.Label(xalign=0.0)
+        summary_lbl.set_markup("<small>Click Re-run to start.</small>")
+        bx.pack_start(summary_lbl, False, False, 0)
+
+        dlg.show_all()
+
+        # Shared state between the inner callbacks.
+        state = {"results": [], "report_text": ""}
+
+        def _append(text, *tags):
+            end = buf.get_end_iter()
+            if tags:
+                buf.insert_with_tags_by_name(end, text, *tags)
+            else:
+                buf.insert(end, text)
+            # Auto-scroll to bottom.
+            try:
+                tv.scroll_to_iter(buf.get_end_iter(), 0.0, False, 0, 0)
+            except Exception:
+                pass
+
+        def _run_all():
+            # Reset UI.
+            buf.delete(buf.get_start_iter(), buf.get_end_iter())
+            state["results"] = []
+            state["report_text"] = ""
+            summary_lbl.set_markup("<small>Running\u2026</small>")
+            progress.set_fraction(0.0)
+            progress.set_text("Running\u2026")
+            btn_rerun.set_sensitive(False)
+
+            test_img = self._make_diagnostic_sandbox_image()
+            try:
+                cases = self._collect_diagnostic_cases(test_img)
+                total = len(cases)
+                current_cat = None
+                for idx, (name, category, fn) in enumerate(cases):
+                    if category != current_cat:
+                        _append(f"\n{category}\n", "heading")
+                        current_cat = category
+                    progress.set_text(f"{name} \u2026")
+                    progress.set_fraction(idx / max(1, total))
+                    while Gtk.events_pending():
+                        Gtk.main_iteration()
+                    status, detail, elapsed_ms = (
+                        self._run_single_diagnostic(fn))
+                    state["results"].append({
+                        "name": name, "category": category,
+                        "status": status, "detail": detail,
+                        "elapsed_ms": elapsed_ms,
+                    })
+                    tag = "pass" if status == "PASS" else "fail"
+                    sigil = "\u2713" if status == "PASS" else "\u2717"
+                    _append(f"  {sigil} ", tag)
+                    _append(f"{name}")
+                    _append(f"  ({elapsed_ms} ms)\n", "detail")
+                    if detail:
+                        # First line goes on its own row; the
+                        # traceback tail (if any) in the trace tag.
+                        lines = detail.splitlines() or [""]
+                        first = lines[0]
+                        _append(f"      {first}\n",
+                                 "trace" if status == "FAIL" else "detail")
+                        for extra in lines[1:]:
+                            _append(f"      {extra}\n", "trace")
+                    progress.set_fraction((idx + 1) / max(1, total))
+                    while Gtk.events_pending():
+                        Gtk.main_iteration()
+            finally:
+                try: test_img.delete()
+                except Exception: pass
+
+            # Build summary + clipboard copy.
+            n_pass = sum(1 for r in state["results"] if r["status"] == "PASS")
+            n_fail = len(state["results"]) - n_pass
+            overall = "pass" if n_fail == 0 else "fail"
+            summary_lbl.set_markup(
+                f"<b><span foreground=\"{'#2da160' if overall == 'pass' else '#d14848'}\">"
+                f"{n_pass} PASS / {n_fail} FAIL</span></b>  "
+                f"<small>across {len(state['results'])} case(s)</small>")
+            progress.set_fraction(1.0)
+            progress.set_text(
+                "All checks passed." if n_fail == 0
+                else f"{n_fail} failure(s) \u2014 see above.")
+            btn_rerun.set_sensitive(True)
+
+            # Plain-text report for clipboard / save.
+            lines = []
+            lines.append(f"Spellcaster Diagnostics "
+                         f"\u2014 {time.strftime('%Y-%m-%d %H:%M:%S')}")
+            lines.append(f"Result: {n_pass} PASS / {n_fail} FAIL")
+            cur_cat = None
+            for r in state["results"]:
+                if r["category"] != cur_cat:
+                    lines.append(f"\n[{r['category']}]")
+                    cur_cat = r["category"]
+                tag = "PASS" if r["status"] == "PASS" else "FAIL"
+                lines.append(f"  [{tag}] {r['name']}  ({r['elapsed_ms']} ms)")
+                if r["detail"]:
+                    for ln in r["detail"].splitlines():
+                        lines.append(f"        {ln}")
+            state["report_text"] = "\n".join(lines)
+
+        def _on_copy(_btn):
+            if not state["report_text"]:
+                return
+            try:
+                from gi.repository import Gdk
+                clip = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+                clip.set_text(state["report_text"], -1)
+                clip.store()
+                btn_copy.set_label("Copied \u2713")
+                def _restore():
+                    btn_copy.set_label("Copy report")
+                    return False
+                GLib.timeout_add(1500, _restore)
+            except Exception as e:
+                Gimp.message(f"Clipboard copy failed: {e}")
+
+        def _on_save(_btn):
+            if not state["report_text"]:
+                return
+            chooser = Gtk.FileChooserDialog(
+                title="Save diagnostics report",
+                action=Gtk.FileChooserAction.SAVE)
+            chooser.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+            chooser.add_button("_Save", Gtk.ResponseType.OK)
+            chooser.set_current_name(
+                f"spellcaster-diagnostics-"
+                f"{time.strftime('%Y%m%d-%H%M%S')}.txt")
+            if chooser.run() == Gtk.ResponseType.OK:
+                path = chooser.get_filename()
+                try:
+                    with open(path, "w", encoding="utf-8") as f:
+                        f.write(state["report_text"])
+                    Gimp.message(f"Report saved to:\n{path}")
+                except Exception as e:
+                    Gimp.message(f"Save failed: {e}")
+            chooser.destroy()
+
+        btn_copy.connect("clicked", _on_copy)
+        btn_save.connect("clicked", _on_save)
+        btn_rerun.connect("clicked", lambda _b: _run_all())
+
+        # Kick off the first run so the user sees results immediately
+        # rather than staring at an empty panel.
+        GLib.idle_add(_run_all)
+
+        dlg.run()
+        dlg.destroy()
         return procedure.new_return_values(
             Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
