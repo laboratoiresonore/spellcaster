@@ -1126,6 +1126,9 @@ def render_calibration_sample(
     timeout: int = 90,
     use_network: bool = True,
     preferred_model: Optional[str] = None,
+    score_with_llm: bool = False,
+    ollama_url: Optional[str] = None,
+    scorer_model: Optional[str] = None,
 ) -> dict:
     """Render ONE sample using the LoRA's auto-derived recipe.
 
@@ -1133,6 +1136,13 @@ def render_calibration_sample(
     shipped defaults + heuristic), then dispatches the same way the
     shootout does. Return shape matches the shootout sample dict so
     the UI can reuse its card renderer.
+
+    When `score_with_llm=True`, a successful render is also sent to
+    a local Ollama multimodal model (default `gemma3:4b`) which
+    returns a 0-10 quality score. The score is stapled onto the
+    sample dict as `score` / `score_reason` so the UI can auto-
+    confirm everything above a threshold. Scoring failures degrade
+    silently — the sample still returns.
     """
     recipe = resolve_shootout_recipe_for_lora(
         lora_name, purpose_group, arch,
@@ -1167,6 +1177,33 @@ def render_calibration_sample(
                             _pick_representative_model(models, arch) or {}
                          ).get("name", ""),
     })
+    # Optional vision scoring. Only attempt when the render succeeded
+    # (no point scoring a red error card) and when the caller opted in.
+    if score_with_llm and out.get("ok") and out.get("image_b64"):
+        try:
+            try:
+                from spellcaster_core.lora_scorer import (
+                    score_image, DEFAULT_OLLAMA_URL, DEFAULT_MODEL,
+                )
+            except ImportError:
+                from lora_scorer import score_image, DEFAULT_OLLAMA_URL, DEFAULT_MODEL  # type: ignore
+            result = score_image(
+                out["image_b64"], out["prompt"],
+                ollama_url=ollama_url or DEFAULT_OLLAMA_URL,
+                model=scorer_model or DEFAULT_MODEL,
+            )
+            out["score"] = result.score
+            out["score_reason"] = result.reason
+            out["score_ok"] = bool(result.ok)
+            if not result.ok:
+                out["score_error"] = result.error
+            out["score_model"] = result.model
+            out["score_elapsed_ms"] = result.elapsed_ms
+        except Exception as e:
+            # Scoring is strictly optional; don't let its failures
+            # corrupt the sample return value.
+            out["score_ok"] = False
+            out["score_error"] = f"scorer exception: {e!s}"[:160]
     return out
 
 
@@ -1214,6 +1251,9 @@ def start_calibration_job(
     user_override_resolver: Optional[Callable[[str], Optional[dict]]] = None,
     seed: int = 12345,
     use_network: bool = True,
+    score_with_llm: bool = False,
+    ollama_url: Optional[str] = None,
+    scorer_model: Optional[str] = None,
 ) -> CalibrationJobState:
     """Kick off a background batch auto-calibration.
 
@@ -1289,6 +1329,9 @@ def start_calibration_job(
                         user_override=user_over,
                         seed=seed,
                         use_network=use_network,
+                        score_with_llm=score_with_llm,
+                        ollama_url=ollama_url,
+                        scorer_model=scorer_model,
                     )
                 except Exception as e:
                     out = {
