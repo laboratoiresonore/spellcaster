@@ -36,6 +36,11 @@ const DEFAULT_SETTINGS = {
     auto_background: false,        // Generate backgrounds after each message
     auto_background_interval: 3,   // Every N messages (not every single one)
     auto_expressions: false,       // Generate expression portraits on the fly
+    // Pre-cast every character + generate body doubles on extension
+    // load. Off by default — this used to queue 15+ Klein jobs
+    // silently on startup, blocking every user-initiated generation
+    // for minutes. Opt-in via the settings toggle.
+    auto_cast: false,
     scene_width: 1280,
     scene_height: 720,
     portrait_width: 400,
@@ -349,9 +354,22 @@ function planVisualUpdates(changes) {
 //  Feature: Auto-Background Generation
 // ═══════════════════════════════════════════════════════════════════
 
+// Re-entrancy guard for the auto-background handler. WAN / Klein
+// generations take 20-120 s; if two character messages render inside
+// that window the naive handler fires two concurrent /studio/scene
+// requests, ComfyUI queues them serially, and the user perceives the
+// background "never updating" because each render is already stale
+// by the time it lands. Keep one generation in flight at a time —
+// the next message that arrives after completion gets its own pass.
+let _autoBgInFlight = false;
+
 async function onCharacterMessageRendered(messageIndex) {
     const settings = getSettings();
     if (!settings.enabled || !settings.auto_background) return;
+    if (_autoBgInFlight) {
+        console.log('[Spellcaster] Auto-bg already in flight — skipping message', messageIndex);
+        return;
+    }
 
     const context = getContext();
     const message = context.chat[messageIndex];
@@ -398,6 +416,7 @@ async function onCharacterMessageRendered(messageIndex) {
     const changeReasons = storyChanges.map(c => c.reason).join(', ');
     console.log(`[Spellcaster] Scaffold: ${scaffoldTriggered ? changeReasons : 'interval'} → "${effectiveScene.substring(0, 50)}..."`);
 
+    _autoBgInFlight = true;
     try {
         let result;
         const studioStatus = await fetch(`${API_BASE}/studio/assets`).then(r => r.json()).catch(() => null);
@@ -444,9 +463,14 @@ async function onCharacterMessageRendered(messageIndex) {
                 await SlashCommandParser.commands['bg']?.callback?.(null, result.bg_filename);
             }
             const composited = result.characters_composited || 0;
+            // sceneDesc can be null when the scaffold triggered via
+            // a change type that doesn't carry a description
+            // (character_enter / pose_change / etc). Fall back to
+            // the effectiveScene text for the toast.
+            const summary = (sceneDesc || effectiveScene || '').slice(0, 50);
             const label = composited > 0
-                ? `Scene + ${composited} character(s): ${sceneDesc.substring(0, 40)}...`
-                : `Scene: ${sceneDesc.substring(0, 50)}...`;
+                ? `Scene + ${composited} character(s): ${summary}…`
+                : `Scene: ${summary}…`;
             toastr.info(label, 'Spellcaster');
         } else if (result.images?.[0]) {
             toastr.info('Background generated (save manually)', 'Spellcaster');
@@ -454,6 +478,8 @@ async function onCharacterMessageRendered(messageIndex) {
     } catch (e) {
         console.error('[Spellcaster] Auto-background failed:', e);
         toastr.warning(`Background generation failed: ${e.message}`, 'Spellcaster');
+    } finally {
+        _autoBgInFlight = false;
     }
 }
 
@@ -1297,6 +1323,11 @@ function renderSettingsPanel() {
             <span>Auto-generate character expressions</span>
         </label>
 
+        <label class="spellcaster-toggle" title="Pre-cast every character + generate a Klein body double on ST launch. Queues one job per character — expect several minutes of ComfyUI queue time after a fresh start. Off by default; /studio-cast-all runs the same pipeline on demand.">
+            <input type="checkbox" id="spellcaster-auto-cast" ${settings.auto_cast ? 'checked' : ''}>
+            <span>Auto-cast on startup (slow)</span>
+        </label>
+
         <div class="spellcaster-row">
             <label>ComfyUI URL:</label>
             <input type="text" id="spellcaster-comfyui-url" value="${settings.comfyui_url}" style="width:100%">
@@ -1314,22 +1345,24 @@ function renderSettingsPanel() {
         </div>
 
         <div class="spellcaster-commands">
-            <strong>Slash Commands:</strong>
-            <div>/scene [description] — generate + set background</div>
-            <div>/portrait [description] — generate character portrait</div>
-            <div>/restyle [style] — transform current avatar (auto-backup)</div>
-            <div>/restyle-all [style] — transform ALL avatars (auto-backup)</div>
-            <div>/restyle-undo — restore current avatar to original</div>
-            <div>/restyle-undo-all — restore ALL avatars to originals</div>
-            <div>/animate [prompt] — animate current avatar as GIF</div>
+            <strong>Generate:</strong>
+            <div>/scene [description] — Klein txt2img → SDXL fallback</div>
+            <div>/portrait [description] — Klein txt2img → SDXL fallback</div>
+            <div>/animate [prompt] — WAN 2.2 I2V → LTX → legacy fallback</div>
+            <div style="margin-top:6px"><strong>Edit the avatar:</strong></div>
+            <div>/edit [instruction] — Klein img2img → Kontext → SDXL</div>
+            <div>/restyle [style] — full restyle + persist (auto-backup)</div>
+            <div>/restyle-all [style] — restyle every character</div>
+            <div>/restyle-undo / /restyle-undo-all — revert to backup</div>
             <div style="margin-top:6px"><strong>Magic Studios:</strong></div>
-            <div>/studio-cast — create face model from avatar</div>
-            <div>/studio-cast-all — cast all characters</div>
-            <div>/studio-body [desc] — generate transparent body</div>
-            <div>/studio-body-all [attire] — bodies for all</div>
+            <div>/studio-cast / /studio-cast-all — create face models</div>
+            <div>/studio-body [desc] / /studio-body-all [attire]</div>
             <div>/studio-scene [desc] — scene + characters composited</div>
             <div>/studio-status — check readiness</div>
-            <div style="margin-top:6px"><strong>System:</strong></div>
+            <div style="margin-top:6px"><strong>Cross-app + system:</strong></div>
+            <div>/sc-capabilities — probe installed architectures</div>
+            <div>/sc-send-to-resolve / -gimp / -darktable — ship an image</div>
+            <div>/sc-inbox — pull assets sent to SillyTavern</div>
             <div>/spellcaster [on|off|auto-bg on|auto-bg off]</div>
         </div>
     </div>`;
@@ -1355,6 +1388,10 @@ function renderSettingsPanel() {
         });
         document.getElementById('spellcaster-auto-expr')?.addEventListener('change', (e) => {
             settings.auto_expressions = e.target.checked;
+            saveSettings();
+        });
+        document.getElementById('spellcaster-auto-cast')?.addEventListener('change', (e) => {
+            settings.auto_cast = e.target.checked;
             saveSettings();
         });
         document.getElementById('spellcaster-comfyui-url')?.addEventListener('change', (e) => {
@@ -1411,7 +1448,14 @@ function blobToBase64(blob) {
  */
 async function autoCastOnStartup() {
     const settings = getSettings();
-    if (!settings.enabled) return;
+    if (!settings.enabled || !settings.auto_cast) {
+        // Default path. The previous behaviour queued a Klein body
+        // job per character on every ST launch — 15+ jobs, ~10
+        // minutes of blocked queue, no user consent. Gated behind
+        // the "Auto-cast on startup" toggle now. /studio-cast-all
+        // is still available for users who want it on demand.
+        return;
+    }
 
     // Wait for ComfyUI to be reachable
     const connected = await checkHealth();
@@ -1436,9 +1480,6 @@ async function autoCastOnStartup() {
 
     console.log(`[Spellcaster] Auto-casting ${toCast.length} characters in background...`);
 
-    // Also include user persona avatar if available
-    const userAvatar = context.user?.avatar;
-
     let cast = 0;
     let bodied = 0;
     for (const char of toCast) {
@@ -1455,9 +1496,16 @@ async function autoCastOnStartup() {
             });
             cast++;
 
-            // Auto-generate body if the card has a body_description
-            const bodyDesc = char.data?.extensions?.spellcaster?.body_description
-                          || char.description;
+            // Auto-generate body if the card has a body_description.
+            // Trim to a Klein-friendly length — character descriptions
+            // are often multi-paragraph personas that dilute the body
+            // prompt. ~400 chars captures the visual descriptors
+            // without the backstory.
+            const bodyDescRaw = char.data?.extensions?.spellcaster?.body_description
+                             || char.description || '';
+            const bodyDesc = bodyDescRaw.length > 400
+                ? bodyDescRaw.slice(0, 400).replace(/\s+\S*$/, '') + '…'
+                : bodyDescRaw;
             if (bodyDesc) {
                 try {
                     await spellcasterAPI('/studio/body', {
