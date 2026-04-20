@@ -850,7 +850,15 @@ def test_video_reactor():
 
 
 def test_wan_video():
-    """Test build_wan_video basic structure (turbo mode)."""
+    """Test build_wan_video basic structure (turbo mode).
+
+    Canon deviation intentional: these are UNIT TESTS that exercise the
+    builder's intrinsic shape with a hand-crafted preset. They do NOT
+    pair with wan_turbo_kwargs because the whole point is to assert the
+    builder's output layout regardless of the canon helpers. Runtime
+    call sites must still pair with video_presets.wan_turbo_kwargs per
+    CLAUDE.md §16.4 rule #2.
+    """
     preset = {
         "arch": "wan",
         "high_model": "wan_high.gguf",
