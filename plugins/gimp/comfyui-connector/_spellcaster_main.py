@@ -5295,95 +5295,491 @@ LTX_PRESETS = {
 }
 
 # ── LTX 2.3 Video Prompt Presets ──────────────────────────────────────────
+# LTX 2.3 explicitly rewards 100-200 word cinematic descriptions — prompt
+# length is a first-class quality lever. Each preset below is tuned to
+# LTX's strengths: cinematic camera moves, VFX (fire / smoke / sparks /
+# lightning), environmental atmosphere (rain / snow / fog), liquid
+# physics, portrait micro-motion, and fantasy / sci-fi effects.
+#
+# Canon defaults (from CLAUDE.md §16.3):
+#   distilled  → cfg=1.0, steps=8  (fast path — 4× quicker, very
+#                usable quality for iteration)
+#   full       → cfg=4.0, steps=30 (quality)
+#   two_stage  → cfg=4.0, steps=30 + half-res → 2× upscale → re-denoise
+# `num_frames_override` follows the preset's intent (25=1s@25fps, 49=~2s,
+# 73=~3s, 97=~4s). LTX 2.3 handles up to 121 frames well.
 LTX_VIDEO_PRESETS = [
     {
         "label": "(none — manual prompt)",
         "prompt": "",
-        "cfg_override": None,
-        "steps_override": None,
-        "two_stage": False,
-        "distilled": False,
-        "num_frames_override": None,
-        "loras": [],
+        "cfg_override": None, "steps_override": None,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": None, "loras": [],
     },
     # ── Speed modes ───────────────────────────────────────────────────
     {
         "label": "Distilled Fast (8 steps, ~60s)",
         "prompt": "",
-        "cfg_override": 1.0,
-        "steps_override": 8,
-        "two_stage": False,
-        "distilled": True,
-        "num_frames_override": None,
-        "loras": [],
+        "cfg_override": 1.0, "steps_override": 8,
+        "two_stage": False, "distilled": True,
+        "num_frames_override": None, "loras": [],
     },
     {
         "label": "Two-Stage HQ (half-res → 2x upscale → re-denoise)",
         "prompt": "",
-        "cfg_override": 4.0,
-        "steps_override": 30,
-        "two_stage": True,
-        "distilled": False,
-        "num_frames_override": None,
-        "loras": [],
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": True, "distilled": False,
+        "num_frames_override": None, "loras": [],
     },
-    # ── Scene templates ───────────────────────────────────────────────
+
+    # ── Cinematic camera moves ────────────────────────────────────────
     {
-        "label": "Cinematic Pan — Landscape",
-        "prompt": "Slow cinematic camera pan across a vast landscape. Golden hour lighting, volumetric fog, "
-                  "depth of field. Photorealistic, 4K film grain, steady dolly movement.",
-        "cfg_override": 4.0,
-        "steps_override": 30,
-        "two_stage": False,
-        "distilled": False,
-        "num_frames_override": 49,
-        "loras": [],
+        "label": "Cinematic Pan — Golden Hour Landscape",
+        "prompt": "A slow cinematic camera pan from left to right across a vast rolling "
+                  "landscape at golden hour. Warm amber sunlight rakes across distant "
+                  "hills, volumetric fog drifts through the valley below, wildflowers "
+                  "sway gently in the foreground breeze. Shallow depth of field keeps "
+                  "the far horizon softly diffused. Photorealistic, anamorphic lens "
+                  "flare, 35mm film grain, rich colour grading with lifted shadows and "
+                  "warm highlights. Steady dolly movement, no cuts.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 73, "loras": [],
     },
+    {
+        "label": "Dolly-In — Establishing Shot",
+        "prompt": "Slow cinematic dolly push-in toward a lone figure standing at the "
+                  "edge of a cliff. The camera glides forward at a steady pace, "
+                  "gradually revealing the vastness of the mountain range behind them. "
+                  "Dramatic cloud cover, soft backlighting, atmospheric haze. The "
+                  "figure remains perfectly still as the world moves around them. "
+                  "Photorealistic, cinematic 2.39:1 framing, rich natural colours.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+    {
+        "label": "Orbital Tracking — Subject Rotate",
+        "prompt": "Smooth orbital camera movement around a central subject, the lens "
+                  "maintaining focus on the subject while the background blurs into a "
+                  "painterly swirl. Cinematic 360-degree tracking shot, stable gimbal "
+                  "movement, shallow depth of field. The subject remains in sharp "
+                  "detail throughout the rotation, lit by soft key light from above.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 97, "loras": [],
+    },
+    {
+        "label": "Crane Shot — Upward Reveal",
+        "prompt": "Dramatic crane shot rising from ground level into the sky, tilting "
+                  "down to reveal a sprawling cityscape at dusk. City lights begin to "
+                  "twinkle on as the camera ascends, traffic streams glow below, the "
+                  "horizon is lit with deep oranges and purples. Cinematic, wide lens "
+                  "with slight barrel distortion, smooth continuous motion.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+    {
+        "label": "Handheld Documentary — Natural",
+        "prompt": "Subtle handheld camera with natural micro-shake, documentary style. "
+                  "Following a subject through an environment with organic operator "
+                  "movement. Natural lighting, grounded colour grading, slight lens "
+                  "vignetting. The frame breathes slightly as the operator moves, "
+                  "giving an immediate, present feel without becoming shaky.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 49, "loras": [],
+    },
+
+    # ── VFX / fire / explosions / lightning ──────────────────────────
+    {
+        "label": "Explosion — Slow-motion Fireball",
+        "prompt": "A massive fireball explosion erupts in slow motion. Orange and "
+                  "yellow flames billow outward in a mushroom shape, dense black "
+                  "smoke curls at the edges, debris and embers scatter through the "
+                  "air, shockwave visible in the surrounding dust. Photorealistic "
+                  "particle physics, high-dynamic-range lighting, 240fps-feel slow "
+                  "motion, cinematic 2.39:1 framing, heat-haze distortion around "
+                  "the blast core.",
+        "cfg_override": 5.0, "steps_override": 30,
+        "two_stage": True, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+    {
+        "label": "Fire Close-up — Dancing Flames",
+        "prompt": "Extreme macro close-up of dancing flames. Every individual flame "
+                  "tongue writhes and curls against black background, glowing orange "
+                  "and yellow at the core with blue-white highlights at the base. "
+                  "Embers rise and flicker, smoke wisps drift upward. Hyperreal fire "
+                  "physics, deep HDR contrast, cinematic crawl speed, the flames "
+                  "move organically like a living creature.",
+        "cfg_override": 4.5, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+    {
+        "label": "Lightning Strike — Stormy Sky",
+        "prompt": "Dramatic lightning bolt cracks across a turbulent stormy sky. "
+                  "Multiple branching forks illuminate dark clouds from within, "
+                  "casting brief harsh shadows. Rain streaks diagonally across the "
+                  "frame, distant thunder rumbles visible as cloud tremors. The "
+                  "lightning flashes last a fraction of a second each, leaving "
+                  "vivid after-images. Cinematic wide shot, ominous blue-grey "
+                  "colour palette with electric white bursts.",
+        "cfg_override": 5.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+    {
+        "label": "Sparks Shower — Metal on Metal",
+        "prompt": "Extreme close-up of sparks flying from a grinding wheel striking "
+                  "metal. Thousands of glowing orange and yellow particles arc "
+                  "through dark space, each leaving a brief bright trail before "
+                  "cooling to ember red. The camera holds perfectly still as the "
+                  "shower builds and fades. Hyperreal particle physics, deep black "
+                  "background, rich warm tones. Cinematic slow-motion feel.",
+        "cfg_override": 4.5, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+    {
+        "label": "Magic Spell — Energy Burst",
+        "prompt": "A wizard's hands glow with swirling magical energy, arcane "
+                  "symbols rotating around the palms. Crackling blue-white electric "
+                  "tendrils reach outward, casting shifting highlights across the "
+                  "sorcerer's face. A sudden burst of energy releases forward, "
+                  "lighting up the surrounding darkness. Fantasy VFX, high-contrast "
+                  "rim lighting, cinematic wide shot, smoke and ember particles "
+                  "drifting through the magical aura.",
+        "cfg_override": 5.0, "steps_override": 30,
+        "two_stage": True, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+    {
+        "label": "Smoke Drift — Volumetric",
+        "prompt": "Slow cinematic shot of thick volumetric smoke curling through a "
+                  "beam of golden light. The smoke swirls in organic vortices, "
+                  "revealing and concealing shapes within it. Dust motes catch the "
+                  "light and shimmer briefly before drifting into shadow. Deep "
+                  "atmospheric depth, high contrast between illuminated smoke and "
+                  "black background, hypnotic slow drift. Cinematographic poetry.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 73, "pingpong": True, "loras": [],
+    },
+
+    # ── Environmental / weather ──────────────────────────────────────
+    {
+        "label": "Heavy Rain — Window View",
+        "prompt": "Rain pours against a window pane in cinematic close-up. Each "
+                  "droplet traces a glistening path downward, refracting the warm "
+                  "interior light behind the glass. Beyond the window, a blurred "
+                  "city at night glows in soft amber and electric blue. The rhythm "
+                  "of the rain is hypnotic, the rivulets merging and splitting as "
+                  "they fall. Moody, contemplative atmosphere, film-noir lighting.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+    {
+        "label": "Snow Fall — Quiet Forest",
+        "prompt": "Gentle snowfall in a silent pine forest. Thousands of fat "
+                  "snowflakes drift lazily downward, catching pale blue winter "
+                  "light. The boughs of the evergreens are already laden with "
+                  "powder, deadening all sound. A slight breeze ripples the "
+                  "surface of the snow, nothing else moves. Serene, meditative "
+                  "atmosphere, cold colour palette with subtle warm highlights.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 97, "pingpong": True, "loras": [],
+    },
+    {
+        "label": "Fog Rolling — Mysterious Valley",
+        "prompt": "Thick fog rolls slowly through a mountain valley at dawn. The "
+                  "mist curls around jagged rock formations, revealing and "
+                  "swallowing trees in turn. First light of day cuts golden shafts "
+                  "through gaps in the fog. Atmospheric, cinematic, vast scale. "
+                  "The camera holds steady as the landscape transforms beneath a "
+                  "living blanket of cloud.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 97, "loras": [],
+    },
+    {
+        "label": "Dust Storm — Desert",
+        "prompt": "A wall of desert dust sweeps across the frame, obscuring the "
+                  "horizon in a wash of ochre and sepia. Sand grains stream "
+                  "diagonally, visible in the low sun, the light fracturing into "
+                  "golden beams through the particulate. Distant cactus silhouettes "
+                  "flicker in and out of view. Apocalyptic, cinematic scale, high "
+                  "contrast between illuminated dust and deep shadow.",
+        "cfg_override": 4.5, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+
+    # ── Liquid / water physics ───────────────────────────────────────
+    {
+        "label": "Water Splash — Macro Slow-mo",
+        "prompt": "Extreme macro slow-motion shot of a single water droplet "
+                  "striking a still surface. The impact sends a perfect crown of "
+                  "splash droplets upward, each catching the light like liquid "
+                  "diamonds. Concentric ripples expand outward across the surface. "
+                  "Hyperreal fluid physics, frozen instant expanding in real time, "
+                  "cinematic high-speed photography look, dramatic side lighting.",
+        "cfg_override": 4.5, "steps_override": 30,
+        "two_stage": True, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+    {
+        "label": "Wave Crash — Coastal",
+        "prompt": "A massive ocean wave rises, curls, and crashes against jagged "
+                  "coastal rocks in cinematic slow motion. The crest turns "
+                  "translucent turquoise where the sun shines through, spray "
+                  "explodes upward in a white sheet, foam cascades over the rocks. "
+                  "Moody overcast sky, cinematic widescreen framing, raw natural "
+                  "power captured with unflinching realism.",
+        "cfg_override": 4.5, "steps_override": 30,
+        "two_stage": True, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+    {
+        "label": "Pour Shot — Coffee/Liquid",
+        "prompt": "Hyperreal close-up of hot coffee being poured into a white "
+                  "ceramic cup. The dark liquid streams in a steady ribbon, "
+                  "catching warm overhead light, steam curling upward in delicate "
+                  "ribbons. Bubbles form and pop on the surface, crema swirls into "
+                  "a fractal pattern. Rich warm palette, shallow depth of field, "
+                  "sensory commercial-food-photography aesthetic.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 49, "loras": [],
+    },
+
+    # ── Lighting / atmosphere ────────────────────────────────────────
+    {
+        "label": "Golden Hour Portrait",
+        "prompt": "A close-up portrait during golden hour. Soft amber sunlight "
+                  "rakes across the subject's face from the side, creating warm "
+                  "highlights and deep amber-tinted shadows. The subject's hair "
+                  "catches the light like spun copper. Micro-expressions flicker "
+                  "naturally, subtle blink, slight breath. Cinematic shallow depth "
+                  "of field, creamy bokeh of sun-lit foliage behind.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 49, "loras": [],
+    },
+    {
+        "label": "Neon Cyberpunk — Rainy Street",
+        "prompt": "A rain-slicked city street at night, reflecting neon signs in "
+                  "hot pink, electric blue, and acid green. Steam rises from grates "
+                  "in the road, a lone figure in a long coat walks slowly through "
+                  "the puddles. Cyberpunk aesthetic, Blade Runner colour palette, "
+                  "moody volumetric lighting, anamorphic lens flares from every "
+                  "neon source, deep blacks and saturated highlights.",
+        "cfg_override": 4.5, "steps_override": 30,
+        "two_stage": True, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+    {
+        "label": "Moonlit Forest — Atmospheric",
+        "prompt": "A deep forest at night under a full moon. Silver-blue moonlight "
+                  "filters through the canopy in ethereal shafts, pooling on the "
+                  "forest floor. A light mist drifts between the trunks at knee "
+                  "height. Fireflies blink occasionally in the middle distance. "
+                  "Fantasy atmosphere, muted cool palette with tiny warm highlights, "
+                  "cinematic long take with barely perceptible camera drift.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 97, "loras": [],
+    },
+    {
+        "label": "Candlelit Interior — Warm",
+        "prompt": "An intimate interior scene lit only by dozens of flickering "
+                  "candles. Warm orange light dances across stone walls and "
+                  "wooden furniture, casting long shifting shadows. The flames "
+                  "each burn with their own rhythm, rising and falling gently. "
+                  "Period-drama cinematography, rich warm colour grading, high "
+                  "contrast, painterly composition reminiscent of Barry Lyndon.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+
+    # ── Character / portrait motion ──────────────────────────────────
     {
         "label": "Portrait — Subtle Motion",
-        "prompt": "Close-up portrait, subtle natural movement. Soft breathing, gentle hair sway in breeze, "
-                  "micro-expressions. Shallow depth of field, studio lighting, photorealistic skin detail.",
-        "cfg_override": 4.0,
-        "steps_override": 30,
-        "two_stage": False,
-        "distilled": False,
-        "num_frames_override": 25,
-        "loras": [],
+        "prompt": "Close-up portrait with subtle natural movement. Soft "
+                  "breathing, gentle hair sway in a barely-there breeze, "
+                  "micro-expressions flickering naturally across the face. "
+                  "Shallow depth of field, studio lighting from above and slightly "
+                  "to the side, photorealistic skin detail with natural pores and "
+                  "light subsurface scattering.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 25, "loras": [],
+    },
+    {
+        "label": "Running Athlete — Slow-mo",
+        "prompt": "An athlete sprints in cinematic slow motion. Every muscle "
+                  "contraction visible, sweat droplets arc through the air, "
+                  "footstrikes send up small plumes of dust. The athlete's hair "
+                  "flows backward in the relative wind. Tracking shot from the "
+                  "side, shallow depth of field, strong directional lighting "
+                  "picking out anatomy. Commercial-sports-cinematography aesthetic.",
+        "cfg_override": 4.5, "steps_override": 30,
+        "two_stage": True, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+
+    # ── Nature macro / micro-world ───────────────────────────────────
+    {
+        "label": "Dew Drops — Leaf Macro",
+        "prompt": "Extreme macro close-up of morning dew drops on a green leaf. "
+                  "Each crystal-clear droplet acts as a miniature lens, refracting "
+                  "the world behind it upside down. The leaf's cellular structure "
+                  "is visible through the water. A tiny ant crosses the leaf, "
+                  "pausing to drink from one of the droplets. Hyperreal detail, "
+                  "soft diffused morning light, fresh green colour palette.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": True, "distilled": False,
+        "num_frames_override": 49, "loras": [],
+    },
+    {
+        "label": "Bee Macro — Pollen Flight",
+        "prompt": "A bumblebee lands on a brilliantly coloured flower in ultra-"
+                  "slow-motion macro. The wings blur in figure-eight patterns, "
+                  "golden pollen grains scatter outward as the bee touches the "
+                  "stamens, fine body hairs catch light from every angle. "
+                  "Razor-sharp depth of field holds on the bee while the "
+                  "background dissolves into painterly bokeh. Nature "
+                  "documentary cinematography.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": True, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+
+    # ── Sci-fi / fantasy ─────────────────────────────────────────────
+    {
+        "label": "Hologram Interface — Sci-fi",
+        "prompt": "A translucent blue holographic interface materialises in mid "
+                  "air, rotating 3D data visualisations spinning slowly in "
+                  "volumetric light. Grid lines and glowing text scroll across "
+                  "the projected surface, occasional glitch artifacts flicker. "
+                  "A hand enters from the side and interacts with the projection, "
+                  "triggering rippling light cascades. Clean sci-fi aesthetic, "
+                  "deep dark environment, electric-blue dominant palette.",
+        "cfg_override": 4.5, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+    {
+        "label": "Laser Beam — Sci-fi Combat",
+        "prompt": "A brilliant red laser beam streaks through a dark environment, "
+                  "cutting a line of incandescent light across the frame. Dust "
+                  "and smoke swirl in its wake, the beam leaves a brief "
+                  "afterglow, heat distortion shimmers along its path. The shot "
+                  "holds long enough to see the beam fade and the air settle. "
+                  "Deep black background, saturated red palette, cinematic "
+                  "sci-fi atmosphere.",
+        "cfg_override": 4.5, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 49, "loras": [],
+    },
+    {
+        "label": "Energy Aura — Character Power-up",
+        "prompt": "A character stands with arms outstretched as a swirling aura "
+                  "of golden and violet energy builds around them. Particles "
+                  "rise from the ground, electric arcs crackle between palms, "
+                  "cloth and hair billow in an aura-induced wind. The power "
+                  "peaks in a brilliant flash. Anime-style VFX, cinematic "
+                  "low-angle shot, rim lighting from the aura itself, high "
+                  "dynamic range.",
+        "cfg_override": 5.0, "steps_override": 30,
+        "two_stage": True, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+
+    # ── Commercial / product ─────────────────────────────────────────
+    {
+        "label": "Product Turntable — 360° Spin",
+        "prompt": "A premium product rotates 360 degrees on a pristine turntable. "
+                  "Clean gradient background from warm to cool, three-point "
+                  "studio lighting with a strong key, soft fill, and back light "
+                  "accentuating the product's silhouette. Smooth constant "
+                  "rotation speed, razor-sharp detail throughout. Premium "
+                  "commercial photography aesthetic.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 97, "loras": [],
+    },
+    {
+        "label": "Hero Product Reveal",
+        "prompt": "A product emerges from swirling fog with a dramatic slow "
+                  "camera push-in. The fog parts to reveal the product lit from "
+                  "below with cool electric-blue light, contrasting warm rim "
+                  "light catching the edges. As the camera arrives on the hero "
+                  "angle, the fog dissipates and lens flares bloom. Luxury "
+                  "advertisement aesthetic, cinematic, anamorphic.",
+        "cfg_override": 4.5, "steps_override": 30,
+        "two_stage": True, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+
+    # ── Abstract / motion graphics ───────────────────────────────────
+    {
+        "label": "Particle Swarm — Abstract",
+        "prompt": "Thousands of luminous particles swirl through dark space in "
+                  "fluid organic patterns, forming and dissolving into shapes — "
+                  "spirals, waves, constellations — driven by invisible forces. "
+                  "Each particle trails a short tail of light, the whole swarm "
+                  "behaves like a living fluid. Motion-graphics aesthetic, "
+                  "saturated cyan and magenta, deep black background.",
+        "cfg_override": 4.5, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 97, "pingpong": True, "loras": [],
+    },
+
+    # ── Cinemagraph loops (pingpong) ─────────────────────────────────
+    {
+        "label": "Cinemagraph — Coffee Steam",
+        "prompt": "Seamless cinemagraph loop: a steaming cup of coffee sits "
+                  "perfectly still on a wooden table. Only the steam moves, "
+                  "curling upward in endless hypnotic patterns. Warm morning "
+                  "light from the side, shallow depth of field, everything else "
+                  "frozen in time. Cinematic still-life meets subtle motion.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 49, "pingpong": True, "loras": [],
     },
     {
         "label": "Nature Loop — Water/Clouds",
-        "prompt": "Seamless loop of natural elements. Flowing water, drifting clouds, swaying trees. "
-                  "Gentle ambient motion, dreamy atmosphere, no camera movement.",
-        "cfg_override": 4.0,
-        "steps_override": 30,
-        "two_stage": False,
-        "distilled": False,
-        "num_frames_override": 49,
-        "pingpong": True,
-        "loras": [],
+        "prompt": "Seamless loop of natural elements in gentle ambient motion. "
+                  "Flowing water meanders across smooth river stones, drifting "
+                  "clouds sail across a cerulean sky, trees sway subtly in a soft "
+                  "breeze. No camera movement, meditative atmosphere, organic "
+                  "imperfect repetition.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 49, "pingpong": True, "loras": [],
     },
+
+    # ── Action / dynamic ─────────────────────────────────────────────
     {
-        "label": "Action Sequence — Dynamic",
-        "prompt": "Dynamic action sequence with fast motion. Tracking camera, motion blur on fast elements, "
-                  "sharp focus on subject. Cinematic color grading, high contrast.",
-        "cfg_override": 5.0,
-        "steps_override": 30,
-        "two_stage": True,
-        "distilled": False,
-        "num_frames_override": 49,
-        "loras": [],
+        "label": "Action Sequence — Dynamic Tracking",
+        "prompt": "A high-octane action sequence captured with an aggressive "
+                  "tracking camera. Fast motion punctuated by brief slow-motion "
+                  "moments, sharp focus on the hero subject while the background "
+                  "streaks by in motion blur. Gritty cinematic colour grading, "
+                  "high contrast, deep blacks and hot highlights, sparks and "
+                  "debris filling the foreground.",
+        "cfg_override": 5.0, "steps_override": 30,
+        "two_stage": True, "distilled": False,
+        "num_frames_override": 73, "loras": [],
     },
-    {
-        "label": "Product Turntable — 360° Spin",
-        "prompt": "Product rotating 360 degrees on turntable. Clean white background, "
-                  "studio lighting, smooth constant rotation speed. Sharp detail throughout.",
-        "cfg_override": 4.0,
-        "steps_override": 30,
-        "two_stage": False,
-        "distilled": False,
-        "num_frames_override": 49,
-        "loras": [],
-    },
+
+    # ── NSFW_LTX_INJECTION_POINT ──
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════
