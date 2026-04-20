@@ -4815,6 +4815,17 @@ end
 -- leaving Darktable first.
 local function process_normal_map(image, max_res)
   local server = get_server()
+  -- Fix 4b (3D audit 2026-04-20): preflight the NormalCrafter custom
+  -- node so the user sees an actionable message before we spend time
+  -- exporting and uploading. Without this, a missing node crashes the
+  -- workflow submit ~2 s after upload with a raw ComfyUI error.
+  local probe = curl_get(server .. "/object_info/NormalCrafterNode")
+  if not probe or probe == "" or probe:find('"error"', 1, true) then
+    dt.print(_("💎 3D Normal Map needs the NormalCrafter custom node on ComfyUI. "
+               .. "Install it via ComfyUI Manager → Install Custom Nodes → "
+               .. "search 'NormalCrafter', restart ComfyUI, try again."))
+    return
+  end
   dt.print(_("Exporting for normal map..."))
   local path, fname = export_to_temp(image)
   if not path then dt.print(_("Export failed")); return end

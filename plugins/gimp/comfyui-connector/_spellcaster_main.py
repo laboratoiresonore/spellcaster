@@ -1961,9 +1961,10 @@ def _add_normal_map_selector(dialog, box, image):
     """Add a normal map layer dropdown to any dialog.
 
     Scans the image's layers for any with 'normal' in the name and
-    populates a dropdown. If no normal map layers exist, shows a
-    'Generate one first' hint. The selected layer can be exported
-    and used as ControlNet input or IC-Light background guidance.
+    populates a dropdown. When no candidate layer exists, shows an
+    inline "Generate now" button that runs NormalCrafter in-place and
+    adds the result as a new layer — no dialog-cancel dance required
+    (fix 2 from the 2026-04-20 3D audit).
 
     Sets dialog._normal_combo (ComboBoxText) and dialog._normal_enabled
     (CheckButton). Use dialog._normal_combo.get_active_id() to get the
@@ -1980,35 +1981,124 @@ def _add_normal_map_selector(dialog, box, image):
         "information to the AI. This dramatically improves:\n"
         "  • Relighting accuracy (light wraps around surfaces correctly)\n"
         "  • Inpainting consistency (fills respect 3D geometry)\n"
-        "  • Style transfer (preserves 3D structure)\n\n"
-        "Generate a normal map first: Enhance > 3D Normal Map")
+        "  • Style transfer (preserves 3D structure)")
     fbox.pack_start(dialog._normal_enabled, False, False, 0)
 
     dialog._normal_combo = Gtk.ComboBoxText()
     dialog._normal_combo.append("none", "(no normal map)")
     dialog._normal_combo.set_tooltip_text(
-        "Select which layer contains the 3D normal map.\n"
+        "Pick the layer that holds the 3D normal map.\n"
         "Normal maps are RGB images where R=X, G=Y, B=Z surface direction.\n"
-        "Generate one via Enhance > 3D Normal Map (NormalCrafter).")
+        "Only layers with 'normal' in their name are pre-filtered; click\n"
+        "the Generate button below if no candidate is present.")
 
-    # Populate with layers that look like normal maps
+    # Populate with layers that look like normal maps (● prefix) first,
+    # then all remaining layers (so the user can still manually pick
+    # any layer if they named their normal layer something odd).
     found_normal = False
+    normal_layers: list[tuple[int, str]] = []
+    other_layers: list[tuple[int, str]] = []
     for i, layer in enumerate(image.get_layers()):
         name = layer.get_name() or f"Layer {i}"
         if "normal" in name.lower():
-            dialog._normal_combo.append(str(i), f"● {name}")
-            if not found_normal:
-                dialog._normal_combo.set_active_id(str(i))
-                dialog._normal_enabled.set_active(True)
-                found_normal = True
+            normal_layers.append((i, name))
         else:
-            dialog._normal_combo.append(str(i), name)
+            other_layers.append((i, name))
+    for i, name in normal_layers:
+        dialog._normal_combo.append(str(i), f"● {name}")
+        if not found_normal:
+            dialog._normal_combo.set_active_id(str(i))
+            dialog._normal_enabled.set_active(True)
+            found_normal = True
+    for i, name in other_layers:
+        dialog._normal_combo.append(str(i), name)
 
     if not found_normal:
         dialog._normal_combo.set_active_id("none")
         dialog._normal_enabled.set_active(False)
 
     fbox.pack_start(dialog._normal_combo, False, False, 0)
+
+    # Inline "Generate now" row — removes the cancel-and-reopen dance
+    # when the user hasn't made a normal map yet. Runs NormalCrafter
+    # in place, adds the result as a new layer named 'Normal Map
+    # (auto)', then re-populates this combo so the new layer is the
+    # selected candidate. Pre-flights the NormalCrafter node + server
+    # reachability before running.
+    gen_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+    gen_btn = Gtk.Button(label=" Generate normal map now ")
+    gen_btn.set_tooltip_text(
+        "Run NormalCrafter on the current canvas and import the 3D\n"
+        "normal map as a new layer. Takes ~10-60 s depending on\n"
+        "resolution and server load. The new layer is selected\n"
+        "automatically so you can click OK to use it immediately.")
+    gen_status = Gtk.Label(label="")
+    gen_status.set_xalign(0.0)
+
+    def _do_generate(_btn):
+        try:
+            srv = (_load_config().get("server_url")
+                   or COMFYUI_DEFAULT_URL)
+            nodes = _probe_comfyui_nodes(srv)
+            if nodes and "NormalCrafterNode" not in nodes:
+                gen_status.set_markup(
+                    '<span color="#c06040">⚠ Install NormalCrafter '
+                    'node on ComfyUI first.</span>')
+                return
+            gen_btn.set_sensitive(False)
+            gen_status.set_text("Exporting canvas…")
+            while Gtk.events_pending():
+                Gtk.main_iteration()
+            tmp = _export_image_to_tmp(image)
+            uname = f"gimp_nm_{uuid.uuid4().hex[:8]}.png"
+            _upload_image(srv, tmp, uname)
+            os.unlink(tmp)
+            gen_status.set_text("Generating… (may take ~30 s)")
+            while Gtk.events_pending():
+                Gtk.main_iteration()
+            from spellcaster_core.workflows import build_normal_map
+            wf = build_normal_map(
+                uname,
+                max_res=min(image.get_width(), 1024))
+            results = list(_run_comfyui_workflow(srv, wf, timeout=300))
+            if not results:
+                gen_status.set_markup(
+                    '<span color="#c06040">⚠ No result from server.'
+                    '</span>')
+                gen_btn.set_sensitive(True)
+                return
+            fn, sf, ft = results[0]
+            data = _download_image(srv, fn, sf, ft)
+            new_layer_name = "Normal Map (auto)"
+            _import_result_as_layer(image, data,
+                                     new_layer_name, keep_size=True)
+            # Re-populate the combo so the new layer appears with the
+            # ● prefix + is selected. Easier than surgically inserting.
+            dialog._normal_combo.remove_all()
+            dialog._normal_combo.append("none", "(no normal map)")
+            for i, layer in enumerate(image.get_layers()):
+                n = layer.get_name() or f"Layer {i}"
+                label = f"● {n}" if "normal" in n.lower() else n
+                dialog._normal_combo.append(str(i), label)
+            # Find the freshly-inserted layer index and select it
+            for i, layer in enumerate(image.get_layers()):
+                if (layer.get_name() or "") == new_layer_name:
+                    dialog._normal_combo.set_active_id(str(i))
+                    dialog._normal_enabled.set_active(True)
+                    dialog._normal_combo.set_sensitive(True)
+                    break
+            gen_status.set_markup(
+                '<span color="#4a8a4a">✓ Normal map ready.</span>')
+            gen_btn.set_sensitive(True)
+        except Exception as _e:
+            gen_status.set_markup(
+                f'<span color="#c06040">⚠ {_e}</span>')
+            gen_btn.set_sensitive(True)
+
+    gen_btn.connect("clicked", _do_generate)
+    gen_row.pack_start(gen_btn, False, False, 0)
+    gen_row.pack_start(gen_status, True, True, 6)
+    fbox.pack_start(gen_row, False, False, 0)
 
     # Grey out combo when checkbox unchecked
     dialog._normal_combo.set_sensitive(found_normal)
@@ -2089,7 +2179,16 @@ def _collect_normal_map_from_dialog(dlg, image, server_url):
     return nm_name
 
 
-def _maybe_override_cn_with_normal_map(controlnet, normal_map_filename):
+#: Arch keys that cannot accept ControlNet conditioning at all — the
+#: canonical `build_*` functions silently skip CN injection for these
+#: (see workflows.py guard `arch_key not in ("flux2klein","flux_kontext",
+#: "chroma")`). Exposed here so the dialog layer can warn the user
+#: BEFORE they submit, instead of silently dropping their normal map.
+_CN_INCOMPATIBLE_ARCHS = frozenset({"flux2klein", "flux_kontext", "chroma"})
+
+
+def _maybe_override_cn_with_normal_map(controlnet, normal_map_filename,
+                                         arch_key=None):
     """Overlay the 'Normal Map (use existing layer)' CN mode onto the
     user's ControlNet selection whenever a normal-map filename is set.
 
@@ -2101,8 +2200,32 @@ def _maybe_override_cn_with_normal_map(controlnet, normal_map_filename):
     canonical inject_controlnet (composites.py) reads the
     `ref_image_filename` key and loads that file via LoadImage as the
     CN input — see CLAUDE.md note on 3D normal map integration.
+
+    When ``arch_key`` identifies a ControlNet-incompatible architecture
+    (flux2klein / flux_kontext / chroma), we show a Gimp.message
+    explaining the normal map will be ignored for this run — instead
+    of silently dropping it at workflow build time (fix 3 from the
+    2026-04-20 3D audit).
     """
     if not normal_map_filename:
+        return controlnet
+    if arch_key in _CN_INCOMPATIBLE_ARCHS:
+        # Fail visibly rather than silently. Return the user's original
+        # (possibly None) controlnet unchanged — we're not injecting
+        # the normal-map mode because it would be a no-op anyway.
+        try:
+            Gimp.message(
+                f"3D Normal Map is not supported on this architecture "
+                f"({arch_key}).\n\n"
+                f"Flux Klein, Flux Kontext, and Chroma don't accept "
+                f"ControlNet conditioning. The normal map will be "
+                f"ignored for this run.\n\n"
+                f"Use SD 1.5, SDXL, Illustrious, Flux.1-dev, or "
+                f"Z-Image-Turbo if you need normal-map guidance.")
+        except Exception:
+            # Gimp may not be imported in bare-test contexts.
+            print(f"[Spellcaster] Normal Map skipped: "
+                  f"arch {arch_key} does not support ControlNet.")
         return controlnet
     merged = dict(controlnet or {})
     merged["mode"] = "Normal Map (use existing layer) — all archs"
@@ -9901,16 +10024,36 @@ class PresetDialog(Gtk.Dialog):
             for l in loras:
                 l["strength_model"] *= 0.75
                 l["strength_clip"] *= 0.75
-        # ControlNet
-        cn_mode = self._cn_mode_combo.get_active_id() if self._cn_mode_combo else "Off"
+        # ControlNet — submit-time gate. _refresh_cn_combos filters the
+        # picker on every preset change (§23), but a stale combo state
+        # (user loaded a saved user-preset whose stored CN mode doesn't
+        # survive the current arch, Gtk signal race, etc.) would
+        # otherwise slip through. cn_is_compatible is the canonical
+        # check — force "Off" whenever the UI-held pick isn't valid for
+        # the loaded arch, so the workflow never references a CN the
+        # sampler will reject.
+        arch_key = preset.get("arch")
+        def _safe_cn_mode(mode_key):
+            if not mode_key or mode_key == "Off":
+                return "Off"
+            cfg = CONTROLNET_GUIDE_MODES.get(mode_key) or {}
+            # Use the canonical helper via its local delegate-or-fallback
+            # wrapper (cn_modes_for_arch) so this stays correct even
+            # when spellcaster_core hasn't loaded — mirrors the same
+            # fallback path _refresh_cn_combos uses.
+            compat = set(cn_modes_for_arch(CONTROLNET_GUIDE_MODES, arch_key))
+            return mode_key if mode_key in compat else "Off"
+        cn_mode = _safe_cn_mode(
+            self._cn_mode_combo.get_active_id() if self._cn_mode_combo else "Off")
         controlnet = {
             "mode": cn_mode,
             "strength": self._cn_strength_spin.get_value() if self._cn_strength_spin else 0.8,
             "start_percent": self._cn_start_spin.get_value() if self._cn_start_spin else 0.0,
             "end_percent": self._cn_end_spin.get_value() if self._cn_end_spin else 1.0,
         }
-        # ControlNet 2
-        cn_mode_2 = self._cn_mode_combo_2.get_active_id() if self._cn_mode_combo_2 else "Off"
+        # ControlNet 2 — same submit-time gate.
+        cn_mode_2 = _safe_cn_mode(
+            self._cn_mode_combo_2.get_active_id() if self._cn_mode_combo_2 else "Off")
         controlnet_2 = {
             "mode": cn_mode_2,
             "strength": self._cn_strength_spin_2.get_value() if self._cn_strength_spin_2 else 0.6,
@@ -11864,6 +12007,12 @@ class LtxVideoDialog(Gtk.Dialog):
         # _add_preset_ui for the contract: we implement
         # _collect_user_preset() / _apply_user_preset(p) below).
         _add_preset_ui(self, box, "ltx_video")
+
+        # LTX is always arch=ltx (video). Route through the central
+        # per-arch optimizer so this dialog's neg-prompt / cfg / steps
+        # tooltips + arch hint match every other dialog's behaviour.
+        # Has no model picker, so one call at init is enough.
+        _apply_arch_optimizations(self, "ltx")
 
         self.show_all()
 
@@ -14599,7 +14748,8 @@ class Spellcaster(Gimp.PlugIn):
             # the CN slot uses a LoadImage(nm_filename) instead of the
             # primary canvas (or any preprocessor the user had picked).
             v["controlnet"] = _maybe_override_cn_with_normal_map(
-                v.get("controlnet"), _nm_filename)
+                v.get("controlnet"), _nm_filename,
+                arch_key=v.get("preset", {}).get("arch"))
         runs = v.get("runs", 1)
         try:
             srv = v["server"]
@@ -14723,7 +14873,8 @@ class Spellcaster(Gimp.PlugIn):
             _save_session()
             dlg.destroy()
             v["controlnet"] = _maybe_override_cn_with_normal_map(
-                v.get("controlnet"), _nm_filename)
+                v.get("controlnet"), _nm_filename,
+                arch_key=v.get("preset", {}).get("arch"))
         runs = v.get("runs", 1)
         try:
             srv = v["server"]
@@ -22105,7 +22256,9 @@ class Spellcaster(Gimp.PlugIn):
         # widget state + exports GIMP layer). Overrides CN1 when set.
         _nm_filename = _collect_normal_map_from_dialog(dlg, image, v["server"])
         dlg.destroy()
-        out_cn1 = _maybe_override_cn_with_normal_map(out_cn1, _nm_filename)
+        out_cn1 = _maybe_override_cn_with_normal_map(
+            out_cn1, _nm_filename,
+            arch_key=v.get("preset", {}).get("arch"))
         runs = v.get("runs", 1)
         try:
             srv = v["server"]
@@ -27182,7 +27335,25 @@ class Spellcaster(Gimp.PlugIn):
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         try:
-            srv = COMFYUI_DEFAULT_URL
+            # Fix 1 (3D audit 2026-04-20): honor the user's configured
+            # server URL. Previously hardcoded COMFYUI_DEFAULT_URL so
+            # users who had set a custom server in Settings silently
+            # hit the fallback default instead.
+            srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+            # Fix 4: preflight the NormalCrafter node so the user gets
+            # a clear "install NormalCrafter" message instead of an
+            # opaque workflow-submit error 60 s into the run.
+            nodes = _probe_comfyui_nodes(srv)
+            if nodes and "NormalCrafterNode" not in nodes:
+                Gimp.message(
+                    "3D Normal Map needs the NormalCrafter custom node "
+                    "on your ComfyUI server.\n\n"
+                    "Install it from ComfyUI Manager → Install Custom "
+                    "Nodes → search 'NormalCrafter', or from:\n"
+                    "  https://github.com/Stable-X/ComfyUI-NormalCrafter\n\n"
+                    f"Then restart ComfyUI and try again.\n(Server: {srv})")
+                return procedure.new_return_values(
+                    Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_normal_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
