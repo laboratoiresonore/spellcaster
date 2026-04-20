@@ -143,6 +143,27 @@ def dispatch_workflow(server, workflow, *, timeout=300, free_vram=False,
                     f"Install the required custom nodes on your server.")
         except ImportError:
             pass
+        # Step 1b: validate the model-file references (ckpt / LoRA /
+        # ControlNet / upscaler / VAE / CLIP / UNET). Turns the cryptic
+        # "Value not in list for CheckpointLoaderSimple.ckpt_name" that
+        # ComfyUI raises mid-submit into an actionable list of missing
+        # files. See preflight.validate_workflow_files.
+        try:
+            from .preflight import (
+                validate_workflow_files, format_missing_files_hint)
+            files_ok, files_report = validate_workflow_files(
+                workflow, server)
+            if not files_ok:
+                hint = format_missing_files_hint(
+                    files_report["missing_files"])
+                raise RuntimeError(
+                    "Some model files referenced by this workflow are "
+                    "not installed on your ComfyUI server.\n\n"
+                    f"{hint}\n\n"
+                    "Install the missing files (or point the preset at "
+                    "files you already have) and try again.")
+        except ImportError:
+            pass
 
     # ── 2. Optimize ───────────────────────────────────────────────
     if optimize:

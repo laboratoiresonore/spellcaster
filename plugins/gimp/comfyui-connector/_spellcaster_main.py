@@ -11467,20 +11467,36 @@ class WanI2VDialog(Gtk.Dialog):
 
         self.show_all()
 
-        # Auto-fetch LoRAs on dialog open (so user doesn't have to click Fetch)
+        # Auto-fetch LoRAs on dialog open (so user doesn't have to click Fetch).
+        # Errors are captured on ``_wan_fetch_error`` so
+        # ``_refresh_lora_combos`` can surface a visible ⚠ label on the
+        # fetch button instead of silently showing "0/0 Wan LoRAs".
         try:
             server = self.server_entry.get_text().strip()
+            self._wan_fetch_error = None
             self._all_wan_loras = _fetch_wan_video_loras(server)
             self._refresh_lora_combos()
-        except Exception:
-            pass
+        except Exception as _e:
+            self._all_wan_loras = []
+            self._wan_fetch_error = _e
+            try:
+                self._refresh_lora_combos()
+            except Exception:
+                pass
 
     def _on_fetch_loras(self, _btn):
         server = self.server_entry.get_text().strip(); _propagate_server_url(server)
+        self._wan_fetch_error = None
         try:
             self._all_wan_loras = _fetch_wan_video_loras(server)
-        except Exception:
+        except Exception as e:
+            # Silent swallow used to hide the root cause — users saw
+            # "0/0 Wan LoRAs" with no indication whether the server
+            # was unreachable or their setup genuinely had none.
+            # Now the button label flips to ⚠ and the tooltip carries
+            # the exception so the cause is distinguishable at a glance.
             self._all_wan_loras = []
+            self._wan_fetch_error = e
         self._refresh_lora_combos()
 
     def _refresh_lora_combos(self):
@@ -11493,9 +11509,17 @@ class WanI2VDialog(Gtk.Dialog):
                 short = lname.rsplit("/", 1)[-1] if "/" in lname else lname
                 combo.append(lname, short)
             combo.set_active(0)
-        total = len(self._all_wan_loras)
-        shown = len(self._wan_loras)
-        self._lora_fetch_btn.set_label(f"{shown}/{total} Wan LoRAs")
+        err = getattr(self, "_wan_fetch_error", None)
+        if err is not None:
+            self._lora_fetch_btn.set_label("⚠ Fetch failed — retry")
+            self._lora_fetch_btn.set_tooltip_text(
+                f"Wan LoRA fetch failed: {type(err).__name__}: {err}")
+        else:
+            total = len(self._all_wan_loras)
+            shown = len(self._wan_loras)
+            self._lora_fetch_btn.set_label(f"{shown}/{total} Wan LoRAs")
+            self._lora_fetch_btn.set_tooltip_text(
+                "Re-fetch the server's Wan LoRA list.")
 
     def _on_preset_changed(self, combo):
         if self._all_wan_loras:

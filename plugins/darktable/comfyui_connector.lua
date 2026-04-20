@@ -794,21 +794,92 @@ local ARCH_LORA_PREFIXES = {
   seedvr       = {"SeedVR\\", "seedvr\\"},
 }
 
+-- Image arches: root-folder LoRAs + empty-prefix fallback are safe to
+-- admit only here. Video arches (wan/ltx/seedvr) must keep a strict
+-- folder match so stray image LoRAs don't slip in.
+local IMAGE_ARCHES_SET = {
+  sd15 = true, sdxl = true, zit = true, illustrious = true, pony = true,
+  flux2klein = true, flux1dev = true, flux_kontext = true, chroma = true,
+}
+
+-- Video-LoRA markers (lowercase pattern → Lua pattern). Any LoRA
+-- whose lowered path contains one of these is a video LoRA and must
+-- NEVER appear in an image-arch picker. Mirrors the _VIDEO_LORA_RE
+-- regex in the GIMP plugin (patterns kept simple enough for Lua's
+-- lowered plain-string matching).
+local VIDEO_LORA_MARKERS = {
+  "wan2.1", "wan2.2", "wan-2.1", "wan-2.2",
+  "wan_2_1", "wan_2_2", "wan21", "wan22",
+  "/i2v", "_i2v_", "-i2v-", "_i2v.", "-i2v.",
+  "high_noise", "low_noise", "highnoise", "lownoise",
+  "high-noise", "low-noise",
+  "lightx2v", "wan-lightning", "wan_lightning",
+  "ltx2", "ltx-2", "ltx_2", "ltxv", "ltx-distill", "ltx_distill",
+  "seed-vr", "seedvr",
+}
+
 local function starts_with(str, prefix)
   return str:sub(1, #prefix) == prefix
 end
 
+local function _looks_like_video_lora(lora_lower)
+  for _, marker in ipairs(VIDEO_LORA_MARKERS) do
+    if lora_lower:find(marker, 1, true) then
+      return true
+    end
+  end
+  return false
+end
+
 local function filter_loras_for_arch(all_loras, arch)
+  -- Three gates, progressively more permissive, matching the canonical
+  -- _filter_loras_for_arch in the GIMP plugin:
+  --   1. case-insensitive folder prefix match (Linux/macOS servers
+  --      return lowercase paths; our prefixes are mixed case);
+  --   2. root-folder LoRAs for image arches (no subfolder separator
+  --      so no strict arch inference is possible — admit them);
+  --   3. empty-prefix image arches (sd15) get every non-video LoRA
+  --      rather than an unconditional empty list.
+  -- Video markers in the lowered path reject WAN/LTX/SeedVR LoRAs
+  -- from ever surfacing in an image arch.
   local prefixes = ARCH_LORA_PREFIXES[arch]
-  if not prefixes or #prefixes == 0 then return {} end
+  local is_image_arch = IMAGE_ARCHES_SET[arch] == true
+  local prefix_variants = {}
+  if prefixes then
+    for _, p in ipairs(prefixes) do
+      local pl = p:lower()
+      table.insert(prefix_variants, pl)
+      local alt = pl:gsub("\\", "/")
+      if alt ~= pl then table.insert(prefix_variants, alt) end
+    end
+  end
   local filtered = {}
   for _, lora in ipairs(all_loras) do
-    for _, prefix in ipairs(prefixes) do
-      -- Check both backslash and forward-slash variants (OS-dependent)
-      local alt = prefix:gsub("\\", "/")
-      if starts_with(lora, prefix) or starts_with(lora, alt) then
+    local lora_lower = lora:lower()
+    -- Image arches always reject video-marker LoRAs first.
+    if is_image_arch and _looks_like_video_lora(lora_lower) then
+      -- skip
+    else
+      local admitted = false
+      -- Gate 1
+      for _, pv in ipairs(prefix_variants) do
+        if starts_with(lora_lower, pv) then
+          admitted = true
+          break
+        end
+      end
+      -- Gate 2 — root-folder LoRA (no separator), image arches only.
+      if (not admitted) and is_image_arch
+          and not lora:find("[\\/]") then
+        admitted = true
+      end
+      -- Gate 3 — empty-prefix image arch: admit any non-video LoRA.
+      if (not admitted) and is_image_arch
+          and (not prefixes or #prefixes == 0) then
+        admitted = true
+      end
+      if admitted then
         table.insert(filtered, lora)
-        break
       end
     end
   end
@@ -6132,7 +6203,22 @@ local fetch_lora_btn = dt.new_widget("button") {
     local shown = #cached_loras
     local total = #all
     local arch = get_current_arch()
-    dt.print(string.format(_("Found %d/%d LoRAs for %s"), shown, total, arch))
+    -- Distinguish between "server unreachable / wrong URL" (total=0)
+    -- and "server up, no compatible LoRAs for this arch" (shown=0,
+    -- total>0). The old message collapsed both into a confusing
+    -- "Found 0/0 LoRAs" without indicating which. dt.print now
+    -- prepends a ⚠ marker when the server returned nothing so users
+    -- immediately check their Server setting instead of assuming
+    -- they have no LoRAs installed.
+    if total == 0 then
+      dt.print(string.format(
+        _("⚠ LoRA fetch returned 0 \u{2014} is ComfyUI at %s running? "
+          .. "Check Server in Spellcaster preferences."),
+        get_server()))
+    else
+      dt.print(string.format(
+        _("Found %d/%d LoRAs for %s"), shown, total, arch))
+    end
   end
 }
 

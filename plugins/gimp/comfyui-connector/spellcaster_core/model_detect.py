@@ -263,13 +263,22 @@ def classify_lora_arch(lora_name):
     convention organises LoRAs by arch folder), then falls back to
     filename keyword hints. Returns None when uncertain so callers
     can pass the LoRA through without blocking a potentially valid use.
+
+    Case-insensitive: Linux / macOS ComfyUI installs report lowercase
+    folder names (``sdxl/foo.safetensors``) where the canonical
+    prefixes use mixed case (``SDXL\\``). Before this, only Windows
+    installs with exact-case folder names matched — Linux users' LoRAs
+    silently fell through to the keyword hints. Both the LoRA name
+    and the prefix list are lowered once before comparison; slash
+    direction is unified to ``\\`` so server-reported forward slashes
+    still match the backslash-first canonical prefixes.
     """
     if not isinstance(lora_name, str) or not lora_name:
         return None
-    normalized = lora_name.replace("/", "\\")
+    normalized = lora_name.replace("/", "\\").lower()
     for arch_key, prefixes in LORA_ARCH_PREFIXES.items():
         for p in prefixes:
-            pn = p.replace("/", "\\")
+            pn = p.replace("/", "\\").lower()
             if pn and normalized.startswith(pn):
                 return arch_key
     ml = lora_name.lower()
