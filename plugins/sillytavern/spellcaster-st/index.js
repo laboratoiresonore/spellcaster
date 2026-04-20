@@ -84,18 +84,50 @@ function saveSettings() {
 //  ComfyUI API Helpers
 // ═══════════════════════════════════════════════════════════════════
 
+// Last-seen API error. Surfaced in the settings panel so a user whose
+// generation failed can see WHY without opening DevTools. Cleared on
+// each successful call. Size-capped at ~500 chars.
+let _lastSpellcasterError = '';
+function _recordApiError(endpoint, detail) {
+    const ts = new Date().toLocaleTimeString();
+    _lastSpellcasterError = `[${ts}] ${endpoint}: ${String(detail).slice(0, 400)}`;
+    // Update the status line in the mounted settings panel, if any.
+    const el = document.getElementById('spellcaster-last-error');
+    if (el) {
+        el.textContent = _lastSpellcasterError;
+        el.style.display = 'block';
+    }
+}
+function _clearApiError(endpoint) {
+    _lastSpellcasterError = '';
+    const el = document.getElementById('spellcaster-last-error');
+    if (el) { el.textContent = ''; el.style.display = 'none'; }
+}
+
 async function spellcasterAPI(endpoint, body) {
     const headers = getContext().getRequestHeaders();
-    const res = await fetch(`${API_BASE}${endpoint}`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-        throw new Error(err.error || `Spellcaster API error: ${res.status}`);
+    try {
+        const res = await fetch(`${API_BASE}${endpoint}`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+            const msg = err.error || `Spellcaster API error: ${res.status}`;
+            _recordApiError(endpoint, msg);
+            throw new Error(msg);
+        }
+        _clearApiError(endpoint);
+        return res.json();
+    } catch (e) {
+        // Network-level failure (ST server down, plugin crash, CORS) —
+        // fetch itself rejects. Surface the message in the panel.
+        if (!_lastSpellcasterError || !_lastSpellcasterError.includes(endpoint)) {
+            _recordApiError(endpoint, e && e.message ? e.message : String(e));
+        }
+        throw e;
     }
-    return res.json();
 }
 
 async function checkHealth() {
@@ -783,7 +815,10 @@ function registerSlashCommands() {
         helpString: 'Edit the current avatar via natural-language instruction (Klein 2 / Flux Kontext / SDXL). Identity is preserved; the instruction drives the change.',
     }));
 
-    // /animate [prompt] — Animate the current character's avatar as a short GIF
+    // /animate [prompt] — Animate the current character's avatar as a short GIF.
+    // Long-running (30-600 s via Guild). Shows a periodic progress toast
+    // and reminds the user they can `/animate-cancel` if they change
+    // their mind mid-render.
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'animate',
         callback: async (args, value) => {
@@ -791,7 +826,20 @@ function registerSlashCommands() {
             const char = context.characters[context.characterId];
             if (!char?.avatar) return 'No character with avatar selected. Select a character first.';
 
-            toastr.info(`Animating ${char.name}...`, 'Spellcaster');
+            // Ambient progress ticker — every 15 s, a fresh toast
+            // reminds the user the render is still going and that
+            // /animate-cancel is available. Silenced as soon as the
+            // real response lands.
+            let tick = 0;
+            const tickTimer = setInterval(() => {
+                tick += 15;
+                if (typeof toastr !== 'undefined') {
+                    toastr.info(`${char.name} still animating (${tick}s)… use /animate-cancel to stop`,
+                                'Spellcaster', { timeOut: 4000 });
+                }
+            }, 15000);
+            toastr.info(`Animating ${char.name}… (WAN 2.2 takes ~30-180 s; /animate-cancel to abort)`,
+                        'Spellcaster');
             try {
                 const avatarUrl = `/characters/${char.avatar}`;
                 const avatarRes = await fetch(avatarUrl);
@@ -817,9 +865,35 @@ function registerSlashCommands() {
                 return 'Animation generation completed but no output received';
             } catch (e) {
                 return `Error: ${e.message}`;
+            } finally {
+                clearInterval(tickTimer);
             }
         },
-        helpString: 'Animate the current character\'s avatar as a short looping GIF.',
+        helpString: 'Animate the current character\'s avatar as a short looping GIF. Long-running — shows a progress toast every 15 s; /animate-cancel aborts.',
+    }));
+
+    // /animate-cancel — abort an in-flight /animate. With no argument
+    // cancels every active shot; pass a shot_id to cancel one.
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'animate-cancel',
+        callback: async (args, value) => {
+            try {
+                const body = value ? { shot_id: String(value).trim() } : {};
+                const r = await fetch(`${API_BASE}/animate/cancel`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json',
+                               ...getContext().getRequestHeaders() },
+                    body: JSON.stringify(body),
+                });
+                if (r.status === 404) return 'No in-flight /animate to cancel.';
+                const j = await r.json().catch(() => ({}));
+                const ids = (j.cancelled || []).map(c => c.shot_id).join(', ');
+                return `Cancelled: ${ids || '(none)'} — the next poll tick will abort.`;
+            } catch (e) {
+                return `Cancel failed: ${e.message}`;
+            }
+        },
+        helpString: 'Cancel an in-flight /animate. With no arg, cancels all active shots.',
     }));
 
     // ═══════════════════════════════════════════════════════════════
@@ -1265,17 +1339,25 @@ function registerFunctionTools() {
     context.registerFunctionTool({
         name: 'spellcaster_generate_scene',
         displayName: 'Generate Scene Image',
-        description: 'Generate an image of the current scene or environment. Call this when the narrative describes a new location, dramatic scene change, or when a visual would enhance the story.',
+        description:
+            'Generate a full-width image of the CURRENT environment and optionally set it as the chat background. ' +
+            'Call this when: (a) the narrative has just moved to a new physical location, (b) the lighting / weather / time-of-day shifts dramatically, or (c) a new wide-angle visual would let the reader picture the scene. ' +
+            'Do NOT call every turn — at most once every 3–5 messages. Skip if the scene has not visually changed. ' +
+            'Example good triggers: "They emerged from the forest into a moonlit clearing…" (new location) / "Dawn broke over the battlefield…" (time shift). ' +
+            'Example bad triggers: generic dialogue, internal monologue, the same room as last turn.',
         parameters: {
             type: 'object',
             properties: {
                 scene_description: {
                     type: 'string',
-                    description: 'Detailed description of the scene to generate (location, lighting, mood, time of day)',
+                    description:
+                        'Detailed description of the scene — location, lighting, mood, time of day, weather, camera angle. ' +
+                        'Prefer concrete nouns and adjectives over abstractions. 30–200 words. ' +
+                        'Example: "A candlelit medieval tavern at dusk, long oak tables, warm amber glow from a roaring stone hearth, smoke drifting in the rafters, wide-angle low shot".',
                 },
                 set_as_background: {
                     type: 'boolean',
-                    description: 'Whether to set the generated image as the chat background',
+                    description: 'Default true. Set the generated image as the chat background. Pass false if you only want to show the image without replacing the current background.',
                 },
             },
             required: ['scene_description'],
@@ -1309,13 +1391,22 @@ function registerFunctionTools() {
     context.registerFunctionTool({
         name: 'spellcaster_generate_portrait',
         displayName: 'Generate Portrait',
-        description: 'Generate a portrait image of a character. Call this when introducing a new character or when a character\'s appearance changes significantly.',
+        description:
+            'Generate a portrait (headshot / upper body) of a SPECIFIC character and render it inline in the chat. ' +
+            'Call this when: (a) a new character is introduced and their appearance matters, (b) an existing character\'s appearance changes significantly (new armour, wound, disguise), or (c) the user explicitly asks "show me" / "what does X look like". ' +
+            'Do NOT call to visualise a group shot — use spellcaster_generate_scene for that. ' +
+            'Do NOT call for every character in a crowd scene. ' +
+            'Example good trigger: "A masked stranger pulled down her hood, revealing…" (new character reveal). ' +
+            'Example bad trigger: "{{char}} smiled" (no visual change).',
         parameters: {
             type: 'object',
             properties: {
                 character_description: {
                     type: 'string',
-                    description: 'Physical description of the character (appearance, clothing, expression, setting)',
+                    description:
+                        'Physical description of this one character — face, hair, expression, clothing, posture, lighting, setting. ' +
+                        'Prefer concrete visual details over personality adjectives. 20–150 words. ' +
+                        'Example: "A sharp-cheekboned elf woman in her thirties, long silver hair braided over one shoulder, weather-worn leather armour with copper buckles, amber eyes narrowed in concentration, dusk-blue lighting, neutral dark background".',
                 },
             },
             required: ['character_description'],
@@ -1343,17 +1434,24 @@ function registerFunctionTools() {
     context.registerFunctionTool({
         name: 'spellcaster_set_atmosphere',
         displayName: 'Set Atmosphere',
-        description: 'Change the visual atmosphere of the scene. Call this when the mood shifts dramatically (e.g., from calm to tense, day to night, peaceful to chaotic).',
+        description:
+            'Regenerate the chat background with a new atmospheric treatment of the SAME location. ' +
+            'Call this when the location has not changed but the mood, weather, lighting, or time-of-day has shifted dramatically enough that the previous background no longer fits. ' +
+            'Example good trigger: "A storm rolled in, thunder shaking the old tavern\'s windows…" (same tavern, stormy now). ' +
+            'Example bad trigger: changing subject / location — use spellcaster_generate_scene for that. ' +
+            'Also bad: subtle mood shifts that don\'t warrant regenerating the background.',
         parameters: {
             type: 'object',
             properties: {
                 atmosphere: {
                     type: 'string',
-                    description: 'Description of the new atmosphere (lighting, mood, weather, time)',
+                    description:
+                        'What changed visually — lighting, mood, weather, time of day. ' +
+                        '10–80 words. Examples: "candlelit at midnight, flickering shadows, thin smoke haze", "blood-red sunset, long dramatic shadows", "torrential rain, lightning flashes, grey-blue cold light".',
                 },
                 location: {
                     type: 'string',
-                    description: 'Current location/setting',
+                    description: 'The current location (same as before — do NOT describe a new place). Pass the physical setting so the atmosphere anchors to the right environment, e.g. "a medieval tavern", "the palace throne room".',
                 },
             },
             required: ['atmosphere'],
@@ -1432,15 +1530,55 @@ function newWizardState() {
     };
 }
 
+// Global handler used when the wizard is open. Lives on window so we
+// can remove it exactly once when the wizard closes — attach/detach
+// symmetrically to avoid duplicate bindings.
+let _wizardKeydownHandler = null;
+let _wizardPrevFocus = null;
+
 function openWizard() {
     _wizardState = newWizardState();
+    // Remember the element that had focus before the wizard took over
+    // so we can restore focus on close (WCAG 2.4.3).
+    _wizardPrevFocus = document.activeElement;
     renderWizard();
+    // Escape-to-close + keep focus inside the modal (basic focus trap).
+    _wizardKeydownHandler = (e) => {
+        if (!_wizardState) return;
+        if (e.key === 'Escape') { e.preventDefault(); closeWizard(); return; }
+        if (e.key === 'Tab') {
+            const root = document.getElementById('spellcaster-wizard-root');
+            if (!root) return;
+            const focusable = root.querySelectorAll(
+                'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+            if (!focusable.length) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (e.shiftKey && document.activeElement === first) {
+                e.preventDefault(); last.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+                e.preventDefault(); first.focus();
+            }
+        }
+    };
+    document.addEventListener('keydown', _wizardKeydownHandler);
 }
 
 function closeWizard() {
     _wizardState = null;
+    if (_wizardKeydownHandler) {
+        document.removeEventListener('keydown', _wizardKeydownHandler);
+        _wizardKeydownHandler = null;
+    }
     const host = document.getElementById('spellcaster-wizard-root');
     if (host && host.parentNode) host.parentNode.removeChild(host);
+    // Restore the caller's focus so keyboard users don't land at <body>.
+    try {
+        if (_wizardPrevFocus && typeof _wizardPrevFocus.focus === 'function') {
+            _wizardPrevFocus.focus();
+        }
+    } catch { /* element may have detached while wizard was open */ }
+    _wizardPrevFocus = null;
 }
 
 function wizardGo(delta) {
@@ -1492,21 +1630,26 @@ function renderWizard() {
     const isLast  = state.step === WIZARD_STEPS.length - 1;
     host.innerHTML = `
     <div class="scw-backdrop" id="scw-backdrop"></div>
-    <div class="scw-modal" role="dialog" aria-label="Spellcaster Wizard">
+    <div class="scw-modal" role="dialog" aria-modal="true"
+         aria-labelledby="scw-title" aria-describedby="scw-body">
         <div class="scw-header">
-            <div class="scw-title">
-                <span class="scw-emoji">🧙‍♂️</span>
+            <div class="scw-title" id="scw-title">
+                <span class="scw-emoji" aria-hidden="true">🧙‍♂️</span>
                 Spellcaster Wizard
                 <span class="scw-step-label">${step.title}</span>
             </div>
-            <button class="scw-close" id="scw-close" aria-label="Close">×</button>
+            <button class="scw-close" id="scw-close" type="button"
+                    aria-label="Close wizard">×</button>
         </div>
-        <div class="scw-progress">${progressDots}</div>
-        <div class="scw-body">${bodyHtml}</div>
+        <div class="scw-progress" role="progressbar"
+             aria-valuemin="1" aria-valuemax="${WIZARD_STEPS.length}"
+             aria-valuenow="${state.step + 1}"
+             aria-label="Step ${state.step + 1} of ${WIZARD_STEPS.length}">${progressDots}</div>
+        <div class="scw-body" id="scw-body">${bodyHtml}</div>
         <div class="scw-footer">
-            <button class="scw-btn scw-secondary" id="scw-back"
+            <button class="scw-btn scw-secondary" id="scw-back" type="button"
                     ${canBack ? '' : 'disabled'}>Back</button>
-            <button class="scw-btn scw-primary" id="scw-next">
+            <button class="scw-btn scw-primary" id="scw-next" type="button">
                 ${isLast ? 'Save & Apply' : 'Next'}
             </button>
         </div>
@@ -1522,6 +1665,17 @@ function renderWizard() {
     // Per-step listeners (kept local to the step renderer via data-scw
     // attributes resolved below).
     _attachStepListeners(step.id, state, host);
+    // Move focus to the first interactive element in the body so
+    // keyboard users land inside the modal and the focus trap has
+    // something to trap. Skipped if nothing is focusable on the step
+    // (rare — most steps have at least one input or button).
+    const firstFocusable = host.querySelector(
+        '.scw-body input, .scw-body select, .scw-body textarea, .scw-body button'
+    ) || host.querySelector('#scw-next');
+    if (firstFocusable && typeof firstFocusable.focus === 'function') {
+        // Defer so the modal insertion finishes layout first.
+        setTimeout(() => { try { firstFocusable.focus(); } catch {} }, 0);
+    }
 }
 
 // Step renderers — each takes state, returns an HTML string. Per-step
@@ -1946,6 +2100,32 @@ function renderSettingsPanel() {
             <span id="spellcaster-denoise-val">${_escape(settings.restyle_denoise)}</span>
         </div>
 
+        <div id="spellcaster-last-error"
+             style="display:${_lastSpellcasterError ? 'block' : 'none'};
+                    margin-top:8px; padding:8px 10px;
+                    background:rgba(255,71,87,0.12);
+                    border-left:3px solid #ff4757;
+                    color:#ffb4bc;
+                    font-family:monospace; font-size:11px;
+                    white-space:pre-wrap; word-break:break-word;
+                    border-radius:4px;"
+             title="Last Spellcaster API error. Cleared on the next successful call."
+             role="alert" aria-live="polite">${_escape(_lastSpellcasterError)}</div>
+
+        <div class="spellcaster-row" style="margin-top:10px;">
+            <strong style="font-size:12px;">Settings backup</strong>
+            <div style="display:flex; gap:6px; margin-top:4px;">
+                <button type="button" id="spellcaster-export"
+                        title="Download current settings as JSON">Export</button>
+                <button type="button" id="spellcaster-import"
+                        title="Load settings from a JSON file">Import</button>
+                <button type="button" id="spellcaster-reset"
+                        title="Reset every setting to defaults (requires confirmation)">Reset</button>
+                <input type="file" id="spellcaster-import-file" accept="application/json"
+                       style="display:none;">
+            </div>
+        </div>
+
         <div class="spellcaster-commands">
             <strong>Generate:</strong>
             <div>/scene [description] — Klein txt2img → SDXL fallback</div>
@@ -2002,10 +2182,16 @@ function renderSettingsPanel() {
         document.getElementById('spellcaster-auto-inbox')?.addEventListener('change', (e) => {
             settings.auto_inbox_poll = e.target.checked;
             saveSettings();
-            // If the user just turned it on, fire one poll right away
-            // so they don't have to wait a full interval to see
-            // anything that's been sitting in the queue.
-            if (e.target.checked) pollInboxOnce().catch(() => {});
+            if (e.target.checked) {
+                // Fire one poll + open the SSE connection right away
+                // so the user doesn't wait a full interval / reconnect.
+                startInboxAutoPoll();
+                pollInboxOnce().catch(() => {});
+            } else {
+                // Tear down both the SSE stream and the polling timer
+                // so no background traffic continues after toggle-off.
+                _stopInbox();
+            }
         });
         document.getElementById('spellcaster-auto-cast')?.addEventListener('change', (e) => {
             settings.auto_cast = e.target.checked;
@@ -2028,6 +2214,71 @@ function renderSettingsPanel() {
         });
         document.getElementById('spellcaster-open-wizard')?.addEventListener('click', () => {
             openWizard();
+        });
+
+        // ── Settings backup: export / import / reset ──
+        document.getElementById('spellcaster-export')?.addEventListener('click', () => {
+            const payload = {
+                _format: 'spellcaster-settings',
+                _version: 1,
+                _exported_at: new Date().toISOString(),
+                settings: { ...getSettings() },
+            };
+            const blob = new Blob([JSON.stringify(payload, null, 2)],
+                                    { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `spellcaster-settings-${Date.now()}.json`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            if (typeof toastr !== 'undefined') toastr.success('Settings exported', 'Spellcaster');
+        });
+        const importFile = document.getElementById('spellcaster-import-file');
+        document.getElementById('spellcaster-import')?.addEventListener('click', () => {
+            importFile?.click();
+        });
+        importFile?.addEventListener('change', async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            if (file.size > 1 * 1024 * 1024) {
+                if (typeof toastr !== 'undefined') toastr.error('File too large (max 1 MB)', 'Spellcaster');
+                return;
+            }
+            try {
+                const text = await file.text();
+                const parsed = JSON.parse(text);
+                if (parsed._format !== 'spellcaster-settings' || !parsed.settings) {
+                    throw new Error('not a Spellcaster settings file');
+                }
+                // Only merge keys that exist in DEFAULT_SETTINGS — prevents
+                // an imported file from smuggling in unknown fields that
+                // later code might read without sanitizing.
+                const current = getSettings();
+                const cleaned = {};
+                for (const k of Object.keys(DEFAULT_SETTINGS)) {
+                    if (k in parsed.settings) cleaned[k] = parsed.settings[k];
+                }
+                Object.assign(current, cleaned);
+                saveSettings();
+                renderSettingsPanel();
+                if (typeof toastr !== 'undefined') toastr.success(`Imported ${Object.keys(cleaned).length} setting(s)`, 'Spellcaster');
+            } catch (err) {
+                if (typeof toastr !== 'undefined') toastr.error(`Import failed: ${err.message}`, 'Spellcaster');
+            } finally {
+                importFile.value = '';  // allow re-import of the same file
+            }
+        });
+        document.getElementById('spellcaster-reset')?.addEventListener('click', () => {
+            if (!confirm('Reset ALL Spellcaster settings to defaults? This includes your ComfyUI URL and any wizard choices.')) return;
+            const current = getSettings();
+            for (const k of Object.keys(current)) delete current[k];
+            Object.assign(current, DEFAULT_SETTINGS);
+            saveSettings();
+            renderSettingsPanel();
+            if (typeof toastr !== 'undefined') toastr.info('Settings reset to defaults', 'Spellcaster');
         });
 
         // Check health
@@ -2101,6 +2352,59 @@ function blobToBase64(blob) {
 //   * Clamped interval (10–300 s) so a bad setting can't hammer the
 //     Guild or starve forever.
 let _inboxInFlight = false;
+
+// Shared renderer used by both the polling path (pollInboxOnce) and the
+// SSE push path (_onInboxEvent). Keeps the attacker-reachable scrub /
+// URL-allowlist logic in one place so the two transports can't drift.
+function renderInboxMessages(msgs) {
+    if (!Array.isArray(msgs) || !msgs.length) return 0;
+    const _stripMd = (s) => String(s == null ? '' : s)
+        .replace(/[\r\n]+/g, ' ')
+        .replace(/[\[\]()`*_~]/g, '')
+        .slice(0, 200);
+    const _urlOk = (u) => {
+        if (typeof u !== 'string' || !u) return false;
+        if (u.startsWith('/api/')) return true;
+        try {
+            const p = new URL(u);
+            if (p.protocol === 'http:' || p.protocol === 'https:') return true;
+            if (p.protocol === 'data:' && /^data:image\//i.test(u)) return true;
+        } catch { return false; }
+        return false;
+    };
+    const parts = msgs.map((m, i) => {
+        const d = m.data || {};
+        const src = _stripMd(d.source || '?');
+        const title = _stripMd(d.title || m.kind);
+        const rawUrl = d.image_url || '';
+        const url = _urlOk(rawUrl) ? rawUrl.replace(/[\s)]/g, encodeURIComponent) : '';
+        return `**${i + 1}. From ${src}:** ${title}\n\n` +
+               (url ? `![${title}](${url})` : '(no usable image url)');
+    });
+    const body = `💎 ${msgs.length} item(s) from cross-plugin:\n\n` +
+                 parts.join('\n\n---\n\n');
+    try {
+        const ctx = getContext();
+        if (ctx && typeof ctx.addOneMessage === 'function') {
+            const msg = {
+                name: 'Spellcaster',
+                is_user: false,
+                is_system: true,
+                send_date: Date.now(),
+                mes: body,
+                extra: { type: 'narrator' },
+            };
+            if (Array.isArray(ctx.chat)) ctx.chat.push(msg);
+            ctx.addOneMessage(msg);
+        } else if (typeof toastr !== 'undefined') {
+            toastr.info(`Cross-plugin inbox: ${msgs.length} new item(s).`, 'Spellcaster');
+        }
+    } catch (e) {
+        console.warn('[Spellcaster] inbox render failed:', e);
+    }
+    return msgs.length;
+}
+
 async function pollInboxOnce() {
     if (_inboxInFlight) return 0;
     _inboxInFlight = true;
@@ -2110,61 +2414,7 @@ async function pollInboxOnce() {
         });
         if (!r.ok) return 0;
         const data = await r.json();
-        const msgs = (data && data.messages) || [];
-        if (!msgs.length) return 0;
-
-        // Same renderer as /sc-inbox — kept in sync so both paths
-        // produce identical output. Attacker-controlled `source`,
-        // `title`, `image_url` (published by any interface with
-        // Guild bus access) are scrubbed / allowlisted.
-        const _stripMd = (s) => String(s == null ? '' : s)
-            .replace(/[\r\n]+/g, ' ')
-            .replace(/[\[\]()`*_~]/g, '')
-            .slice(0, 200);
-        const _urlOk = (u) => {
-            if (typeof u !== 'string' || !u) return false;
-            if (u.startsWith('/api/')) return true;
-            try {
-                const p = new URL(u);
-                if (p.protocol === 'http:' || p.protocol === 'https:') return true;
-                if (p.protocol === 'data:' && /^data:image\//i.test(u)) return true;
-            } catch { return false; }
-            return false;
-        };
-        const parts = msgs.map((m, i) => {
-            const d = m.data || {};
-            const src = _stripMd(d.source || '?');
-            const title = _stripMd(d.title || m.kind);
-            const rawUrl = d.image_url || '';
-            const url = _urlOk(rawUrl) ? rawUrl.replace(/[\s)]/g, encodeURIComponent) : '';
-            return `**${i + 1}. From ${src}:** ${title}\n\n` +
-                   (url ? `![${title}](${url})` : '(no usable image url)');
-        });
-        const body = `💎 ${msgs.length} item(s) from cross-plugin:\n\n` +
-                     parts.join('\n\n---\n\n');
-        // Post as a system-ish message via ST's addOneMessage API if
-        // available; fall back to toastr + console so the user still
-        // sees something on older ST builds.
-        try {
-            const ctx = getContext();
-            if (ctx && typeof ctx.addOneMessage === 'function') {
-                const msg = {
-                    name: 'Spellcaster',
-                    is_user: false,
-                    is_system: true,
-                    send_date: Date.now(),
-                    mes: body,
-                    extra: { type: 'narrator' },
-                };
-                if (Array.isArray(ctx.chat)) ctx.chat.push(msg);
-                ctx.addOneMessage(msg);
-            } else if (typeof toastr !== 'undefined') {
-                toastr.info(`Cross-plugin inbox: ${msgs.length} new item(s).`, 'Spellcaster');
-            }
-        } catch (e) {
-            console.warn('[Spellcaster] inbox render failed:', e);
-        }
-        return msgs.length;
+        return renderInboxMessages((data && data.messages) || []);
     } catch (e) {
         // Network hiccup — fine, try again next tick.
         return 0;
@@ -2174,26 +2424,83 @@ async function pollInboxOnce() {
 }
 
 let _inboxTimer = null;
+let _inboxES = null;        // EventSource — preferred when the browser + Guild support SSE
+let _inboxESRetry = null;   // setTimeout handle for reconnect backoff
+let _inboxESBackoff = 2000; // starts at 2 s, doubles to 60 s on repeated failures
+
+function _stopInbox() {
+    if (_inboxTimer !== null) { clearInterval(_inboxTimer); _inboxTimer = null; }
+    if (_inboxES)             { try { _inboxES.close(); } catch {} _inboxES = null; }
+    if (_inboxESRetry)        { clearTimeout(_inboxESRetry); _inboxESRetry = null; }
+}
+
+// Handle a single SSE push. The stream kind is the `event:` field.
+function _onInboxEvent(evt) {
+    try {
+        const parsed = JSON.parse(evt.data || '{}');
+        // Fake a /cross/inbox-shaped message so _renderInboxMessages
+        // below can stay shared with the pull path.
+        const data = parsed.data || parsed;
+        renderInboxMessages([{ kind: evt.type || parsed.kind || 'sillytavern.asset.send', data }]);
+    } catch (e) {
+        console.warn('[Spellcaster] SSE event parse failed:', e);
+    }
+}
+
 function startInboxAutoPoll() {
-    if (_inboxTimer !== null) return;  // idempotent
+    const settings = getSettings();
+    // No work unless both the master toggle and the inbox opt-in are on.
+    if (!settings.enabled || !settings.auto_inbox_poll) { _stopInbox(); return; }
+    if (_inboxES || _inboxTimer) return;  // idempotent
+
+    // ── Path 1: SSE (preferred) ──────────────────────────────────────
+    // EventSource is available in every modern browser; ST runs in one.
+    // The server plugin proxies the Guild's /api/events/stream onto the
+    // ST origin so CORS/mixed-content isn't an issue.
+    if (typeof EventSource !== 'undefined') {
+        try {
+            const es = new EventSource(`${API_BASE}/cross/events`);
+            _inboxES = es;
+            es.addEventListener('sillytavern.asset.send', _onInboxEvent);
+            es.addEventListener('sillytavern.asset.created', _onInboxEvent);
+            // Reset backoff on a clean open.
+            es.addEventListener('open', () => { _inboxESBackoff = 2000; });
+            es.onerror = () => {
+                // EventSource tries to reconnect on its own, but it can
+                // busy-loop against a down Guild. Close + schedule a
+                // backoff reconnect we control.
+                try { es.close(); } catch {}
+                if (_inboxES === es) _inboxES = null;
+                const d = Math.min(60000, _inboxESBackoff);
+                _inboxESBackoff = Math.min(60000, _inboxESBackoff * 2);
+                _inboxESRetry = setTimeout(() => {
+                    const s = getSettings();
+                    if (s.enabled && s.auto_inbox_poll) startInboxAutoPoll();
+                }, d);
+            };
+        } catch (e) {
+            console.warn('[Spellcaster] EventSource failed; falling back to polling:', e);
+        }
+    }
+
+    // ── Path 2: Polling fallback ─────────────────────────────────────
+    // Run the poll in addition to SSE: SSE gives us instant new assets,
+    // but some older Guilds (pre-phase-3) won't serve /cross/events and
+    // SSE onerror might keep firing. Polling is the defensive backstop.
     const tick = async () => {
         try {
-            const settings = getSettings();
-            if (!settings.enabled || !settings.auto_inbox_poll) return;
+            const s = getSettings();
+            if (!s.enabled || !s.auto_inbox_poll) return;
             if (typeof document !== 'undefined' && document.hidden) return;
             await pollInboxOnce();
         } catch (e) {
             console.warn('[Spellcaster] inbox poll tick failed:', e);
         }
     };
-    // Clamp the interval to [10 s, 5 min] — a sane range prevents a
-    // fat-fingered setting from hammering the Guild or waiting forever.
-    const raw = Number(getSettings().auto_inbox_interval_s);
+    const raw = Number(settings.auto_inbox_interval_s);
     const interval = Math.min(300, Math.max(10, Number.isFinite(raw) ? raw : 30)) * 1000;
     _inboxTimer = setInterval(tick, interval);
-    // Also fire once right away so users don't wait a full cycle on
-    // freshly-enabled auto-poll.
-    setTimeout(tick, 500);
+    setTimeout(tick, 500);  // fire once immediately
 }
 
 async function autoCastOnStartup() {

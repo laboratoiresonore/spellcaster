@@ -5,5 +5,8 @@
     "main": "index.js",
     "type": "module",
     "author": "Laboratoire Sonore",
-    "license": "GPL-2.0"
+    "license": "GPL-2.0",
+    "scripts": {
+        "test": "node --test --test-reporter=spec test/server-plugin.test.mjs test/index.test.mjs test/workflows.test.mjs"
+    }
 }
