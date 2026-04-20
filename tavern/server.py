@@ -2598,6 +2598,94 @@ def _serve_placeholder_icon(handler):
     handler.wfile.write(data)
 
 
+_AVATAR_IMAGE_ARCHS = frozenset({
+    "sdxl", "sd15", "illustrious", "pony", "flux1dev", "flux2klein",
+    "chroma", "sd3", "sd3_turbo", "hunyuan_dit", "pixart", "auraflow",
+    "kolors", "playground", "sdxl_turbo", "zit",
+})
+
+
+def _avatar_dispatch_with_qc(prompt_text, negative, comfy_url, char):
+    """Render an avatar with adaptive, self-healing quality control.
+
+    The avatar fast-path passes ``skip_loras=True`` to avoid LoRA shape
+    mismatches during internal asset generation. That's fine for most
+    archs, but leaner settings on certain families (notably Flux 2 Klein
+    sampled away from its 1024² native resolution) produce chronically
+    under-exposed output — near-black portraits that read as "no avatar"
+    in a 36px circular thumbnail.
+
+    This helper wraps ``_dispatch_txt2img`` with a one-shot QC retry:
+      1. First pass — arch's avatar resolution, ``skip_loras=True``.
+      2. Inspect mean luminance of the result. If it crosses the
+         under-exposure threshold, retry at the arch's full native
+         ``default_resolution`` with ``skip_loras=False`` so the
+         registered ``autoset_loras`` (sharpness / detail helpers)
+         run. We also drop ``skip_loras`` on retry so Klein's
+         ``K9bSh4rpD3tails`` and any future family-specific helpers
+         come along for the ride.
+      3. Degenerate (solid-colour) outputs are caught by the existing
+         ``_image_is_degenerate`` pass and trigger the same retry.
+
+    Adaptive: every decision reads from the arch registry (``get_arch``)
+    instead of hard-coding per-family exceptions, so a new image
+    architecture inherits the behaviour once it declares its
+    ``default_resolution`` / ``autoset_loras``.
+
+    Returns the avatar URL or raises the last dispatch exception.
+    """
+    own_model = char.get("model_name")
+    own_arch = char.get("model_arch")
+    if own_model and own_arch in _AVATAR_IMAGE_ARCHS:
+        use_model, use_arch = own_model, own_arch
+    else:
+        use_model, use_arch = None, None
+    model_type = char.get("model_type")
+
+    av_w, av_h = _avatar_resolution(use_arch)
+    img_url = _dispatch_txt2img(
+        prompt_text, negative, av_w, av_h, comfy_url,
+        model_name=use_model, model_arch=use_arch,
+        model_type=model_type, skip_loras=True,
+    )
+
+    # QC pass — check exposure + degeneracy. A single retry is worth
+    # the cost (avatar gen is the user's first visual impression of a
+    # newly-added wizard); more than one gets noisy.
+    needs_retry = False
+    try:
+        if _image_is_underexposed(img_url):
+            print(f"  [Avatar] QC: underexposed (arch={use_arch}) — retrying with full preset")
+            needs_retry = True
+        elif _image_is_degenerate(img_url):
+            print(f"  [Avatar] QC: degenerate (arch={use_arch}) — retrying with full preset")
+            needs_retry = True
+    except Exception:
+        needs_retry = False
+
+    if not needs_retry:
+        return img_url
+
+    # Retry at the arch's registered native resolution with full LoRAs.
+    rw, rh = av_w, av_h
+    try:
+        if BUILTIN_AVAILABLE and get_arch and use_arch:
+            _arch = get_arch(use_arch)
+            if _arch and getattr(_arch, "default_resolution", None):
+                rw, rh = int(_arch.default_resolution[0]), int(_arch.default_resolution[1])
+    except Exception:
+        rw, rh = av_w, av_h
+    try:
+        return _dispatch_txt2img(
+            prompt_text, negative, rw, rh, comfy_url,
+            model_name=use_model, model_arch=use_arch,
+            model_type=model_type, skip_loras=False,
+        )
+    except Exception as e:
+        print(f"  [Avatar] QC retry failed ({e}); keeping first-pass result")
+        return img_url
+
+
 def _generate_avatar_for_setup(char, comfy_url):
     """Render a single avatar inline (called by the background worker).
 
@@ -2606,27 +2694,10 @@ def _generate_avatar_for_setup(char, comfy_url):
     Returns the avatar URL or None on failure.
     """
     try:
-        char_id = char.get("id", "")
         prompt_text = _build_avatar_prompt(char)
         negative = ("text, watermark, blurry, deformed, ugly, low quality, "
                     "frame, border")
-        own_model = char.get("model_name")
-        own_arch = char.get("model_arch")
-        IMAGE_ARCHS = {"sdxl", "sd15", "illustrious", "pony", "flux1dev",
-                       "flux2klein", "chroma", "sd3", "sd3_turbo",
-                       "hunyuan_dit", "pixart", "auraflow", "kolors",
-                       "playground", "sdxl_turbo", "zit"}
-        if own_model and own_arch in IMAGE_ARCHS:
-            use_model, use_arch = own_model, own_arch
-        else:
-            use_model, use_arch = None, None
-        av_w, av_h = _avatar_resolution(use_arch)
-        return _dispatch_txt2img(
-            prompt_text, negative, av_w, av_h, comfy_url,
-            model_name=use_model, model_arch=use_arch,
-            model_type=char.get("model_type"),
-            skip_loras=True,
-        )
+        return _avatar_dispatch_with_qc(prompt_text, negative, comfy_url, char)
     except Exception as e:
         print(f"  [Setup] Avatar dispatch failed for {char.get('id')}: {e}")
         return None
@@ -7197,20 +7268,83 @@ _ANIM_POLL_THREAD = None
 def _avatar_resolution(arch_key):
     """Return (width, height) for avatar generation, optimized per architecture.
 
-    Each architecture was trained at a native resolution; generating at that
-    resolution or nearby produces the best quality. For avatar thumbnails we
-    use a balance of quality vs speed:
-      - SD1.5: 512×512 (native)
-      - SDXL Turbo: 512×512 (native for turbo)
-      - Everything else (SDXL, Flux, SD3, etc.): 768×768 (good quality, not overkill)
+    Honours the arch's registered ``default_resolution`` (each arch knows
+    what its distilled / turbo / base checkpoint was trained at), then
+    clamps to a sensible avatar range (min 512, max 1024 on the long side)
+    and rounds to a multiple of 16. This fixes the Klein family, which
+    was producing underexposed output at the old hardcoded 768×768 — Klein
+    is a 4-step distillation trained at 1024² and drifts to near-black
+    when sampled away from its trained resolution.
     """
-    if arch_key in ("sd15",):
-        return 512, 512
-    elif arch_key in ("sdxl_turbo",):
-        return 512, 512
-    # All modern architectures: SDXL, Illustrious, Pony, Flux, SD3, HunyuanDiT,
-    # PixArt, AuraFlow, Kolors, Playground, ZIT, etc.
-    return 768, 768
+    target = None
+    try:
+        if BUILTIN_AVAILABLE and get_arch:
+            arch = get_arch(arch_key)
+            if arch and getattr(arch, "default_resolution", None):
+                target = tuple(arch.default_resolution)
+    except Exception:
+        target = None
+    if target is None:
+        # Legacy fallbacks for unregistered archs: keep the old behaviour.
+        if arch_key in ("sd15", "sdxl_turbo"):
+            return 512, 512
+        return 768, 768
+
+    w, h = int(target[0]), int(target[1])
+    long_side = max(w, h)
+    short_side = min(w, h)
+    # Cap the long side at 1024 (avatar thumbnails don't need more).
+    if long_side > 1024:
+        scale = 1024.0 / long_side
+        w = int(w * scale)
+        h = int(h * scale)
+        short_side = min(w, h)
+    # And never drop below 512 on the short side so SD1.5 etc. stay at
+    # native without being accidentally upscaled.
+    if short_side < 512:
+        scale = 512.0 / short_side
+        w = int(w * scale)
+        h = int(h * scale)
+    # ComfyUI samplers want multiples of 16; round DOWN so we never
+    # exceed the cap we just applied.
+    w = max(512, (w // 16) * 16)
+    h = max(512, (h // 16) * 16)
+    return w, h
+
+
+def _image_is_underexposed(image_url, threshold=48.0):
+    """Return True if a generated image is chronically dark.
+
+    Companion to ``_image_is_degenerate`` — that one catches pure-flat
+    frames, this one catches frames that HAVE content but are too dark
+    to read as a portrait in a sidebar thumbnail. Mean luminance below
+    ``threshold`` (out of 255) triggers a retry path. Klein 2 at non-
+    native resolution produces 15-30/255 output; SDXL baseline sits
+    around 100-120/255.
+
+    Defensive: PIL optional — returns False on import or runtime error
+    so a missing dep can never block the dispatch.
+    """
+    try:
+        from PIL import Image
+        import io
+    except ImportError:
+        return False
+    try:
+        with urllib.request.urlopen(image_url, timeout=10) as resp:
+            data = resp.read()
+        if len(data) < 200:
+            return False  # degeneracy check handles truncated payloads
+        img = Image.open(io.BytesIO(data)).convert("L")
+        img.thumbnail((256, 256))
+        pixels = list(img.getdata())
+        if not pixels:
+            return False
+        mean = sum(pixels) / len(pixels)
+        return mean < threshold
+    except Exception as e:
+        print(f"  [Quality] exposure check failed: {e}")
+        return False
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -12822,38 +12956,16 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 prompt_text = base_prompt
             negative = "text, watermark, blurry, deformed, ugly, low quality, frame, border"
 
-            # Per-model wizards (comfyui_model / custom_*) use their OWN model
-            # to generate the avatar — the wizard's portrait is conjured by itself.
-            own_model = char.get("model_name")
-            own_arch = char.get("model_arch")
-            # Only use the wizard's model for image-gen architectures
-            IMAGE_ARCHS = {"sdxl", "sd15", "illustrious", "pony",
-                           "flux1dev", "flux2klein", "chroma", "sd3", "sd3_turbo",
-                           "hunyuan_dit", "pixart", "auraflow", "kolors",
-                           "playground", "sdxl_turbo", "zit"}
-            if own_model and own_arch in IMAGE_ARCHS:
-                use_model = own_model
-                use_arch = own_arch
-            else:
-                use_model = None
-                use_arch = None
-
-            # Use arch-appropriate resolution for best quality
-            av_w, av_h = _avatar_resolution(use_arch)
-
             use_type = char.get("model_type", "unknown")
-            print(f"  [Avatar] Generating for {char_id}: model={use_model} arch={use_arch} type={use_type} res={av_w}x{av_h}")
+            print(f"  [Avatar] Generating for {char_id}: model={char.get('model_name')} arch={char.get('model_arch')} type={use_type}")
             try:
-                img_url = _dispatch_txt2img(
-                    prompt_text, negative, av_w, av_h, comfy,
-                    model_name=use_model, model_arch=use_arch,
-                    model_type=char.get("model_type"),
-                    skip_loras=True)
+                img_url = _avatar_dispatch_with_qc(
+                    prompt_text, negative, comfy, char)
                 _GENERATED_ASSETS.setdefault(char_id, {})["avatar_url"] = img_url
                 _save_generated_assets()
                 return self.end_json(200, {"avatar_url": img_url})
             except Exception as e:
-                print(f"  [Avatar] FAILED for {char_id} (model={use_model}, arch={use_arch}): {e}")
+                print(f"  [Avatar] FAILED for {char_id} (model={char.get('model_name')}, arch={char.get('model_arch')}): {e}")
                 return self.end_json(500, {"error": str(e)})
 
         # -- /api/animated_avatar_queue -- queue a WAN animation (non-blocking)
@@ -12993,27 +13105,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
                         prompt_text = _build_avatar_prompt(char)
                         negative = "text, watermark, blurry, deformed, ugly, low quality, frame, border"
                         print(f"  [Batch] Generating avatar for: {char.get('name', char['id'])}")
-
-                        # Per-model wizards use their OWN model (matches avatar_generate)
-                        own_model = char.get("model_name")
-                        own_arch = char.get("model_arch")
-                        IMAGE_ARCHS = {"sdxl", "sd15", "illustrious", "pony",
-                                       "flux1dev", "flux2klein", "chroma",
-                                       "sd3", "sd3_turbo", "hunyuan_dit",
-                                       "pixart", "auraflow", "kolors",
-                                       "playground", "sdxl_turbo", "zit"}
-                        if own_model and own_arch in IMAGE_ARCHS:
-                            use_model, use_arch = own_model, own_arch
-                        else:
-                            use_model, use_arch = None, None
-
-                        # Use arch-appropriate resolution
-                        av_w, av_h = _avatar_resolution(use_arch)
-
-                        img_url = _dispatch_txt2img(prompt_text, negative, av_w, av_h, comfy,
-                                                   model_name=use_model, model_arch=use_arch,
-                                                   model_type=char.get("model_type"),
-                                                   skip_loras=True)
+                        img_url = _avatar_dispatch_with_qc(
+                            prompt_text, negative, comfy, char)
                         _BATCH_RESULTS.append({"id": char['id'], "avatar_url": img_url, "status": "ok"})
                         # Persist to _GENERATED_ASSETS so avatar survives page reload
                         _GENERATED_ASSETS.setdefault(char['id'], {})["avatar_url"] = img_url
