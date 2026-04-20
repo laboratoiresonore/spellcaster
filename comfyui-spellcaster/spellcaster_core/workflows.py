@@ -4028,17 +4028,20 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
         latent_ref = [mask_latent_id, 0]
 
     # Two-pass KSamplerAdvanced
+    # `_sampler` / `_scheduler` default to euler/simple (canon); caller
+    # may override via `sampler_name`/`scheduler` kwargs for experiments
+    # like dpmpp_2m_sde/karras on full-step runs.
     pass1_id = nf.ksampler_advanced(
         high_ref, ["40", 0], ["40", 1], latent_ref,
         add_noise="enable", noise_seed=seed,
-        steps=steps, cfg=cfg, sampler_name="euler", scheduler="simple",
+        steps=steps, cfg=cfg, sampler_name=_sampler, scheduler=_scheduler,
         start_at_step=0, end_at_step=second_step,
         return_with_leftover_noise="enable", node_id="50",
     )
     pass2_id = nf.ksampler_advanced(
         low_ref, ["40", 0], ["40", 1], [pass1_id, 0],
         add_noise="disable", noise_seed=0,
-        steps=steps, cfg=1, sampler_name="euler", scheduler="simple",
+        steps=steps, cfg=1, sampler_name=_sampler, scheduler=_scheduler,
         start_at_step=second_step, end_at_step=10000,
         return_with_leftover_noise="disable", node_id="51",
     )
