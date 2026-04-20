@@ -671,6 +671,12 @@ def _auto_update():
         staged = 0
         failed = 0
         remote_filenames = set()
+        # Track non-py assets that failed so the end-of-run summary
+        # can call them out by name — the user's support complaint
+        # was about silently-skipped theme / icon updates, and the
+        # fix is to name names in stderr so they can eyeball which
+        # file actually broke.
+        _failed_assets: list[tuple[str, str]] = []
         _plugin_root = _PLUGIN_DIR.resolve()
         for rel_path, remainder, expected_size, expected_sha in remote_files:
             remote_filenames.add(remainder)
@@ -695,7 +701,17 @@ def _auto_update():
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 tmp = dest.with_suffix(dest.suffix + ".tmp")
                 if _au is not None:
-                    blob = _au.download_blob(
+                    # Use the retry wrapper when available — asset
+                    # files (CSS / PNG / GIF) fail more often than
+                    # plain .py downloads because they hit large
+                    # blob endpoints. Transient network hiccups get
+                    # smoothed over 3 attempts with exp backoff;
+                    # deterministic failures (SHA / size mismatch)
+                    # still fail fast and land in the `failed`
+                    # counter.
+                    _dl = getattr(_au, "download_blob_with_retry",
+                                  _au.download_blob)
+                    blob = _dl(
                         url, expected_size, _hdrs,
                         timeout=60,
                         filename_hint=remainder,
@@ -730,6 +746,10 @@ def _auto_update():
                         staged += 1
             except Exception as e:
                 failed += 1
+                # Track failed non-py assets separately so the final
+                # summary can call them out by name.
+                if not remainder.endswith(".py"):
+                    _failed_assets.append((remainder, str(e)[:120]))
                 print(f"[Spellcaster] Failed to download {remainder}: {e}", file=_sys.stderr)
                 # Clean up any partial tmp file so the next run starts fresh.
                 try:
@@ -865,6 +885,14 @@ def _auto_update():
             if failed > 0:
                 msg += (f"\n{failed} file(s) failed integrity check or "
                         "download — next launch will retry them.")
+                # Name the failed asset files explicitly. Without
+                # this, "3 files failed" doesn't tell the user their
+                # themes / icons specifically are affected.
+                if _failed_assets:
+                    names = ", ".join(n for n, _err in _failed_assets[:6])
+                    if len(_failed_assets) > 6:
+                        names += f", +{len(_failed_assets) - 6} more"
+                    msg += f"\nAssets that failed: {names}"
             if staged > 0:
                 msg += "\nRestart GIMP to apply all updates (some files were in use)."
             elif updated > 0:
@@ -1277,6 +1305,227 @@ if not getattr(sys.modules.get(__name__), _PRESENCE_KEY, False):
         _start_comfy_presence_heartbeat()
     except Exception as _e:  # pragma: no cover — defensive
         print(f"[Spellcaster] Presence heartbeat failed to start: {_e}")
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Cross-interface INBOX — worker + per-menu-invocation auto-drain
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Every Spellcaster menu click triggers a silent inbox drain BEFORE the
+# user's intended action runs. GIMP 3 plugins are one-shot processes
+# (no persistent main loop for a background timer), so instead of a
+# long-lived poller, we gate on an on-disk timestamp and drain at most
+# once per `_INBOX_POLL_INTERVAL_S` seconds across the whole user
+# session. Errors are swallowed — the inbox drain must never block or
+# fail a user's primary action.
+#
+# Manual "Check Spellcaster Inbox" still exists and shares the same
+# worker — it bypasses the interval gate so "force drain now" works.
+#
+# The on-disk gate file sits next to GIMP's pluginrc under the user's
+# plug-ins dir. We deliberately avoid the main plugin config.json so a
+# stale timestamp never blocks legitimate config reads.
+
+_INBOX_GATE_FILE = None          # lazy-populated on first call
+_INBOX_POLL_INTERVAL_S = 30.0    # don't hit the mailbox more than twice/min
+_INBOX_AUTO_HTTP_TIMEOUT = 3.0   # short cap — silent path, not blocking
+_INBOX_AUTO_ASSET_TIMEOUT = 8.0  # per-asset download budget on auto path
+_INBOX_AUTO_MAX_SIZE = 25 * 1024 * 1024   # 25 MB on auto path
+
+
+def _inbox_gate_path():
+    global _INBOX_GATE_FILE
+    if _INBOX_GATE_FILE is None:
+        try:
+            _INBOX_GATE_FILE = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "spellcaster_inbox_gate.json")
+        except Exception:
+            # Fallback: system temp if somehow __file__ isn't resolvable.
+            _INBOX_GATE_FILE = os.path.join(
+                tempfile.gettempdir(), "spellcaster_inbox_gate.json")
+    return _INBOX_GATE_FILE
+
+
+def _inbox_gate_read():
+    try:
+        with open(_inbox_gate_path(), "r", encoding="utf-8") as f:
+            return float((json.load(f) or {}).get("last_poll_ts") or 0.0)
+    except Exception:
+        return 0.0
+
+
+def _inbox_gate_write(ts):
+    try:
+        with open(_inbox_gate_path(), "w", encoding="utf-8") as f:
+            json.dump({"last_poll_ts": float(ts)}, f)
+    except Exception:
+        pass  # best-effort — a missed write just re-polls sooner
+
+
+def _drain_inbox_worker(*, http_timeout, per_asset_timeout, max_asset_size,
+                        silent):
+    """Pull and open gimp mailbox assets. Used by both the manual
+    "Check Inbox" menu entry and the silent per-invocation auto-drain.
+
+    Returns a dict:
+      {"status":  "ok" | "empty" | "cross_interface_missing" |
+                  "guild_backbone_off" | "guild_http_error" |
+                  "guild_unreachable",
+       "opened":  int,
+       "failures": [str],
+       "http_code": int | None,
+       "error":    str | None}
+
+    ``silent=True`` suppresses ``Gimp.message`` popups and caps size +
+    timeouts so the auto-poll path never blocks a user for more than a
+    few seconds even if the Guild is slow.
+    """
+    result = {"status": "ok", "opened": 0, "failures": [],
+              "http_code": None, "error": None}
+    try:
+        from spellcaster_core.cross_interface import resolve_guild_url
+    except ImportError as e:
+        result["status"] = "cross_interface_missing"
+        result["error"] = str(e)
+        return result
+
+    import urllib.request as _ur
+    import urllib.error as _ue
+    import urllib.parse as _up
+    import json as _json
+
+    guild_base = resolve_guild_url()
+    url = f"{guild_base}/api/gimp/inbox?consume=1&max=20"
+    try:
+        req = _ur.Request(url, headers={"Accept": "application/json"})
+        with _ur.urlopen(req, timeout=http_timeout) as resp:
+            body = _json.loads(resp.read())
+    except _ue.HTTPError as e:
+        if e.code == 501:
+            result["status"] = "guild_backbone_off"
+        else:
+            result["status"] = "guild_http_error"
+            result["http_code"] = e.code
+        return result
+    except Exception as e:
+        result["status"] = "guild_unreachable"
+        result["error"] = str(e)
+        return result
+
+    messages = (body or {}).get("messages") or []
+    keepers = [m for m in messages
+                if (m.get("kind") or "").startswith("gimp.asset.")]
+    if not keepers:
+        result["status"] = "empty"
+        return result
+
+    opened = 0
+    failures = []
+    for m in keepers:
+        md = m.get("data") or {}
+        image_url = (md.get("image_url") or md.get("url") or "").strip()
+        if not image_url:
+            failures.append("(message with no image_url)")
+            continue
+        if image_url.startswith("/"):
+            image_url = guild_base.rstrip("/") + image_url
+        try:
+            _scheme = _up.urlparse(image_url).scheme.lower()
+        except Exception:
+            _scheme = ""
+        if _scheme not in ("http", "https"):
+            failures.append(f"blocked non-http url: {image_url[:80]}")
+            continue
+        try:
+            req = _ur.Request(image_url,
+                              headers={"User-Agent": "spellcaster-gimp/2.0"})
+            with _ur.urlopen(req, timeout=per_asset_timeout) as resp:
+                asset_bytes = resp.read(max_asset_size + 1)
+                if len(asset_bytes) > max_asset_size:
+                    failures.append(
+                        f"oversize (>{max_asset_size // (1024*1024)} MB): "
+                        f"{image_url[:80]}")
+                    continue
+        except Exception as e:
+            failures.append(f"download: {e}")
+            continue
+        suffix = ".png"
+        if image_url.lower().endswith((".jpg", ".jpeg")):
+            suffix = ".jpg"
+        elif image_url.lower().endswith(".mp4"):
+            failures.append(
+                f"mp4 can't open in GIMP: {image_url.rsplit('/', 1)[-1]}")
+            continue
+        tmp = tempfile.NamedTemporaryFile(
+            delete=False, suffix=suffix, prefix="spellcaster_inbox_")
+        try:
+            tmp.write(asset_bytes)
+            tmp.close()
+            gfile = Gio.File.new_for_path(tmp.name)
+            new_image = Gimp.file_load(
+                Gimp.RunMode.NONINTERACTIVE, gfile)
+            if new_image is None:
+                failures.append(f"GIMP couldn't load {tmp.name}")
+                continue
+            Gimp.Display.new(new_image)
+            opened += 1
+        except Exception as e:
+            failures.append(f"load: {e}")
+
+    result["opened"] = opened
+    result["failures"] = failures
+    return result
+
+
+def _maybe_auto_drain_inbox():
+    """Silent, interval-gated inbox drain. Called at the top of every
+    wrapped Spellcaster procedure callback.
+
+    Returns immediately if:
+      - disabled via config (``auto_inbox_poll=false``);
+      - less than ``_INBOX_POLL_INTERVAL_S`` has passed since the
+        last drain (on-disk timestamp);
+      - any exception during gate read (fail-open skips the drain
+        rather than risk blocking the user).
+
+    NEVER raises. Prints any internal error to stdout for the dev log
+    but does not surface to the user — the auto path is fire-and-forget.
+    """
+    try:
+        cfg = _load_config()
+        if not cfg.get("auto_inbox_poll", True):
+            return
+        now = time.time()
+        last = _inbox_gate_read()
+        if (now - last) < _INBOX_POLL_INTERVAL_S:
+            return
+        _inbox_gate_write(now)
+        result = _drain_inbox_worker(
+            http_timeout=_INBOX_AUTO_HTTP_TIMEOUT,
+            per_asset_timeout=_INBOX_AUTO_ASSET_TIMEOUT,
+            max_asset_size=_INBOX_AUTO_MAX_SIZE,
+            silent=True)
+        # Only log when something actually happened — silent drains
+        # shouldn't clutter the dev console.
+        if result.get("opened"):
+            print(f"[Spellcaster] Auto-drained {result['opened']} "
+                  f"inbox asset(s)")
+    except Exception as e:
+        print(f"[Spellcaster] auto inbox drain skipped: {e}")
+
+
+def _wrap_auto_drain(callback):
+    """Wrap a GIMP procedure callback so the inbox auto-drain runs
+    before the user's action. The drain is capped by timeout + size
+    (see `_INBOX_AUTO_*` constants) so even a slow or hostile Guild
+    can't block the user more than a few seconds. Errors from the
+    drain NEVER propagate to the wrapped callback.
+    """
+    def wrapped(procedure, run_mode, image, drawables, config, data):
+        _maybe_auto_drain_inbox()
+        return callback(procedure, run_mode, image, drawables, config, data)
+    return wrapped
 
 
 def _auto_enhance(prompt, arch_key, negative="", model_name=None,
@@ -2084,27 +2333,36 @@ CONTROLNET_GUIDE_MODES = {
                        "illustrious": "SDXL\\ttplanetSDXLControlnet_Tile_v20Fp16.safetensors",
                        "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
     },
+    # Three normal-map modes share the same cn_models shape. Prior to
+    # 2026-04-20 all three were mis-wired to depth (SDXL/Illustrious)
+    # or lineart (SD1.5) ControlNet files — normal-vector RGB colours
+    # fed into an unrelated CN produced visually-garbage output. The
+    # corrected filenames below are the canonical normal-map CNs. If
+    # a given model isn't on the user's ComfyUI server, workflow
+    # submit fails with a clear "model not found" error (far better
+    # than silent wrong-CN output). The cn_model_coverage section in
+    # tests/e2e_audit.py flags missing files against a live server.
     "Normal Map (surface 3D) — SD1.5/SDXL/Flux/ZIT": {
         "preprocessor": "BAE-NormalMapPreprocessor",
-        "cn_models": {"sd15": "control_v11p_sd15_lineart_fp16.safetensors",
-                       "sdxl": "SDXL\\control-lora-depth-rank128.safetensors",
-                       "illustrious": "SDXL\\control-lora-depth-rank128.safetensors",
+        "cn_models": {"sd15": "control_v11p_sd15_normalbae.pth",
+                       "sdxl": "SDXL\\controlnet-union-sdxl-1.0.safetensors",
+                       "illustrious": "SDXL\\controlnet-union-sdxl-1.0.safetensors",
                        "flux1dev": "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors",
                        "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
     },
     "Normal Map (use existing layer) — all archs": {
         "preprocessor": None,
-        "cn_models": {"sd15": "control_v11p_sd15_lineart_fp16.safetensors",
-                       "sdxl": "SDXL\\control-lora-depth-rank128.safetensors",
-                       "illustrious": "SDXL\\control-lora-depth-rank128.safetensors",
+        "cn_models": {"sd15": "control_v11p_sd15_normalbae.pth",
+                       "sdxl": "SDXL\\controlnet-union-sdxl-1.0.safetensors",
+                       "illustrious": "SDXL\\controlnet-union-sdxl-1.0.safetensors",
                        "flux1dev": "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors",
                        "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
     },
     "Normal DSINE (high quality) — SD1.5/SDXL/Flux/ZIT": {
         "preprocessor": "DSINE-NormalMapPreprocessor",
-        "cn_models": {"sd15": "control_v11p_sd15_lineart_fp16.safetensors",
-                       "sdxl": "SDXL\\control-lora-depth-rank128.safetensors",
-                       "illustrious": "SDXL\\control-lora-depth-rank128.safetensors",
+        "cn_models": {"sd15": "control_v11p_sd15_normalbae.pth",
+                       "sdxl": "SDXL\\controlnet-union-sdxl-1.0.safetensors",
+                       "illustrious": "SDXL\\controlnet-union-sdxl-1.0.safetensors",
                        "flux1dev": "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors",
                        "zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
     },
@@ -2119,6 +2377,200 @@ CONTROLNET_GUIDE_MODES = {
         "cn_models": {"zit": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"},
     },
 }
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  OUTPAINT_PURPOSE_PRESETS — shared between Outpaint and Klein Outpaint
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Single source of truth for every "what are you extending" preset the two
+# outpaint dialogs offer. Both `_run_outpaint` (generic, ControlNet path)
+# and `_run_klein_outpaint` (Flux 2 Klein) populate their Purpose combobox
+# from this dict so the feature parity is by construction. Each entry
+# carries BOTH a positive prompt and a negative — architectures that
+# reject negative conditioning (Klein, Flux 1 Dev, Kontext, Chroma per §9)
+# still see the preset in the list; the dialog just ignores the negative
+# at submit time (`_apply_arch_optimizations` disables the widget).
+#
+# Rule when adding a new purpose: prompt must explicitly encode "seamless
+# continuation" language (the model's job is to extend, not replace),
+# and the negative must reject "visible seam / mismatched lighting /
+# inconsistent perspective" style failure modes.
+
+OUTPAINT_PURPOSE_PRESETS = {
+    "(general extension)": {
+        "prompt": "seamless continuation of the existing scene, matching lighting, style, and color palette, natural extension, consistent perspective, same quality and mood",
+        "negative": "different style, inconsistent lighting, visible seam, border artifact, blurry, mismatched colors, distorted perspective",
+    },
+    "Complete person / body": {
+        "prompt": "natural continuation of the human body, correct anatomy, matching skin tone and clothing, same pose direction, realistic body proportions, matching lighting on skin",
+        "negative": "extra limbs, wrong anatomy, mismatched skin color, different clothing, floating body parts, deformed, cut off",
+    },
+    "Extend landscape / sky": {
+        "prompt": "seamless landscape continuation, matching horizon line, consistent sky, natural terrain, same vegetation style, matching cloud formation, coherent depth of field",
+        "negative": "different landscape, sky mismatch, horizon break, inconsistent foliage, visible seam, different season",
+    },
+    "Complete cut-off object": {
+        "prompt": "natural completion of the cut-off object, matching material, same texture and color, correct proportions, physically plausible shape, seamless extension",
+        "negative": "wrong shape, different material, inconsistent color, floating parts, impossible geometry, visible seam",
+    },
+    "Extend interior / room": {
+        "prompt": "seamless room extension, matching wall color, consistent floor, same furniture style, correct perspective lines, matching ambient lighting",
+        "negative": "different room, wrong perspective, inconsistent decor, floating furniture, visible seam, mismatched lighting",
+    },
+    "Add more background / bokeh": {
+        "prompt": "smooth background extension, matching bokeh and depth of field, consistent blur, same color tones, natural out-of-focus continuation",
+        "negative": "sharp background, different blur, focus shift, inconsistent bokeh, visible seam, different color temperature",
+    },
+    "Widen panorama": {
+        "prompt": "panoramic scene extension, wide angle continuation, matching horizon, consistent sky and ground, seamless blend at edges, natural wide-angle perspective",
+        "negative": "lens distortion mismatch, different exposure, sky break, visible stitch line, perspective error",
+    },
+    "Add headroom / sky / ceiling above": {
+        "prompt": "natural continuation upward, sky or ceiling matching scene context, correct lighting direction from above, consistent atmosphere, proper vertical perspective",
+        "negative": "floating objects, wrong ceiling, sky mismatch, inconsistent overhead lighting, visible seam, direction reversed",
+    },
+    "Add floor / ground below": {
+        "prompt": "natural ground surface below subject, matching floor material, correct shadows, consistent perspective, seamless edge blending, proper ground-plane vanishing point",
+        "negative": "floating subject, wrong floor material, mismatched shadows, impossible perspective, visible seam, tilted ground",
+    },
+    "Reveal hidden subject": {
+        "prompt": "extending to reveal more of a partially visible person or object, natural body continuation, matching pose and proportions, seamless completion of what was cut off",
+        "negative": "wrong anatomy, mismatched pose, duplicated head or limbs, distorted proportions, visible seam, conflicting perspective",
+    },
+    "Add reflection surface": {
+        "prompt": "reflective surface below, mirror-like floor or water reflection, matching lighting, symmetrical reflection of subject, natural ripples or glossy finish",
+        "negative": "incorrect reflection, mismatched subject in reflection, distorted mirror image, broken symmetry, harsh seam",
+    },
+    "Cinematic widescreen crop": {
+        "prompt": "extending sides for cinematic 2.39:1 aspect ratio, matching scene content, letterbox-style wide composition, environmental context at the edges",
+        "negative": "repeated edge content, tiled artefacts, obvious crop lines, inconsistent color temperature, distorted perspective at edges",
+    },
+    "Add foreground elements": {
+        "prompt": "natural foreground elements, depth-appropriate objects, bokeh foreground blur, matching scene context and lighting, framing the subject without blocking it",
+        "negative": "foreground obscuring subject, wrong depth of field, sharp elements where blur is expected, lighting mismatch, floating objects",
+    },
+    "Environmental storytelling": {
+        "prompt": "extending scene to reveal environmental context, narrative elements, props and details that tell a story, matching art direction, coherent world-building",
+        "negative": "unrelated objects, off-genre props, style break, visible seam, inconsistent lighting, perspective errors",
+    },
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  ARCH_OPTIMIZATIONS — central per-model post-select optimization layer
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# When the user picks a model in ANY dialog, `_apply_arch_optimizations`
+# reads this table and adjusts the UI so the defaults match what that arch
+# actually wants: disables negative-prompt widgets on no-negative
+# architectures (Klein / Flux 1 Dev / Flux Kontext / Chroma per CLAUDE.md
+# §9), surfaces an inline hint explaining the arch's prompt style, and
+# applies any arch-specific warnings.
+#
+# Single source of truth — every dialog that has a model selector MUST
+# call `_apply_arch_optimizations(dlg, arch_key)` on its preset-changed
+# handler, matching the existing LoRA / ControlNet / scene refresh calls.
+# This is the "bigger design thing" §24 sibling: the Lua surfaces get
+# canonical dispatch, the Python surfaces get canonical UI behaviour.
+
+ARCH_OPTIMIZATIONS = {
+    # Arches that DO support negative prompts.
+    "sd15":         {"negative": True,
+                      "hint": "SD 1.5 — classic tag prompts, cfg 7-9, 20-30 steps."},
+    "sdxl":         {"negative": True,
+                      "hint": "SDXL — tag-based prompts OK, cfg 5-7, 25-30 steps."},
+    "sdxl_turbo":   {"negative": True,
+                      "hint": "SDXL Turbo — low cfg (1-2), 4-8 steps."},
+    "illustrious":  {"negative": True,
+                      "hint": "Illustrious — booru tags, low cfg 5-6, euler_ancestral."},
+    "pony":         {"negative": True,
+                      "hint": "Pony — score tags (score_9, score_8_up...), cfg 6-8."},
+    "playground":   {"negative": True,
+                      "hint": "Playground v2.5 — aesthetic natural language, cfg 3."},
+    "zit":          {"negative": True,
+                      "hint": "Z-Image-Turbo — short prompts, cfg 2.0, 6 steps."},
+    "sd3":          {"negative": True,
+                      "hint": "SD3 / SD3.5 — MMDiT, natural language, cfg 4-6."},
+    "sd3_turbo":    {"negative": True,
+                      "hint": "SD3.5 Turbo — low cfg (1-2), 4-8 steps."},
+    "kolors":       {"negative": True,
+                      "hint": "Kolors — Chinese+English prompts, cfg 5-7."},
+    "hunyuan_dit":  {"negative": True,
+                      "hint": "HunyuanDiT — bilingual prompts, cfg 6."},
+    "pixart":       {"negative": True,
+                      "hint": "PixArt — natural language, cfg 4-5, 20 steps."},
+    "auraflow":     {"negative": True,
+                      "hint": "AuraFlow — natural language, cfg 3-5, 25 steps."},
+    # Arches that DO NOT support negative prompts (CLAUDE.md §9).
+    "flux1dev":     {"negative": False,
+                      "hint": "Flux 1 Dev — natural language, NO negative prompt, cfg 3.5, 25 steps."},
+    "flux_kontext": {"negative": False,
+                      "hint": "Flux Kontext — edit instructions, NO negative prompt, cfg 3.5."},
+    "flux2klein":   {"negative": False,
+                      "hint": "Flux 2 Klein — natural language, NO negative prompt, cfg 1.0, 4-6 steps. Enhancer is ON by default."},
+    "chroma":       {"negative": False,
+                      "hint": "Chroma — natural language, NO negative prompt, no ControlNet."},
+}
+
+
+def _apply_arch_optimizations(dlg, arch_key, *, arch_hint_label=None):
+    """Per-model UI optimization applied on every preset change.
+
+    Reads ARCH_OPTIMIZATIONS[arch_key] and:
+      * disables / re-enables ``dlg.neg_tv`` (and greys any negative
+        prompt label found at ``dlg._neg_label``) based on whether the
+        arch accepts negative conditioning. CLAUDE.md §9 is the source
+        of truth — calling this is equivalent to baking the matrix
+        into every dialog's init.
+      * sets an arch-specific tooltip on ``neg_tv`` explaining WHY it
+        was disabled, so the user doesn't assume the dialog is broken.
+      * writes a one-line hint into ``arch_hint_label`` (if provided)
+        summarising the arch's prompting style and default knobs.
+
+    Silent no-op when the dialog has no ``neg_tv`` attribute — caller
+    dialogs without a negative prompt widget (Klein outpaint etc.)
+    still benefit from the hint label.
+
+    Pair to the existing ``_refresh_cn_combos`` / ``_refresh_lora_combos``
+    / ``_refresh_scene_combo`` calls — all four fire from one
+    ``_on_preset_changed`` handler on PresetDialog.
+    """
+    opt = ARCH_OPTIMIZATIONS.get(arch_key or "", {})
+    supports_neg = opt.get("negative", True)
+    hint = opt.get("hint", "")
+
+    neg_tv = getattr(dlg, "neg_tv", None)
+    if neg_tv is not None:
+        neg_tv.set_sensitive(supports_neg)
+        try:
+            neg_tv.set_editable(supports_neg)
+        except Exception:
+            pass
+        if supports_neg:
+            neg_tv.set_tooltip_text(
+                "Describe elements you DO NOT want in the image "
+                "(e.g. 'blurry, distorted, watermark, text').")
+        else:
+            neg_tv.set_tooltip_text(
+                f"This architecture ({arch_key}) doesn't use negative prompts — "
+                f"the canonical workflow calls ConditioningZeroOut on the "
+                f"positive conditioning instead. Anything you type here is "
+                f"ignored at submit time.")
+    neg_label = getattr(dlg, "_neg_label", None)
+    if neg_label is not None:
+        try:
+            neg_label.set_sensitive(supports_neg)
+        except Exception:
+            pass
+
+    target_hint = arch_hint_label or getattr(dlg, "_arch_hint_label", None)
+    if target_hint is not None and hint:
+        try:
+            target_hint.set_markup(f"<i>{hint}</i>")
+            target_hint.show()
+        except Exception:
+            pass
+
 
 FACEID_PRESETS = {
     "SD1.5 — Juggernaut Reborn": {
@@ -8118,13 +8570,24 @@ class PresetDialog(Gtk.Dialog):
         sw = Gtk.ScrolledWindow(); sw.set_min_content_height(60); sw.add(self.prompt_tv)
         box.pack_start(sw, False, False, 0)
 
-        # Negative
-        box.pack_start(Gtk.Label(label="Negative:", xalign=0), False, False, 0)
+        # Negative. Label is captured on self so _apply_arch_optimizations
+        # can grey it out on no-negative arches (Flux / Kontext / Klein /
+        # Chroma) at the same time the TextView is disabled.
+        self._neg_label = Gtk.Label(label="Negative:", xalign=0)
+        box.pack_start(self._neg_label, False, False, 0)
         self.neg_tv = Gtk.TextView()
         self.neg_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         self.neg_tv.set_tooltip_text("Describe elements you DO NOT want in the image (e.g. 'blurry, distorted, watermark, text').")
         sw2 = Gtk.ScrolledWindow(); sw2.set_min_content_height(40); sw2.add(self.neg_tv)
         box.pack_start(sw2, False, False, 0)
+
+        # Per-arch hint — populated by _apply_arch_optimizations on every
+        # preset change. Starts empty; the first _apply_preset call will
+        # fill it with the active arch's prompt-style summary.
+        self._arch_hint_label = Gtk.Label(xalign=0)
+        self._arch_hint_label.set_line_wrap(True)
+        self._arch_hint_label.set_margin_top(2)
+        box.pack_start(self._arch_hint_label, False, False, 0)
 
         # ── Advanced Parameters (collapsible) ────────────────────────────
         adv_exp = Gtk.Expander(label="\u25b8 Advanced Parameters")
@@ -8536,6 +8999,11 @@ class PresetDialog(Gtk.Dialog):
         # Update style preset availability labels for new arch
         if self._all_lora_names:
             self._check_style_preset_availability()
+        # Per-arch UI optimization — disables the negative prompt widget
+        # on no-negative architectures and surfaces a prompting-style
+        # hint. Companion to _refresh_cn_combos / _refresh_lora_combos.
+        # See ARCH_OPTIMIZATIONS and _apply_arch_optimizations above.
+        _apply_arch_optimizations(self, p.get("arch"))
 
     # ── Turbo mode helpers ────────────────────────────────────────────
 
@@ -13751,7 +14219,15 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-outpaint",
         }
 
-        proc = Gimp.ImageProcedure.new(self, name, Gimp.PDBProcType.PLUGIN, callback, None)
+        # Wrap every callback with the inbox auto-drain so users see
+        # any pending cross-interface sends without having to click
+        # "Check Inbox" first. Interval-gated + timeout-capped inside
+        # the wrapper — see `_maybe_auto_drain_inbox` for the policy.
+        # The manual `_run_check_inbox` handler bypasses the gate via
+        # its direct call into `_drain_inbox_worker`.
+        proc = Gimp.ImageProcedure.new(
+            self, name, Gimp.PDBProcType.PLUGIN,
+            _wrap_auto_drain(callback), None)
         proc.set_menu_label(label)
         # Primary Spellcaster top-level menu path
         proc.add_menu_path(_menu_paths.get(name, _S))
@@ -16266,30 +16742,29 @@ class Spellcaster(Gimp.PlugIn):
         klein_combo.set_active(0)
         bx.pack_start(klein_combo, False, False, 0)
 
-        # Purpose presets (reuse from outpaint)
-        KLEIN_OUTPAINT_PRESETS = {
-            "(general extension)": "seamless continuation of the existing scene, matching lighting, style, and color palette, natural extension, consistent perspective",
-            "Complete person / body": "natural continuation of the human body, correct anatomy, matching skin tone and clothing, same pose direction, realistic proportions",
-            "Extend landscape / sky": "seamless landscape continuation, matching horizon, consistent sky, natural terrain, same vegetation, coherent depth of field",
-            "Complete cut-off object": "natural completion of the cut-off object, matching material and texture, correct proportions, seamless extension",
-            "Extend interior / room": "seamless room extension, matching wall color, consistent floor, same furniture style, correct perspective",
-            "Add more background": "smooth background extension, matching colors and blur, consistent depth of field, natural continuation",
-            "Widen panorama": "panoramic scene extension, wide angle continuation, matching horizon, consistent sky and ground",
-            "Add floor / ground": "natural ground surface below subject, matching floor material, correct shadows, consistent perspective, seamless edge blending",
-            "Add ceiling / sky above": "natural continuation upward, ceiling or sky matching scene context, correct lighting direction, consistent atmosphere",
-            "Reveal hidden subject": "extending to reveal more of a partially visible person or object, natural body continuation, matching pose and proportions",
-            "Add reflection surface": "reflective surface below, mirror-like floor or water reflection, matching lighting, symmetrical reflection of subject",
-            "Cinematic widescreen crop": "extending sides for cinematic 2.39:1 aspect ratio, matching scene content, letterbox-style wide composition",
-            "Add foreground elements": "natural foreground elements, depth-appropriate objects, bokeh foreground blur, matching scene context and lighting",
-            "Environmental storytelling": "extending scene to reveal environmental context, narrative elements, props and details that tell a story, matching art direction",
-        }
+        # Purpose presets — canonical shared dict (OUTPAINT_PURPOSE_PRESETS
+        # at module level). Klein only consumes the `prompt` field since
+        # the Klein workflow doesn't accept a negative prompt per §9;
+        # the `negative` in each entry is preserved for the generic
+        # _run_outpaint path which layers it into CLIPTextEncode.
         bx.pack_start(Gtk.Label(label="Purpose:", xalign=0), False, False, 0)
         purpose_combo = Gtk.ComboBoxText()
         purpose_combo.set_tooltip_text("What you're extending — auto-fills an optimized prompt.")
-        for label in KLEIN_OUTPAINT_PRESETS:
+        for label in OUTPAINT_PURPOSE_PRESETS:
             purpose_combo.append(label, label)
         purpose_combo.set_active(0)
         bx.pack_start(purpose_combo, False, False, 0)
+
+        # Arch hint — Klein is hard-coded flux2klein. Let
+        # _apply_arch_optimizations fill in the "Klein 2 — natural
+        # language, NO negative, cfg 1.0, 4-6 steps. Enhancer is ON by
+        # default." line so the user sees the same style of per-model
+        # summary every dialog surfaces.
+        arch_hint = Gtk.Label(xalign=0)
+        arch_hint.set_line_wrap(True)
+        arch_hint.set_margin_top(2)
+        bx.pack_start(arch_hint, False, False, 0)
+        _apply_arch_optimizations(dlg, "flux2klein", arch_hint_label=arch_hint)
 
         # Prompt
         bx.pack_start(Gtk.Label(label="Prompt:", xalign=0), False, False, 0)
@@ -16301,8 +16776,9 @@ class Spellcaster(Gimp.PlugIn):
 
         def _on_purpose(combo):
             key = combo.get_active_id()
-            if key and key in KLEIN_OUTPAINT_PRESETS:
-                prompt_tv.get_buffer().set_text(KLEIN_OUTPAINT_PRESETS[key])
+            entry = OUTPAINT_PURPOSE_PRESETS.get(key) if key else None
+            if entry:
+                prompt_tv.get_buffer().set_text(entry.get("prompt", ""))
         purpose_combo.connect("changed", _on_purpose)
         _on_purpose(purpose_combo)
 
@@ -20908,60 +21384,39 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     def _run_outpaint(self, procedure, run_mode, image, drawables, config, data):
-        """Outpaint: extend canvas by generating new content at the edges."""
+        """Outpaint: extend canvas by generating new content at the edges.
+
+        Purpose presets come from the module-level OUTPAINT_PURPOSE_PRESETS
+        (shared with _run_klein_outpaint) so both dialogs offer the same
+        14 continuation recipes. Per-model optimization rides on the
+        standard PresetDialog flow: picking a model fires _apply_preset,
+        which sets arch-specific steps/cfg/sampler/scheduler AND calls
+        _apply_arch_optimizations to disable the negative-prompt widget
+        on Flux / Klein / Kontext / Chroma and surface an arch hint.
+        """
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
-        OUTPAINT_PRESETS = {
-            "(general extension)": {
-                "prompt": "seamless continuation of the existing scene, matching lighting, style, and color palette, natural extension, consistent perspective, same quality and mood",
-                "negative": "different style, inconsistent lighting, visible seam, border artifact, blurry, mismatched colors, distorted perspective",
-            },
-            "Complete person / body": {
-                "prompt": "natural continuation of the human body, correct anatomy, matching skin tone and clothing, same pose direction, realistic body proportions, matching lighting on skin",
-                "negative": "extra limbs, wrong anatomy, mismatched skin color, different clothing, floating body parts, deformed, cut off",
-            },
-            "Extend landscape / sky": {
-                "prompt": "seamless landscape continuation, matching horizon line, consistent sky, natural terrain, same vegetation style, matching cloud formation, coherent depth of field",
-                "negative": "different landscape, sky mismatch, horizon break, inconsistent foliage, visible seam, different season",
-            },
-            "Complete cut-off object": {
-                "prompt": "natural completion of the cut-off object, matching material, same texture and color, correct proportions, physically plausible shape, seamless extension",
-                "negative": "wrong shape, different material, inconsistent color, floating parts, impossible geometry, visible seam",
-            },
-            "Extend interior / room": {
-                "prompt": "seamless room extension, matching wall color, consistent floor, same furniture style, correct perspective lines, matching ambient lighting",
-                "negative": "different room, wrong perspective, inconsistent decor, floating furniture, visible seam, mismatched lighting",
-            },
-            "Add more background / bokeh": {
-                "prompt": "smooth background extension, matching bokeh and depth of field, consistent blur, same color tones, natural out-of-focus continuation",
-                "negative": "sharp background, different blur, focus shift, inconsistent bokeh, visible seam, different color temperature",
-            },
-            "Widen panorama": {
-                "prompt": "panoramic scene extension, wide angle continuation, matching horizon, consistent sky and ground, seamless blend at edges, natural wide-angle perspective",
-                "negative": "lens distortion mismatch, different exposure, sky break, visible stitch line, perspective error",
-            },
-            "Add headroom / space above": {
-                "prompt": "natural sky or ceiling continuation above the subject, matching lighting from above, consistent atmosphere, proper vertical perspective",
-                "negative": "floating objects, wrong ceiling, sky mismatch, inconsistent overhead lighting, visible seam",
-            },
-        }
         dlg = PresetDialog("Spellcaster — Outpaint / Extend Canvas", mode="img2img")
         dlg.w_spin.set_value(image.get_width())
         dlg.h_spin.set_value(image.get_height())
 
-        # Outpaint purpose dropdown
+        # Outpaint purpose dropdown — sources from the shared canonical
+        # OUTPAINT_PURPOSE_PRESETS dict (module-level). Each entry has
+        # {prompt, negative}; negative is silently ignored at submit
+        # time on no-negative arches because _apply_arch_optimizations
+        # disables dlg.neg_tv for those.
         purpose_combo = Gtk.ComboBoxText()
         purpose_combo.set_tooltip_text("What you're extending. Each purpose has an optimized prompt\nfor seamless continuation of that specific content type.")
-        for label in OUTPAINT_PRESETS:
+        for label in OUTPAINT_PURPOSE_PRESETS:
             purpose_combo.append(label, label)
         purpose_combo.set_active(0)
         def _on_purpose_changed(combo):
             key = combo.get_active_id()
-            if key and key in OUTPAINT_PRESETS:
-                p = OUTPAINT_PRESETS[key]
-                dlg.prompt_tv.get_buffer().set_text(p["prompt"])
-                dlg.neg_tv.get_buffer().set_text(p["negative"])
+            entry = OUTPAINT_PURPOSE_PRESETS.get(key) if key else None
+            if entry:
+                dlg.prompt_tv.get_buffer().set_text(entry.get("prompt", ""))
+                dlg.neg_tv.get_buffer().set_text(entry.get("negative", ""))
         purpose_combo.connect("changed", _on_purpose_changed)
         purpose_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         purpose_box.pack_start(Gtk.Label(label="Purpose:"), False, False, 0)
@@ -26961,113 +27416,49 @@ class Spellcaster(Gimp.PlugIn):
         path prepended with the Guild's base URL) and opens it as a
         new image. Messages are consumed on read, so pressing Check
         Inbox a second time gives an empty pull.
+
+        Shares its worker (`_drain_inbox_worker`) with the auto-poll
+        path: every Spellcaster menu invocation also drains silently
+        in the background via `_maybe_auto_drain_inbox`, so users
+        typically don't need to click this manually — it's the force
+        drain + diagnostic view.
         """
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(
                 Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
-        try:
-            from spellcaster_core.cross_interface import (
-                CrossInterfaceClient, resolve_guild_url,
-            )
-        except ImportError as e:
-            Gimp.message(f"Check Inbox: cross_interface helper missing — {e}")
+        result = _drain_inbox_worker(
+            http_timeout=10, per_asset_timeout=30,
+            max_asset_size=100 * 1024 * 1024,
+            silent=False)
+        status = result.get("status")
+        if status == "cross_interface_missing":
+            Gimp.message(f"Check Inbox: cross_interface helper missing — "
+                         f"{result.get('error') or 'ImportError'}")
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+        if status == "guild_backbone_off":
+            Gimp.message(
+                "Check Inbox: the Guild's mailbox primitives are "
+                "disabled (cross-interface backbone off). Start the "
+                "Wizard Guild with cross_interface enabled.")
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+        if status == "guild_http_error":
+            Gimp.message(
+                f"Check Inbox: Guild returned HTTP {result.get('http_code')}.")
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+        if status == "guild_unreachable":
+            Gimp.message(f"Check Inbox: Guild unreachable — {result.get('error')}")
             return procedure.new_return_values(
                 Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
-        guild_base = resolve_guild_url()
-        import urllib.request as _ur
-        import urllib.error as _ue
-        import json as _json
-
-        url = f"{guild_base}/api/gimp/inbox?consume=1&max=20"
-        try:
-            req = _ur.Request(url, headers={"Accept": "application/json"})
-            with _ur.urlopen(req, timeout=10) as resp:
-                body = _json.loads(resp.read())
-        except _ue.HTTPError as e:
-            if e.code == 501:
-                Gimp.message(
-                    "Check Inbox: the Guild's mailbox primitives are "
-                    "disabled (cross-interface backbone off). Start the "
-                    "Wizard Guild with cross_interface enabled.")
-            else:
-                Gimp.message(f"Check Inbox: Guild returned HTTP {e.code}.")
-            return procedure.new_return_values(
-                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
-        except Exception as e:
-            Gimp.message(f"Check Inbox: Guild unreachable — {e}")
-            return procedure.new_return_values(
-                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
-
-        messages = (body or {}).get("messages") or []
-        # Keep only gimp.asset.send events — ignore other bus noise
-        # that might have been routed to the gimp mailbox.
-        keepers = [m for m in messages
-                    if (m.get("kind") or "").startswith("gimp.asset.")]
-        if not keepers:
+        opened = result.get("opened", 0)
+        failures = result.get("failures") or []
+        if status == "empty":
             Gimp.message("Check Inbox: nothing waiting.")
             return procedure.new_return_values(
                 Gimp.PDBStatusType.SUCCESS, GLib.Error())
-
-        opened = 0
-        failures: list[str] = []
-        for m in keepers:
-            md = m.get("data") or {}
-            image_url = (md.get("image_url") or md.get("url")
-                          or "").strip()
-            if not image_url:
-                failures.append("(message with no image_url)")
-                continue
-            if image_url.startswith("/"):
-                image_url = guild_base.rstrip("/") + image_url
-            # Scheme clamp — an attacker with Guild-publish access could
-            # otherwise smuggle file:// / gopher:// / ftp:// URLs that
-            # urllib happily follows, tricking this GIMP instance into
-            # reading arbitrary local files or probing internal services.
-            try:
-                _scheme = urllib.parse.urlparse(image_url).scheme.lower()
-            except Exception:
-                _scheme = ""
-            if _scheme not in ("http", "https"):
-                failures.append(f"blocked non-http url: {image_url[:80]}")
-                continue
-            # Download bytes (cap size to avoid RAM-bomb replies)
-            try:
-                req = _ur.Request(image_url, headers={"User-Agent": "spellcaster-gimp/2.0"})
-                with _ur.urlopen(req, timeout=30) as resp:
-                    _MAX = 100 * 1024 * 1024  # 100 MB
-                    asset_bytes = resp.read(_MAX + 1)
-                    if len(asset_bytes) > _MAX:
-                        failures.append(f"oversize (>100 MB): {image_url[:80]}")
-                        continue
-            except Exception as e:
-                failures.append(f"download: {e}")
-                continue
-            # Write to temp + load into GIMP
-            suffix = ".png"
-            if image_url.lower().endswith((".jpg", ".jpeg")):
-                suffix = ".jpg"
-            elif image_url.lower().endswith(".mp4"):
-                suffix = ".mp4"  # GIMP won't open mp4 — skip
-                failures.append(
-                    f"mp4 can't open in GIMP: {image_url.rsplit('/', 1)[-1]}")
-                continue
-            tmp = tempfile.NamedTemporaryFile(
-                delete=False, suffix=suffix,
-                prefix="spellcaster_inbox_")
-            try:
-                tmp.write(asset_bytes)
-                tmp.close()
-                gfile = Gio.File.new_for_path(tmp.name)
-                new_image = Gimp.file_load(
-                    Gimp.RunMode.NONINTERACTIVE, gfile)
-                if new_image is None:
-                    failures.append(f"GIMP couldn't load {tmp.name}")
-                    continue
-                Gimp.Display.new(new_image)
-                opened += 1
-            except Exception as e:
-                failures.append(f"load: {e}")
 
         lines = [f"Opened {opened} image(s) from the inbox."]
         if failures:
