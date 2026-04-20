@@ -10427,6 +10427,217 @@ def _cleanup_server_temps(server, results, cleanup_mode):
         pass  # privacy module not available — skip cleanup
 
 
+_TELEMETRY_DIR = _PLUGIN_DIR / "logs"
+_DISPATCH_LOG_PATH = _TELEMETRY_DIR / "dispatch_log.jsonl"
+_VIDEOSHOT_LOG_PATH = _TELEMETRY_DIR / "videoshot_log.jsonl"
+_DIAGNOSTICS_LOG_PATH = _TELEMETRY_DIR / "diagnostics.jsonl"
+
+# Class-type tokens that mark a workflow as face-swap-capable. Matches
+# against ``class_type`` values walked from the workflow dict at
+# dispatch time. Keep in sync with the face-swap handlers in the
+# plugin and the face-swap guard in spellcaster_core/workflows.py.
+_FACESWAP_NODE_TOKENS = (
+    "ReActorFaceSwap", "ReActorFaceSwapOpt", "ReActorLoadFaceModel",
+    "Face Swap (mtb)", "Load Face Swap Model (mtb)",
+    "ApplyPulidFlux", "IPAdapterFaceID",
+)
+
+
+def _workflow_arch_key(workflow) -> str:
+    """Best-effort arch classification of a workflow for telemetry.
+
+    Walks CheckpointLoader / UNetLoader / Flux2Klein* nodes and maps
+    their ckpt_name / model filename onto a registered arch key via
+    ``model_detect.classify_ckpt_model``. Unknown -> ``"unknown"``.
+    """
+    if not isinstance(workflow, dict):
+        return ""
+    try:
+        from spellcaster_core.model_detect import classify_ckpt_model
+    except Exception:
+        classify_ckpt_model = None
+    loader_classes = {
+        "CheckpointLoaderSimple", "CheckpointLoader", "CheckpointLoaderGGUF",
+        "UNETLoader", "UnetLoaderGGUF", "UNetLoader",
+        "Flux2KleinCheckpointLoader",
+    }
+    seen_klein = False
+    for node in workflow.values():
+        if not isinstance(node, dict):
+            continue
+        ct = node.get("class_type", "")
+        if ct.startswith("Flux2Klein"):
+            seen_klein = True
+        if ct not in loader_classes:
+            continue
+        inputs = node.get("inputs", {}) or {}
+        name = (inputs.get("ckpt_name") or inputs.get("unet_name")
+                or inputs.get("model_name") or "")
+        if name and classify_ckpt_model is not None:
+            try:
+                arch = classify_ckpt_model(name)
+                if arch:
+                    return arch
+            except Exception:
+                pass
+    return "flux2klein" if seen_klein else "unknown"
+
+
+def _workflow_is_faceswap(workflow) -> bool:
+    if not isinstance(workflow, dict):
+        return False
+    for node in workflow.values():
+        if not isinstance(node, dict):
+            continue
+        ct = node.get("class_type", "")
+        for tok in _FACESWAP_NODE_TOKENS:
+            if tok in ct:
+                return True
+    return False
+
+
+def _workflow_video_outputs(images) -> list:
+    """From a list of (filename, subfolder, folder_type) tuples, return
+    the ones whose extension looks like video/animation output so the
+    videoshot_log can capture per-frame timings."""
+    out = []
+    if not images:
+        return out
+    VIDEO_EXTS = (".mp4", ".gif", ".webm", ".mkv", ".mov", ".avi")
+    for fn, sf, ft in images:
+        if any(str(fn).lower().endswith(ext) for ext in VIDEO_EXTS):
+            out.append((fn, sf, ft))
+    return out
+
+
+def _append_jsonl(path: "Path", record: dict) -> None:
+    """Atomic-append a JSONL row; never raises. Creates ``logs/`` on
+    first use. Used by every telemetry writer so tests can intercept
+    one function rather than N."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, default=str) + "\n")
+    except Exception:
+        # Telemetry must never break user-facing actions.
+        pass
+
+
+def _record_dispatch_telemetry(
+        workflow, *, elapsed: float, outcome: str,
+        error: str = "", warnings: "list | None" = None,
+        images: "list | None" = None,
+        handler: str = "") -> None:
+    """Single choke-point for per-dispatch telemetry.
+
+    Fires for EVERY ``_run_comfyui_workflow`` call, success or fail,
+    closing the "GIMP dispatches invisible to SpeedCoach" gap
+    (2026-04-20 audit). Does four things in parallel:
+
+      1. Appends a row to ``logs/dispatch_log.jsonl`` locally so
+         SpeedCoach's file-based aggregator can find it when the
+         Guild is offline.
+      2. POSTs to the Guild's ``/api/telemetry/dispatch_ok`` endpoint
+         via the existing ``_speedcoach_report_dispatch`` helper.
+      3. If any output filename is a video/GIF/mp4, appends a
+         per-output row to ``logs/videoshot_log.jsonl`` with the
+         elapsed time \u2014 lets SpeedCoach's video aggregator work
+         without a separate per-frame timing harness.
+      4. If the workflow contains face-swap class-types, stamps
+         ``faceswap_health.record_dispatch()`` for crash attribution
+         (CLAUDE.md \u00a720.1).
+
+    Never raises; swallows every exception so telemetry failures
+    can't break a successful render.
+    """
+    try:
+        arch = _workflow_arch_key(workflow)
+    except Exception:
+        arch = ""
+    is_fs = False
+    try:
+        is_fs = _workflow_is_faceswap(workflow)
+    except Exception:
+        pass
+    record = {
+        "ts": time.time(),
+        "origin": "gimp",
+        "handler": handler,
+        "arch": arch,
+        "elapsed": float(elapsed),
+        "outcome": outcome,          # "ok" | "error"
+        "n_outputs": len(images) if images else 0,
+    }
+    if error:
+        record["error"] = str(error)[:400]
+    if warnings:
+        record["warnings"] = [str(w)[:200] for w in warnings][:20]
+    if is_fs:
+        record["is_faceswap"] = True
+
+    _append_jsonl(_DISPATCH_LOG_PATH, record)
+
+    # Video per-output rows. Each gets its own row so SpeedCoach's
+    # median-over-fingerprint aggregation works \u2014 a 30-frame
+    # WAN run produces 30 rows, not one.
+    try:
+        video_outs = _workflow_video_outputs(images or [])
+        for fn, _sf, _ft in video_outs:
+            _append_jsonl(_VIDEOSHOT_LOG_PATH, {
+                "ts": time.time(),
+                "origin": "gimp",
+                "handler": handler,
+                "arch": arch,
+                "filename": str(fn),
+                "elapsed": float(elapsed),
+                "outcome": outcome,
+            })
+    except Exception:
+        pass
+
+    # Face-swap health attribution \u2014 stamp before the user sees
+    # any ComfyUI crash attributed to it.
+    if is_fs:
+        try:
+            from spellcaster_core import faceswap_health as _fsh
+            _fsh.record_dispatch()
+        except Exception:
+            pass
+
+    # Guild telemetry POST. `_speedcoach_report_dispatch` already
+    # handles when the Guild is unreachable \u2014 silent no-op.
+    try:
+        job_spec = {
+            "handler": handler or "",
+            "arch": arch or "unknown",
+            "origin": "gimp",
+        }
+        _speedcoach_report_dispatch(
+            job_spec, elapsed=float(elapsed),
+            warnings=warnings or None,
+            failed=(outcome != "ok"),
+            error=error or "",
+        )
+    except Exception:
+        pass
+
+
+def _current_handler_name() -> str:
+    """Best-effort: walk the Python call stack and return the first
+    ``_run_*`` method encountered. Labels dispatch_log rows with the
+    user-facing handler so SpeedCoach can slice suggestions per
+    tool."""
+    try:
+        import inspect as _inspect
+        for frame in _inspect.stack()[2:20]:
+            name = frame.function
+            if name.startswith("_run_") or name.startswith("_do_"):
+                return name
+    except Exception:
+        pass
+    return ""
+
+
 def _run_comfyui_workflow(server, workflow, timeout=300):
     """Wait for ComfyUI queue to clear, then submit workflow and wait for results.
 
@@ -10436,9 +10647,19 @@ def _run_comfyui_workflow(server, workflow, timeout=300):
     GIMP-specific steps (queue wait, lock, upload flush, precache) run
     around the dispatch call. If dispatch is unavailable, falls back to
     the inline implementation.
+
+    Telemetry: wraps the entire call in ``_record_dispatch_telemetry``
+    so every GIMP handler feeds the dispatch_log / videoshot_log /
+    faceswap_health chain without per-handler plumbing.
     """
     global _workflow_queue_depth
     _workflow_queue_depth += 1
+    _t_start = time.time()
+    _tel_handler = _current_handler_name()
+    _tel_outcome = "error"
+    _tel_error = ""
+    _tel_warnings: list = []
+    _tel_images: list = []
     try:
         # GIMP-specific: wait for ComfyUI queue + flush pending uploads
         _wait_for_comfy_queue_empty(server)
@@ -10456,6 +10677,7 @@ def _run_comfyui_workflow(server, workflow, timeout=300):
                 privacy=False,  # GIMP handles privacy after precache
             )
             images = result.outputs
+            _tel_warnings = list(result.warnings or [])
             for w in result.warnings:
                 print(f"[Spellcaster] {w}")
         except ImportError:
@@ -10497,9 +10719,27 @@ def _run_comfyui_workflow(server, workflow, timeout=300):
             _repatriate_outputs(server, images)
         except Exception:
             pass
+        _tel_outcome = "ok"
+        _tel_images = images
         return images
+    except Exception as _exc:
+        _tel_outcome = "error"
+        _tel_error = f"{type(_exc).__name__}: {_exc}"
+        raise
     finally:
         _workflow_queue_depth -= 1
+        try:
+            _record_dispatch_telemetry(
+                workflow,
+                elapsed=time.time() - _t_start,
+                outcome=_tel_outcome,
+                error=_tel_error,
+                warnings=_tel_warnings,
+                images=_tel_images,
+                handler=_tel_handler,
+            )
+        except Exception:
+            pass
 
 
 def _async_fetch(fetch_fn, on_done, on_error):
@@ -30404,6 +30644,53 @@ class Spellcaster(Gimp.PlugIn):
             return f"{len(wf)} nodes, CN chain present"
         cases.append(("build_iclight_cn", "Workflows", _iclight_cn))
 
+        # ── Telemetry wiring ────────────────────────────────
+        def _telemetry_wiring():
+            """Verify the dispatch wrapper wrote a row to
+            ``logs/dispatch_log.jsonl`` when a real workflow ran. If
+            the log file is empty, it means telemetry got detached
+            and SpeedCoach won't see GIMP dispatches. Checks the
+            helper chain in isolation so the test doesn't require a
+            live ComfyUI."""
+            import tempfile as _tf
+            import pathlib as _pl
+            # Redirect to a temp path so the test doesn't mutate
+            # the user's real logs/.
+            tmp = _pl.Path(_tf.mkdtemp(prefix="sc_tel_")) / "dispatch.jsonl"
+            fake_wf = {
+                "1": {"class_type": "CheckpointLoaderSimple",
+                      "inputs": {"ckpt_name": "sd_xl_base_1.0.safetensors"}},
+                "2": {"class_type": "KSampler",
+                      "inputs": {"seed": 42}},
+            }
+            orig_path = globals()["_DISPATCH_LOG_PATH"]
+            globals()["_DISPATCH_LOG_PATH"] = tmp
+            try:
+                _record_dispatch_telemetry(
+                    fake_wf, elapsed=2.5, outcome="ok",
+                    handler="harness_telemetry_case",
+                    images=[], warnings=None)
+            finally:
+                globals()["_DISPATCH_LOG_PATH"] = orig_path
+            assert tmp.exists(), f"dispatch_log not written to {tmp}"
+            body = tmp.read_text(encoding="utf-8").strip()
+            assert body, "dispatch_log is empty"
+            row = json.loads(body.splitlines()[-1])
+            assert row.get("outcome") == "ok"
+            assert row.get("handler") == "harness_telemetry_case"
+            # Should have classified the checkpoint into an arch.
+            assert row.get("arch"), f"no arch detected: {row!r}"
+            # Also confirm face-swap detection heuristic works.
+            fs_wf = {
+                "1": {"class_type": "ReActorFaceSwap", "inputs": {}}
+            }
+            assert _workflow_is_faceswap(fs_wf), (
+                "ReActorFaceSwap not detected as face-swap")
+            assert not _workflow_is_faceswap(fake_wf), (
+                "plain workflow mis-classified as face-swap")
+            return f"arch={row['arch']}, outcome={row['outcome']}"
+        cases.append(("telemetry_wiring", "Workflows", _telemetry_wiring))
+
         def _build_img2img_case():
             sdxl_preset = next(
                 (p for p in MODEL_PRESETS if p.get("arch") == "sdxl"),
@@ -30582,6 +30869,18 @@ class Spellcaster(Gimp.PlugIn):
 
         n_pass = sum(1 for r in results if r["status"] == "PASS")
         n_fail = len(results) - n_pass
+        # Also append to logs/diagnostics.jsonl so batch runs build
+        # the same historical record as interactive runs.
+        try:
+            _append_jsonl(_DIAGNOSTICS_LOG_PATH, {
+                "ts": time.time(),
+                "origin": "gimp-batch",
+                "n_pass": n_pass,
+                "n_fail": n_fail,
+                "results": results,
+            })
+        except Exception:
+            pass
         print(f"[Spellcaster] diagnostics: {n_pass} PASS / "
               f"{n_fail} FAIL \u2192 {report_path}")
         if n_fail:
@@ -30743,6 +31042,20 @@ class Spellcaster(Gimp.PlugIn):
                 "All checks passed." if n_fail == 0
                 else f"{n_fail} failure(s) \u2014 see above.")
             btn_rerun.set_sensitive(True)
+
+            # Persist to logs/diagnostics.jsonl so future SpeedCoach /
+            # support-triage can look at historical runs instead of
+            # asking the user to re-run ad hoc.
+            try:
+                _append_jsonl(_DIAGNOSTICS_LOG_PATH, {
+                    "ts": time.time(),
+                    "origin": "gimp",
+                    "n_pass": n_pass,
+                    "n_fail": n_fail,
+                    "results": state["results"],
+                })
+            except Exception:
+                pass
 
             # Plain-text report for clipboard / save.
             lines = []
@@ -32790,21 +33103,18 @@ class Spellcaster(Gimp.PlugIn):
             "aborted (your work stays safe).\n\n"
             "Equivalent to: close GIMP → relaunch manually.")
         def _on_restart(_btn):
-            # Previous implementation bug (2026-04-20 report "restart
-            # button doesn't work"):
-            #   * Gimp.quit(False) was called while still inside the
-            #     Settings dlg.run() loop. GIMP can't quit while a
-            #     plug-in dialog is on-screen — the request queued
-            #     but never fired. User saw "Relaunching GIMP…"
-            #     forever with no visible effect.
-            #   * New GIMP was spawned immediately, racing the old
-            #     one for pluginrc + config file locks.
-            # Fix: launch the new GIMP via a shell wrapper that
-            # sleeps 3 s before exec'ing (cmd `timeout /t 3` on
-            # Windows, `sleep 3` on Unix), close the Settings dialog
-            # programmatically so dlg.run() returns, then schedule
-            # Gimp.quit via GLib.idle_add so it fires AFTER the
-            # dialog-close event is processed.
+            # Previous implementation bugs (2026-04-20):
+            #   * Called Gimp.quit(False) while still inside dlg.run()
+            #     — GIMP can't quit while a plug-in dialog is on-screen,
+            #     so the request queued but never fired. User saw
+            #     "Relaunching GIMP..." forever with nothing happening.
+            #   * Spawned the new GIMP immediately, racing the old one
+            #     for pluginrc + config file locks.
+            # Fix: 3-second launch delay on the new GIMP (Windows
+            # `timeout` / Unix `sleep`) + close the Settings dialog
+            # programmatically so dlg.run() returns + schedule the
+            # actual quit via GLib.idle_add so it runs AFTER the
+            # dialog-close event has been processed.
             import sys as _sys, subprocess as _subp
             candidates = []
             try:
@@ -32814,13 +33124,10 @@ class Spellcaster(Gimp.PlugIn):
                     candidates.append(gimp_exe_env)
             except Exception:
                 pass
-            # Walk from sys.executable up a few dirs looking for
-            # gimp-3.0. On Windows the plug-in runs under
-            # gimp-script-fu-interpreter-3.0.exe (or a Python
-            # interpreter GIMP bundles) whose parent dir usually
-            # contains gimp-3.0.exe. Also check <base>/bin/ — GIMP
-            # sometimes splits plug-in hosts and gimp.exe across
-            # sibling dirs (<install>/lib/... + <install>/bin/).
+            # Walk from sys.executable up a few dirs looking for the
+            # GIMP binary. On Windows the plug-in runs under
+            # `gimp-script-fu-interpreter-3.0.exe` (or similar),
+            # which lives in the same `bin/` dir as `gimp-3.0.exe`.
             try:
                 base = Path(_sys.executable).parent
                 for _depth in range(5):
@@ -32829,6 +33136,9 @@ class Spellcaster(Gimp.PlugIn):
                         p = base / cand
                         if p.exists() and str(p) not in candidates:
                             candidates.append(str(p))
+                    # Also check <base>/bin/ — GIMP 3 on Windows sometimes
+                    # has plug-in interpreters in <install>/lib/gimp/3.0/
+                    # plug-ins/ and the gimp exe in <install>/bin/.
                     bin_dir = base / "bin"
                     if bin_dir.is_dir():
                         for cand in ("gimp-3.0.exe", "gimp.exe"):
@@ -32849,6 +33159,10 @@ class Spellcaster(Gimp.PlugIn):
             update_status.set_markup(
                 '<span foreground="#FFC107">Relaunching GIMP in 3 s…'
                 '</span>')
+            # Purge pluginrc + apply staged updates BEFORE the new GIMP
+            # starts loading. The 3-second timeout in the spawned
+            # wrapper gives this plug-in and GIMP proper time to exit
+            # + release any file locks first.
             try:
                 _delete_all_gimp_pluginrc()
             except Exception:
@@ -32857,14 +33171,17 @@ class Spellcaster(Gimp.PlugIn):
                 _apply_staged_updates()
             except Exception:
                 pass
-            # Spawn a detached wrapper that sleeps then execs GIMP.
-            # The 3 s wait gives our plug-in + GIMP proper time to
-            # exit and release file locks on pluginrc / config.json
-            # before the new instance opens them. Skipping the wait
-            # produced silent "file in use" errors on Windows that
-            # left the new GIMP in a half-broken state.
+            # Spawn a detached wrapper that sleeps briefly then execs
+            # GIMP. The wait is CRITICAL on Windows — launching GIMP
+            # while the current instance still holds pluginrc or
+            # config.json open produces "file in use" errors and the
+            # new instance falls back to a silently-broken state.
             try:
                 if os.name == "nt":
+                    # cmd /c "timeout /t 3 /nobreak >nul & start "" "gimp.exe""
+                    # - /c runs the command then closes the cmd window
+                    # - `start "" "…"` launches detached so the cmd can exit
+                    # - the empty "" is the window title (required)
                     cmd = (f'timeout /t 3 /nobreak >nul & '
                            f'start "" "{chosen}"')
                     CREATE_NO_WINDOW = 0x08000000
@@ -32877,8 +33194,7 @@ class Spellcaster(Gimp.PlugIn):
                     )
                 else:
                     _subp.Popen(
-                        ["sh", "-c",
-                         f"sleep 3 && exec {_subp.list2cmdline([chosen])}"],
+                        ["sh", "-c", f"sleep 3 && exec {_subp.list2cmdline([chosen])}"],
                         start_new_session=True,
                         close_fds=True,
                         stdin=_subp.DEVNULL,
@@ -32895,12 +33211,17 @@ class Spellcaster(Gimp.PlugIn):
                 '<span foreground="#00E676">New GIMP will start in 3 s. '
                 'Closing this one now…</span>')
 
-            # Defer Gimp.quit until AFTER the dialog-close event has
-            # fired. Calling it from the click handler races dlg.run().
+            # Close the Settings dialog so dlg.run() returns +
+            # schedule the actual Gimp.quit via idle_add so it fires
+            # AFTER the dialog-close event is processed. Doing it in
+            # the click handler directly would race dlg.run().
             def _deferred_quit():
                 try:
                     Gimp.quit(False)
                 except Exception as e:
+                    # Some plug-in contexts don't allow Gimp.quit —
+                    # the user will have to close the window manually,
+                    # but the new GIMP is already on its way.
                     print(f"[Spellcaster] Gimp.quit failed ({e}); "
                           f"close GIMP manually.",
                           file=__import__('sys').stderr)
@@ -32909,8 +33230,6 @@ class Spellcaster(Gimp.PlugIn):
                 GLib.idle_add(_deferred_quit)
             except Exception:
                 pass
-            # Close the Settings dialog so dlg.run() returns + the
-            # idle callback above can fire.
             try:
                 dlg.response(Gtk.ResponseType.CLOSE)
             except Exception:

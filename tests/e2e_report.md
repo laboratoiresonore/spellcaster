@@ -1,6 +1,6 @@
 # Spellcaster E2E Audit
 
-_Ran at_: 2026-04-20 16:32:08
+_Ran at_: 2026-04-20 16:55:31
 _Totals_: **66** pass · **0** fail · **0** warn · **0** skip
 
 ## Event schema
@@ -52,7 +52,7 @@ _Totals_: **66** pass · **0** fail · **0** warn · **0** skip
 | PASS | cleanup_inputs server-scan exempts sc_cache_* | missing=set(), extra=set() | 0 |
 | PASS | purge_cache targets ONLY CACHE_PREFIXES | wiped=['sc_cache_abc.png'] | 0 |
 | PASS | cleanup_outputs wipes all result files | wiped=['result_1.png', 'sc_cache_should_still_go_if_passed_here.png'] | 0 |
-| PASS | section complete |  | 7 |
+| PASS | section complete |  | 5 |
 
 ## Blank/uniform classifiers
 
@@ -69,7 +69,7 @@ _Totals_: **66** pass · **0** fail · **0** warn · **0** skip
 | PASS | uniform: all-white L |  | 0 |
 | PASS | uniform: mixed L |  | 0 |
 | PASS | uniform: empty |  | 0 |
-| PASS | section complete |  | 2273 |
+| PASS | section complete |  | 2281 |
 
 ## IC-Light normal-map routing
 
@@ -81,14 +81,14 @@ _Totals_: **66** pass · **0** fail · **0** warn · **0** skip
 | PASS | CN model is normalbae (surface-aware) | cn_names=['control_v11p_sd15_normalbae.pth'] | 0 |
 | PASS | normal map loaded as image (not latent) |  | 0 |
 | PASS | no-normal path does NOT include ControlNet | classes=['CLIPTextEncode', 'CheckpointLoaderSimple', 'ICLightConditioning', 'KSampler', 'LoadAndApplyICLightUnet', 'LoadImage', 'SaveImage', 'VAEDecode', 'VAEEncode'] | 0 |
-| PASS | section complete |  | 4 |
+| PASS | section complete |  | 6 |
 
 ## Plugin surface (AST)
 
 | Status | Test | Detail | Time (ms) |
 |---|---|---|---|
 | PASS | plugin parses |  | 0 |
-| PASS | every _PROC_FEATURES key has menu_map entry (90 procs) |  | 0 |
+| PASS | every _PROC_FEATURES key has menu_map entry (94 procs) |  | 0 |
 | PASS | every _PROC_FEATURES key has _menu_paths entry |  | 0 |
 | PASS | no orphan menu_map keys (every menu has a feature) |  | 0 |
 | PASS | no orphan _menu_paths keys |  | 0 |
@@ -97,4 +97,4 @@ _Totals_: **66** pass · **0** fail · **0** warn · **0** skip
 | PASS | _download_image results aren't stored as '*_path' |  | 0 |
 | PASS | upload-cache migration (cached=63, legacy=9) | 9 legacy idioms remain (budget 12; helper leaves are expected) | 0 |
 | PASS | sc_cache_* literals use content-hash suffix |  | 0 |
-| PASS | section complete |  | 7326 |
+| PASS | section complete |  | 7228 |
