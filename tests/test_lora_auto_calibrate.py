@@ -1233,6 +1233,16 @@ CASES = [
     ("fsh-state: state survives persist path reload",   case_fsh_state_persists_across_set_persist_path),
     ("fsh-state: force_enable bypasses auto-disable",   case_fsh_force_enable_bypasses_auto_disable),
     ("fsh-state: user forced-off beats auto state",     case_fsh_user_forced_off_beats_auto_state),
+
+    ("preflight: red when ComfyUI unreachable",         case_preflight_classify_red_when_comfy_unreachable),
+    ("preflight: red when faceswap escalated",          case_preflight_classify_red_when_faceswap_escalated),
+    ("preflight: red when canary failed",               case_preflight_classify_red_when_canary_failed),
+    ("preflight: yellow when scorer offline",           case_preflight_classify_yellow_when_scorer_offline),
+    ("preflight: yellow when no preflight run yet",     case_preflight_classify_yellow_when_no_preflight_yet),
+    ("preflight: yellow when canary stale",             case_preflight_classify_yellow_when_canary_stale),
+    ("preflight: green when all systems go",            case_preflight_classify_green_when_all_good),
+    ("preflight: run_full caches results to disk",      case_preflight_run_full_caches_results_to_disk),
+    ("preflight: get_status reads cache",               case_preflight_get_status_reads_cache_for_canaries),
 ]
 
 
