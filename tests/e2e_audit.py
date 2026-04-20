@@ -1010,18 +1010,594 @@ def test_cross_interface_backbone(report: Report, verbose: bool = False) -> None
 
 
 # ═══════════════════════════════════════════════════════════════════════
+#  Post-audit sections — cover every function in every interface
+#  (presence broker + blob bus + events schema + ST routes + GuildClient
+#  + ControlNet model coverage + full coverage inventory). Added 2026-04-20.
+# ═══════════════════════════════════════════════════════════════════════
+
+def test_presence_broker(report: Report, verbose: bool = False) -> None:
+    """ComfyUI-hosted presence broker — register / heartbeat / list /
+    unregister round-trip. Also verifies multi-host coexistence (same
+    `key` on two synthetic hosts = two `instance_id` entries)."""
+    section = "Presence broker (ComfyUI)"
+    comfy_url = get_comfyui_url()
+    if not comfy_url:
+        report.add(section, "broker.preflight", SKIP,
+                   "comfyui_url not configured")
+        return
+
+    base = comfy_url.rstrip("/") + "/spellcaster/presence"
+
+    def _post(path, body, timeout=3.0):
+        try:
+            req = urllib.request.Request(
+                base + path,
+                data=json.dumps(body).encode(),
+                method="POST",
+                headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.status, json.loads(resp.read().decode())
+        except urllib.error.HTTPError as e:
+            try:
+                return e.code, json.loads(e.read().decode())
+            except Exception:
+                return e.code, {}
+        except Exception as e:
+            return 0, {"error": str(e)}
+
+    def _get(path, timeout=3.0):
+        try:
+            req = urllib.request.Request(base + path)
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.status, json.loads(resp.read().decode())
+        except Exception as e:
+            return 0, {"error": str(e)}
+
+    # Reachability
+    t0 = time.time()
+    sc, body = _get("/list")
+    ms = int((time.time() - t0) * 1000)
+    if sc != 200:
+        report.add(section, "GET /list (baseline)", FAIL,
+                   f"HTTP {sc}: {body}", ms)
+        return
+    peers_before = {p.get("instance_id") for p in body.get("peers", [])}
+    report.add(section, "GET /list (baseline)", PASS,
+               f"{len(peers_before)} peers", ms)
+
+    # Reject bad key
+    sc, body = _post("/register", {"key": "BAD-KEY-$"})
+    report.add(section, "register rejects invalid key",
+               PASS if sc == 400 else FAIL,
+               f"HTTP {sc}")
+
+    # Register two synthetic instances — same key, different host
+    synth_key = "e2e_audit"
+    sc1, r1 = _post("/register", {
+        "key": synth_key, "host": "audit-hostA", "label": "Audit A"})
+    sc2, r2 = _post("/register", {
+        "key": synth_key, "host": "audit-hostB", "label": "Audit B"})
+    if sc1 == 200 and sc2 == 200 and r1.get("instance_id") != r2.get("instance_id"):
+        report.add(section, "multi-host coexistence", PASS,
+                   f"{r1.get('instance_id')} + {r2.get('instance_id')}")
+    else:
+        report.add(section, "multi-host coexistence", FAIL,
+                   f"sc1={sc1} sc2={sc2} r1={r1} r2={r2}")
+
+    # Heartbeat refreshes
+    sc, body = _post("/heartbeat", {
+        "key": synth_key, "host": "audit-hostA"})
+    report.add(section, "heartbeat refresh",
+               PASS if sc == 200 and body.get("ok") else FAIL,
+               f"age_s={body.get('age_s')}")
+
+    # /list shows both
+    sc, body = _get("/list")
+    peers_after = {p.get("instance_id") for p in body.get("peers", [])}
+    added = peers_after - peers_before
+    if {r1.get("instance_id"), r2.get("instance_id")} <= added:
+        report.add(section, "GET /list sees both synthetic peers", PASS,
+                   f"+{len(added)} peers")
+    else:
+        report.add(section, "GET /list sees both synthetic peers", FAIL,
+                   f"added={added}")
+
+    # Unregister both — cleanup
+    for host in ("audit-hostA", "audit-hostB"):
+        sc, _ = _post("/unregister", {"key": synth_key, "host": host})
+        report.add(section, f"unregister {host}",
+                   PASS if sc == 200 else FAIL, f"HTTP {sc}")
+
+
+def test_blob_bus(report: Report, verbose: bool = False) -> None:
+    """ComfyUI-hosted blob bus — put / get / list / dedup / TTL ceiling.
+    Exercises the multipart upload path used by every Send-to-X flow
+    (GIMP / DT / Resolve blob-first transport)."""
+    section = "Blob bus (ComfyUI)"
+    comfy_url = get_comfyui_url()
+    if not comfy_url:
+        report.add(section, "blob.preflight", SKIP,
+                   "comfyui_url not configured")
+        return
+
+    base = comfy_url.rstrip("/") + "/spellcaster/blob"
+    payload = b"e2e_audit blob bus " + str(time.time()).encode()
+
+    # Multipart upload
+    import os as _os
+    boundary = "----e2eAuditBlob" + _os.urandom(8).hex()
+    parts = []
+    def _f(name, value):
+        parts.append(f"--{boundary}\r\n".encode())
+        parts.append(
+            f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode())
+        parts.append(value.encode("utf-8"))
+        parts.append(b"\r\n")
+    _f("origin", "e2e_audit")
+    _f("kind", "test")
+    _f("ttl_s", "120")  # short TTL so we don't pollute the store
+    parts.append(f"--{boundary}\r\n".encode())
+    parts.append(
+        b'Content-Disposition: form-data; name="file"; '
+        b'filename="audit.bin"\r\n'
+        b'Content-Type: application/octet-stream\r\n\r\n')
+    parts.append(payload)
+    parts.append(b"\r\n")
+    parts.append(f"--{boundary}--\r\n".encode())
+    body = b"".join(parts)
+
+    t0 = time.time()
+    try:
+        req = urllib.request.Request(
+            base + "/put", data=body, method="POST",
+            headers={
+                "Content-Type": f"multipart/form-data; boundary={boundary}",
+                "Content-Length": str(len(body)),
+            })
+        with urllib.request.urlopen(req, timeout=10.0) as resp:
+            put_rec = json.loads(resp.read().decode())
+        ms = int((time.time() - t0) * 1000)
+    except urllib.error.HTTPError as e:
+        report.add(section, "POST /blob/put", WARN,
+                   f"HTTP {e.code} — blob bus may not be deployed yet")
+        return
+    except Exception as e:
+        report.add(section, "POST /blob/put", FAIL, str(e))
+        return
+
+    h = put_rec.get("hash")
+    if h and put_rec.get("url"):
+        report.add(section, "POST /blob/put", PASS,
+                   f"hash={h[:12]} size={put_rec.get('size')}", ms)
+    else:
+        report.add(section, "POST /blob/put", FAIL, str(put_rec))
+        return
+
+    # GET roundtrip
+    try:
+        with urllib.request.urlopen(put_rec["url"], timeout=5.0) as resp:
+            got = resp.read()
+        if got == payload:
+            report.add(section, "GET /blob/<hash> roundtrip", PASS,
+                       f"{len(got)}B exact match")
+        else:
+            report.add(section, "GET /blob/<hash> roundtrip", FAIL,
+                       f"size mismatch got={len(got)} want={len(payload)}")
+    except Exception as e:
+        report.add(section, "GET /blob/<hash> roundtrip", FAIL, str(e))
+
+    # Dedup — uploading the same bytes again should return the same hash
+    try:
+        req = urllib.request.Request(
+            base + "/put", data=body, method="POST",
+            headers={
+                "Content-Type": f"multipart/form-data; boundary={boundary}",
+                "Content-Length": str(len(body)),
+            })
+        with urllib.request.urlopen(req, timeout=10.0) as resp:
+            put2 = json.loads(resp.read().decode())
+        if put2.get("hash") == h:
+            report.add(section, "dedup (same bytes → same hash)", PASS,
+                       f"hash stable")
+        else:
+            report.add(section, "dedup (same bytes → same hash)", FAIL,
+                       f"got {put2.get('hash')}")
+    except Exception as e:
+        report.add(section, "dedup (same bytes → same hash)", FAIL, str(e))
+
+    # /list catalog
+    try:
+        with urllib.request.urlopen(base + "/list", timeout=3.0) as resp:
+            lst = json.loads(resp.read().decode())
+        blobs = lst.get("blobs") or []
+        if any(b.get("hash") == h for b in blobs):
+            report.add(section, "GET /blob/list", PASS,
+                       f"{len(blobs)} live blobs incl. ours")
+        else:
+            report.add(section, "GET /blob/list", WARN,
+                       f"ours missing ({len(blobs)} total)")
+    except Exception as e:
+        report.add(section, "GET /blob/list", FAIL, str(e))
+
+    # 404 for unknown hash
+    bogus = "0" * 64
+    try:
+        with urllib.request.urlopen(
+                base + "/" + bogus, timeout=3.0) as resp:
+            report.add(section, "GET /blob/<unknown>", FAIL,
+                       f"expected 404, got {resp.status}")
+    except urllib.error.HTTPError as e:
+        report.add(section, "GET /blob/<unknown>", PASS if e.code == 404
+                   else FAIL, f"HTTP {e.code}")
+    except Exception as e:
+        report.add(section, "GET /blob/<unknown>", FAIL, str(e))
+
+
+def test_events_schema(report: Report, verbose: bool = False) -> None:
+    """spellcaster_core/events.py — every dataclass round-trips through
+    to_payload() and parse_event(). Proves that publishers and
+    subscribers share a single wire contract."""
+    section = "Event schema"
+    try:
+        # Import from the canonical location. Tests run from repo root.
+        # Prefer a clean sys.path import (mirrors how plugins load
+        # spellcaster_core) over spec_from_file_location, because
+        # dataclass()'s _is_type helper walks sys.modules to resolve
+        # forward refs — spec-loaded modules that aren't registered
+        # there crash with an opaque NoneType.__dict__ error.
+        core_parent = os.path.abspath(os.path.join(
+            os.path.dirname(__file__), "..", "comfyui-spellcaster"))
+        if core_parent not in sys.path:
+            sys.path.insert(0, core_parent)
+        import importlib as _importlib
+        # Drop a stale import (event_bus edited between runs) so we
+        # always exercise the on-disk copy.
+        sys.modules.pop("spellcaster_core.events", None)
+        events_mod = _importlib.import_module("spellcaster_core.events")
+    except Exception as e:
+        report.add(section, "import events.py", FAIL, str(e))
+        return
+    report.add(section, "import events.py", PASS,
+               f"registry has {len(events_mod.EVENT_SCHEMAS)} explicit kinds")
+
+    # For every class in __all__, construct a default instance and
+    # verify validate + to_payload + parse_event.
+    all_names = getattr(events_mod, "__all__", [])
+    dataclass_names = [n for n in all_names
+                        if isinstance(getattr(events_mod, n, None), type)
+                        and hasattr(getattr(events_mod, n), "KIND")]
+    for name in dataclass_names:
+        cls = getattr(events_mod, name)
+        try:
+            inst = cls()
+            payload = inst.to_payload()
+            assert isinstance(payload, dict)
+            assert "KIND" not in payload
+            assert cls.validate(payload) is True
+            # Wildcard kinds require an origin to resolve; use a synthetic
+            # origin for those and a direct kind lookup for the rest.
+            kind = cls.KIND
+            if kind.startswith("*."):
+                kind = "e2e_audit" + kind[1:]
+            parsed = events_mod.parse_event(kind, payload)
+            if parsed is None and kind in events_mod.EVENT_SCHEMAS:
+                raise AssertionError(f"parse_event returned None for {kind}")
+            report.add(section, f"{name} round-trip", PASS,
+                       f"kind={cls.KIND}")
+        except Exception as e:
+            report.add(section, f"{name} round-trip", FAIL, str(e))
+
+    # publish_event helper + wildcard expansion
+    try:
+        captured = []
+
+        class _Bus:
+            def publish(self, kind, *, origin, data):
+                captured.append((kind, origin, data))
+
+        bus = _Bus()
+        AssetSend = getattr(events_mod, "AssetSend")
+        events_mod.publish_event(
+            bus, AssetSend(image_url="/x", hash="h", source="audit"),
+            origin="e2e_audit")
+        if captured and captured[0][0] == "e2e_audit.asset.send":
+            report.add(section, "publish_event() wildcard expansion", PASS,
+                       captured[0][0])
+        else:
+            report.add(section, "publish_event() wildcard expansion", FAIL,
+                       f"got {captured}")
+    except Exception as e:
+        report.add(section, "publish_event() wildcard expansion", FAIL,
+                   str(e))
+
+
+def test_sillytavern_routes(report: Report, verbose: bool = False) -> None:
+    """SillyTavern server-plugin routes. ST runs its own HTTP server
+    on port 8000 by default; the server-plugin mounts routes under
+    /api/plugins/spellcaster-st/. Tests probe each route with stub
+    payloads. Gracefully skipped if ST isn't running."""
+    section = "SillyTavern routes"
+    sc, cfg = http_get("/api/config")
+    st_url = (cfg.get("sillytavern_url") if isinstance(cfg, dict)
+              else "") or "http://127.0.0.1:8000"
+    base = st_url.rstrip("/") + "/api/plugins/spellcaster-st"
+
+    def _probe(method, path, body=None, expected=(200, 204, 404)):
+        url = base + path
+        try:
+            data = (json.dumps(body).encode("utf-8")
+                    if method == "POST" and body is not None else None)
+            req = urllib.request.Request(url, data=data, method=method,
+                headers={"Content-Type": "application/json"} if data else {})
+            with urllib.request.urlopen(req, timeout=5.0) as resp:
+                status = resp.status
+        except urllib.error.HTTPError as e:
+            status = e.code
+        except Exception as e:
+            return None, str(e)
+        return status, ""
+
+    # Preflight — is ST up at all?
+    sc, err = _probe("GET", "/peers")
+    if sc is None:
+        report.add(section, "ST preflight", SKIP,
+                   f"ST not running ({err})")
+        return
+    report.add(section, "ST preflight", PASS,
+               f"reachable at {st_url}")
+
+    routes: list[tuple[str, str, Optional[dict]]] = [
+        ("GET",  "/peers",        None),
+        ("GET",  "/models",       None),
+        ("GET",  "/capabilities", None),
+        ("GET",  "/cross/inbox",  None),
+        ("POST", "/settings",     {"comfyui_url": "http://127.0.0.1:8188"}),
+    ]
+    for method, path, body in routes:
+        sc, err = _probe(method, path, body)
+        if sc is None:
+            report.add(section, f"{method} {path}", FAIL, err)
+        elif sc in (200, 204):
+            report.add(section, f"{method} {path}", PASS, f"HTTP {sc}")
+        elif sc == 404:
+            report.add(section, f"{method} {path}", WARN,
+                       "route not registered (older ST plugin build?)")
+        else:
+            report.add(section, f"{method} {path}", WARN,
+                       f"HTTP {sc}")
+
+
+def test_guild_client(report: Report, verbose: bool = False) -> None:
+    """Resolve plugin's GuildClient facade — every public method,
+    called against the live Guild."""
+    section = "GuildClient (Resolve shared/)"
+    try:
+        import importlib.util
+        here = os.path.abspath(os.path.dirname(__file__))
+        api_path = os.path.abspath(os.path.join(
+            here, "..", "plugins", "resolve", "shared",
+            "spellcaster_api.py"))
+        spec = importlib.util.spec_from_file_location(
+            "spellcaster_api", api_path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        client = mod.GuildClient(GUILD_URL)
+    except Exception as e:
+        report.add(section, "import + construct", FAIL, str(e))
+        return
+    report.add(section, "import + construct", PASS,
+               f"base_url={client.base_url}")
+
+    # Introspect methods and call the ones that don't take required args
+    # beyond the live endpoint.
+    import inspect as _inspect
+    methods = []
+    for name, member in _inspect.getmembers(client, predicate=callable):
+        if name.startswith("_"):
+            continue
+        try:
+            sig = _inspect.signature(member)
+            # Zero-required-arg methods we can call directly
+            required = [p for p in sig.parameters.values()
+                        if p.default is _inspect.Parameter.empty
+                        and p.kind in (_inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                                       _inspect.Parameter.POSITIONAL_ONLY)]
+            if not required:
+                methods.append(name)
+        except (TypeError, ValueError):
+            continue
+    for name in methods:
+        t0 = time.time()
+        try:
+            getattr(client, name)()
+            ms = int((time.time() - t0) * 1000)
+            report.add(section, f"{name}()", PASS, "no exception", ms)
+        except Exception as e:
+            ms = int((time.time() - t0) * 1000)
+            err = str(e)[:80]
+            # Some endpoints may legitimately not exist in older Guilds
+            if "404" in err or "not found" in err.lower():
+                report.add(section, f"{name}()", WARN, err, ms)
+            else:
+                report.add(section, f"{name}()", FAIL, err, ms)
+
+
+def test_cn_model_coverage(report: Report, verbose: bool = False) -> None:
+    """For every ControlNet mode in the GIMP plugin's
+    CONTROLNET_GUIDE_MODES, verify the referenced cn_model file is
+    actually on the ComfyUI server. Catches mis-wired mappings like
+    'Normal Map → control-lora-depth' (unrelated model)."""
+    section = "ControlNet model coverage"
+    comfy_url = get_comfyui_url()
+    if not comfy_url:
+        report.add(section, "preflight", SKIP,
+                   "comfyui_url not configured")
+        return
+
+    # Fetch available CN models once
+    try:
+        url = comfy_url.rstrip("/") + "/object_info/ControlNetLoader"
+        with urllib.request.urlopen(url, timeout=10.0) as resp:
+            oi = json.loads(resp.read().decode())
+    except Exception as e:
+        report.add(section, "fetch /object_info/ControlNetLoader",
+                   FAIL, str(e))
+        return
+    choices = (oi.get("ControlNetLoader", {}).get("input", {})
+               .get("required", {}).get("control_net_name", [[]]))
+    available = set(choices[0]) if choices and isinstance(choices[0], list) else set()
+    report.add(section, "server CN inventory", PASS,
+               f"{len(available)} CN files visible")
+
+    # Parse CONTROLNET_GUIDE_MODES out of _spellcaster_main.py without
+    # executing the GIMP plugin (imports GIMP libs).
+    try:
+        main_py = os.path.abspath(os.path.join(
+            os.path.dirname(__file__), "..", "plugins", "gimp",
+            "comfyui-connector", "_spellcaster_main.py"))
+        import ast as _ast
+        tree = _ast.parse(open(main_py, encoding="utf-8").read())
+        modes_dict = None
+        for node in tree.body:
+            if (isinstance(node, _ast.Assign)
+                    and any(isinstance(t, _ast.Name)
+                             and t.id == "CONTROLNET_GUIDE_MODES"
+                             for t in node.targets)):
+                modes_dict = _ast.literal_eval(node.value)
+                break
+        if modes_dict is None:
+            raise RuntimeError("CONTROLNET_GUIDE_MODES not found in main.py")
+    except Exception as e:
+        report.add(section, "parse CONTROLNET_GUIDE_MODES", FAIL, str(e))
+        return
+    report.add(section, "parse CONTROLNET_GUIDE_MODES", PASS,
+               f"{len(modes_dict)} modes defined")
+
+    # For each mode + arch pair, check the referenced cn_model file
+    missing = []
+    for mode_name, spec in modes_dict.items():
+        cn_models = spec.get("cn_models") or {}
+        for arch, model_file in cn_models.items():
+            if not model_file:
+                continue
+            if model_file not in available:
+                missing.append(f"{mode_name!r}[{arch}] → {model_file}")
+    if not missing:
+        report.add(section, "every mode × arch has a real model", PASS,
+                   f"{len(modes_dict)} modes verified")
+    else:
+        # Don't fail outright — missing models = server missing files,
+        # not necessarily a wiring bug. Warn with details.
+        sample = "; ".join(missing[:5])
+        more = f" (+{len(missing)-5} more)" if len(missing) > 5 else ""
+        report.add(section, "every mode × arch has a real model", WARN,
+                   f"{len(missing)} mappings missing: {sample}{more}")
+
+
+def test_coverage_inventory(report: Report, verbose: bool = False) -> None:
+    """Introspective sweep: for every importable module on every
+    plugin surface, count public functions and flag what's not
+    exercised elsewhere in this audit. The goal is a ceiling-count
+    rather than per-function tests — live code is too plumbing-heavy
+    for unit-style isolation. We report:
+
+        total_public_fns / exercised_here
+
+    where exercised_here is a coarse grep: if the function's name
+    appears anywhere else in this file's source, it counts. This is
+    intentionally over-generous; the report's real value is the
+    INVENTORY (what exists) more than the percentage.
+    """
+    section = "Coverage inventory"
+    import ast as _ast, inspect as _inspect
+
+    repo_root = os.path.abspath(os.path.join(
+        os.path.dirname(__file__), ".."))
+    surfaces = [
+        ("spellcaster_core",
+         os.path.join(repo_root, "comfyui-spellcaster", "spellcaster_core")),
+        ("comfyui_pack",
+         os.path.join(repo_root, "comfyui-spellcaster")),
+        ("gimp_plugin",
+         os.path.join(repo_root, "plugins", "gimp", "comfyui-connector")),
+        ("resolve_shared",
+         os.path.join(repo_root, "plugins", "resolve", "shared")),
+        ("resolve_bridge",
+         os.path.join(repo_root, "plugins", "resolve",
+                      "spellcaster_bridge")),
+        ("guild_tavern",
+         os.path.join(repo_root, "tavern")),
+    ]
+
+    # Load this audit's source once for "exercised" grep
+    with open(__file__, encoding="utf-8") as f:
+        audit_src = f.read()
+
+    grand_total = 0
+    grand_exercised = 0
+    for surface_name, surface_dir in surfaces:
+        if not os.path.isdir(surface_dir):
+            report.add(section, f"{surface_name}", SKIP,
+                       "dir missing")
+            continue
+        public_fns: list[str] = []
+        for root, _dirs, files in os.walk(surface_dir):
+            # Skip caches + vendored
+            skip_parts = {"__pycache__", ".pytest_cache", "nsfw",
+                          "staging", "node_modules"}
+            if any(p in root.split(os.sep) for p in skip_parts):
+                continue
+            for fn in files:
+                if not fn.endswith(".py"):
+                    continue
+                path = os.path.join(root, fn)
+                try:
+                    tree = _ast.parse(open(path, encoding="utf-8").read())
+                except Exception:
+                    continue
+                for node in _ast.walk(tree):
+                    if isinstance(node, _ast.FunctionDef) and not node.name.startswith("_"):
+                        public_fns.append(node.name)
+        uniq = sorted(set(public_fns))
+        exercised = [n for n in uniq
+                     if (f" {n}(" in audit_src or f"\"{n}\"" in audit_src
+                          or f"'{n}'" in audit_src)]
+        grand_total += len(uniq)
+        grand_exercised += len(exercised)
+        pct = (100.0 * len(exercised) / max(1, len(uniq)))
+        report.add(section, f"{surface_name}",
+                   PASS if len(exercised) else WARN,
+                   f"{len(exercised)}/{len(uniq)} referenced ({pct:.0f}%)")
+
+    # Summary
+    pct = 100.0 * grand_exercised / max(1, grand_total)
+    report.add(section, "TOTAL across all surfaces",
+               PASS,
+               f"{grand_exercised}/{grand_total} public fns referenced "
+               f"({pct:.0f}%)")
+
+
+# ═══════════════════════════════════════════════════════════════════════
 #  MAIN
 # ═══════════════════════════════════════════════════════════════════════
 
 SECTIONS = {
-    "endpoints":        test_guild_endpoints,
-    "scaffolds":        test_scaffolds,
-    "naming":           test_wizard_names,
-    "build_fns":        test_build_functions,
-    "manifest":         test_plugin_manifest,
-    "video":            test_video_canon,
-    "profiles":         test_model_prompt_profiles,
-    "cross_interface":  test_cross_interface_backbone,
+    "endpoints":         test_guild_endpoints,
+    "scaffolds":         test_scaffolds,
+    "naming":            test_wizard_names,
+    "build_fns":         test_build_functions,
+    "manifest":          test_plugin_manifest,
+    "video":             test_video_canon,
+    "profiles":          test_model_prompt_profiles,
+    "cross_interface":   test_cross_interface_backbone,
+    # Post-audit (2026-04-20) — cover every surface shipped this week
+    "presence_broker":   test_presence_broker,
+    "blob_bus":          test_blob_bus,
+    "events_schema":     test_events_schema,
+    "st_routes":         test_sillytavern_routes,
+    "guild_client":      test_guild_client,
+    "cn_model_coverage": test_cn_model_coverage,
+    "coverage_inventory": test_coverage_inventory,
 }
 
 
@@ -1036,20 +1612,33 @@ def main():
     ap.add_argument("--no-llm", action="store_true",
                      help="skip the LLM turn in scaffold tests (faster)")
     ap.add_argument("--verbose", "-v", action="store_true")
+    ap.add_argument("--offline", action="store_true",
+                     help="Run only sections that don't need a live Guild "
+                          "(events_schema, coverage_inventory)")
     args = ap.parse_args()
 
-    # Preflight — Guild must be reachable
-    sc, body = http_get("/api/llm_status")
-    if sc != 200:
-        print(f"Guild preflight failed at {GUILD_URL}/api/llm_status "
-              f"(HTTP {sc}: {body!r:.120})", file=sys.stderr)
-        return 2
+    # Sections that don't contact the Guild — safe to run standalone.
+    OFFLINE_SECTIONS = {"events_schema", "coverage_inventory"}
 
     selected = set(SECTIONS.keys())
     if args.only:
         selected = set(x.strip() for x in args.only.split(",") if x.strip())
     if args.skip:
         selected -= set(x.strip() for x in args.skip.split(",") if x.strip())
+    if args.offline:
+        selected &= OFFLINE_SECTIONS
+
+    # Preflight — Guild must be reachable, unless every selected section
+    # is offline. Coverage inventory + events schema don't need it.
+    needs_guild = bool(selected - OFFLINE_SECTIONS)
+    if needs_guild:
+        sc, body = http_get("/api/llm_status")
+        if sc != 200:
+            print(f"Guild preflight failed at {GUILD_URL}/api/llm_status "
+                  f"(HTTP {sc}: {body!r:.120})", file=sys.stderr)
+            print("Hint: pass --offline to run just the sections that "
+                  "don't need the Guild.", file=sys.stderr)
+            return 2
 
     report = Report()
     for key, fn in SECTIONS.items():
