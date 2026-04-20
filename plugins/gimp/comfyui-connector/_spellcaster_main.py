@@ -544,6 +544,125 @@ def _style_dialog_buttons(dialog):
 # Apply premium theme only if the user opted in (check is inside the function).
 _apply_spellcaster_theme()
 
+
+def _reapply_appearance_assets() -> dict:
+    """Push freshly-downloaded theme / splash / icon assets into the
+    locations GIMP actually reads them from.
+
+    Before 2026-04-20 this logic lived inline in ``_auto_update``'s
+    Step 6, so the boot-time updater reapplied the theme but the
+    "Repair / Update Now" button in Settings only downloaded files
+    into the plugin dir and left GIMP reading the OLD theme / splash /
+    icon between restarts. Users clicked Repair, saw no change,
+    reported the bug.
+
+    Extracted here so both call sites stay in sync. Respects the
+    ``apply_theme`` config opt-in; no-ops otherwise.
+
+    Returns a summary dict ``{theme, banner, splash, icons}`` where
+    each value is ``"skipped"`` / ``"installed"`` / ``"unchanged"``
+    so the caller can show the user what actually landed.
+    """
+    import sys as _sys
+    import shutil
+    summary = {"theme": "skipped", "banner": "skipped",
+               "splash": "skipped", "icons": "skipped"}
+    cfg = _load_config()
+    if not cfg.get("apply_theme", False):
+        return summary
+
+    try:
+        _install_spellcaster_theme_to_disk()
+        summary["theme"] = "installed"
+    except Exception as _e:
+        print(f"[Spellcaster] theme re-install failed: {_e}",
+              file=_sys.stderr)
+
+    try:
+        banner_gif = _PLUGIN_DIR / "gimp_banner.gif"
+        if not banner_gif.exists():
+            banner_gif = _PLUGIN_DIR.parent / "gimp_banner.gif"
+        parent_banner = _PLUGIN_DIR.parent / "gimp_banner.gif"
+        if banner_gif.exists() and banner_gif.resolve() != parent_banner.resolve():
+            shutil.copy2(banner_gif, parent_banner)
+            summary["banner"] = "installed"
+        elif parent_banner.exists():
+            summary["banner"] = "unchanged"
+    except Exception as _e:
+        print(f"[Spellcaster] banner copy failed: {_e}", file=_sys.stderr)
+
+    try:
+        banner_png = _PLUGIN_DIR.parent / "gimp_banner.png"
+        if not banner_png.exists():
+            banner_png = _PLUGIN_DIR / "gimp_banner.png"
+        if banner_png.exists():
+            splash_candidates = []
+            if _sys.platform == "win32":
+                roots = [Path("C:/Program Files/GIMP 3"),
+                         Path("C:/Program Files (x86)/GIMP 3")]
+            elif _sys.platform == "darwin":
+                roots = [Path("/Applications/GIMP.app/Contents/Resources")]
+            else:
+                roots = [Path("/usr/share/gimp/3.0"),
+                         Path("/usr/local/share/gimp/3.0")]
+            for pf in roots:
+                if pf.is_dir():
+                    for f in pf.rglob("gimp-splash*.png"):
+                        splash_candidates.append(f)
+            landed = False
+            for splash in splash_candidates:
+                try:
+                    backup = splash.with_suffix(".orig" + splash.suffix)
+                    if not backup.exists():
+                        shutil.copy2(splash, backup)
+                    shutil.copy2(banner_png, splash)
+                    landed = True
+                except (PermissionError, OSError) as _e:
+                    print(f"[Spellcaster] splash overwrite failed for "
+                          f"{splash}: {_e}", file=_sys.stderr)
+            if landed:
+                summary["splash"] = "installed"
+            elif splash_candidates:
+                summary["splash"] = "unchanged"
+    except Exception as _e:
+        print(f"[Spellcaster] splash logic crashed: {_e}", file=_sys.stderr)
+
+    try:
+        icon_src = _PLUGIN_DIR / "spellcaster_icon.png"
+        if icon_src.exists():
+            if _sys.platform == "win32":
+                roots = [Path("C:/Program Files/GIMP 3"),
+                         Path("C:/Program Files (x86)/GIMP 3")]
+            elif _sys.platform == "darwin":
+                roots = [Path("/Applications/GIMP.app/Contents/Resources")]
+            else:
+                roots = [Path("/usr/share/gimp/3.0"),
+                         Path("/usr/local/share/gimp/3.0")]
+            landed = False
+            for pf in roots:
+                if not pf.is_dir():
+                    continue
+                for icon_name in ("gimp-logo.png", "wilber.png"):
+                    for icon_path in pf.rglob(icon_name):
+                        try:
+                            backup = icon_path.with_suffix(
+                                ".orig" + icon_path.suffix)
+                            if not backup.exists():
+                                shutil.copy2(icon_path, backup)
+                            shutil.copy2(icon_src, icon_path)
+                            landed = True
+                        except (PermissionError, OSError) as _e:
+                            print(f"[Spellcaster] icon overwrite failed "
+                                  f"for {icon_path}: {_e}",
+                                  file=_sys.stderr)
+            if landed:
+                summary["icons"] = "installed"
+    except Exception as _e:
+        print(f"[Spellcaster] icon logic crashed: {_e}", file=_sys.stderr)
+
+    return summary
+
+
 def _auto_update():
     """Check GitHub for a newer commit and download ALL plugin files dynamically.
 
@@ -798,65 +917,12 @@ def _auto_update():
                 except Exception:
                     pass  # unfixable - _load_config() returns {} safely
 
-        # Step 6: Re-apply appearance assets if user opted in
-        cfg = _load_config()
-        if cfg.get("apply_theme", False):
-            # Re-install gimp.css to all GIMP config dirs (opt-in only)
-            _install_spellcaster_theme_to_disk()
-
-            # Update the banner GIF in the parent plugins/gimp/ directory
-            banner_gif = _PLUGIN_DIR / "gimp_banner.gif"
-            if not banner_gif.exists():
-                banner_gif = _PLUGIN_DIR.parent / "gimp_banner.gif"
-            parent_banner = _PLUGIN_DIR.parent / "gimp_banner.gif"
-            if banner_gif.exists() and banner_gif != parent_banner:
-                import shutil
-                try:
-                    shutil.copy2(banner_gif, parent_banner)
-                except Exception:
-                    pass
-
-            # Re-apply system splash if the banner PNG exists
-            banner_png = _PLUGIN_DIR.parent / "gimp_banner.png"
-            if not banner_png.exists():
-                banner_png = _PLUGIN_DIR / "gimp_banner.png"
-            if banner_png.exists():
-                # Find and replace GIMP system splash
-                import shutil
-                splash_candidates = []
-                if _sys.platform == "win32":
-                    for pf in [Path("C:/Program Files/GIMP 3"), Path("C:/Program Files (x86)/GIMP 3")]:
-                        share = pf / "share" / "gimp" / "3.0" / "images"
-                        if share.is_dir():
-                            for f in share.glob("gimp-splash*.png"):
-                                splash_candidates.append(f)
-                for splash in splash_candidates:
-                    if splash.exists():
-                        try:
-                            backup = splash.with_suffix(".orig" + splash.suffix)
-                            if not backup.exists():
-                                shutil.copy2(splash, backup)
-                            shutil.copy2(banner_png, splash)
-                        except (PermissionError, OSError):
-                            pass
-                        break
-
-            # Re-apply custom icon
-            icon_src = _PLUGIN_DIR / "spellcaster_icon.png"
-            if icon_src.exists():
-                if _sys.platform == "win32":
-                    for pf in [Path("C:/Program Files/GIMP 3"), Path("C:/Program Files (x86)/GIMP 3")]:
-                        for icon_name in ["gimp-logo.png", "wilber.png"]:
-                            icon_path = pf / "share" / "gimp" / "3.0" / "images" / icon_name
-                            if icon_path.exists():
-                                try:
-                                    import shutil
-                                    backup = icon_path.with_suffix(".orig" + icon_path.suffix)
-                                    if not backup.exists():
-                                        shutil.copy2(icon_path, backup)
-                                    shutil.copy2(icon_src, icon_path)
-                                except (PermissionError, OSError):
-                                    pass
+        # Step 6: Re-apply appearance assets (theme CSS, splash, icons)
+        # if the user opted in via apply_theme=True. Extracted into
+        # _reapply_appearance_assets() so Settings > Repair / Update
+        # Now runs the exact same logic — before 2026-04-20 the two
+        # paths diverged and Repair silently skipped the re-apply.
+        _reapply_appearance_assets()
 
         # Step 7b: Delete GIMP pluginrc cache — forces re-scan of procedures
         # Scans ALL GIMP versions (3.0, 3.2, etc.) not just 3.0
@@ -31613,9 +31679,40 @@ class Spellcaster(Gimp.PlugIn):
                     except Exception: pass
                 # Delete pluginrc to force GIMP to re-scan procedures
                 _delete_all_gimp_pluginrc()
+                # Re-apply theme / splash / icons to GIMP's install
+                # location. Before 2026-04-20 the Repair button skipped
+                # this and only dropped fresh files into the plugin
+                # dir — which meant GIMP kept reading the OLD theme /
+                # splash / icon across restarts. Now Repair pushes the
+                # newly-downloaded assets into every known GIMP config
+                # + install root (same helper the boot updater uses).
+                # No-op when apply_theme is off.
+                _appearance_summary = {}
+                try:
+                    _appearance_summary = _reapply_appearance_assets()
+                except Exception as _e:
+                    print(f"[Repair] appearance re-apply failed: {_e}",
+                          file=_sys.stderr)
+                _parts = [f"Updated {updated}/{len(remote_files)} files."]
+                if _appearance_summary:
+                    _applied = [k for k, v in _appearance_summary.items()
+                                if v == "installed"]
+                    _all_skipped = all(v == "skipped" for v in
+                                         _appearance_summary.values())
+                    if _all_skipped:
+                        _parts.append("Theme/splash/icon re-apply skipped "
+                                      "(set apply_theme=true in Settings).")
+                    elif _applied:
+                        _parts.append("Re-applied: " + ", ".join(_applied) + ".")
+                    else:
+                        _parts.append(
+                            "Assets downloaded but none reinstalled "
+                            "(check permissions on GIMP's install dir).")
+                _parts.append("Restart GIMP to see the new UI.")
                 update_status.set_markup(
-                    f'<span foreground="#00E676">Updated {updated}/{len(remote_files)} files.\n'
-                    f'Restart GIMP to apply.</span>')
+                    '<span foreground="#00E676">' +
+                    GLib.markup_escape_text("\n".join(_parts)) +
+                    '</span>')
             except Exception as e:
                 update_status.set_markup(f'<span foreground="#FF5252">Error: {e}</span>')
             btn.set_sensitive(True)
