@@ -141,6 +141,8 @@
                     <span>Include built-in wizards</span>
                 </label>
                 <a href="/static/guild.html" id="scaffold-link" title="Open The Travelling Wizard — scaffolds, workflows, configuration &amp; more">🧙 Travelling Wizard</a>
+                <a href="/insights" id="insights-link" target="_blank" rel="noopener"
+                   title="SpeedCoach dashboard — per-arch speed, LoRA impact, queue heatmap, mailbox SLA, drift detection">⚡ Insights</a>
                 <button id="settings-btn">⚙️ Settings</button>
                 <!-- Graceful exit: calls /api/guild/exit which closes
                      the Guild. Connected apps (ComfyUI/Ollama/Kobold)
@@ -180,6 +182,25 @@
                 </div>
             </header>
             
+            <!-- SpeedCoach drift banner — surfaces ComfyUI node-catalogue
+                 changes since last session. Poller in speedcoach_client.js
+                 toggles display:flex when /api/speedcoach/drift.has_drift=true.
+                 Click opens /insights for the full diff. -->
+            <div id="speedcoach-drift-banner" style="display:none;
+                        padding:10px 16px; margin:6px 16px; border-radius:8px;
+                        background:rgba(180,100,60,0.16);
+                        border:1px solid rgba(200,130,80,0.45);
+                        color:#f4c8a2; gap:10px; align-items:center;">
+                <span style="flex:1;" id="speedcoach-drift-text">
+                    ⚠ ComfyUI node catalogue changed since last session.
+                </span>
+                <a href="/insights" target="_blank" rel="noopener"
+                   style="color:#f0d89a;text-decoration:underline;">Review →</a>
+                <button id="speedcoach-drift-dismiss" type="button"
+                        style="background:none;border:0;color:#8a8778;
+                               cursor:pointer;font-size:18px;padding:0 4px;">×</button>
+            </div>
+
             <div id="chat-stream">
                 <!-- Chat messages inject here -->
             </div>
@@ -535,6 +556,14 @@
                 </div>
             </div>
 
+            <!-- LoRA version migration banner \u2014 populated when
+                 orphans remain after auto-detect. The user picks a
+                 replacement (or dismisses / deletes). -->
+            <div id="lora-migrations" style="display:none;background:rgba(88,224,255,0.08);border:1px solid rgba(88,224,255,0.35);border-radius:10px;padding:14px;margin-bottom:16px;">
+                <p style="color:#ddd;font-size:13px;margin-bottom:8px;"><strong>\u26a0 LoRA upgrades detected.</strong> Files listed below are in your registry but no longer on the ComfyUI server. Pick the replacement or dismiss.</p>
+                <div id="lora-migrations-list"></div>
+            </div>
+
             <!-- Search + filters — drops in front of the list. Only
                  shows when metadata has populated (civitai_* fields) so
                  users on day-1 without the fetch don't see empty filters. -->
@@ -588,5 +617,6 @@
     <script src="lora_calibration.js?v=20260420h"></script>
     <script src="spellcaster_actions.js?v=20260420h"></script>
     <script src="setup_wizard.js?v=20260420h"></script>
+    <script src="speedcoach_client.js?v=20260420a"></script>
 </body>
 </html>

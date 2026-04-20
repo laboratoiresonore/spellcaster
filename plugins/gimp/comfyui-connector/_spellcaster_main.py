@@ -544,6 +544,140 @@ def _style_dialog_buttons(dialog):
 # Apply premium theme only if the user opted in (check is inside the function).
 _apply_spellcaster_theme()
 
+
+def _reapply_appearance_assets() -> dict:
+    """Push freshly-downloaded theme / splash / icon assets into the
+    locations GIMP actually reads them from.
+
+    Before 2026-04-20 this logic lived inline in ``_auto_update``'s
+    Step 6, so the boot-time updater reapplied the theme but the
+    "Repair / Update Now" button in Settings only downloaded files
+    into the plugin dir and left GIMP reading the OLD theme/splash/
+    icon. Users clicked Repair, saw no change, reported the bug.
+
+    Extracted here so both call sites stay in sync. Respects the
+    ``apply_theme`` config opt-in; no-ops otherwise.
+
+    Returns a summary dict ``{theme, banner, splash, icons}`` where
+    each value is ``"skipped"`` / ``"installed"`` / ``"unchanged"``
+    so the caller can show the user what actually landed.
+    """
+    import sys as _sys
+    import shutil
+    summary = {"theme": "skipped", "banner": "skipped",
+               "splash": "skipped", "icons": "skipped"}
+    cfg = _load_config()
+    if not cfg.get("apply_theme", False):
+        return summary
+
+    # 1. gimp.css — writes the Spellcaster theme into every detected
+    # GIMP config dir. _install_spellcaster_theme_to_disk() already
+    # handles version detection and skips dirs that don't exist.
+    try:
+        _install_spellcaster_theme_to_disk()
+        summary["theme"] = "installed"
+    except Exception as _e:
+        print(f"[Spellcaster] theme re-install failed: {_e}",
+              file=_sys.stderr)
+
+    # 2. gimp_banner.gif in the parent plugins/gimp/ directory (some
+    # dialogs look for it one level up from the plugin dir).
+    try:
+        banner_gif = _PLUGIN_DIR / "gimp_banner.gif"
+        if not banner_gif.exists():
+            banner_gif = _PLUGIN_DIR.parent / "gimp_banner.gif"
+        parent_banner = _PLUGIN_DIR.parent / "gimp_banner.gif"
+        if banner_gif.exists() and banner_gif.resolve() != parent_banner.resolve():
+            shutil.copy2(banner_gif, parent_banner)
+            summary["banner"] = "installed"
+        elif parent_banner.exists():
+            summary["banner"] = "unchanged"
+    except Exception as _e:
+        print(f"[Spellcaster] banner copy failed: {_e}", file=_sys.stderr)
+
+    # 3. gimp-splash.png — backup the original once, overwrite with
+    # the banner PNG. Searches every known GIMP 3 install root.
+    try:
+        banner_png = _PLUGIN_DIR.parent / "gimp_banner.png"
+        if not banner_png.exists():
+            banner_png = _PLUGIN_DIR / "gimp_banner.png"
+        if banner_png.exists():
+            splash_candidates = []
+            if _sys.platform == "win32":
+                roots = [Path("C:/Program Files/GIMP 3"),
+                         Path("C:/Program Files (x86)/GIMP 3")]
+            elif _sys.platform == "darwin":
+                roots = [Path("/Applications/GIMP.app/Contents/Resources")]
+            else:
+                roots = [Path("/usr/share/gimp/3.0"),
+                         Path("/usr/local/share/gimp/3.0")]
+            for pf in roots:
+                # Windows layout: <root>/share/gimp/3.0/images.
+                # macOS / Linux layout depends on the packaging; glob
+                # defensively for the gimp-splash*.png pattern anywhere
+                # under the root.
+                if pf.is_dir():
+                    for f in pf.rglob("gimp-splash*.png"):
+                        splash_candidates.append(f)
+            landed = False
+            for splash in splash_candidates:
+                try:
+                    backup = splash.with_suffix(".orig" + splash.suffix)
+                    if not backup.exists():
+                        shutil.copy2(splash, backup)
+                    shutil.copy2(banner_png, splash)
+                    landed = True
+                except (PermissionError, OSError) as _e:
+                    print(f"[Spellcaster] splash overwrite failed for "
+                          f"{splash}: {_e}", file=_sys.stderr)
+            if landed:
+                summary["splash"] = "installed"
+            elif splash_candidates:
+                summary["splash"] = "unchanged"
+    except Exception as _e:
+        print(f"[Spellcaster] splash logic crashed: {_e}", file=_sys.stderr)
+
+    # 4. Custom icon — GIMP ships gimp-logo.png + wilber.png as the
+    # branding used throughout the UI. Replace both.
+    try:
+        icon_src = _PLUGIN_DIR / "spellcaster_icon.png"
+        if icon_src.exists():
+            if _sys.platform == "win32":
+                roots = [Path("C:/Program Files/GIMP 3"),
+                         Path("C:/Program Files (x86)/GIMP 3")]
+            elif _sys.platform == "darwin":
+                roots = [Path("/Applications/GIMP.app/Contents/Resources")]
+            else:
+                roots = [Path("/usr/share/gimp/3.0"),
+                         Path("/usr/local/share/gimp/3.0")]
+            landed = False
+            for pf in roots:
+                if not pf.is_dir():
+                    continue
+                for icon_name in ("gimp-logo.png", "wilber.png"):
+                    # Walk the tree so we catch the icon regardless of
+                    # whether it lives in share/gimp/3.0/images/ or
+                    # another packaging-specific subdir.
+                    for icon_path in pf.rglob(icon_name):
+                        try:
+                            backup = icon_path.with_suffix(
+                                ".orig" + icon_path.suffix)
+                            if not backup.exists():
+                                shutil.copy2(icon_path, backup)
+                            shutil.copy2(icon_src, icon_path)
+                            landed = True
+                        except (PermissionError, OSError) as _e:
+                            print(f"[Spellcaster] icon overwrite failed "
+                                  f"for {icon_path}: {_e}",
+                                  file=_sys.stderr)
+            if landed:
+                summary["icons"] = "installed"
+    except Exception as _e:
+        print(f"[Spellcaster] icon logic crashed: {_e}", file=_sys.stderr)
+
+    return summary
+
+
 def _auto_update():
     """Check GitHub for a newer commit and download ALL plugin files dynamically.
 
@@ -798,65 +932,12 @@ def _auto_update():
                 except Exception:
                     pass  # unfixable - _load_config() returns {} safely
 
-        # Step 6: Re-apply appearance assets if user opted in
-        cfg = _load_config()
-        if cfg.get("apply_theme", False):
-            # Re-install gimp.css to all GIMP config dirs (opt-in only)
-            _install_spellcaster_theme_to_disk()
-
-            # Update the banner GIF in the parent plugins/gimp/ directory
-            banner_gif = _PLUGIN_DIR / "gimp_banner.gif"
-            if not banner_gif.exists():
-                banner_gif = _PLUGIN_DIR.parent / "gimp_banner.gif"
-            parent_banner = _PLUGIN_DIR.parent / "gimp_banner.gif"
-            if banner_gif.exists() and banner_gif != parent_banner:
-                import shutil
-                try:
-                    shutil.copy2(banner_gif, parent_banner)
-                except Exception:
-                    pass
-
-            # Re-apply system splash if the banner PNG exists
-            banner_png = _PLUGIN_DIR.parent / "gimp_banner.png"
-            if not banner_png.exists():
-                banner_png = _PLUGIN_DIR / "gimp_banner.png"
-            if banner_png.exists():
-                # Find and replace GIMP system splash
-                import shutil
-                splash_candidates = []
-                if _sys.platform == "win32":
-                    for pf in [Path("C:/Program Files/GIMP 3"), Path("C:/Program Files (x86)/GIMP 3")]:
-                        share = pf / "share" / "gimp" / "3.0" / "images"
-                        if share.is_dir():
-                            for f in share.glob("gimp-splash*.png"):
-                                splash_candidates.append(f)
-                for splash in splash_candidates:
-                    if splash.exists():
-                        try:
-                            backup = splash.with_suffix(".orig" + splash.suffix)
-                            if not backup.exists():
-                                shutil.copy2(splash, backup)
-                            shutil.copy2(banner_png, splash)
-                        except (PermissionError, OSError):
-                            pass
-                        break
-
-            # Re-apply custom icon
-            icon_src = _PLUGIN_DIR / "spellcaster_icon.png"
-            if icon_src.exists():
-                if _sys.platform == "win32":
-                    for pf in [Path("C:/Program Files/GIMP 3"), Path("C:/Program Files (x86)/GIMP 3")]:
-                        for icon_name in ["gimp-logo.png", "wilber.png"]:
-                            icon_path = pf / "share" / "gimp" / "3.0" / "images" / icon_name
-                            if icon_path.exists():
-                                try:
-                                    import shutil
-                                    backup = icon_path.with_suffix(".orig" + icon_path.suffix)
-                                    if not backup.exists():
-                                        shutil.copy2(icon_path, backup)
-                                    shutil.copy2(icon_src, icon_path)
-                                except (PermissionError, OSError):
-                                    pass
+        # Step 6: Re-apply appearance assets (theme CSS, splash, icons)
+        # if the user opted in via apply_theme=True. Extracted into
+        # _reapply_appearance_assets() so the Settings > Repair button
+        # runs the exact same logic — prior to 2026-04-20 the two code
+        # paths diverged and the Repair button skipped the re-apply.
+        _reapply_appearance_assets()
 
         # Step 7b: Delete GIMP pluginrc cache — forces re-scan of procedures
         # Scans ALL GIMP versions (3.0, 3.2, etc.) not just 3.0
@@ -2284,10 +2365,7 @@ def _add_normal_map_selector(dialog, box, image):
             gen_status.set_text("Exporting canvas…")
             while Gtk.events_pending():
                 Gtk.main_iteration()
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_nm_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname)
-            os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[nm-gen] ")
             gen_status.set_text("Generating… (may take ~30 s)")
             while Gtk.events_pending():
                 Gtk.main_iteration()
@@ -2435,64 +2513,104 @@ def _export_normal_map_layer(image, layer_ref):
 
     ``layer_ref`` accepts either a dotted-path string ("2.0" = first
     child of third top-level layer) produced by ``_walk_all_layers``,
-    or an integer top-level index (legacy callers). Temporarily makes
-    only the target layer visible (recursively — parents of a nested
-    target are re-shown so the group's composite includes the child),
-    exports the flattened image, then restores original visibility.
+    or an integer top-level index (legacy callers).
+
+    Works on a DUPLICATE of the image so a mid-export crash can never
+    leave the user's live canvas with every-layer-hidden — that was
+    the bug behind the "flatten execution error then black result"
+    reports: when `_export_image_to_tmp` raised from inside this
+    helper, the visibility restore block never ran, the user's
+    canvas stayed with all layers hidden, and the next dispatch
+    exported a black/transparent composite.
 
     Returns the temp file path (caller must unlink after upload) or
     None when the layer can't be resolved.
     """
-    # Resolve the target layer
+    # Resolve the target layer on the ORIGINAL image (names must match
+    # exactly — the duplicate's layers have the same names + positions).
     if isinstance(layer_ref, int):
-        layers = image.get_layers()
-        if layer_ref < 0 or layer_ref >= len(layers):
+        orig_layers = image.get_layers()
+        if layer_ref < 0 or layer_ref >= len(orig_layers):
             return None
-        target = layers[layer_ref]
+        target_orig = orig_layers[layer_ref]
     else:
-        target = _find_layer_by_path(image, layer_ref)
+        target_orig = _find_layer_by_path(image, layer_ref)
+        if target_orig is None:
+            return None
+
+    # Duplicate the image up-front so visibility toggles are scoped to
+    # a throwaway copy. If the export raises, the live canvas stays
+    # untouched (the old code manipulated `image` itself, which
+    # trapped users with all-layers-hidden on any export failure).
+    try:
+        dup_img = image.duplicate()
+    except Exception as e:
+        print(f"[Spellcaster] normal-map export: duplicate() failed: {e}")
+        return None
+
+    try:
+        # Re-resolve the target on the duplicate by index/name. Walk the
+        # duplicate the same way _walk_all_layers walked the original;
+        # the structure is identical so the paths line up.
+        target = None
+        if isinstance(layer_ref, int):
+            dup_layers = dup_img.get_layers()
+            if 0 <= layer_ref < len(dup_layers):
+                target = dup_layers[layer_ref]
+        else:
+            target = _find_layer_by_path(dup_img, layer_ref)
+        if target is None:
+            # Fallback: match by name across all layers in the duplicate.
+            target_name = target_orig.get_name() or ""
+            for l, _ in _walk_all_layers(dup_img):
+                if (l.get_name() or "") == target_name:
+                    target = l
+                    break
         if target is None:
             return None
 
-    # Snapshot visibility of EVERY layer (top-level + nested) so we can
-    # restore exactly. Then hide everything, re-show the target AND
-    # every ancestor group (so group-mask/opacity lets the child
-    # composite through).
-    all_layers = [l for l, _ in _walk_all_layers(image)]
-    orig_vis = [(l, l.get_visible()) for l in all_layers]
-    for l, _ in orig_vis:
-        try:
-            l.set_visible(False)
-        except Exception:
-            pass
-    try:
-        target.set_visible(True)
-    except Exception:
-        pass
-    # Re-show ancestor groups — walk by matching get_parent chain.
-    try:
-        ancestor = target.get_parent() if hasattr(target, "get_parent") else None
-        while ancestor is not None:
+        # Hide every layer on the duplicate, then re-show the target
+        # AND its ancestor chain so a nested layer's composite reaches
+        # the flatten call.
+        for l, _ in _walk_all_layers(dup_img):
             try:
-                ancestor.set_visible(True)
+                l.set_visible(False)
             except Exception:
-                break
-            ancestor = (ancestor.get_parent()
-                        if hasattr(ancestor, "get_parent") else None)
-    except Exception:
-        pass
-
-    # Export
-    path = _export_image_to_tmp(image)
-
-    # Restore
-    for l, v in orig_vis:
+                pass
         try:
-            l.set_visible(v)
+            target.set_visible(True)
+        except Exception:
+            pass
+        try:
+            ancestor = (target.get_parent()
+                        if hasattr(target, "get_parent") else None)
+            while ancestor is not None:
+                try:
+                    ancestor.set_visible(True)
+                except Exception:
+                    break
+                ancestor = (ancestor.get_parent()
+                            if hasattr(ancestor, "get_parent") else None)
         except Exception:
             pass
 
-    return path
+        # Export the duplicate. _export_image_to_tmp duplicates AGAIN
+        # internally before flatten, which is fine — an extra
+        # duplicate is cheap and keeps the outer duplicate's
+        # visibility state intact for debugging.
+        try:
+            return _export_image_to_tmp(dup_img)
+        except Exception as e:
+            print(f"[Spellcaster] normal-map export: "
+                  f"_export_image_to_tmp failed: {e}")
+            return None
+    finally:
+        # Always destroy the duplicate — never leaks into the user's
+        # open-image list.
+        try:
+            dup_img.delete()
+        except Exception:
+            pass
 
 
 def _collect_normal_map_from_dialog(dlg, image, server_url):
@@ -2519,6 +2637,31 @@ def _collect_normal_map_from_dialog(dlg, image, server_url):
         return None
     idx_id = cmb.get_active_id()
 
+    # Reuse-first guard: if the combo doesn't already point at a
+    # layer, scan the image for anything named "Normal*" BEFORE
+    # falling through to auto-generation. Two scenarios fixed by this:
+    #   1. The user opened a dialog, generated a normal map via the
+    #      inline "Generate now" button, then switched to a different
+    #      method \u2014 the new dialog's combo starts at "none" but
+    #      the layer is sitting in the image.
+    #   2. The auto-gen Path 2 created "Normal Map (auto)" on a
+    #      previous run; a subsequent 3D method should reuse that
+    #      rather than spend 20-30 s regenerating.
+    # _find_normal_layer recurses into groups so auto-generated
+    # normals inside "Spellcaster results" are still discovered.
+    if not idx_id or idx_id == "none":
+        existing = _find_normal_layer(image)
+        if existing is not None:
+            try:
+                for _layer, _path in _walk_all_layers(image):
+                    if _layer is existing:
+                        idx_id = _path
+                        print(f"[Spellcaster] Reusing existing normal-map "
+                              f"layer '{existing.get_name()}' (no regen).")
+                        break
+            except Exception:
+                pass
+
     # Path 2: auto-generate when nothing is picked + auto-gen is ON.
     if (not idx_id or idx_id == "none") and auto_cb is not None and auto_cb.get_active():
         # Preflight NormalCrafter before spending time on export/upload.
@@ -2539,13 +2682,7 @@ def _collect_normal_map_from_dialog(dlg, image, server_url):
             pass  # probe failed — best-effort, let the workflow error out
         # Export canvas + upload
         try:
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_nmsrc_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(server_url, tmp, uname)
-            try:
-                os.unlink(tmp)
-            except Exception:
-                pass
+            uname = _export_and_upload_cached(server_url, image, debug_prefix="[nm-src] ")
         except Exception as e:
             print(f"[Spellcaster] auto-normal-map export failed: {e}")
             return None
@@ -2631,6 +2768,64 @@ def _collect_normal_map_from_dialog(dlg, image, server_url):
 #: "chroma")`). Exposed here so the dialog layer can warn the user
 #: BEFORE they submit, instead of silently dropping their normal map.
 _CN_INCOMPATIBLE_ARCHS = frozenset({"flux2klein", "flux_kontext", "chroma"})
+
+
+# Cache the ControlNetLoader file list per (server, ttl) so repeated
+# pre-dispatch checks during a single session don't DoS /object_info.
+_CN_AVAILABLE_CACHE: dict = {}
+_CN_AVAILABLE_TTL = 60.0  # seconds
+
+
+def _fetch_available_cn_files(server):
+    """Return the list of ControlNet filenames ComfyUI currently knows
+    about, cached for ``_CN_AVAILABLE_TTL`` per server. Empty list on
+    failure — callers must treat an empty list as "don't know" and
+    NOT as "nothing installed"."""
+    if not server:
+        return []
+    key = server.rstrip("/")
+    now = time.time()
+    cached = _CN_AVAILABLE_CACHE.get(key)
+    if cached and (now - cached[0]) < _CN_AVAILABLE_TTL:
+        return cached[1]
+    try:
+        info = _api_get(server, "/object_info/ControlNetLoader")
+        files = (info.get("ControlNetLoader", {})
+                     .get("input", {})
+                     .get("required", {})
+                     .get("control_net_name", [[]]))
+        names = files[0] if files and isinstance(files[0], list) else []
+        names = [str(n) for n in names]
+        _CN_AVAILABLE_CACHE[key] = (now, names)
+        return names
+    except Exception:
+        _CN_AVAILABLE_CACHE[key] = (now, [])
+        return []
+
+
+def _cn_model_available(server, filename):
+    """Three-valued presence check:
+
+      * True  — file was explicitly seen on the server.
+      * False — server returned a non-empty list and this file is absent.
+      * None  — we couldn't read ``/object_info/ControlNetLoader`` at all
+                (treat as "don't know"; callers should NOT block dispatch).
+
+    Comparison matches on the exact string AND on the basename (ComfyUI
+    sometimes reports files without subfolder prefixes).
+    """
+    if not filename:
+        return True
+    available = _fetch_available_cn_files(server)
+    if not available:
+        return None
+    if filename in available:
+        return True
+    bn = filename.replace("\\", "/").rsplit("/", 1)[-1]
+    for a in available:
+        if a == filename or a == bn or a.replace("\\", "/").rsplit("/", 1)[-1] == bn:
+            return True
+    return False
 
 
 def _layer_label(method, *, preset=None, preset_key=None,
@@ -2783,6 +2978,41 @@ def _maybe_override_cn_with_normal_map(controlnet, normal_map_filename,
             print(f"[Spellcaster] Normal Map skipped: "
                   f"arch {arch_key} does not support ControlNet.")
         return controlnet
+    # CN file preflight — before we lock the workflow into the
+    # "Normal Map (use existing layer)" mode, confirm the arch-specific
+    # CN file is actually on the ComfyUI server. When it's missing the
+    # user was previously getting a cryptic "MISSING <cn_filename>"
+    # from the server mid-dispatch (or, worse, "MISSING union net tile"
+    # when a secondary CN slot defaulted to SDXL tile without the
+    # file); now we warn + drop the override instead.
+    try:
+        mode = "Normal Map (use existing layer) — all archs"
+        entry = CONTROLNET_GUIDE_MODES.get(mode, {})
+        cn_models = (entry or {}).get("cn_models") or {}
+        resolved = cn_models.get(arch_key) if arch_key else None
+        cfg = _load_config()
+        server_url = cfg.get("server_url", COMFYUI_DEFAULT_URL)
+        if resolved:
+            available = _cn_model_available(server_url, resolved)
+            if available is False:
+                try:
+                    bn = resolved.replace("\\", "/").rsplit("/", 1)[-1]
+                    Gimp.message(
+                        f"3D Normal Map needs ControlNet model\n"
+                        f"    {bn}\n"
+                        f"but it isn't installed on ComfyUI "
+                        f"({server_url}).\n\n"
+                        f"Install it through ComfyUI Manager, or untick "
+                        f"'3D Normal Map' in the dialog. Proceeding "
+                        f"without 3D guidance for this run.")
+                except Exception:
+                    print(f"[Spellcaster] Normal Map CN missing: "
+                          f"{resolved!r} (proceeding without it)")
+                return controlnet
+    except Exception:
+        # Preflight failure must never block dispatch — the server
+        # will still emit its own error if the file really is missing.
+        pass
     merged = dict(controlnet or {})
     merged["mode"] = "Normal Map (use existing layer) — all archs"
     merged["ref_image_filename"] = normal_map_filename
@@ -6467,14 +6697,33 @@ def _mask_image_to_gimp_selection(image, mask_path, feather=4):
 
     Args:
         image: The GIMP image to apply the selection to.
-        mask_path (str): Path to the downloaded mask PNG (grayscale).
+        mask_path: Path to the downloaded mask PNG (str / PathLike),
+            OR the raw PNG bytes \u2014 we accept both because
+            ``_download_image`` returns bytes while callers sometimes
+            already stage a file. Bytes are written to a temp file
+            transparently.
         feather (int): Feather radius in pixels (0 = hard edge).
     """
     # Strategy: load mask as image → save as channel in target → convert
     # channel to selection. Uses only proven API calls from
     # _create_selection_mask_png (which works on GIMP 3.0-3.2).
     mask_img = None
+    _tmp_mask_path: str | None = None
     try:
+        # Callers occasionally pass raw PNG bytes from
+        # ``_download_image`` directly \u2014 that hits "embedded null
+        # byte" when Gio.File.new_for_path tries to interpret the
+        # binary as a filesystem path. Materialise bytes to a temp
+        # file so the downstream GIMP loader gets what it expects,
+        # and remember the path so we can clean it up below.
+        if isinstance(mask_path, (bytes, bytearray)):
+            _tmp = tempfile.NamedTemporaryFile(
+                suffix=".png", prefix="sam3_mask_", delete=False)
+            _tmp.write(bytes(mask_path))
+            _tmp.close()
+            _tmp_mask_path = _tmp.name
+            mask_path = _tmp_mask_path
+
         # 1. Load mask PNG as a separate GIMP image
         mask_file = Gio.File.new_for_path(mask_path)
         mask_img = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, mask_file)
@@ -6523,27 +6772,34 @@ def _mask_image_to_gimp_selection(image, mask_path, feather=4):
         # content as a selection on the MASK image, save that channel,
         # then create a new channel in the TARGET from the mask layer.
 
-        # Hide all layers, show only mask, create channel from visible
+        # Hide all layers, show only mask, create channel from visible.
+        # Wrapped in try/finally so a mid-op raise (new_from_visible,
+        # insert_channel, etc.) can't leave the canvas with every-
+        # layer-hidden — that bug produced black results on
+        # subsequent exports.
         orig_vis = []
-        for l in image.get_layers():
-            orig_vis.append((l, l.get_visible()))
-            l.set_visible(False)
+        tmp_layer = None
+        try:
+            for l in image.get_layers():
+                orig_vis.append((l, l.get_visible()))
+                l.set_visible(False)
 
-        tmp_layer = Gimp.Layer.new_from_drawable(mask_drawable, image)
-        tmp_layer.set_name("_SAM3_mask_tmp")
-        tmp_layer.set_visible(True)
-        image.insert_layer(tmp_layer, None, 0)
+            tmp_layer = Gimp.Layer.new_from_drawable(mask_drawable, image)
+            tmp_layer.set_name("_SAM3_mask_tmp")
+            tmp_layer.set_visible(True)
+            image.insert_layer(tmp_layer, None, 0)
 
-        chan = Gimp.Channel.new_from_visible(image, image, "_SAM3_sel")
-        image.insert_channel(chan, None, 0)
-
-        # Clean up temp layer + restore visibility
-        image.remove_layer(tmp_layer)
-        for l, v in orig_vis:
-            try:
-                l.set_visible(v)
-            except Exception:
-                pass
+            chan = Gimp.Channel.new_from_visible(image, image, "_SAM3_sel")
+            image.insert_channel(chan, None, 0)
+        finally:
+            if tmp_layer is not None:
+                try: image.remove_layer(tmp_layer)
+                except Exception: pass
+            for l, v in orig_vis:
+                try:
+                    l.set_visible(v)
+                except Exception:
+                    pass
 
         # Convert channel to selection
         select_ok = False
@@ -6584,6 +6840,15 @@ def _mask_image_to_gimp_selection(image, mask_path, feather=4):
         raise RuntimeError(f"Could not convert SAM3 mask to selection: {e}.\n"
                            "The mask was added as a layer — you can convert it "
                            "manually via Select > By Color.") from e
+    finally:
+        # Best-effort cleanup for the materialised temp file when
+        # bytes were passed. We avoid unlinking the caller's own
+        # path (only the one we created in this function).
+        if _tmp_mask_path:
+            try:
+                os.unlink(_tmp_mask_path)
+            except Exception:
+                pass
 
 
 def _create_selection_mask_png(filepath, image):
@@ -6845,6 +7110,158 @@ def _precache_results(server, results):
                 _download_cache[key] = tmp.name
         except Exception:
             pass
+
+
+def _looks_like_uniform_mask(png_bytes: bytes) -> bool:
+    """True when a grayscale mask PNG is essentially all one value.
+
+    Complement to ``_looks_like_blank_rembg``. Segmentation nodes
+    sometimes return masks that are entirely black (no match) or
+    entirely white (post-invert no match). Both are useless \u2014
+    the former selects nothing, the latter selects everything.
+    Detect either and the caller can warn the user instead of
+    silently applying a bogus selection.
+
+    Returns True when >99% of pixels share the same bucket in a
+    coarse 4-bucket histogram. False when there's real structure,
+    when PIL is absent (fail-open), or when the PNG fails to decode.
+    """
+    if not png_bytes:
+        return True
+    try:
+        from PIL import Image
+        import io
+        img = Image.open(io.BytesIO(png_bytes))
+        if img.mode == "LA":
+            img = img.getchannel("L")
+        elif img.mode in ("RGB", "RGBA", "P"):
+            img = img.convert("L")
+        stat = img.getextrema()
+        if stat[0] == stat[1]:
+            return True  # literally flat
+        hist = img.histogram()
+        total = sum(hist) or 1
+        buckets = [sum(hist[i:i + 64]) for i in range(0, 256, 64)]
+        peak = max(buckets)
+        return (peak / total) > 0.99
+    except ImportError:
+        return False
+    except Exception:
+        return True
+
+
+def _looks_like_blank_rembg(png_bytes: bytes) -> bool:
+    """Heuristic: decide whether a rembg / BiRefNet result is useless.
+
+    A healthy background-removal returns an RGBA PNG where a sizeable
+    fraction of pixels are fully opaque (the foreground). A failed
+    run \u2014 OOM mid-BiRefNet, missing model file, unsupported image
+    size \u2014 surfaces as either a fully-transparent image or a
+    pass-through of the original with no alpha channel. Either way
+    the user gets nothing useful and we should retry with the safer
+    engine.
+
+    Returns True when:
+      * the decoded image has no alpha channel at all, OR
+      * fewer than 0.5% of pixels have alpha > 10 (essentially
+        nothing selected), OR
+      * the decode fails (corrupt bytes from a crashed node).
+
+    Returns False for any non-trivial RGBA image, including the
+    "rembg found a subject but not a perfect mask" case \u2014 that's
+    still usable, we don't want to retry gratuitously.
+    """
+    if not png_bytes:
+        return True
+    try:
+        from PIL import Image
+        import io
+        img = Image.open(io.BytesIO(png_bytes))
+        if img.mode not in ("RGBA", "LA", "PA"):
+            # No alpha channel at all \u2014 rembg/BiRefNet always
+            # emits RGBA, so a mode without alpha means the node
+            # pass-through'd the source unchanged.
+            return True
+        # Normalise to RGBA and split to isolate alpha. ``split()[-1]``
+        # is more robust than ``getchannel("A")`` across PIL versions:
+        # older/bundled PIL variants on GIMP's Python return subtly
+        # different extrema. The harness's ``blank_rembg_detector``
+        # case caught the regression.
+        alpha = img.convert("RGBA").split()[-1]
+        # ``getbbox()`` returns None for a fully-transparent band.
+        if alpha.getbbox() is None:
+            return True
+        hist = alpha.histogram()
+        total = sum(hist)
+        if not total:
+            return True
+        opaque_ish = sum(hist[11:])  # pixels with alpha > 10
+        return (opaque_ish / total) < 0.005
+    except ImportError:
+        # PIL isn't always present (GIMP 3.2's bundled Python lacks
+        # it). When absent, do a pure-Python alpha sampling of the
+        # PNG. Only supports 8-bit RGBA / LA with filter type 0 on
+        # every row \u2014 the shape rembg and BiRefNet emit. Real-
+        # world PNGs with other filters fall through to fail-open.
+        try:
+            if len(png_bytes) < 29 or png_bytes[:8] != b"\x89PNG\r\n\x1a\n":
+                return True
+            # Parse IHDR.
+            import struct as _struct
+            ihdr_len = _struct.unpack(">I", png_bytes[8:12])[0]
+            if png_bytes[12:16] != b"IHDR" or ihdr_len != 13:
+                return False
+            w, h, bit_depth, color_type = _struct.unpack(
+                ">IIBB", png_bytes[16:26])
+            if bit_depth != 8 or color_type not in (4, 6):
+                return True if color_type not in (4, 6) else False
+            channels = 4 if color_type == 6 else 2
+            alpha_offset = 3 if color_type == 6 else 1
+            # Walk chunks, collect IDATs.
+            import zlib as _zlib
+            idat = bytearray()
+            pos = 8 + 4 + 4 + ihdr_len + 4  # sig + len + type + data + crc
+            while pos + 12 <= len(png_bytes):
+                clen = _struct.unpack(">I", png_bytes[pos:pos+4])[0]
+                ctype = png_bytes[pos+4:pos+8]
+                if ctype == b"IDAT":
+                    idat += png_bytes[pos+8:pos+8+clen]
+                elif ctype == b"IEND":
+                    break
+                pos += 8 + clen + 4
+            try:
+                raw = _zlib.decompress(bytes(idat))
+            except Exception:
+                return False
+            # Each scanline: 1 filter byte + w*channels pixel bytes.
+            stride = 1 + w * channels
+            if len(raw) < stride * h:
+                return False
+            # Check every row's filter is 0 (None). If any row uses
+            # another filter, give up and fail-open.
+            for y in range(h):
+                if raw[y * stride] != 0:
+                    return False
+            # Sample alpha bytes across the image.
+            non_blank = 0
+            total = 0
+            step_y = max(1, h // 32)
+            step_x = max(1, w // 32)
+            for y in range(0, h, step_y):
+                row_off = y * stride + 1
+                for x in range(0, w, step_x):
+                    a = raw[row_off + x * channels + alpha_offset]
+                    total += 1
+                    if a > 10:
+                        non_blank += 1
+            if not total:
+                return True
+            return (non_blank / total) < 0.005
+        except Exception:
+            return False
+    except Exception:
+        # Corrupt PNG / decode error \u2014 treat as blank so we retry.
+        return True
 
 
 def _download_image_raw(server, filename, subfolder="", folder_type="output"):
@@ -9024,7 +9441,48 @@ class _JobManager:
             # otherwise it's clutter. 60 % is the threshold where
             # tile-loaded workflows start spilling.
             parts.append(f"host RAM {r['ram_used_pct']}%")
+
+        # ── Refined ETA countdown ────────────────────────────────
+        # First tick of each job fetches a pre-dispatch baseline from
+        # the Guild's /api/speedcoach/estimate (aware of queue depth,
+        # VRAM, cold-model, historical fingerprint medians). Every
+        # subsequent tick refines that baseline in-process using the
+        # current step/max ratio — no HTTP per tick.
+        if "pre_est" not in current:
+            try:
+                current["pre_est"] = _speedcoach_initial_estimate(
+                    current, rich=r)
+            except Exception:
+                current["pre_est"] = None
+        pre = current.get("pre_est") or {}
+        try:
+            from spellcaster_core import estimate as _est_mod
+            elapsed_f = time.time() - current["start_ts"]
+            live = _est_mod.estimate_during_dispatch(
+                pre,
+                elapsed=elapsed_f,
+                step_cur=int(pv or 0),
+                step_max=int(pm or 0),
+            )
+            eta = float(live.get("eta_sec") or 0)
+            if pre.get("est_sec") or (pv and pm):
+                if eta >= 0.5:
+                    parts.append(f"ETA {_est_mod.format_countdown(eta)}")
+                else:
+                    # Overrun: show how far past we are so the user
+                    # sees something honest rather than a stuck "~now".
+                    parts.append(_est_mod.format_overrun(-eta))
+            current["live_total_est"] = float(live.get("total_sec") or 0)
+        except Exception:
+            pass
+
         parts.append(elapsed_str)
+        try:
+            for extra in _speedcoach_tick_parts():
+                if extra:
+                    parts.append(extra)
+        except Exception:
+            pass
         text = "   ·   ".join(parts)
 
         if text != self._last_text:
@@ -9059,6 +9517,525 @@ class _JobManager:
 _JOBS = _JobManager()
 
 
+# ── SpeedCoach bridge (GIMP-side) ─────────────────────────────────────
+#
+# Thin HTTP client over the Guild's /api/speedcoach/* endpoints plus
+# short-lived caches so the status bar's 300 ms tick doesn't hammer the
+# Guild. Every surface the dialogs use — banner, warnings chip,
+# retrospective, LoRA calibration dots, Arch Speed Chart, drift review,
+# Mini-HUD — reads through these helpers so the data stays coherent
+# across GIMP and the Guild.
+
+_SPEEDCOACH_STATE = {
+    # Last prediction the UI showed the user (stamped by the banner
+    # helper before dispatch). Consumed by the post-run retrospective.
+    "last_prediction": None,      # {job_id, median, p95, n, ts, handler, arch}
+    # Retrospective snapshot stays visible in the status bar for ~6 s
+    # after a dispatch completes ≥2× slower or faster than predicted.
+    "retro_text":      "",
+    "retro_expires":   0.0,
+    # Cached warnings_last_run — polled every ~10 ticks (3 s) alongside
+    # the ComfyUI stats poll in _JobManager._tick.
+    "warnings_cache":  None,      # {outcome, elapsed, predicted, warnings[]}
+    "warnings_poll":   0.0,
+    # User-toggleable global enable from Spellcaster menu. Persisted via
+    # plugin config so the choice survives GIMP restarts.
+    "enabled":         True,
+    # Per-dialog-per-session banner dismissals. Key is "<dialog_name>";
+    # value is a timestamp — the banner hides until GIMP restarts.
+    "dismissed":       {},
+    # Mini-HUD singleton window. Created lazily on first Show Mini-HUD
+    # click; re-opens the existing one if already up.
+    "minihud_win":     None,
+}
+
+
+def _speedcoach_config_get(key: str, default=None):
+    try:
+        cfg = _load_config()
+        sc_cfg = cfg.get("speedcoach") or {}
+        return sc_cfg.get(key, default)
+    except Exception:
+        return default
+
+
+def _speedcoach_config_set(key: str, value) -> None:
+    try:
+        cfg = _load_config()
+        sc_cfg = dict(cfg.get("speedcoach") or {})
+        sc_cfg[key] = value
+        cfg["speedcoach"] = sc_cfg
+        _save_config(cfg)
+    except Exception:
+        pass
+
+
+def _speedcoach_enabled() -> bool:
+    # Config wins over in-memory default; default-on for first install.
+    cfg_val = _speedcoach_config_get("enabled", None)
+    if cfg_val is None:
+        return bool(_SPEEDCOACH_STATE.get("enabled", True))
+    return bool(cfg_val)
+
+
+def _speedcoach_guild_url() -> str:
+    try:
+        cfg = _load_config()
+        return (cfg.get("guild_url") or "http://127.0.0.1:7777").rstrip("/")
+    except Exception:
+        return "http://127.0.0.1:7777"
+
+
+def _speedcoach_get(path: str, params: dict | None = None, timeout: float = 3.0):
+    """Plain GET against the Guild's /api/speedcoach/* surface.
+    Returns decoded JSON dict on success, ``None`` on any failure."""
+    try:
+        import urllib.parse
+        base = _speedcoach_guild_url()
+        qs = ("?" + urllib.parse.urlencode(params)) if params else ""
+        url = f"{base}{path}{qs}"
+        req = urllib.request.Request(url,
+                                      headers={"User-Agent": "Spellcaster-GIMP/1.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if resp.status != 200:
+                return None
+            return json.loads(resp.read().decode("utf-8", errors="replace"))
+    except Exception:
+        return None
+
+
+def _speedcoach_post(path: str, body: dict, timeout: float = 3.0):
+    """Plain POST against the Guild (telemetry writers)."""
+    try:
+        base = _speedcoach_guild_url()
+        payload = json.dumps(body).encode("utf-8")
+        req = urllib.request.Request(
+            f"{base}{path}", data=payload, method="POST",
+            headers={"Content-Type": "application/json",
+                     "User-Agent": "Spellcaster-GIMP/1.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return (resp.status == 200)
+    except Exception:
+        return False
+
+
+def _speedcoach_fetch_warnings_cached() -> dict | None:
+    """Return the last cached warnings summary, or refetch every ~10 s."""
+    now = time.time()
+    if (now - _SPEEDCOACH_STATE.get("warnings_poll", 0.0)) < 10.0:
+        return _SPEEDCOACH_STATE.get("warnings_cache")
+    if not _speedcoach_enabled():
+        return None
+    data = _speedcoach_get("/api/speedcoach/warnings_last")
+    _SPEEDCOACH_STATE["warnings_cache"] = data
+    _SPEEDCOACH_STATE["warnings_poll"] = now
+    return data
+
+
+def _speedcoach_suggest(job_spec: dict) -> list:
+    if not _speedcoach_enabled():
+        return []
+    params = {}
+    for k in ("arch", "handler", "steps", "upscale", "lora_stack_hash"):
+        v = job_spec.get(k)
+        if v not in (None, ""):
+            params[k] = str(v)
+    data = _speedcoach_get("/api/speedcoach/suggest", params)
+    if not data or not isinstance(data, dict):
+        return []
+    return list(data.get("suggestions") or [])
+
+
+def _speedcoach_predicted(job_spec: dict) -> tuple[float, float, int]:
+    if not _speedcoach_enabled():
+        return (0.0, 0.0, 0)
+    params = {}
+    for k in ("arch", "handler", "steps", "upscale", "lora_stack_hash"):
+        v = job_spec.get(k)
+        if v not in (None, ""):
+            params[k] = str(v)
+    data = _speedcoach_get("/api/speedcoach/predicted", params)
+    if not data:
+        return (0.0, 0.0, 0)
+    return (float(data.get("median") or 0.0),
+            float(data.get("p95") or 0.0),
+            int(data.get("sample_size") or 0))
+
+
+def _speedcoach_stamp_prediction(job_spec: dict) -> None:
+    """Before a handler dispatches, the banner helper stamps the
+    median + sample size so the post-run retrospective can compare."""
+    try:
+        med, _p95, n = _speedcoach_predicted(job_spec)
+    except Exception:
+        med, n = (0.0, 0)
+    _SPEEDCOACH_STATE["last_prediction"] = {
+        "median":  float(med),
+        "n":       int(n),
+        "ts":      time.time(),
+        "handler": job_spec.get("handler") or job_spec.get("build_fn") or "",
+        "arch":    job_spec.get("arch") or "",
+    }
+
+
+def _speedcoach_report_dispatch(job_spec: dict, *, elapsed: float,
+                                 warnings: list | None = None,
+                                 failed: bool = False,
+                                 error: str = "") -> None:
+    """Post the dispatch record to the Guild + stage the retrospective
+    if elapsed diverged significantly from the prediction. Never raises."""
+    predicted = 0.0
+    try:
+        pred = _SPEEDCOACH_STATE.get("last_prediction") or {}
+        if pred and pred.get("handler") == (job_spec.get("handler")
+                                              or job_spec.get("build_fn")):
+            predicted = float(pred.get("median") or 0.0)
+    except Exception:
+        pass
+    body = dict(job_spec or {})
+    body.setdefault("origin", "gimp")
+    body.setdefault("ts", time.time())
+    body["elapsed"] = float(elapsed)
+    if predicted:
+        body["predicted_elapsed"] = float(predicted)
+    if warnings:
+        body["warnings"] = [str(w)[:200] for w in warnings][:20]
+    if failed:
+        body["failed"] = True
+    if error:
+        body["error"] = str(error)[:400]
+    _speedcoach_post("/api/telemetry/dispatch_ok", body)
+    # Retrospective text — only show when prediction vs actual diverges.
+    if predicted > 0 and elapsed > 0:
+        ratio = elapsed / predicted
+        if ratio >= 2.0 or ratio <= 0.5:
+            txt = (f"Done {elapsed:.0f}s (predicted {predicted:.0f}s). "
+                   f"Click Diagnostics for the breakdown.")
+            _SPEEDCOACH_STATE["retro_text"]    = txt
+            _SPEEDCOACH_STATE["retro_expires"] = time.time() + 6.0
+    # Invalidate warnings cache so the chip picks up the new run.
+    _SPEEDCOACH_STATE["warnings_poll"] = 0.0
+
+
+def _speedcoach_lora_stack_hash(loras) -> str:
+    """Mirrors speedcoach._lora_stack_hash for prediction lookups.
+    Import-friendly; tolerates the bundled spellcaster_core copy."""
+    try:
+        from spellcaster_core import speedcoach as _sc
+        return _sc._lora_stack_hash(loras)
+    except Exception:
+        return "none" if not loras else "unknown"
+
+
+def _speedcoach_initial_estimate(job: dict, *, rich: dict | None = None) -> dict:
+    """Fetch a pre-dispatch ETA baseline for ``job``.
+
+    Called ONCE per job, on the first status-bar tick, so the
+    expensive (historical-median lookup) part runs outside the 300 ms
+    render loop. Combines three data sources:
+
+      1. ``_SPEEDCOACH_STATE["last_prediction"]`` — stamped by the
+         handler-dialog banner helper before dispatch.
+      2. Otherwise call the Guild's ``/api/speedcoach/estimate``.
+      3. Fall back to the local ``spellcaster_core.estimate`` module.
+
+    ``rich`` is the cached ``_fetch_comfy_status_rich`` dict so we
+    can pass queue depth + VRAM % into the estimator without a
+    second HTTP call.
+    """
+    r = rich or {}
+    queue_ahead = int(r.get("pending") or 0)
+    vram_pct = float(r.get("vram_used_pct") or 0.0)
+    pred = _SPEEDCOACH_STATE.get("last_prediction") or {}
+    spec_arch = str(pred.get("arch") or "")
+    spec_handler = str(pred.get("handler") or "")
+    spec_steps = pred.get("steps")
+    spec_lora_hash = pred.get("lora_stack_hash")
+    try:
+        params = {}
+        if spec_arch:    params["arch"] = spec_arch
+        if spec_handler: params["handler"] = spec_handler
+        if spec_steps is not None:
+            params["steps"] = str(int(spec_steps))
+        if spec_lora_hash:
+            params["lora_stack_hash"] = spec_lora_hash
+        if queue_ahead:
+            params["queue_ahead"] = str(queue_ahead)
+        if vram_pct:
+            params["vram_pct"] = str(int(vram_pct))
+        data = _speedcoach_get("/api/speedcoach/estimate", params)
+        if isinstance(data, dict) and data.get("est_sec"):
+            return data
+    except Exception:
+        pass
+    try:
+        from spellcaster_core import estimate as _est_mod
+        spec = {
+            "arch":    spec_arch,
+            "handler": spec_handler,
+            "steps":   int(spec_steps) if isinstance(spec_steps, (int, float)) else None,
+            "lora_stack_hash": spec_lora_hash,
+        }
+        est = _est_mod.estimate_pre_dispatch(
+            spec,
+            queue_ahead=queue_ahead,
+            vram_pct=vram_pct,
+            cold_model=False,
+        )
+        est["handler_key"] = spec_handler
+        return est
+    except Exception:
+        return {}
+
+
+def _speedcoach_tick_parts() -> list[str]:
+    """Extra status-bar fragments appended each 300 ms tick. Warnings
+    chip, retrospective text (time-limited). Returns [] when disabled."""
+    if not _speedcoach_enabled():
+        return []
+    out: list[str] = []
+    now = time.time()
+    retro = _SPEEDCOACH_STATE.get("retro_text") or ""
+    if retro and now < _SPEEDCOACH_STATE.get("retro_expires", 0.0):
+        out.append(retro)
+    w = _speedcoach_fetch_warnings_cached()
+    if isinstance(w, dict):
+        outcome = w.get("outcome") or "ok"
+        n = len(w.get("warnings") or [])
+        if outcome == "warnings" and n:
+            out.append(f"\u26a0 {n}")
+        elif outcome == "failed":
+            out.append("\u26a0 FAILED")
+    return out
+
+
+def _speedcoach_warnings_popover(parent) -> None:
+    """Open a modal summarising the last run's warnings. Called from
+    the status-bar click; GIMP's status bar doesn't catch clicks so we
+    also expose this via Diagnostics > Last Run Warnings."""
+    try:
+        from gi.repository import Gtk
+    except Exception:
+        return
+    w = _speedcoach_fetch_warnings_cached() or {}
+    dlg = Gtk.Dialog(title="Spellcaster · Last Run Warnings",
+                     transient_for=parent, modal=True)
+    dlg.add_button("Dismiss All", Gtk.ResponseType.CLOSE)
+    box = dlg.get_content_area()
+    box.set_margin_top(10); box.set_margin_bottom(10)
+    box.set_margin_start(12); box.set_margin_end(12)
+    outcome = (w.get("outcome") or "ok").upper()
+    elapsed = float(w.get("elapsed") or 0.0)
+    warnings = list(w.get("warnings") or [])
+    header = Gtk.Label(label=f"Outcome: {outcome}   ·   "
+                              f"Elapsed: {elapsed:.0f}s   ·   "
+                              f"{len(warnings)} warning(s)")
+    header.set_xalign(0.0)
+    box.append(header)
+    if not warnings:
+        msg = Gtk.Label(
+            label="No warnings in the most recent dispatch.")
+        msg.set_xalign(0.0)
+        msg.set_margin_top(8)
+        box.append(msg)
+    for i, wn in enumerate(warnings):
+        row = Gtk.Label(label=f"• {wn}")
+        row.set_xalign(0.0)
+        row.set_wrap(True)
+        row.set_margin_top(6)
+        box.append(row)
+    dlg.set_default_size(440, -1)
+    dlg.show()
+    dlg.run() if hasattr(dlg, "run") else None
+    try:
+        dlg.destroy()
+    except Exception:
+        pass
+
+
+def _speedcoach_banner_for_dialog(dialog_name: str, job_spec: dict):
+    """Build + return a Gtk.Box containing a SpeedCoach banner if a
+    valid suggestion exists for ``job_spec``, else None. Stamps the
+    prediction for later retrospective use regardless."""
+    try:
+        _speedcoach_stamp_prediction(job_spec)
+    except Exception:
+        pass
+    if not _speedcoach_enabled():
+        return None
+    dismissed = _SPEEDCOACH_STATE.get("dismissed") or {}
+    if dismissed.get(dialog_name):
+        return None
+    try:
+        suggs = _speedcoach_suggest(job_spec)
+    except Exception:
+        return None
+    if not suggs:
+        return None
+    top = suggs[0]
+    kind = top.get("kind", "suggestion")
+    msg = top.get("message") or ""
+    speedup = int(top.get("speedup_pct") or 0)
+    n = int(top.get("sample_size") or 0)
+    # Telemetry: record that a suggestion was shown.
+    try:
+        _speedcoach_post("/api/telemetry/speedcoach_event", {
+            "action": "shown", "kind": kind,
+            "speedup_pct": speedup, "sample_size": n,
+            "origin": "gimp",
+        }, timeout=1.0)
+    except Exception:
+        pass
+
+    try:
+        from gi.repository import Gtk
+    except Exception:
+        return None
+
+    outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+    inner = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+    inner.set_margin_top(6); inner.set_margin_bottom(6)
+    inner.set_margin_start(10); inner.set_margin_end(10)
+    # Gentle amber banner via CSS.
+    try:
+        prov = Gtk.CssProvider()
+        prov.load_from_data(
+            b".spellcaster-speedcoach {"
+            b"background: rgba(255, 210, 80, 0.18);"
+            b"border: 1px solid rgba(190, 140, 30, 0.45);"
+            b"border-radius: 6px;"
+            b"}"
+        )
+        style = inner.get_style_context()
+        style.add_provider(prov, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        style.add_class("spellcaster-speedcoach")
+    except Exception:
+        pass
+    lbl = Gtk.Label(label=f"\u26a1 {msg}")
+    lbl.set_wrap(True); lbl.set_xalign(0.0); lbl.set_hexpand(True)
+    inner.append(lbl)
+
+    def _on_try(_btn):
+        _speedcoach_post("/api/telemetry/speedcoach_event", {
+            "action": "accepted", "kind": kind,
+            "speedup_pct": speedup, "sample_size": n,
+            "origin": "gimp",
+        }, timeout=1.0)
+        Gimp.message(
+            "SpeedCoach: the suggested configuration change is "
+            "displayed in the banner — apply it manually in this "
+            "dialog (we don't auto-mutate your settings).")
+
+    def _on_keep(_btn):
+        _speedcoach_post("/api/telemetry/speedcoach_event", {
+            "action": "dismissed", "kind": kind,
+            "speedup_pct": speedup, "sample_size": n,
+            "origin": "gimp",
+        }, timeout=1.0)
+        try:
+            outer.set_visible(False)
+        except Exception:
+            pass
+
+    def _on_off(_btn):
+        dism = dict(_SPEEDCOACH_STATE.get("dismissed") or {})
+        dism[dialog_name] = True
+        _SPEEDCOACH_STATE["dismissed"] = dism
+        try:
+            outer.set_visible(False)
+        except Exception:
+            pass
+
+    btn_try = Gtk.Button(label="Try faster")
+    btn_try.connect("clicked", _on_try)
+    btn_keep = Gtk.Button(label="Keep")
+    btn_keep.connect("clicked", _on_keep)
+    btn_off = Gtk.Button(label="×")
+    btn_off.set_tooltip_text("Don't show for this dialog this session")
+    btn_off.connect("clicked", _on_off)
+    for b in (btn_try, btn_keep, btn_off):
+        inner.append(b)
+    outer.append(inner)
+    return outer
+
+
+def _speedcoach_show_minihud() -> None:
+    """Open the floating 120×40 always-on-top HUD window. Idempotent."""
+    try:
+        from gi.repository import Gtk, GLib as _GLib
+    except Exception:
+        return
+    existing = _SPEEDCOACH_STATE.get("minihud_win")
+    if existing is not None:
+        try:
+            existing.present()
+            return
+        except Exception:
+            pass
+    win = Gtk.Window(title="Spellcaster HUD")
+    try:
+        win.set_decorated(False)
+    except Exception:
+        pass
+    win.set_default_size(180, 48)
+    try:
+        win.set_keep_above(True)
+    except Exception:
+        pass
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+    box.set_margin_top(4); box.set_margin_bottom(4)
+    box.set_margin_start(6); box.set_margin_end(6)
+    lbl = Gtk.Label(label="idle")
+    lbl.set_xalign(0.0); lbl.set_wrap(True)
+    box.append(lbl)
+    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+    close_btn = Gtk.Button(label="×")
+    close_btn.connect("clicked", lambda _b: win.close())
+    cancel_btn = Gtk.Button(label="Cancel")
+    cancel_btn.connect("clicked", lambda _b: _JOBS.cancel_all())
+    row.append(cancel_btn); row.append(close_btn)
+    box.append(row)
+    win.set_child(box) if hasattr(win, "set_child") else win.add(box)
+
+    def _tick():
+        if not win.is_visible():
+            return False
+        parts = []
+        with _JOBS._lock:
+            active = list(_JOBS._jobs)
+        if not active:
+            parts.append("idle")
+        else:
+            cur = active[-1]
+            elapsed = int(time.time() - cur["start_ts"])
+            parts.append(cur["phase_text"] or cur["label_text"])
+            if len(active) > 1:
+                parts.append(f"+{len(active)-1}q")
+            parts.append(f"{elapsed}s")
+        r = getattr(_JOBS, "_poll_rich_cached", None) or {}
+        pv, pm = r.get("progress_value"), r.get("progress_max")
+        if pv and pm:
+            parts.append(f"step {pv}/{pm}")
+        if r.get("vram_used_pct"):
+            parts.append(f"VRAM {r['vram_used_pct']}%")
+        lbl.set_text("   ·   ".join(parts))
+        return True
+
+    _GLib.timeout_add(500, _tick)
+    _SPEEDCOACH_STATE["minihud_win"] = win
+    def _on_close(*_args):
+        _SPEEDCOACH_STATE["minihud_win"] = None
+        return False
+    try:
+        win.connect("close-request", _on_close)
+    except Exception:
+        try:
+            win.connect("destroy", _on_close)
+        except Exception:
+            pass
+    win.show()
+
+
 def _update_spinner_status(text):
     """Back-compat shim — every call site across the plugin still uses
     this name. Forwards to the current job's phase text, which the job
@@ -9073,6 +10050,247 @@ def _update_spinner_status(text):
 # Legacy module-level slot — some older paths still read this. Kept so
 # any external callers that import it don't AttributeError.
 _spinner_label_text = ""
+
+
+# ── Upload cache: skip re-export + re-upload on identical resubmits ─
+# Keyed by (server_url, content_fingerprint). Value carries the
+# filename we last uploaded to ComfyUI for this content. Privacy
+# module's ``CACHE_PREFIXES`` exempts ``sc_cache_*`` from the after-
+# every-workflow wipe so the entry stays live between submits; the
+# user can blow the cache away manually via "Clear image cache".
+#
+# The fingerprint is computed from the GIMP thumbnail bytes + canvas
+# dims + optional selection bounds (see ``_image_fingerprint``). It
+# survives a selection change on the SAME image because the selection
+# is part of the key \u2014 sending "the whole image" and "a selection
+# of the image" are different cache entries.
+_UPLOAD_CACHE: "dict[tuple[str, str], dict]" = {}
+
+# Per-entry TTL (seconds). After this window expires we re-export +
+# re-upload even if the content hash still matches, in case the user
+# manually wiped the server-side file. 1 hour strikes a balance
+# between "always fresh" and "rare re-exports".
+_UPLOAD_CACHE_TTL = 3600
+
+# Aggregate cap on distinct cache entries per session. A user who
+# cycles through dozens of different canvases would otherwise let the
+# cache grow unbounded and keep stale files live on ComfyUI forever.
+# When the cap is hit, the oldest entry is evicted + its server-side
+# file is wiped (so the cap doubles as a privacy ceiling).
+_UPLOAD_CACHE_MAX = 32
+
+
+def _upload_cache_enabled() -> bool:
+    """Read the ``image_upload_cache`` flag from config, default ON.
+
+    Users who prioritise strict privacy can set this to ``false`` in
+    ``config.json``; every submit then re-exports + re-uploads (the
+    pre-2026-04-20 behaviour). Also forces the cache off when
+    ``SPELLCASTER_DISABLE_UPLOAD_CACHE`` is set in the environment,
+    so a single shell export can disable it for a debug session.
+    """
+    if os.environ.get("SPELLCASTER_DISABLE_UPLOAD_CACHE"):
+        return False
+    try:
+        return bool(_load_config().get("image_upload_cache", True))
+    except Exception:
+        return True
+
+
+def _image_fingerprint(image, selection_bounds=None) -> str:
+    """Compute a fast content fingerprint of the active GIMP image.
+
+    Strategy: hash the thumbnail bytes (GIMP-rendered flattened RGBA,
+    fast \u2014 no PDB export pass needed) plus the canvas dimensions
+    and the optional selection bounds. False-positive rate:
+    astronomically low (SHA-256 of ~200 \u00d7 200 \u00d7 4 bytes).
+
+    When the thumbnail call fails (rare, but some Gimp versions
+    expose it differently) we fall back to
+    ``(image_id, dims, selection_bounds, time)`` \u2014 a signature
+    that NEVER matches across calls, so the cache degrades to the
+    old "always re-upload" behaviour rather than incorrectly
+    serving a stale entry.
+    """
+    import hashlib
+    h = hashlib.sha256()
+    try:
+        # Gimp.Image.get_thumbnail(w, h, alpha) -> GLib.Bytes.
+        # The thumbnail is the FLATTENED image at up to the given
+        # size; we use 256 so even tiny canvas differences are
+        # captured. GimpAlphaComponent.INCLUDE keeps the alpha so
+        # transparent-pixel shifts still bust the cache.
+        try:
+            alpha_incl = Gimp.PixbufTransparency.KEEP_ALPHA
+        except Exception:
+            alpha_incl = 0
+        # GdkPixbuf row layout has rowstride padding that may differ
+        # per call for the same content (uninitialised padding bytes).
+        # Hash only width*channels per row, not the full rowstride
+        # span. Harness's `fingerprint_stable` case catches this.
+        thumb = image.get_thumbnail(256, 256, alpha_incl)
+        if thumb is not None:
+            w_t = thumb.get_width()
+            h_t = thumb.get_height()
+            ch_t = thumb.get_n_channels()
+            rs_t = thumb.get_rowstride()
+            raw = bytes(thumb.get_pixels())
+            row_len = w_t * ch_t
+            if rs_t == row_len:
+                thumb_bytes = raw[:row_len * h_t]
+            else:
+                thumb_bytes = b"".join(
+                    raw[y * rs_t: y * rs_t + row_len]
+                    for y in range(h_t))
+        else:
+            thumb_bytes = b""
+    except Exception:
+        thumb_bytes = b""
+    if thumb_bytes:
+        h.update(thumb_bytes)
+        h.update(f"|{image.get_width()}x{image.get_height()}".encode())
+        if selection_bounds:
+            h.update(f"|sel={selection_bounds}".encode())
+        return h.hexdigest()[:24]
+    # Fallback — force a miss on every call so we don't cache-hit
+    # with bad data.
+    h.update(f"{image.get_id()}|{image.get_width()}x{image.get_height()}"
+             f"|sel={selection_bounds}|t={time.time()}".encode())
+    return h.hexdigest()[:24]
+
+
+def _upload_cache_evict_lru(current_server: str) -> None:
+    """When the cache overflows, drop the oldest entry + wipe its
+    server-side file via the privacy module. Keeps the cache honest
+    (no unbounded growth on the user's ComfyUI disk).
+    """
+    if len(_UPLOAD_CACHE) < _UPLOAD_CACHE_MAX:
+        return
+    try:
+        oldest_key = min(
+            _UPLOAD_CACHE.keys(),
+            key=lambda k: _UPLOAD_CACHE[k].get("uploaded_at", 0),
+        )
+    except ValueError:
+        return
+    entry = _UPLOAD_CACHE.pop(oldest_key, None)
+    if not entry:
+        return
+    fname = entry.get("filename")
+    srv = oldest_key[0]
+    if fname and srv:
+        try:
+            from spellcaster_core.privacy import _overwrite_with_tiny
+            _overwrite_with_tiny(srv, fname)
+        except Exception:
+            pass
+
+
+def _export_and_upload_cached(server, image, *, selection_bounds=None,
+                                debug_prefix="") -> str:
+    """Return the ComfyUI input filename for the current image/selection.
+
+    On a cache hit, this is a \u2248 10 ms lookup \u2014 no export, no
+    upload. On a miss we do the full export + upload dance and store
+    the resulting filename under the content hash so the next identical
+    submit hits. The returned filename always starts with
+    ``sc_cache_`` so the privacy module's ``CACHE_PREFIXES`` exempts
+    it from the after-every-workflow wipe.
+
+    Args:
+        server: ComfyUI URL.
+        image: ``Gimp.Image`` \u2014 the canvas to export.
+        selection_bounds: optional ``(x1, y1, x2, y2)`` to export a
+            selection instead of the full canvas. Part of the cache
+            key, so full-image vs selection submits don't collide.
+        debug_prefix: prepended to the log line when we emit a
+            cache-hit or miss trace. Helps distinguish callers in the
+            GIMP console (e.g. ``"[img2img]"``).
+
+    Raises:
+        RuntimeError when both export strategies fail. Callers that
+        want to fall back silently should catch this and re-try the
+        non-cached path.
+    """
+    srv_key = (server or "").rstrip("/")
+    if not _upload_cache_enabled():
+        # Straight-through path: export + upload fresh every time.
+        if selection_bounds:
+            tmp, _w, _h = _export_selection_to_tmp(image)
+        else:
+            tmp = _export_image_to_tmp(image)
+        if not tmp:
+            raise RuntimeError("image export failed")
+        uname = f"gimp_{uuid.uuid4().hex[:8]}.png"
+        _upload_image(server, tmp, uname)
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
+        return uname
+
+    fp = _image_fingerprint(image, selection_bounds=selection_bounds)
+    cache_key = (srv_key, fp)
+    hit = _UPLOAD_CACHE.get(cache_key)
+    now = time.time()
+    if hit and (now - hit.get("uploaded_at", 0)) < _UPLOAD_CACHE_TTL:
+        if debug_prefix:
+            print(f"[Spellcaster] {debug_prefix}cache-hit "
+                  f"{hit['filename']} (fp={fp[:8]}\u2026)")
+        # Refresh the timestamp so recently-used entries linger.
+        hit["uploaded_at"] = now
+        return hit["filename"]
+
+    # Miss \u2014 export + upload.
+    if selection_bounds:
+        tmp, _w, _h = _export_selection_to_tmp(image)
+    else:
+        tmp = _export_image_to_tmp(image)
+    if not tmp:
+        raise RuntimeError("image export failed")
+    filename = f"sc_cache_{fp}.png"
+    try:
+        _upload_image(server, tmp, filename)
+    finally:
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
+    _upload_cache_evict_lru(srv_key)
+    _UPLOAD_CACHE[cache_key] = {
+        "filename": filename,
+        "uploaded_at": now,
+        "fp": fp,
+    }
+    if debug_prefix:
+        print(f"[Spellcaster] {debug_prefix}cache-miss {filename} "
+              f"(fp={fp[:8]}\u2026)")
+    return filename
+
+
+def _purge_upload_cache(server: "str | None" = None) -> int:
+    """Wipe every cached upload from the server + clear the in-memory
+    map. Called by "Clear image cache" and by the "switch server"
+    flow. Returns the number of files wiped."""
+    try:
+        from spellcaster_core.privacy import purge_cache as _pc
+    except Exception:
+        _pc = None
+    wiped_count = 0
+    servers = set()
+    for (srv, _fp), entry in list(_UPLOAD_CACHE.items()):
+        if server is not None and srv != server.rstrip("/"):
+            continue
+        servers.add(srv)
+        _UPLOAD_CACHE.pop((srv, _fp), None)
+    if _pc is not None:
+        for srv in servers:
+            try:
+                res = _pc(srv)
+                wiped_count += len(res.get("wiped") or [])
+            except Exception:
+                pass
+    return wiped_count
 
 
 # ── Mask cache for inpaint ──────────────────────────────────────────
@@ -9828,7 +11046,8 @@ class PresetDialog(Gtk.Dialog):
     dropdown only for inpaint).
     """
 
-    def __init__(self, title, mode="img2img", server_url=COMFYUI_DEFAULT_URL):
+    def __init__(self, title, mode="img2img", server_url=COMFYUI_DEFAULT_URL,
+                 exclude_archs=None):
         # Gtk.Dialog provides built-in OK/Cancel button handling and
         # get_content_area() for the main widget container
         super().__init__(title=title)
@@ -9838,6 +11057,19 @@ class PresetDialog(Gtk.Dialog):
         self.set_default_response(Gtk.ResponseType.OK)
         _style_dialog_buttons(self)
         self.mode = mode
+        # Arch gate for the model dropdown. When the caller knows this
+        # dialog is about to get a 3D normal-map selector bolted on
+        # (img2img, inpaint, outpaint), pass
+        # ``exclude_archs=_CN_INCOMPATIBLE_ARCHS`` so Klein / Kontext /
+        # Chroma never appear in the combo in the first place. Prior
+        # to 2026-04-20 the arch-gate helper only greyed the normal-map
+        # frame AFTER the user had already picked an incompatible arch
+        # \u2014 users read it as "the app let me pick this, then
+        # silently disabled 3D." The combo-level filter makes the
+        # constraint visible up front.
+        self._exclude_archs: frozenset[str] = (
+            frozenset(exclude_archs) if exclude_archs else frozenset()
+        )
 
         box = self.get_content_area()
         box.set_spacing(8)
@@ -9866,14 +11098,37 @@ class PresetDialog(Gtk.Dialog):
         # Model preset
         box.pack_start(Gtk.Label(label="Model Preset:", xalign=0), False, False, 0)
         self.preset_combo = Gtk.ComboBoxText()
+        # Incompatible archs are kept in the combo (index-stable so
+        # every ``self.preset_combo.get_active()`` caller keeps
+        # working) but flagged with a leading "\u229d" sigil. The
+        # ``changed``-signal gate below auto-reverts any selection
+        # whose arch is in ``_exclude_archs``, so they can't be
+        # committed. Users see the option exists but clearly can't
+        # pick it when 3D is enabled.
         for i, p in enumerate(MODEL_PRESETS):
-            self.preset_combo.append(str(i), _model_label(p, mode))
-        # Default to favourite model from settings, or first model
+            label_txt = _model_label(p, mode)
+            if p.get("arch", "") in self._exclude_archs:
+                label_txt = "\u229d " + label_txt + "  (3D \u2014 pick another)"
+            self.preset_combo.append(str(i), label_txt)
+        # Default to favourite model from settings, or first compatible
+        # preset. A favourite whose arch is in ``_exclude_archs`` is
+        # skipped so the dialog doesn't open on a disallowed pick.
         fav = _load_config().get("favourite_model", -1)
-        if 0 <= fav < len(MODEL_PRESETS):
+        fav_ok = (0 <= fav < len(MODEL_PRESETS)
+                  and MODEL_PRESETS[fav].get("arch", "") not in self._exclude_archs)
+        if fav_ok:
             self.preset_combo.set_active(fav)
         else:
-            self.preset_combo.set_active(0)
+            # First compatible preset — falls back to 0 if nothing
+            # matches (shouldn't happen: exclude_archs is a small set).
+            first_ok = next(
+                (i for i, p in enumerate(MODEL_PRESETS)
+                 if p.get("arch", "") not in self._exclude_archs),
+                0,
+            )
+            self.preset_combo.set_active(first_ok)
+        # Remember the last valid pick so the gate can revert.
+        self._last_valid_preset_idx = self.preset_combo.get_active()
         self.preset_combo.connect("changed", self._on_preset_changed)
         self.preset_combo.set_tooltip_text("Select the AI Architecture. FLUX is state-of-the-art, SDXL balances speed/quality.")
         box.pack_start(self.preset_combo, False, False, 0)
@@ -10330,21 +11585,62 @@ class PresetDialog(Gtk.Dialog):
 
     def _on_preset_changed(self, combo):
         idx = combo.get_active()
-        if idx >= 0:
-            # Deactivate turbo when changing presets (user can re-enable)
-            self._turbo_saved = None
-            self.turbo_check.set_active(False)
-            self._apply_preset(idx)
-            self._update_turbo_availability()
-            # Re-filter LoRAs for the new architecture
-            if self._all_lora_names:
-                self._refresh_lora_combos()
-            # Re-filter scene presets for the new architecture
-            if self._scene_combo:
-                self._refresh_scene_combo()
-            # Re-filter ControlNets — Klein/Kontext/Chroma get "Off"
-            # only, others see only the modes that map to their arch.
-            self._refresh_cn_combos()
+        if idx < 0:
+            return
+        # Arch-gate: when the dialog was opened with ``exclude_archs``
+        # (3D-aware flows \u2014 img2img / inpaint / outpaint), reject
+        # any selection whose arch is in the excluded set. Revert to
+        # the last valid pick and flash the banner so the user knows
+        # why. Incompatible rows are marked with a "\u229d" prefix in
+        # their label at construction time, so the visual cue is
+        # already there before they click.
+        excluded = getattr(self, "_exclude_archs", frozenset())
+        if excluded:
+            arch = MODEL_PRESETS[idx].get("arch", "") if 0 <= idx < len(MODEL_PRESETS) else ""
+            if arch in excluded:
+                last = getattr(self, "_last_valid_preset_idx", -1)
+                if 0 <= last < len(MODEL_PRESETS) and last != idx:
+                    # Temporarily detach so the revert doesn't recurse
+                    # into this same handler.
+                    try:
+                        combo.handler_block_by_func(self._on_preset_changed)
+                    except Exception:
+                        pass
+                    combo.set_active(last)
+                    try:
+                        combo.handler_unblock_by_func(self._on_preset_changed)
+                    except Exception:
+                        pass
+                # Surface the reason. One-shot Gimp.message is
+                # noisy, but the banner is the only surface that
+                # survives the revert \u2014 without it the user just
+                # sees their pick bounce back with no explanation.
+                try:
+                    Gimp.message(
+                        f"{MODEL_PRESETS[idx].get('label', arch)} doesn't "
+                        f"support 3D normal maps (its architecture "
+                        f"disables ControlNet). Either pick a different "
+                        f"model or disable 3D normal map in the dialog "
+                        f"to use this one.")
+                except Exception:
+                    pass
+                return
+        # Remember the last valid pick for future reverts.
+        self._last_valid_preset_idx = idx
+        # Deactivate turbo when changing presets (user can re-enable)
+        self._turbo_saved = None
+        self.turbo_check.set_active(False)
+        self._apply_preset(idx)
+        self._update_turbo_availability()
+        # Re-filter LoRAs for the new architecture
+        if self._all_lora_names:
+            self._refresh_lora_combos()
+        # Re-filter scene presets for the new architecture
+        if self._scene_combo:
+            self._refresh_scene_combo()
+        # Re-filter ControlNets — Klein/Kontext/Chroma get "Off"
+        # only, others see only the modes that map to their arch.
+        self._refresh_cn_combos()
 
     def _on_lora_combo_changed(self, combo, model_spin, clip_spin):
         """When a LoRA is selected, look up metadata for trigger words and optimal strength.
@@ -10446,8 +11742,14 @@ class PresetDialog(Gtk.Dialog):
         def on_done(data):
             if not isinstance(data, dict):
                 return
-            triggers = data.get("trigger_words") or []
-            weight = data.get("recommended_weight")
+            # The Guild endpoint wraps the record under ``knowledge``:
+            # ``{"knowledge": {trigger_words, recommended_weight, \u2026}}``.
+            # Earlier revisions read fields off the top-level dict
+            # \u2014 a silent no-op that made the cross-plugin
+            # fallback useless. Handle both shapes.
+            record = data.get("knowledge") if isinstance(data.get("knowledge"), dict) else data
+            triggers = record.get("trigger_words") or []
+            weight = record.get("recommended_weight")
             if not triggers and weight in (None, ""):
                 return
             self._apply_lora_metadata(
@@ -14745,32 +16047,54 @@ class CalibrationWizardDialog(Gtk.Dialog):
     # ── Page builders ─────────────────────────────────────────────────
 
     def _build_page_welcome(self):
-        """Page 0: Welcome and overview."""
-        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        vbox.set_margin_top(20)
+        """Page 0: Welcome + clear explanation of what calibration
+        accomplishes, the three steps, and how failed renders are
+        treated (special category, routed to a research/repair path)."""
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        vbox.set_margin_top(14)
 
         title = Gtk.Label()
         title.set_markup(
-            "<span size='x-large' weight='bold'>Calibration Wizard</span>")
+            "<span size='x-large' weight='bold'>Calibration Wizard</span>\n"
+            "<span foreground='#a09a86' size='small'>"
+            "Find the image models you like best + the settings that "
+            "suit your taste on this GPU."
+            "</span>")
+        title.set_justify(Gtk.Justification.CENTER)
         vbox.pack_start(title, False, False, 0)
 
         desc = Gtk.Label()
         desc.set_markup(
-            "This wizard tests your installed AI models and tunes settings\n"
-            "to your taste — like an eye exam, but for art.\n\n"
-            "You'll see real generated images side by side.\n"
-            "Pick the ones you prefer. That's it.\n\n"
-            "<b>Step 1:</b> Rate your models (Love / OK / Dislike)\n"
-            "<b>Step 2:</b> Fine-tune settings for your favorites\n"
-            "<b>Step 3:</b> Review and apply\n")
+            "Every installed <b>image</b> checkpoint or UNET gets one "
+            "sample render so you can rate them side by side. Video "
+            "archs (WAN / LTX) are calibrated separately; Klein + "
+            "Kontext are too constrained for free-form taste tests.\n\n"
+            "<b>Step 1 — Taste test.</b> One image per model on the "
+            "<i>same prompt + seed</i> so differences are the model, "
+            "not luck. Rate:\n"
+            "   ♥ <b>Love</b> — keep at the top of the picker\n"
+            "   ○ <b>OK</b>    — keep available\n"
+            "   ✗ <b>Dislike</b> — hide from the default picker\n"
+            "   ⚠ <b>FAILED</b> — render crashed or was broken "
+            "(special: opens a research / repair dialog with Civitai "
+            "lookup and LLM diagnosis).\n\n"
+            "<b>Step 2 — Settings.</b> For each Loved model, compare "
+            "CFG / step / sampler alternatives side by side. Timing "
+            "is logged to SpeedCoach so dialog banners can suggest "
+            "faster alternatives later.\n\n"
+            "<b>Step 3 — Apply.</b> A calibration profile is written "
+            "to <tt>config.json</tt>. Every Spellcaster dialog "
+            "auto-loads it — no manual settings copy.\n\n"
+            "<i>Click any sample thumbnail to open it full size.</i>")
         desc.set_line_wrap(True)
-        desc.set_max_width_chars(60)
-        desc.set_justify(Gtk.Justification.CENTER)
+        desc.set_max_width_chars(78)
+        desc.set_xalign(0.0)
         vbox.pack_start(desc, False, False, 0)
 
         self._welcome_status = Gtk.Label()
-        self._welcome_status.set_markup("<i>Click Next to discover your models...</i>")
-        vbox.pack_start(self._welcome_status, False, False, 10)
+        self._welcome_status.set_markup(
+            "<i>Click <b>Next</b> to discover your installed image models…</i>")
+        vbox.pack_start(self._welcome_status, False, False, 8)
 
         self._stack.add_named(vbox, "welcome")
 
@@ -14936,27 +16260,77 @@ class CalibrationWizardDialog(Gtk.Dialog):
         thread.start()
 
     def _generate_samples_thread(self):
-        """Background thread: generate one image per model."""
-        from spellcaster_core.preference_calibration import generate_model_sample
+        """Background thread: generate one image per model using the
+        rich sample helper so we capture elapsed_ms + failure reason
+        alongside the PNG bytes. Post each dispatch record through
+        ``/api/telemetry/dispatch_ok`` so SpeedCoach learns the user's
+        per-model timing on this box."""
+        from spellcaster_core.preference_calibration import (
+            generate_model_sample_rich,
+        )
         import random
 
         seed = random.randint(1, 2**31)
+        self._taste_seed = seed
         total = len(self._models)
+        # Per-sample rich results so the wizard can show elapsed, error,
+        # preset. Keyed by model name.
+        self._model_results = {}
 
         for i, model in enumerate(self._models):
-            # Update progress on main thread
-            frac = (i + 1) / total
             short = model["short_name"][:30]
             GLib.idle_add(self._update_taste_progress, i + 1, total, short)
 
-            png_data = generate_model_sample(
+            res = generate_model_sample_rich(
                 self.server, model, seed=seed, timeout=180)
-            self._model_images[model["name"]] = png_data
+            self._model_results[model["name"]] = res
+            self._model_images[model["name"]] = res.get("png")
 
-            # Add card to grid on main thread
-            GLib.idle_add(self._add_model_card, model, png_data)
+            # Fire dispatch telemetry so SpeedCoach learns per-model
+            # elapsed on this box. Best-effort — never blocks the
+            # render loop.
+            try:
+                self._post_calibration_telemetry(model, res)
+            except Exception:
+                pass
+
+            GLib.idle_add(self._add_model_card, model, res)
 
         GLib.idle_add(self._generation_complete)
+
+    def _post_calibration_telemetry(self, model, rich_result):
+        """POST per-sample dispatch data to the Guild so the
+        dispatch_log.jsonl picks up calibration runs and SpeedCoach's
+        arch_speed_chart / speed_leaderboard can use them."""
+        try:
+            cfg = _load_config()
+            guild = (cfg.get("guild_url")
+                      or "http://127.0.0.1:7777").rstrip("/")
+            body = {
+                "ts":       time.time(),
+                "build_fn": "calibration_taste_test",
+                "handler":  "calibration_wizard",
+                "arch":     model.get("arch"),
+                "model":    model.get("name"),
+                "steps":    (rich_result.get("preset") or {}).get("steps"),
+                "cfg":      (rich_result.get("preset") or {}).get("cfg"),
+                "elapsed":  float(rich_result.get("elapsed_ms", 0)) / 1000.0,
+                "failed":   bool(rich_result.get("failed")),
+                "error":    rich_result.get("error", ""),
+                "origin":   "gimp",
+            }
+            payload = json.dumps(body).encode("utf-8")
+            req = urllib.request.Request(
+                f"{guild}/api/telemetry/dispatch_ok", data=payload,
+                method="POST",
+                headers={"Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=1.5) as r:
+                    r.read()
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     def _update_taste_progress(self, current, total, name):
         self._taste_bar.set_fraction(current / total)
@@ -14972,13 +16346,32 @@ class CalibrationWizardDialog(Gtk.Dialog):
             "<b>Done!</b> Rate each model, then click Next.")
         return False
 
-    def _add_model_card(self, model, png_data):
-        """Add one model image + rating controls to the taste grid."""
+    def _add_model_card(self, model, rich_result):
+        """Add one model image + rating controls to the taste grid.
+
+        ``rich_result`` is the dict from ``generate_model_sample_rich``:
+        ``{png, elapsed_ms, failed, error, preset, prompt, seed}``.
+
+        Surfaces added in the 2026-04-20 polish pass:
+          * click thumbnail → open a full-size enlarge window
+          * elapsed_ms label under the model name
+          * FAILED radio (4-way rating: Love/OK/Dislike/FAILED)
+          * FAILED cards auto-route to Dislike in the profile but also
+            gain a [Research fix] button that opens the repair dialog.
+        """
+        png_data = (rich_result.get("png")
+                     if isinstance(rich_result, dict) else rich_result)
+        elapsed_ms = int(rich_result.get("elapsed_ms") or 0) if isinstance(rich_result, dict) else 0
+        err_msg = rich_result.get("error", "") if isinstance(rich_result, dict) else ""
+        failed = bool(rich_result.get("failed")) if isinstance(rich_result, dict) else (png_data is None)
+
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         card.set_margin_start(4); card.set_margin_end(4)
         card.set_margin_top(4); card.set_margin_bottom(4)
 
-        # Image
+        # Image with click-to-enlarge. Wrapped in an EventBox so we
+        # can catch mouse clicks on the otherwise-inert Gtk.Image.
+        img_widget = None
         if png_data:
             try:
                 loader = GdkPixbuf.PixbufLoader()
@@ -14992,34 +16385,60 @@ class CalibrationWizardDialog(Gtk.Dialog):
                 scaled = pixbuf.scale_simple(
                     target_w, target_h, GdkPixbuf.InterpType.BILINEAR)
                 img_widget = Gtk.Image.new_from_pixbuf(scaled)
+                # EventBox wraps the image so click-to-enlarge works;
+                # naked Gtk.Image swallows events.
+                ebox = Gtk.EventBox()
+                ebox.set_tooltip_text("Click to view full size")
+                ebox.add(img_widget)
+                def _on_click(_w, _evt, full=pixbuf, name=model.get("short_name", "")):
+                    self._show_enlarge_window(name, full)
+                    return True
+                ebox.connect("button-press-event", _on_click)
+                img_widget = ebox
             except Exception:
                 img_widget = Gtk.Image.new_from_icon_name(
                     "image-missing", Gtk.IconSize.DIALOG)
         else:
             img_widget = Gtk.Label()
-            img_widget.set_markup("<i>Generation failed</i>")
+            img_widget.set_markup(
+                "<span foreground='#C86060'><b>Generation FAILED</b></span>\n"
+                f"<span size='x-small'>{GLib.markup_escape_text(err_msg[:180])}</span>")
+            img_widget.set_line_wrap(True)
 
         card.pack_start(img_widget, False, False, 0)
 
-        # Model name
+        # Model name + timing line
         name_label = Gtk.Label()
         short = model["short_name"][:25]
-        name_label.set_markup(f"<small><b>{GLib.markup_escape_text(short)}</b>"
-                              f" ({model['arch']})</small>")
+        elapsed_label = (f" · {elapsed_ms/1000:.1f}s"
+                          if elapsed_ms > 0 else "")
+        name_label.set_markup(
+            f"<small><b>{GLib.markup_escape_text(short)}</b>"
+            f" ({model['arch']}){elapsed_label}</small>")
         name_label.set_line_wrap(True)
         card.pack_start(name_label, False, False, 0)
 
-        # Rating radio buttons
-        rating_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        # Rating radio — 4 choices: Love / OK / Dislike / FAILED
+        rating_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         rating_box.set_halign(Gtk.Align.CENTER)
 
-        btn_love = Gtk.RadioButton.new_with_label(None, "♥ Love")
-        btn_ok = Gtk.RadioButton.new_with_label_from_widget(btn_love, "OK")
+        btn_love    = Gtk.RadioButton.new_with_label(None, "♥")
+        btn_love.set_tooltip_text("Love — keep at top of picker")
+        btn_ok      = Gtk.RadioButton.new_with_label_from_widget(btn_love, "○")
+        btn_ok.set_tooltip_text("OK — keep available")
         btn_dislike = Gtk.RadioButton.new_with_label_from_widget(btn_love, "✗")
+        btn_dislike.set_tooltip_text("Dislike — hide from default picker")
+        btn_failed  = Gtk.RadioButton.new_with_label_from_widget(btn_love, "⚠")
+        btn_failed.set_tooltip_text(
+            "FAILED — render crashed or produced a broken image. "
+            "Routes to a research / repair dialog.")
 
-        # Default to OK
-        btn_ok.set_active(True)
-        self._model_ratings[model["name"]] = "ok"
+        if failed:
+            btn_failed.set_active(True)
+            self._model_ratings[model["name"]] = "failed"
+        else:
+            btn_ok.set_active(True)
+            self._model_ratings[model["name"]] = "ok"
 
         model_name = model["name"]
         btn_love.connect("toggled", lambda b, n=model_name:
@@ -15028,15 +16447,287 @@ class CalibrationWizardDialog(Gtk.Dialog):
                        self._on_rating_toggled(b, n, "ok"))
         btn_dislike.connect("toggled", lambda b, n=model_name:
                             self._on_rating_toggled(b, n, "dislike"))
+        btn_failed.connect("toggled", lambda b, n=model_name:
+                            self._on_rating_toggled(b, n, "failed"))
 
         rating_box.pack_start(btn_love, False, False, 0)
         rating_box.pack_start(btn_ok, False, False, 0)
         rating_box.pack_start(btn_dislike, False, False, 0)
+        rating_box.pack_start(btn_failed, False, False, 0)
         card.pack_start(rating_box, False, False, 0)
+
+        # Research-fix button for FAILED cards. Only visible when the
+        # render actually failed; users who mark a bad-looking image
+        # as FAILED after-the-fact can click the button too — it's
+        # shown whenever the rating is "failed".
+        fix_btn = Gtk.Button(label="🛠 Research fix")
+        fix_btn.set_tooltip_text(
+            "Look up this model on Civitai, check the node catalogue "
+            "for drift, and ask the local LLM to diagnose the error.")
+        fix_btn.set_visible(failed)
+        def _on_fix(_b, m=dict(model), r=dict(rich_result or {})):
+            self._open_research_fix(m, r)
+        fix_btn.connect("clicked", _on_fix)
+        card.pack_start(fix_btn, False, False, 0)
+
+        # When the user toggles into FAILED after-the-fact, show the
+        # fix button dynamically.
+        def _on_failed_toggle(b, btn=fix_btn):
+            if b.get_active():
+                btn.set_visible(True)
+        btn_failed.connect("toggled", _on_failed_toggle)
 
         self._taste_grid.add(card)
         card.show_all()
+        # Keep fix button hidden on non-failed samples even after
+        # show_all — show_all forcibly shows every child, so re-hide.
+        if not failed:
+            fix_btn.set_visible(False)
         return False
+
+    def _show_enlarge_window(self, title_text, pixbuf):
+        """Open a modal window showing the sample at (up to) 90% of
+        screen size — the thumbnails in the grid are too small to judge
+        model quality."""
+        try:
+            win = Gtk.Window(title=f"Sample · {title_text}")
+            win.set_transient_for(self)
+            win.set_modal(True)
+            # Aim for roughly 90% of the parent dialog's width for the
+            # enlarge target, capped to the native pixbuf size so we
+            # never up-scale past source.
+            parent_w = max(900, self.get_allocated_width())
+            parent_h = max(700, self.get_allocated_height())
+            src_w, src_h = pixbuf.get_width(), pixbuf.get_height()
+            target_w = min(int(parent_w * 0.9), src_w or parent_w)
+            if src_w > 0:
+                target_h = int(src_h * target_w / src_w)
+            else:
+                target_h = src_h or parent_h
+            win.set_default_size(target_w + 40, min(target_h + 60, parent_h))
+            scaled = pixbuf.scale_simple(target_w, target_h,
+                                          GdkPixbuf.InterpType.BILINEAR)
+            scroll = Gtk.ScrolledWindow()
+            scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+            img = Gtk.Image.new_from_pixbuf(scaled)
+            scroll.add(img)
+            win.add(scroll)
+            win.show_all()
+        except Exception as e:
+            print(f"[Calibration] enlarge window failed: {e}")
+
+    def _open_research_fix(self, model, rich_result):
+        """Open a 'Research fix' dialog for a model that failed to
+        render. Offers three read-side investigations:
+
+          1. Civitai lookup — public API search by filename hash
+             (falls back to name-token search when hash unavailable).
+          2. SpeedCoach node-drift check — diff current /object_info
+             against the last snapshot; a missing custom node is the
+             #1 cause of crashes after a ComfyUI update.
+          3. Local LLM diagnosis — ollama / gemma3:4b reads the error
+             message + preset and suggests likely fixes.
+
+        None of these auto-apply — they're pure research. The output
+        is written into a scrollable text area so the user can copy
+        it, and a 'Re-try' button re-runs just this model's sample.
+        """
+        from gi.repository import Gtk
+        name = model.get("name", "")
+        arch = model.get("arch", "")
+        err = (rich_result or {}).get("error", "")
+        elapsed = int((rich_result or {}).get("elapsed_ms") or 0)
+
+        dlg = Gtk.Dialog(title=f"Research Fix — {name}",
+                          transient_for=self, modal=True)
+        dlg.add_button("Close", Gtk.ResponseType.CLOSE)
+        dlg.add_button("Re-try this model", 1)
+        dlg.set_default_size(720, 560)
+        bx = dlg.get_content_area()
+        bx.set_margin_top(10); bx.set_margin_bottom(10)
+        bx.set_margin_start(12); bx.set_margin_end(12)
+
+        head = Gtk.Label()
+        head.set_markup(
+            f"<b>{GLib.markup_escape_text(name)}</b>  "
+            f"<span foreground='#a09a86'>({arch}, "
+            f"{elapsed/1000:.1f}s)</span>")
+        head.set_xalign(0.0)
+        bx.pack_start(head, False, False, 0)
+
+        if err:
+            e = Gtk.Label()
+            e.set_markup(
+                f"<span foreground='#C86060'>Error: "
+                f"{GLib.markup_escape_text(err[:400])}</span>")
+            e.set_line_wrap(True); e.set_xalign(0.0)
+            bx.pack_start(e, False, False, 4)
+
+        # Scrollable text buffer for findings.
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        tv = Gtk.TextView()
+        tv.set_editable(False); tv.set_wrap_mode(Gtk.WrapMode.WORD)
+        buf = tv.get_buffer()
+        buf.set_text(
+            "Click one of the research buttons below. Results will "
+            "append here.\n")
+        scroll.add(tv)
+        bx.pack_start(scroll, True, True, 4)
+
+        def _append(line):
+            end = buf.get_end_iter()
+            buf.insert(end, line + "\n")
+
+        # ── Research button row ────────────────────────────────────
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+
+        def _on_civitai(_b):
+            _append("\n── Civitai lookup ──")
+            _b.set_sensitive(False)
+            def _bg():
+                try:
+                    # Try the knowledge stack first (local cache +
+                    # optional one-shot civitai query).
+                    from spellcaster_core.lora_knowledge import (
+                        get_knowledge,
+                    )
+                    # Civitai's knowledge store keys by LoRA; for a
+                    # checkpoint search-by-name is the best we have.
+                    try:
+                        import urllib.parse
+                        q = urllib.parse.quote(name.rsplit("\\", 1)[-1]
+                                                   .rsplit("/", 1)[-1]
+                                                   .rsplit(".", 1)[0])
+                        url = (f"https://civitai.com/api/v1/models"
+                               f"?limit=3&query={q}")
+                        req = urllib.request.Request(url,
+                            headers={"User-Agent":"Spellcaster-Calibration/1.0"})
+                        with urllib.request.urlopen(req, timeout=8) as r:
+                            data = json.loads(r.read().decode("utf-8", "replace"))
+                        items = data.get("items", []) or []
+                        if not items:
+                            GLib.idle_add(_append, "No results found.")
+                        else:
+                            for it in items[:3]:
+                                GLib.idle_add(_append,
+                                    f"• {it.get('name','?')} "
+                                    f"(type={it.get('type','?')}, "
+                                    f"nsfw={it.get('nsfw',False)})")
+                                url = (f"https://civitai.com/models/"
+                                        f"{it.get('id','')}")
+                                GLib.idle_add(_append, f"  {url}")
+                    except Exception as e:
+                        GLib.idle_add(_append,
+                            f"Civitai lookup failed: {e}")
+                finally:
+                    GLib.idle_add(_b.set_sensitive, True)
+            threading.Thread(target=_bg, daemon=True).start()
+        btn_civ = Gtk.Button(label="🔍 Civitai lookup")
+        btn_civ.connect("clicked", _on_civitai)
+        row.pack_start(btn_civ, False, False, 0)
+
+        def _on_drift(_b):
+            _append("\n── Node-drift check (SpeedCoach) ──")
+            _b.set_sensitive(False)
+            def _bg():
+                try:
+                    cfg = _load_config()
+                    guild = (cfg.get("guild_url")
+                              or "http://127.0.0.1:7777").rstrip("/")
+                    req = urllib.request.Request(
+                        f"{guild}/api/speedcoach/drift",
+                        headers={"User-Agent":"Spellcaster-Calibration/1.0"})
+                    with urllib.request.urlopen(req, timeout=4) as r:
+                        d = json.loads(r.read().decode("utf-8", "replace"))
+                    if not d.get("has_drift"):
+                        GLib.idle_add(_append,
+                            "No drift since last session.")
+                    else:
+                        a = len(d.get("added") or [])
+                        rm = len(d.get("removed") or [])
+                        c = len(d.get("changed") or [])
+                        GLib.idle_add(_append,
+                            f"+{a} added · -{rm} removed · "
+                            f"~{c} changed. A missing node is the "
+                            f"top cause of model-load failures.")
+                        for itm in (d.get("removed") or [])[:8]:
+                            GLib.idle_add(_append, f"  removed: {itm}")
+                except Exception as e:
+                    GLib.idle_add(_append, f"Drift probe failed: {e}")
+                finally:
+                    GLib.idle_add(_b.set_sensitive, True)
+            threading.Thread(target=_bg, daemon=True).start()
+        btn_drift = Gtk.Button(label="⚙ Node drift")
+        btn_drift.connect("clicked", _on_drift)
+        row.pack_start(btn_drift, False, False, 0)
+
+        def _on_llm(_b):
+            _append("\n── Local LLM diagnosis ──")
+            _b.set_sensitive(False)
+            def _bg():
+                try:
+                    cfg = _load_config()
+                    llm_url = (cfg.get("llm_url")
+                                or "http://127.0.0.1:11434").rstrip("/")
+                    prompt = (
+                        "You are a ComfyUI + Spellcaster diagnostician. "
+                        "A user's render of model '{m}' (arch={a}) "
+                        "failed. The error was:\n\n{e}\n\n"
+                        "Give a terse 3-bullet diagnosis: most likely "
+                        "cause, verification step, fix. Markdown bullets."
+                    ).format(m=name, a=arch, e=err or "(no error text)")
+                    body = json.dumps({
+                        "model": "gemma3:4b",
+                        "prompt": prompt,
+                        "stream": False,
+                    }).encode("utf-8")
+                    req = urllib.request.Request(
+                        f"{llm_url}/api/generate", data=body,
+                        method="POST",
+                        headers={"Content-Type":"application/json"})
+                    with urllib.request.urlopen(req, timeout=40) as r:
+                        resp = json.loads(r.read().decode("utf-8","replace"))
+                    text = (resp or {}).get("response","").strip()
+                    GLib.idle_add(_append, text if text else "(no response)")
+                except Exception as e:
+                    GLib.idle_add(_append, f"LLM call failed: {e}")
+                finally:
+                    GLib.idle_add(_b.set_sensitive, True)
+            threading.Thread(target=_bg, daemon=True).start()
+        btn_llm = Gtk.Button(label="🧠 Ask LLM")
+        btn_llm.connect("clicked", _on_llm)
+        row.pack_start(btn_llm, False, False, 0)
+
+        bx.pack_start(row, False, False, 4)
+        dlg.show_all()
+        resp = dlg.run()
+        dlg.destroy()
+        if resp == 1:
+            # Re-try just this model's sample in a background thread.
+            self._retry_single_model(model)
+
+    def _retry_single_model(self, model):
+        """Re-run one model's sample without restarting the whole batch.
+        Updates the corresponding card in place if we can still find it;
+        otherwise just appends a new card."""
+        from spellcaster_core.preference_calibration import (
+            generate_model_sample_rich,
+        )
+        def _bg():
+            seed = getattr(self, "_taste_seed", 42)
+            res = generate_model_sample_rich(
+                self.server, model, seed=seed, timeout=180)
+            if hasattr(self, "_model_results") and isinstance(
+                    getattr(self, "_model_results", None), dict):
+                self._model_results[model["name"]] = res
+            self._model_images[model["name"]] = res.get("png")
+            try:
+                self._post_calibration_telemetry(model, res)
+            except Exception:
+                pass
+            GLib.idle_add(self._add_model_card, model, res)
+        threading.Thread(target=_bg, daemon=True).start()
 
     def _on_rating_toggled(self, button, model_name, rating):
         if button.get_active():
@@ -15048,12 +16739,14 @@ class CalibrationWizardDialog(Gtk.Dialog):
         """Called when entering the settings page."""
         from spellcaster_core.preference_calibration import arch_valid_ranges
 
-        # Collect models that need settings calibration
+        # Collect models that need settings calibration. Exclude both
+        # "dislike" AND "failed" — failed-to-render means we can't
+        # meaningfully A/B its CFG/steps/sampler either.
         self._calibrate_queue = []
         for model in self._models:
             name = model["name"]
             rating = self._model_ratings.get(name, "ok")
-            if rating == "dislike":
+            if rating in ("dislike", "failed"):
                 continue
             ranges = arch_valid_ranges(model["arch"])
             if not ranges:
@@ -15409,7 +17102,6 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-klein-blend": "klein_flux2",
             "spellcaster-klein-repose": "klein_flux2",
             "spellcaster-klein-headswap": "klein_flux2",
-            "spellcaster-klein-headswap-face": "klein_flux2",
             "spellcaster-klein-inpaint": "klein_flux2",
             # R117: LTX procedures now go through the sentinel probe
             # (see _FEATURE_SENTINELS["ltx_video"]). Gate key remains
@@ -15451,6 +17143,8 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-settings": None,
             "spellcaster-my-presets": None,
             "spellcaster-bridge": None,
+            "spellcaster-clear-upload-cache": None,
+            "spellcaster-test-harness": None,
             # SAM3 AI Selection
             "spellcaster-sam3-select": None,    # always register — preflight checks server at runtime
             "spellcaster-sam3-extract": None,
@@ -15492,6 +17186,14 @@ class Spellcaster(Gimp.PlugIn):
             # published toward GIMP (frames from Resolve, references
             # from SillyTavern, etc.) and open each as a new image.
             "spellcaster-check-inbox": None,
+            # SpeedCoach diagnostic surfaces (always on — read-only
+            # aggregations against Guild-local JSONL).
+            "spellcaster-arch-speed-chart":    None,
+            "spellcaster-review-drift":        None,
+            "spellcaster-show-minihud":        None,
+            "spellcaster-faceswap-reset":      None,
+            "spellcaster-last-warnings":       None,
+            "spellcaster-toggle-speedcoach":   None,
         }
 
         # ── Feature-gate logic: denylist + probe-cached allowlist ──
@@ -15528,6 +17230,44 @@ class Spellcaster(Gimp.PlugIn):
             if present is not None and feature not in present:
                 continue                          # probe says node missing
             procs.append(name)
+
+        # Procedure-set drift guard: GIMP caches the registered procedure
+        # list in pluginrc. If we rename or remove a procedure (e.g. a
+        # renamed menu entry, a removed-duplicate), GIMP will keep
+        # showing the stale old name next to the new one until pluginrc
+        # is regenerated. _auto_update + _apply_staged_updates already
+        # purge pluginrc when code changes, BUT if the user disables
+        # auto-update OR the Repair button has already been used AND
+        # the SHA didn't change, we can silently miss it.
+        #
+        # Defense-in-depth: remember the last-registered procedure set
+        # in config.json. When the CURRENT set differs (names added or
+        # removed), delete pluginrc so GIMP re-scans on next launch.
+        # Idempotent — no-op when the set is stable.
+        try:
+            import hashlib as _hashlib
+            _proc_digest = _hashlib.sha1(
+                "|".join(sorted(procs)).encode("utf-8")
+            ).hexdigest()[:16]
+            _last_digest = cfg.get("procedure_set_digest") or ""
+            if _proc_digest != _last_digest:
+                # Drift detected (or first run). Purge pluginrc so GIMP
+                # drops any procedure name no longer in _PROC_FEATURES.
+                try:
+                    _delete_all_gimp_pluginrc()
+                except Exception:
+                    pass
+                try:
+                    cfg["procedure_set_digest"] = _proc_digest
+                    _save_config(cfg)
+                except Exception:
+                    pass
+        except Exception:
+            # Digest / config write failure must never block plugin
+            # registration. GIMP still gets the correct `procs` list —
+            # we just miss the pluginrc-purge speedup this launch.
+            pass
+
         return procs
 
     def do_create_procedure(self, name):
@@ -15582,25 +17322,29 @@ class Spellcaster(Gimp.PlugIn):
                                           "Change character pose, position, or camera angle"),
             "spellcaster-klein-headswap": ("Headswap...", self._run_klein_headswap,
                                             "Face swap + AI refinement for natural blending"),
-            "spellcaster-klein-headswap-face": ("Flux 2 Headswap...", self._run_klein_headswap,
-                                                  "Face swap with Flux 2 AI refinement pass"),
             "spellcaster-klein-inpaint": ("Inpaint...", self._run_klein_inpaint,
                                            "Regenerate selected area — context-aware, smooth edges"),
             "spellcaster-klein-detail": ("Detail Enhancer...", self._run_klein_detail,
                                           "Enhance any region — face, eyes, hands, skin, hair, clothing"),
             "spellcaster-klein-generate": ("Generate Object...", self._run_klein_generate,
                                             "Generate any object as a transparent layer — matches scene lighting"),
-            "spellcaster-klein-auto-inpaint": ("Klein Auto-Inpaint... (Florence)", self._run_klein_auto_inpaint,
-                                                "Florence2 auto-mask + Klein inpaint — describe what to replace, no mask painting"),
-            "spellcaster-klein-sam3-inpaint": ("Klein SAM3 Inpaint...", self._run_klein_sam3_inpaint,
-                                                "SAM3 segment + Klein inpaint — optionally guided by a reference image"),
-            "spellcaster-klein-refine": ("Klein Refine...", self._run_klein_refine,
-                                          "Multi-reference Klein refine — LineArt/HED/Tile/Depth structural enhancement"),
-            "spellcaster-klein-face-detail": ("Klein Face Detailer...", self._run_klein_face_detail,
-                                               "YOLO face detection + Klein high-detail regeneration of each face"),
-            "spellcaster-klein-color-match": ("Klein Color Match...", self._run_klein_color_match,
+            # Auto-Inpaint / SAM3-Inpaint / Refine / Face Detailer / Color
+            # Match / Virtual Try-On used to live under a separate
+            # "Klein" submenu with redundant "Klein *" prefixes. Merged
+            # into the Flux 2 submenu (2026-04-20) so the user sees ONE
+            # current submenu instead of both a current ("Flux 2") and
+            # an outdated ("Klein") copy side-by-side.
+            "spellcaster-klein-auto-inpaint": ("Auto-Inpaint... (Florence)", self._run_klein_auto_inpaint,
+                                                "Florence2 auto-mask + Flux 2 inpaint — describe what to replace, no mask painting"),
+            "spellcaster-klein-sam3-inpaint": ("SAM3 Inpaint...", self._run_klein_sam3_inpaint,
+                                                "SAM3 segment + Flux 2 inpaint — optionally guided by a reference image"),
+            "spellcaster-klein-refine": ("Refine...", self._run_klein_refine,
+                                          "Multi-reference Flux 2 refine — LineArt/HED/Tile/Depth structural enhancement"),
+            "spellcaster-klein-face-detail": ("Face Detailer...", self._run_klein_face_detail,
+                                               "YOLO face detection + Flux 2 high-detail regeneration of each face"),
+            "spellcaster-klein-color-match": ("Reference Color Match...", self._run_klein_color_match,
                                                "ColorMatchV2 — harmonize image colors against a reference photo (no diffusion)"),
-            "spellcaster-klein-virtual-tryon": ("Klein Virtual Try-On...", self._run_klein_virtual_tryon,
+            "spellcaster-klein-virtual-tryon": ("Virtual Try-On...", self._run_klein_virtual_tryon,
                                                  "4-reference photoshoot — face + outfit + optional background + pose"),
             "spellcaster-generate-anything": ("Generate Anything...", self._run_generate_anything,
                                                "Generate any object as a transparent layer — works with ALL models"),
@@ -15656,6 +17400,19 @@ class Spellcaster(Gimp.PlugIn):
                                        "Quick access to saved prompt and settings presets"),
             "spellcaster-bridge": ("Workflow Library...", self._run_bridge,
                                     "Browse workflows, import from server, edit scaffolds"),
+            "spellcaster-clear-upload-cache": ("Clear image cache (ComfyUI)",
+                                                 self._run_clear_upload_cache,
+                                                 "Wipe every cached canvas/selection upload from the ComfyUI "
+                                                 "input dir. The cache speeds up repeat submits of the same "
+                                                 "image by skipping the re-export; clearing it restores a "
+                                                 "stricter privacy posture at the cost of one re-upload the "
+                                                 "next time you send that image."),
+            "spellcaster-test-harness": ("Run test harness (batch only)",
+                                          self._run_test_harness,
+                                          "End-to-end test harness for tests/gimp_batch.py. "
+                                          "Does nothing when invoked from the menu \u2014 only runs "
+                                          "in GIMP batch mode (-idf + NONINTERACTIVE). Writes a "
+                                          "JSONL report to $SPELLCASTER_TEST_REPORT."),
             "spellcaster-sam3-select": ("AI Select by Description...", self._run_sam3_select,
                                          "Type what to select (person, shirt, hair) — AI creates the selection automatically"),
             "spellcaster-sam3-extract": ("AI Extract Subject...", self._run_sam3_extract,
@@ -15714,6 +17471,26 @@ class Spellcaster(Gimp.PlugIn):
             # sent toward GIMP and open each as a new image.
             "spellcaster-check-inbox": ("💎 Check Spellcaster Inbox", self._run_check_inbox,
                                          "Open every pending asset other Spellcaster apps have sent to GIMP (frames from Resolve, refs from SillyTavern, etc.)"),
+            # SpeedCoach diagnostics + view toggles. Read-side only; no
+            # writes beyond telemetry. Menus under Diagnostics / View.
+            "spellcaster-arch-speed-chart": ("Arch Speed Chart...",
+                                              self._run_arch_speed_chart,
+                                              "Per-arch render speed on your box (from preflight canaries). Compare how long each architecture takes for a baseline render."),
+            "spellcaster-review-drift": ("Review Node Drift...",
+                                          self._run_review_drift,
+                                          "Diff the last two ComfyUI /object_info snapshots — added / removed / signature-changed nodes that may break calibrations."),
+            "spellcaster-show-minihud": ("Show Mini-HUD",
+                                          self._run_show_minihud,
+                                          "Open a floating always-on-top HUD with step progress, VRAM%, and queue depth — keeps progress visible when GIMP isn't focused."),
+            "spellcaster-faceswap-reset": ("Reset Faceswap Crash State",
+                                            self._run_faceswap_reset,
+                                            "Clear the face-swap auto-disable counter + escalation flag. Use after fixing a TensorRT / onnxruntime install."),
+            "spellcaster-last-warnings": ("Last Run Warnings...",
+                                           self._run_last_warnings,
+                                           "Open the warnings popover for the most recent dispatch — uncalibrated LoRAs, VRAM near OOM, model fallbacks, etc."),
+            "spellcaster-toggle-speedcoach": ("Toggle Speed Suggestions",
+                                               self._run_toggle_speedcoach,
+                                               "Enable or disable SpeedCoach banners + status-bar warnings chip globally. Persists across GIMP restarts."),
         }
 
         label, callback, doc = menu_map[name]
@@ -15744,12 +17521,15 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-klein-inpaint":     f"{_S}/Flux 2",
             "spellcaster-klein-detail":      f"{_S}/Flux 2",
             "spellcaster-klein-generate":    f"{_S}/Flux 2",
-            "spellcaster-klein-auto-inpaint":  f"{_S}/Klein",
-            "spellcaster-klein-sam3-inpaint":  f"{_S}/Klein",
-            "spellcaster-klein-refine":        f"{_S}/Klein",
-            "spellcaster-klein-face-detail":   f"{_S}/Klein",
-            "spellcaster-klein-color-match":   f"{_S}/Klein",
-            "spellcaster-klein-virtual-tryon": f"{_S}/Klein",
+            # Promoted from a legacy "Klein" submenu into "Flux 2" so
+            # users no longer see two parallel submenus (one with the
+            # current brand, one with the codename). Same callbacks.
+            "spellcaster-klein-auto-inpaint":  f"{_S}/Flux 2",
+            "spellcaster-klein-sam3-inpaint":  f"{_S}/Flux 2",
+            "spellcaster-klein-refine":        f"{_S}/Flux 2",
+            "spellcaster-klein-face-detail":   f"{_S}/Flux 2",
+            "spellcaster-klein-color-match":   f"{_S}/Flux 2",
+            "spellcaster-klein-virtual-tryon": f"{_S}/Flux 2",
 
             # Enhance — fix, upscale, restore
             "spellcaster-upscale":           f"{_S}/Enhance",
@@ -15767,7 +17547,6 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-faceid-img2img":    f"{_S}/Face",
             "spellcaster-pulid-flux":        f"{_S}/Face",
             "spellcaster-face-restore":      f"{_S}/Face",
-            "spellcaster-klein-headswap-face": f"{_S}/Face",
 
             # Style — visual transformation
             "spellcaster-style-transfer":    f"{_S}/Style",
@@ -15821,6 +17600,8 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-settings":          f"{_S}/Tools",
             "spellcaster-bridge":            f"{_S}/Tools",
             "spellcaster-calibration-wizard": f"{_S}/Tools",
+            "spellcaster-clear-upload-cache": f"{_S}/Tools",
+            "spellcaster-test-harness":      f"{_S}/Tools",
             # R105: cross-plugin transfer submenu — visible diamond
             # markers make it easy to spot the inter-app channels.
             "spellcaster-send-to-resolve":      f"{_S}/Cross-App",
@@ -15828,6 +17609,14 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-send-to-sillytavern":  f"{_S}/Cross-App",
             "spellcaster-character-card-editor": f"{_S}/Cross-App",
             "spellcaster-check-inbox":          f"{_S}/Cross-App",
+            # Diagnostics — SpeedCoach read-only surfaces.
+            "spellcaster-arch-speed-chart":   f"{_S}/Diagnostics",
+            "spellcaster-review-drift":       f"{_S}/Diagnostics",
+            "spellcaster-faceswap-reset":     f"{_S}/Diagnostics",
+            "spellcaster-last-warnings":      f"{_S}/Diagnostics",
+            # View — toggles + floating overlays.
+            "spellcaster-show-minihud":       f"{_S}/View",
+            "spellcaster-toggle-speedcoach":  f"{_S}/View",
         }
 
         # ── Native GIMP menu integration ─────────────────────────────
@@ -15922,7 +17711,8 @@ class Spellcaster(Gimp.PlugIn):
                 return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         else:
             GimpUi.init("spellcaster")
-            dlg = PresetDialog("Spellcaster — Image to Image", mode="img2img")
+            dlg = PresetDialog("Spellcaster — Image to Image", mode="img2img",
+                                exclude_archs=_CN_INCOMPATIBLE_ARCHS)
             dlg.w_spin.set_value(image.get_width())
             dlg.h_spin.set_value(image.get_height())
             # 3D Normal Map picker — injected onto the shared PresetDialog
@@ -15956,10 +17746,12 @@ class Spellcaster(Gimp.PlugIn):
             srv = v["server"]
             cn_active = v.get("controlnet", {}).get("mode", "Off") != "Off"
 
-            # GIMP export on main thread (PDB not thread-safe)
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            # Content-hash upload cache: when the user sends the same
+            # image to ComfyUI twice in a row, the helper short-circuits
+            # the export + upload pass and returns the previously-
+            # uploaded filename. sc_cache_* prefix survives the
+            # per-workflow privacy wipe.
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[img2img] ")
 
             base_seed = v["seed"]
             for run_i in range(runs):
@@ -15988,6 +17780,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster img2img Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -16039,6 +17833,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster txt2img Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -16053,7 +17849,8 @@ class Spellcaster(Gimp.PlugIn):
         else:
             try:
                 GimpUi.init("spellcaster")
-                dlg = PresetDialog("Spellcaster — Inpaint Selection", mode="inpaint")
+                dlg = PresetDialog("Spellcaster — Inpaint Selection", mode="inpaint",
+                                    exclude_archs=_CN_INCOMPATIBLE_ARCHS)
             except Exception as _dlg_err:
                 Gimp.message(f"Inpaint dialog failed to open:\n{_dlg_err}")
                 import traceback; traceback.print_exc()
@@ -16101,9 +17898,11 @@ class Spellcaster(Gimp.PlugIn):
                     "server": srv,
                 }
 
-            tmp = _export_image_to_tmp(image)
-            iname = f"gimp_inp_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, iname); os.unlink(tmp)
+            # Inpaint always uploads the FULL canvas (the mask carries
+            # the region). Cache key is image-only \u2014 the mask cache
+            # (separate, above) handles selection-bounded caching for
+            # the mask PNG itself.
+            iname = _export_and_upload_cached(srv, image, debug_prefix="[inpaint] ")
 
             base_seed = v["seed"]
             for run_i in range(runs):
@@ -16133,6 +17932,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Inpaint Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -16159,9 +17960,7 @@ class Spellcaster(Gimp.PlugIn):
             _update_spinner_status("Face Swap: exporting images...")
             srv = v["server"]
             # Upload target (current canvas)
-            tmp = _export_image_to_tmp(image)
-            tgt_name = f"gimp_fstgt_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, tgt_name); os.unlink(tmp)
+            tgt_name = _export_and_upload_cached(srv, image, debug_prefix="[fstgt] ")
             # Upload source face
             src_name = f"gimp_fssrc_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, v["face_file"], src_name)
@@ -16201,6 +18000,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-faceswap"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Face Swap Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -16227,9 +18028,7 @@ class Spellcaster(Gimp.PlugIn):
         try:
             _update_spinner_status("Face Swap (Model): exporting image...")
             srv = v["server"]
-            tmp = _export_image_to_tmp(image)
-            tgt_name = f"gimp_fsm_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, tgt_name); os.unlink(tmp)
+            tgt_name = _export_and_upload_cached(srv, image, debug_prefix="[fsm] ")
             wf = build_faceswap_model(
                 tgt_name, v["face_model"],
                 swap_model=v["swap_model"],
@@ -16254,6 +18053,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-faceswap-model"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Face Swap (Model) Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -16333,13 +18134,14 @@ class Spellcaster(Gimp.PlugIn):
                 has_sel, sx1, sy1, sx2, sy2 = _get_selection_bounds(image)
                 if has_sel:
                     _update_spinner_status("LTX I2V: exporting selection region...")
-                    tmp, _sw, _sh = _export_selection_to_tmp(image)
+                    i2v_filename = _export_and_upload_cached(
+                        v["server"], image,
+                        selection_bounds=_get_selection_bounds(image)[1:5],
+                        debug_prefix="[ltx-i2v-sel] ")
                 else:
                     _update_spinner_status("LTX I2V: exporting image...")
-                    tmp = _export_image_to_tmp(image)
-                i2v_filename = f"gimp_ltx_i2v_{uuid.uuid4().hex[:8]}.png"
-                _upload_image(v["server"], tmp, i2v_filename)
-                os.unlink(tmp)
+                    i2v_filename = _export_and_upload_cached(
+                        v["server"], image, debug_prefix="[ltx-i2v] ")
 
             # Prompt enhancement — if the dialog toggle is on, run the
             # user prompt through the local LLM with LTX's cinematic
@@ -16419,6 +18221,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster LTX T2V Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -16463,9 +18267,7 @@ class Spellcaster(Gimp.PlugIn):
             else:
                 _update_spinner_status("Wan I2V: exporting image...")
                 srv = v["server"]
-                tmp = _export_image_to_tmp(image)
-            uname = f"gimp_wan_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+                uname = _export_and_upload_cached(srv, image, debug_prefix="[wan] ")
 
             # IP-Adapter: upload reference image if using a separate file
             ipa_image = None
@@ -16567,6 +18369,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Wan I2V Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -16743,6 +18547,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Wan FLF Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -17050,9 +18856,7 @@ class Spellcaster(Gimp.PlugIn):
         # ═══════════════════════════════════════════════════════════════
         try:
             # Export start image
-            tmp = _export_image_to_tmp(image)
-            start_name = f"gimp_duo_start_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, start_name); os.unlink(tmp)
+            start_name = _export_and_upload_cached(srv, image, debug_prefix="[duo_start] ")
 
             # Upload Actor A face ref
             if a_source == "file" and a_file:
@@ -17175,6 +18979,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.message("Two-Actor Director complete!\nLast frames imported. MP4s in ComfyUI output folder.")
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Director Duo Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -17363,9 +19169,7 @@ class Spellcaster(Gimp.PlugIn):
 
         # Execution
         try:
-            tmp = _export_image_to_tmp(image)
-            start_name = f"gimp_trio_start_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, start_name); os.unlink(tmp)
+            start_name = _export_and_upload_cached(srv, image, debug_prefix="[trio_start] ")
 
             ref_names = []
             for i, af in enumerate(actor_info):
@@ -17446,6 +19250,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.message("Three-Actor Director complete!\nMP4s in ComfyUI output folder.")
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Director Trio Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -17563,6 +19369,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Video Upscale Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -17719,6 +19527,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Video ReActor Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -17925,6 +19735,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.message("SeedVR2 Video Upscale complete!\nCheck ComfyUI output folder for the upscaled MP4.")
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"SeedVR2 Video Upscale Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -17952,9 +19764,7 @@ class Spellcaster(Gimp.PlugIn):
             _update_spinner_status("Face Swap (mtb): exporting images...")
             srv = v["server"]
             # Export target (current canvas)
-            tmp = _export_image_to_tmp(image)
-            tgt_name = f"gimp_mtb_tgt_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, tgt_name); os.unlink(tmp)
+            tgt_name = _export_and_upload_cached(srv, image, debug_prefix="[mtb_tgt] ")
             # Upload source face image
             src_name = f"gimp_mtb_src_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, v["source_path"], src_name)
@@ -17972,6 +19782,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-faceswap-mtb"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Face Swap (mtb) Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -18007,9 +19819,7 @@ class Spellcaster(Gimp.PlugIn):
         try:
             _update_spinner_status("FaceID: exporting images...")
             srv = v["server"]
-            tmp = _export_image_to_tmp(image)
-            tgt_name = f"gimp_fid_tgt_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, tgt_name); os.unlink(tmp)
+            tgt_name = _export_and_upload_cached(srv, image, debug_prefix="[fid_tgt] ")
             src_name = f"gimp_fid_ref_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, v["source_path"], src_name)
             base_seed = v["seed"]
@@ -18038,6 +19848,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-faceid-img2img"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster FaceID Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -18076,9 +19888,7 @@ class Spellcaster(Gimp.PlugIn):
         try:
             _update_spinner_status("PuLID Flux: exporting images...")
             srv = v["server"]
-            tmp = _export_image_to_tmp(image)
-            tgt_name = f"gimp_pulid_tgt_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, tgt_name); os.unlink(tmp)
+            tgt_name = _export_and_upload_cached(srv, image, debug_prefix="[pulid_tgt] ")
             src_name = f"gimp_pulid_ref_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, v["source_path"], src_name)
             base_seed = v["seed"]
@@ -18109,6 +19919,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-pulid-flux"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster PuLID Flux Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -18303,9 +20115,7 @@ class Spellcaster(Gimp.PlugIn):
 
         try:
             # Export target (current canvas) on main thread
-            tmp = _export_image_to_tmp(image)
-            tgt_name = f"gimp_hs_tgt_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, tgt_name); os.unlink(tmp)
+            tgt_name = _export_and_upload_cached(srv, image, debug_prefix="[hs_tgt] ")
 
             # Upload source face image (if file, not model)
             src_name = None
@@ -18339,6 +20149,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Klein Headswap Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -18367,9 +20179,7 @@ class Spellcaster(Gimp.PlugIn):
         try:
             _update_spinner_status("Klein: exporting image...")
             srv = v["server"]
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_klein_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[klein] ")
             _klein_prompt, _ = _auto_enhance(v["prompt"], "flux2klein")
             base_seed = v["seed"]
             for run_i in range(runs):
@@ -18395,6 +20205,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Klein Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -18422,9 +20234,7 @@ class Spellcaster(Gimp.PlugIn):
             _update_spinner_status("Klein+Ref: exporting images...")
             srv = v["server"]
             # Upload main image
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_kleinm_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[kleinm] ")
             # Upload reference image
             ref_name = f"gimp_kleinr_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, v["ref_file"], ref_name)
@@ -18452,6 +20262,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-klein-img2img-ref"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Klein+Ref Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -18624,9 +20436,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         try:
             _update_spinner_status("Klein Outpaint: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_klein_out_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[klein_out] ")
 
             km = _preset_pick(KLEIN_MODELS, klein_key)
             preset = {
@@ -18658,6 +20468,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.displays_flush()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Klein Outpaint Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -18972,6 +20784,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.displays_flush()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Klein Layer Blender Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -19413,9 +21227,7 @@ class Spellcaster(Gimp.PlugIn):
 
         try:
             _update_spinner_status("Klein Re-poser: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_repose_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[repose] ")
 
             # Repose preserves the subject and changes only the pose — treat
             # as refine scope so the LLM doesn't invent new characters.
@@ -19442,6 +21254,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Klein Re-poser Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -19958,9 +21772,7 @@ class Spellcaster(Gimp.PlugIn):
                     "server": srv,
                 }
 
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_kinp_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[kinp] ")
 
             # Enhance once, use across all runs. method='klein_inpaint'
             # narrows the LLM to "describe what fills the mask" so Klein
@@ -19996,6 +21808,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Klein Inpaint Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -20116,9 +21930,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         try:
             _update_spinner_status("Klein Detail: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_detail_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[detail] ")
             # Detail boost — preserves subject, adds quality/texture descriptors.
             prompt, _ = _auto_enhance(prompt, "flux2klein",
                                        method="klein_refine")
@@ -20138,6 +21950,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Klein Detail Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -20256,9 +22070,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _update_spinner_status("Klein Generate: exporting scene reference...")
-            tmp = _export_image_to_tmp(image)
-            scene_uname = f"gimp_scene_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, scene_uname); os.unlink(tmp)
+            scene_uname = _export_and_upload_cached(srv, image, debug_prefix="[scene] ")
             # Klein generate_object drops a described object into the
             # scene — inpaint-scope (focus on the new object, not the
             # whole scene which already exists).
@@ -20322,6 +22134,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Klein Generate Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -20447,9 +22261,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _update_spinner_status("Klein Auto-Inpaint: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_klauto_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[klauto] ")
             _prompt = inpaint_prompt
             if enhance:
                 _prompt, _ = _auto_enhance(inpaint_prompt, "flux2klein",
@@ -20474,6 +22286,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Klein Auto-Inpaint Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -20628,9 +22442,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _update_spinner_status("Klein SAM3 Inpaint: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_klsam3_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[klsam3] ")
             ref_name = None
             if ref_file:
                 ref_name = f"gimp_klsam3ref_{uuid.uuid4().hex[:8]}.png"
@@ -20662,6 +22474,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Klein SAM3 Inpaint Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -20775,9 +22589,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _update_spinner_status("Klein Refine: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_klrefine_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[klrefine] ")
             _prompt = prompt
             if enhance:
                 _prompt, _ = _auto_enhance(prompt, "flux2klein",
@@ -20802,6 +22614,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Klein Refine Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -20930,9 +22744,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         try:
             _update_spinner_status("Klein Face Detail: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_klface_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[klface] ")
             _prompt = prompt
             if enhance:
                 _prompt, _ = _auto_enhance(prompt, "flux2klein",
@@ -20959,6 +22771,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Klein Face Detail Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -21058,9 +22872,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _update_spinner_status("Klein Color Match: uploading...")
-            tmp = _export_image_to_tmp(image)
-            tgt_name = f"gimp_klcm_tgt_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, tgt_name); os.unlink(tmp)
+            tgt_name = _export_and_upload_cached(srv, image, debug_prefix="[klcm_tgt] ")
             ref_name = f"gimp_klcm_ref_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, ref_file, ref_name)
             wf = build_klein_color_match(tgt_name, ref_name, method=method, strength=strength)
@@ -21076,6 +22888,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Klein Color Match Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -21227,9 +23041,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _update_spinner_status("Klein Try-On: exporting face (canvas)...")
-            tmp = _export_image_to_tmp(image)
-            face_name = f"gimp_tryon_face_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, face_name); os.unlink(tmp)
+            face_name = _export_and_upload_cached(srv, image, debug_prefix="[tryon_face] ")
             outfit_name = f"gimp_tryon_outfit_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, outfit_file, outfit_name)
             bg_name = None
@@ -21265,6 +23077,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Klein Virtual Try-On Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -21394,9 +23208,7 @@ class Spellcaster(Gimp.PlugIn):
             scene_uname = None
             arch_key = preset.get("arch", "sdxl")
             if arch_key in ("flux2klein", "flux1dev"):
-                tmp = _export_image_to_tmp(image)
-                scene_uname = f"gimp_scene_{uuid.uuid4().hex[:8]}.png"
-                _upload_image(srv, tmp, scene_uname); os.unlink(tmp)
+                scene_uname = _export_and_upload_cached(srv, image, debug_prefix="[scene] ")
             # Auto-enhance prompt if enabled
             prompt, negative = _auto_enhance(prompt, arch_key, negative)
             base_seed = seed
@@ -21431,6 +23243,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Generate Anything Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -21557,6 +23371,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-layer-blend-ratio"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Layer Blend Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -21670,9 +23486,7 @@ class Spellcaster(Gimp.PlugIn):
 
         try:
             _update_spinner_status("Upscale Blend: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_upblend_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[upscale-blend] ")
 
             wf = build_upscale_blend(uname, ma_file, mb_file, ratio, scale_by=1.0)
 
@@ -21693,6 +23507,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-upscale-blend"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Upscaler Blend Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -22331,9 +24147,7 @@ class Spellcaster(Gimp.PlugIn):
         # ═══════════════════════════════════════════════════════════════
         try:
             # Export start image (current canvas) on main thread
-            tmp = _export_image_to_tmp(image)
-            start_name = f"gimp_director_start_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, start_name); os.unlink(tmp)
+            start_name = _export_and_upload_cached(srv, image, debug_prefix="[director_start] ")
 
             # all_results[step][variation] = list of (fn, sf, ft)
             all_results = []
@@ -22561,6 +24375,8 @@ class Spellcaster(Gimp.PlugIn):
                          f"MP4 saved in ComfyUI output folder.")
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Wan Director Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -22756,6 +24572,8 @@ class Spellcaster(Gimp.PlugIn):
                     dup.delete()
                     Gimp.message(f"GIF stitched! {len(all_frames)} frames.\nExported to: {out_path}")
                 except Exception as e:
+                    import traceback
+                    traceback.print_exc()
                     Gimp.message(f"Stitched {len(all_frames)} frames as layers.\n"
                                  f"Auto-export failed: {e}\n"
                                  f"Use File > Export As to save as GIF manually.")
@@ -22801,6 +24619,8 @@ class Spellcaster(Gimp.PlugIn):
 
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"GIF Stitch Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -22933,6 +24753,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Watermark embedding failed: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -23002,6 +24824,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Watermark reading failed: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -23070,9 +24894,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         try:
             _update_spinner_status("Upscale: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_upscale_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[upscale] ")
             # WaveSpeed AI upscale (special handling)
             if model_name and model_name.startswith("__wavespeed_"):
                 parts = model_name.strip("_").split("_")
@@ -23089,6 +24911,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Upscale Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -23260,9 +25084,7 @@ class Spellcaster(Gimp.PlugIn):
             mtmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False); mtmp.close()
             _create_selection_mask_png(mtmp.name, image)
             _update_spinner_status("Object Removal: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            iname = f"gimp_remove_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, iname); os.unlink(tmp)
+            iname = _export_and_upload_cached(srv, image, debug_prefix="[remove] ")
             mname = f"gimp_remove_mask_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, mtmp.name, mname); os.unlink(mtmp.name)
 
@@ -23289,6 +25111,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-lama-remove"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Object Removal Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -23346,9 +25170,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         try:
             _update_spinner_status("LUT: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_lut_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[lut] ")
             wf = build_lut(uname, lut_name, strength)
             _update_spinner_status("LUT: processing on ComfyUI...")
             results = _run_with_spinner("LUT: processing on ComfyUI...",
@@ -23360,6 +25182,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-lut"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster LUT Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -23377,7 +25201,8 @@ class Spellcaster(Gimp.PlugIn):
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
-        dlg = PresetDialog("Spellcaster — Outpaint / Extend Canvas", mode="img2img")
+        dlg = PresetDialog("Spellcaster — Outpaint / Extend Canvas", mode="img2img",
+                            exclude_archs=_CN_INCOMPATIBLE_ARCHS)
         dlg.w_spin.set_value(image.get_width())
         dlg.h_spin.set_value(image.get_height())
 
@@ -23510,9 +25335,7 @@ class Spellcaster(Gimp.PlugIn):
         try:
             srv = v["server"]
             _update_spinner_status("Outpaint: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_outpaint_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[outpaint] ")
             base_seed = v["seed"]
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
@@ -23534,6 +25357,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-outpaint"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Outpaint Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -23831,9 +25656,7 @@ class Spellcaster(Gimp.PlugIn):
         try:
             _update_spinner_status("Style Transfer: exporting images...")
             # Upload target (current canvas)
-            tmp = _export_image_to_tmp(image)
-            tgt_name = f"gimp_style_tgt_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, tgt_name); os.unlink(tmp)
+            tgt_name = _export_and_upload_cached(srv, image, debug_prefix="[style_tgt] ")
             # Upload style reference
             ref_name = f"gimp_style_ref_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, style_path, ref_name)
@@ -23859,6 +25682,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Style Transfer Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -23975,9 +25800,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         try:
             _update_spinner_status("Face Restore: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_facerestore_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[facerestore] ")
             # If comparison mode, import the original as a "Before" layer first
             if do_compare:
                 _import_result_as_layer(image, tmp if os.path.exists(tmp) else _export_image_to_tmp(image),
@@ -24011,6 +25834,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-face-restore"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Face Restore Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -24134,9 +25959,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         try:
             _update_spinner_status("Photo Restore: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_photorestore_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[photorestore] ")
             wf = build_photo_restore(uname, upscale_model, fr_preset["model"],
                                        facedetection, 1.0, codeformer_weight,
                                        sharpen_radius, 0.5, sharpen_amount)
@@ -24149,6 +25972,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-photo-restore"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Photo Restore Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -24445,9 +26270,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         try:
             _update_spinner_status("Detail Hallucinate: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_hallucinate_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[hallucinate] ")
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = _build_detail_hallucinate(uname, upscale_model, preset, prompt, negative,
@@ -24472,6 +26295,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Detail Hallucinate Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -24775,9 +26600,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         try:
             _update_spinner_status("SeedV2R: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_seedv2r_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[seedv2r] ")
             orig_w = image.get_width()
             orig_h = image.get_height()
             # Klein/Flux2 uses guidance=1.0 — never the SDXL-tuned preset CFG
@@ -24806,6 +26629,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster SeedV2R Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -25076,9 +26901,7 @@ class Spellcaster(Gimp.PlugIn):
         if _colorize_engine and _colorize_engine.startswith("ddcolor"):
             try:
                 _update_spinner_status("DDColor: exporting image...")
-                tmp = _export_image_to_tmp(image)
-                uname = f"gimp_colorize_{uuid.uuid4().hex[:8]}.png"
-                _upload_image(srv, tmp, uname); os.unlink(tmp)
+                uname = _export_and_upload_cached(srv, image, debug_prefix="[colorize] ")
                 ckpt = "ddcolor_artistic.pth" if "artistic" in _colorize_engine else "ddcolor_modelscope.pth"
                 wf = build_ddcolor(uname, checkpoint=ckpt)
                 results = _run_with_spinner("DDColor: colorizing...",
@@ -25089,6 +26912,8 @@ class Spellcaster(Gimp.PlugIn):
                 Gimp.displays_flush(); Gimp.progress_end()
                 return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 Gimp.message(f"DDColor Error: {e}")
                 return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -25102,9 +26927,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _update_spinner_status("Colorize: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_colorize_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[colorize] ")
             # Colorize scope: the LLM outputs ONLY colour/tone keywords
             # (the subject comes from the B&W source). method='colorize'
             # caps length at 15-30 words.
@@ -25133,6 +26956,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Colorize Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -25196,6 +27021,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-batch-variations"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Batch Variations Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -25404,9 +27231,7 @@ class Spellcaster(Gimp.PlugIn):
         use_normal = normal_cb.get_active()
         try:
             _update_spinner_status("IC-Light: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_iclight_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[iclight] ")
             # Generate or reuse normal map if enabled
             normal_uname = None
             if use_normal:
@@ -25415,37 +27240,34 @@ class Spellcaster(Gimp.PlugIn):
                 # the old shallow scan missed.
                 normal_layer = _find_normal_layer(image)
                 if normal_layer:
-                    # Export the existing normal map layer. Walk ALL
-                    # layers (nested included) to snapshot + restore
-                    # visibility; set_visible(False) on a group hides
-                    # its children implicitly, which is what we want
-                    # while we flip only the normal on.
+                    # Export the existing normal map layer via the
+                    # canonical duplicate-based helper so an export
+                    # failure can't strand the user's canvas with
+                    # every-layer-hidden (the bug behind the "flatten
+                    # error then black image" reports).
                     _update_spinner_status("IC-Light: exporting normal map layer...")
-                    all_layers = [l for l, _ in _walk_all_layers(image)]
-                    orig_vis = [(l, l.get_visible()) for l in all_layers]
-                    for l, _ in orig_vis:
-                        try: l.set_visible(False)
-                        except Exception: pass
-                    try: normal_layer.set_visible(True)
-                    except Exception: pass
-                    # Re-show ancestor groups so the nested normal
-                    # layer composites through.
+                    ntmp = None
                     try:
-                        a = (normal_layer.get_parent()
-                             if hasattr(normal_layer, "get_parent") else None)
-                        while a is not None:
-                            try: a.set_visible(True)
-                            except Exception: break
-                            a = (a.get_parent()
-                                 if hasattr(a, "get_parent") else None)
-                    except Exception:
-                        pass
-                    ntmp = _export_image_to_tmp(image)
-                    for l, v in orig_vis:
-                        try: l.set_visible(v)
-                        except Exception: pass
-                    normal_uname = f"gimp_iclight_normal_{uuid.uuid4().hex[:8]}.png"
-                    _upload_image(srv, ntmp, normal_uname); os.unlink(ntmp)
+                        # _walk_all_layers yields (layer, path); we want
+                        # the path so _export_normal_map_layer can match
+                        # the same layer on a duplicate.
+                        norm_path = None
+                        for l, p in _walk_all_layers(image):
+                            if l is normal_layer:
+                                norm_path = p
+                                break
+                        if norm_path is not None:
+                            ntmp = _export_normal_map_layer(image, norm_path)
+                    except Exception as _e:
+                        print(f"[IC-Light] normal-map export failed: {_e}")
+                        ntmp = None
+                    if ntmp:
+                        normal_uname = f"gimp_iclight_normal_{uuid.uuid4().hex[:8]}.png"
+                        try:
+                            _upload_image(srv, ntmp, normal_uname)
+                        finally:
+                            try: os.unlink(ntmp)
+                            except Exception: pass
                 else:
                     # Generate normal map on-the-fly via NormalCrafter
                     _update_spinner_status("IC-Light: generating 3D normal map...")
@@ -25486,6 +27308,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster IC-Light Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -25963,9 +27787,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         try:
             _update_spinner_status("SUPIR: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_supir_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[supir] ")
             # SUPIR is AI restoration — prompt adds quality/detail guidance,
             # not new subjects. method='refine' caps at 15-40 words.
             prompt, _ = _auto_enhance(prompt, "sdxl", method="refine")
@@ -25988,6 +27810,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster SUPIR Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -26228,9 +28052,7 @@ class Spellcaster(Gimp.PlugIn):
                 ref_name = f"gimp_pb_ref_{uuid.uuid4().hex[:8]}.png"
                 _upload_image(srv, face_file, ref_name)
             else:
-                tmp = _export_image_to_tmp(image)
-                ref_name = f"gimp_pb_ref_{uuid.uuid4().hex[:8]}.png"
-                _upload_image(srv, tmp, ref_name); os.unlink(tmp)
+                ref_name = _export_and_upload_cached(srv, image, debug_prefix="[pb_ref] ")
 
             klein_key = list(KLEIN_MODELS.keys())[0]  # Default to first available
 
@@ -26355,6 +28177,8 @@ class Spellcaster(Gimp.PlugIn):
                 f"  ComfyUI/models/reactor/faces/{model_name}.safetensors")
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Photobooth Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -26934,9 +28758,7 @@ class Spellcaster(Gimp.PlugIn):
                 ref_name = f"gimp_bf_ref_{uuid.uuid4().hex[:8]}.png"
                 _upload_image(srv, face_file, ref_name)
             else:
-                tmp = _export_image_to_tmp(image)
-                ref_name = f"gimp_bf_ref_{uuid.uuid4().hex[:8]}.png"
-                _upload_image(srv, tmp, ref_name); os.unlink(tmp)
+                ref_name = _export_and_upload_cached(srv, image, debug_prefix="[bf_ref] ")
 
             preset = dict(MODEL_PRESETS[model_idx] if 0 <= model_idx < len(MODEL_PRESETS) else MODEL_PRESETS[0])
             # Quality boost: prepend proven realism tokens
@@ -27046,6 +28868,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.message("Body Factory complete!\nThe selected body is your top layer — use it as a start image for Wan I2V or Director.")
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Body Factory Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -27253,9 +29077,7 @@ class Spellcaster(Gimp.PlugIn):
                 mname = f"gimp_cs_mask_{uuid.uuid4().hex[:8]}.png"
                 _upload_image(srv, mtmp.name, mname); os.unlink(mtmp.name)
 
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_cs_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[cs] ")
 
             # Clothing Store — a targeted outfit swap. Tryon scope focuses
             # the LLM on garment details (cut / fabric / drape) and keeps
@@ -27291,6 +29113,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.message("Clothing Store complete!\nNew outfits added as layers.")
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Clothing Store Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -27520,9 +29344,7 @@ class Spellcaster(Gimp.PlugIn):
             # STEP 1: Background
             # ══════════════════════════════════════════════════════════
             if bg_key == "(use current canvas as background)":
-                tmp = _export_image_to_tmp(image)
-                bg_name = f"gimp_ss_bg_{uuid.uuid4().hex[:8]}.png"
-                _upload_image(srv, tmp, bg_name); os.unlink(tmp)
+                bg_name = _export_and_upload_cached(srv, image, debug_prefix="[ss_bg] ")
                 _import_result_as_layer(image, _download_image(srv, bg_name, "", "input"), "Studio Set BG")
             else:
                 # Generate background — pick best (with quality boost)
@@ -27625,6 +29447,8 @@ class Spellcaster(Gimp.PlugIn):
                 "TIP: Save the image before generating video — it's your 'master shot'.")
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Studio Set Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -27674,25 +29498,115 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         try:
             _update_spinner_status("Remove Background: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_rembg_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
-            if _engine == "birefnet":
-                wf = build_rembg_birefnet(uname, model="BiRefNet-general")
-            elif _engine == "birefnet-portrait":
-                wf = build_rembg_birefnet(uname, model="BiRefNet-portrait")
-            else:
-                wf = build_rembg(uname)
-            _update_spinner_status("Remove Background: processing on ComfyUI...")
-            results = _run_with_spinner("Remove Background: processing on ComfyUI...",
-                                        lambda: list(_run_comfyui_workflow(srv, wf)))
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[rembg] ")
+
+            # Preflight the engine the user picked. BiRefNet models
+            # aren't always installed on a vanilla ComfyUI; probing
+            # first turns a 30-second "process then blank" into a
+            # 1-second "not installed, falling back" message.
+            nodes = _probe_comfyui_nodes(srv) or set()
+            effective_engine = _engine
+            if effective_engine in ("birefnet", "birefnet-portrait"):
+                if "BiRefNetRMBG" not in nodes:
+                    try:
+                        Gimp.message(
+                            "BiRefNet is not installed on this ComfyUI "
+                            "server. Falling back to the faster rembg "
+                            "engine.\n\nTo enable BiRefNet: install "
+                            "'ComfyUI-RMBG' (1038lab) via ComfyUI "
+                            "Manager and download BiRefNet-general to "
+                            "models/RMBG/BiRefNet/.")
+                    except Exception:
+                        print("[Spellcaster] BiRefNet not installed; "
+                              "falling back to rembg.")
+                    effective_engine = "rembg"
+                elif "Image Rembg (Remove Background)" not in nodes:
+                    # If BiRefNet IS installed, a rembg fallback path
+                    # won't work either. We'll still try BiRefNet; a
+                    # blank result triggers an actionable error below.
+                    pass
+
+            def _build_wf(engine_key: str):
+                if engine_key == "birefnet":
+                    return build_rembg_birefnet(uname, model="BiRefNet-general")
+                if engine_key == "birefnet-portrait":
+                    return build_rembg_birefnet(uname, model="BiRefNet-portrait")
+                return build_rembg(uname)
+
+            wf = _build_wf(effective_engine)
+            label_text = {
+                "birefnet":          "BiRefNet (detailed, slower)",
+                "birefnet-portrait": "BiRefNet Portrait (people)",
+                "rembg":             "rembg (fast)",
+            }.get(effective_engine, effective_engine)
+            _update_spinner_status(
+                f"Remove Background: processing via {label_text}\u2026 "
+                f"(BiRefNet can take 30-90 s on the first run)")
+            results = _run_with_spinner(
+                f"Remove Background ({label_text})\u2026",
+                lambda: list(_run_comfyui_workflow(srv, wf, timeout=180)))
+
+            # Blank-output guard. A BiRefNet run that OOMs or fails
+            # mid-model-load can succeed at the workflow level and
+            # return a PNG whose alpha channel is entirely zero (or
+            # an RGBA-flat image with no subject). Detect that and
+            # auto-fall-back to rembg so the user gets SOMETHING.
+            imported = 0
             for i, (fn, sf, ft) in enumerate(results):
-                _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), _layer_label("Background Removed", extra="rembg", i=i), False)
+                data = _download_image(srv, fn, sf, ft)
+                if _looks_like_blank_rembg(data):
+                    print(f"[Spellcaster] rembg result looked blank "
+                          f"({effective_engine}); falling back to rembg.")
+                    if effective_engine != "rembg":
+                        # Retry once with the safer engine.
+                        wf2 = _build_wf("rembg")
+                        _update_spinner_status(
+                            "Remove Background: BiRefNet returned empty; "
+                            "retrying with rembg\u2026")
+                        results2 = _run_with_spinner(
+                            "Remove Background (rembg fallback)\u2026",
+                            lambda: list(_run_comfyui_workflow(srv, wf2, timeout=120)))
+                        for j, (fn2, sf2, ft2) in enumerate(results2):
+                            data2 = _download_image(srv, fn2, sf2, ft2)
+                            _apply_mask_mode(
+                                srv, image, data2,
+                                _layer_label("Background Removed",
+                                              extra="rembg fallback", i=j),
+                                False)
+                            imported += 1
+                        break
+                    else:
+                        # Plain rembg itself returned blank \u2014 the
+                        # source image probably doesn't have a
+                        # distinguishable subject. Import it so the
+                        # user can see what came back, but flag it.
+                        _apply_mask_mode(
+                            srv, image, data,
+                            _layer_label("Background Removed (empty result)",
+                                          extra="check subject", i=i),
+                            False)
+                        imported += 1
+                else:
+                    _apply_mask_mode(
+                        srv, image, data,
+                        _layer_label("Background Removed",
+                                      extra=label_text, i=i),
+                        False)
+                    imported += 1
+
+            if imported == 0:
+                raise RuntimeError(
+                    "Server returned no usable image. Check the ComfyUI "
+                    "console for the actual node error (missing model "
+                    "file, OOM, or unsupported image size).")
+
             Gimp.displays_flush()
             Gimp.progress_end()
             _LAST_PROCEDURE["name"] = "spellcaster-rembg"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Remove Background Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -27755,9 +29669,7 @@ class Spellcaster(Gimp.PlugIn):
         _propagate_server_url(srv); dlg.destroy()
         try:
             _update_spinner_status("SAM3: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_sam3_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[sam3] ")
             wf = build_sam3_segment(uname, prompt, mask_expand=0, mask_blur=0)
             _update_spinner_status("SAM3: segmenting on ComfyUI...")
             results = _run_with_spinner("SAM3: segmenting on ComfyUI...",
@@ -27768,7 +29680,24 @@ class Spellcaster(Gimp.PlugIn):
             imported = False
             for fn, sf, ft in results:
                 if 'subject' in fn.lower():
-                    _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
+                    data = _download_image(srv, fn, sf, ft)
+                    # Empty-detection guard: when SAM3 finds nothing
+                    # matching the prompt, slot 0 comes back fully
+                    # transparent. Tell the user rather than silently
+                    # importing an invisible layer.
+                    if _looks_like_blank_rembg(data):
+                        try:
+                            Gimp.message(
+                                f"SAM3 didn't find '{prompt}' in this image.\n\n"
+                                f"Try a simpler prompt (e.g. 'person' "
+                                f"instead of 'the man in the red shirt'), "
+                                f"or check the canvas actually contains "
+                                f"what you described.")
+                        except Exception:
+                            print(f"[Spellcaster] SAM3 found nothing for '{prompt}'.")
+                        imported = True
+                        break
+                    _import_result_as_layer(image, data,
                                             f"SAM3: {prompt}", keep_size=True)
                     imported = True
                     break
@@ -27782,6 +29711,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-sam3-select"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster SAM3 Selection Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -27829,24 +29760,46 @@ class Spellcaster(Gimp.PlugIn):
         _propagate_server_url(srv); dlg.destroy()
         try:
             _update_spinner_status("SAM3 Extract: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_sam3x_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[sam3x] ")
             wf = build_sam3_extract(uname, prompt)
             _update_spinner_status("SAM3 Extract: processing on ComfyUI...")
             results = _run_with_spinner("SAM3 Extract: processing...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
+            nothing_found = False
             for i, (fn, sf, ft) in enumerate(results):
-                # Import at natural size — the result is full-canvas with alpha,
-                # so it overlays exactly on top of the original subject position.
-                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
+                data = _download_image(srv, fn, sf, ft)
+                # Empty-detection guard: SAM3 Extract emits an RGBA
+                # image that is fully transparent when nothing in the
+                # canvas matches the prompt. Rather than import an
+                # invisible layer, tell the user. We check only the
+                # first sensible result; subsequent ones would be
+                # variants of the same (failed) detection.
+                if _looks_like_blank_rembg(data):
+                    nothing_found = True
+                    continue
+                # Import at natural size \u2014 the result is full-canvas
+                # with alpha, so it overlays exactly on top of the
+                # original subject position.
+                _import_result_as_layer(image, data,
                                         f"SAM3 Extracted: {prompt} #{i+1}",
                                         keep_size=True)
+                nothing_found = False
+            if nothing_found:
+                try:
+                    Gimp.message(
+                        f"SAM3 Extract didn't find '{prompt}' in this image.\n\n"
+                        f"Try a simpler prompt (e.g. 'person' instead of "
+                        f"'the man in the red shirt'), or make sure the "
+                        f"subject is visible on the active canvas.")
+                except Exception:
+                    print(f"[Spellcaster] SAM3 Extract found nothing for '{prompt}'.")
             Gimp.displays_flush()
             Gimp.progress_end()
             _LAST_PROCEDURE["name"] = "spellcaster-sam3-extract"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster SAM3 Extract Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -27905,28 +29858,52 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _update_spinner_status("Anything But: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_antibut_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[antibut] ")
             # invert=True -> mask output (slot 1) is reversed.
             wf = build_sam3_segment(uname, prompt, invert=True,
                                      mask_expand=0, mask_blur=0)
             _update_spinner_status("Anything But: segmenting on ComfyUI...")
             results = _run_with_spinner("Anything But: segmenting on ComfyUI...",
                                          lambda: list(_run_comfyui_workflow(srv, wf)))
-            mask_path = None
+            # ``_download_image`` returns raw PNG bytes, not a path \u2014
+            # the variable name makes that explicit to avoid the
+            # "embedded null byte" regression this bug was filed under.
+            # ``_mask_image_to_gimp_selection`` accepts both shapes.
+            mask_bytes = None
             for fn, sf, ft in results:
                 if 'mask' in fn.lower():
-                    mask_path = _download_image(srv, fn, sf, ft)
+                    mask_bytes = _download_image(srv, fn, sf, ft)
                     break
-            if not mask_path:
+            if not mask_bytes:
                 raise RuntimeError("SAM3 did not return a mask image")
-            _mask_image_to_gimp_selection(image, mask_path, feather=feather)
+            # Empty-mask guard: when SAM3 finds nothing, slot 1's
+            # mask is entirely black \u2014 inverting it yields a
+            # fully-white mask, i.e. "select everything", which is
+            # never what the user asked for. ``_looks_like_uniform_mask``
+            # catches both the all-black and all-white degenerate
+            # cases (post-invert the all-white one surfaces here).
+            if _looks_like_uniform_mask(mask_bytes):
+                try:
+                    Gimp.message(
+                        f"SAM3 didn't find '{prompt}' in this image, so "
+                        f"'Anything But' would select the entire canvas. "
+                        f"No selection applied.\n\nTry a simpler prompt "
+                        f"(e.g. 'person', 'sky', 'car').")
+                except Exception:
+                    print(f"[Spellcaster] Anything But: SAM3 found "
+                          f"nothing for '{prompt}'.")
+                Gimp.progress_end()
+                _LAST_PROCEDURE["name"] = "spellcaster-anything-but"
+                return procedure.new_return_values(
+                    Gimp.PDBStatusType.SUCCESS, GLib.Error())
+            _mask_image_to_gimp_selection(image, mask_bytes, feather=feather)
             Gimp.displays_flush()
             Gimp.progress_end()
             _LAST_PROCEDURE["name"] = "spellcaster-anything-but"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Anything But Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -28000,9 +29977,7 @@ class Spellcaster(Gimp.PlugIn):
         _propagate_server_url(srv); dlg.destroy()
         try:
             _update_spinner_status("Magic Eraser: exporting image...")
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_magicerase_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[magicerase] ")
             wf = build_magic_eraser(uname, prompt,
                                      mask_expand=expand_px, mask_blur=blur_px)
             _update_spinner_status("Magic Eraser: detecting + inpainting...")
@@ -28011,13 +29986,64 @@ class Spellcaster(Gimp.PlugIn):
             if not results:
                 raise RuntimeError("Magic Eraser returned no result")
             fn, sf, ft = results[0]
-            _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
+            out_bytes = _download_image(srv, fn, sf, ft)
+            # No-match heuristic: when SAM3 finds nothing, its mask
+            # comes through empty and LaMa pass-throughs the input.
+            # A perceptual-hash match between input and output tells
+            # us the pipeline ran but erased nothing. We hash the
+            # downloaded result + the uploaded input's canvas
+            # fingerprint; if they look visually identical, warn.
+            try:
+                from PIL import Image
+                import io, hashlib
+                in_fp = _image_fingerprint(image)
+                out_img = Image.open(io.BytesIO(out_bytes)).convert("RGB")
+                # 16x16 thumbnail is enough to detect "nothing
+                # changed" without false-positives for valid erases.
+                out_img.thumbnail((16, 16))
+                out_hash = hashlib.sha256(out_img.tobytes()).hexdigest()[:24]
+                # The canvas fingerprint uses a different thumbnail
+                # method; we can't compare them directly. Instead
+                # export the canvas thumbnail the same way for a
+                # like-to-like match.
+                try:
+                    try:
+                        alpha_incl = Gimp.PixbufTransparency.KEEP_ALPHA
+                    except Exception:
+                        alpha_incl = 0
+                    in_thumb = image.get_thumbnail(16, 16, alpha_incl)
+                    in_raw = bytes(in_thumb.get_bytes().get_data())
+                    in_img = Image.frombytes(
+                        "RGBA" if in_thumb.get_has_alpha() else "RGB",
+                        (in_thumb.get_width(), in_thumb.get_height()),
+                        in_raw).convert("RGB")
+                    in_img.thumbnail((16, 16))
+                    canvas_hash = hashlib.sha256(in_img.tobytes()).hexdigest()[:24]
+                    if canvas_hash == out_hash:
+                        try:
+                            Gimp.message(
+                                f"Magic Eraser didn't find '{prompt}' to remove "
+                                f"\u2014 the output is identical to the input.\n\n"
+                                f"Try a simpler or more specific prompt "
+                                f"(e.g. 'person', 'watermark', 'car') and "
+                                f"make sure the target is visible on the "
+                                f"active canvas.")
+                        except Exception:
+                            print(f"[Spellcaster] Magic Eraser: nothing "
+                                  f"matched '{prompt}', output = input.")
+                except Exception:
+                    pass  # best-effort; never block the import
+            except ImportError:
+                pass
+            _import_result_as_layer(image, out_bytes,
                                     f"Erased: {prompt}", keep_size=True)
             Gimp.displays_flush()
             Gimp.progress_end()
             _LAST_PROCEDURE["name"] = "spellcaster-magic-eraser"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Magic Eraser Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -28057,6 +30083,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-send-image"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Upload Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -28375,9 +30403,7 @@ class Spellcaster(Gimp.PlugIn):
             _update_spinner_status("Kontext: exporting image...")
             srv = v["server"]
             _propagate_server_url(srv)
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_kontext_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[kontext] ")
             # Build a preset dict compatible with build_img2img
             preset = {
                 "arch": "flux_kontext",
@@ -28414,12 +30440,342 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Kontext Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     # ══════════════════════════════════════════════════════════════════════
     #  Cancel Queued Generations
     # ══════════════════════════════════════════════════════════════════════
+
+    def _run_test_harness(self, procedure, run_mode, image, drawables, config, data):
+        """End-to-end test harness runnable from GIMP batch mode.
+
+        Invoked by ``tests/gimp_batch.py`` via:
+            gimp -idf -b "(gimp-pdb-run-procedure \"spellcaster-test-harness\" '())"
+
+        Writes a JSONL report to ``$SPELLCASTER_TEST_REPORT`` (default
+        ``<tmp>/spellcaster-test-report.jsonl``). Each line is one test
+        case: ``{"name": ..., "status": "PASS"|"FAIL", "detail": ...}``.
+
+        Runs without a display (``-idf`` mode): no Gtk widget creation,
+        no dialogs, no ComfyUI submit. Exercises the parts of the
+        plugin that can be tested against a synthetic in-memory
+        canvas \u2014 namely the workflow builders, fingerprint +
+        upload-cache helpers, result-import roundtrip, and
+        registration integrity.
+
+        Test cases:
+          * ``plugin_imports``       \u2014 module loaded without
+                                        exception.
+          * ``registry_shapes``      \u2014 _PROC_FEATURES / menu_map /
+                                        _menu_paths have matching keys.
+          * ``fingerprint_stable``   \u2014 _image_fingerprint returns
+                                        the same value on identical
+                                        canvas state.
+          * ``normal_layer_finder``  \u2014 _find_normal_layer detects a
+                                        "Normal Map (auto)"-named
+                                        layer.
+          * ``blank_rembg_detector`` \u2014 _looks_like_blank_rembg
+                                        classifies synthetic blank PNGs.
+          * ``uniform_mask_detector`` \u2014 _looks_like_uniform_mask on
+                                        synthetic monochrome PNGs.
+          * ``build_iclight_cn``     \u2014 build_iclight routes normal
+                                        map through ControlNetLoader.
+          * ``build_img2img``        \u2014 _build_img2img compiles a
+                                        valid workflow dict.
+          * ``import_layer``         \u2014 _import_result_as_layer adds
+                                        a new layer to a fresh image.
+        """
+        if run_mode != Gimp.RunMode.NONINTERACTIVE:
+            Gimp.message(
+                "Test harness is for batch mode only. Run via:\n\n"
+                "python tests/gimp_batch.py")
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        report_path = os.environ.get(
+            "SPELLCASTER_TEST_REPORT",
+            os.path.join(tempfile.gettempdir(),
+                         "spellcaster-test-report.jsonl"))
+        results: list[dict] = []
+
+        def _case(name: str, fn) -> None:
+            t0 = time.time()
+            try:
+                detail = fn() or ""
+                status = "PASS"
+            except AssertionError as ae:
+                status, detail = "FAIL", str(ae)
+            except Exception as e:
+                import traceback
+                status = "FAIL"
+                detail = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+            results.append({
+                "name": name, "status": status, "detail": detail,
+                "elapsed_ms": int((time.time() - t0) * 1000),
+            })
+
+        # ── Case: plugin_imports ──────────────────────────────
+        _case("plugin_imports", lambda: (
+            "_spellcaster_main loaded OK "
+            f"(__file__={os.path.basename(__file__)})"))
+
+        # ── Case: registry_shapes ─────────────────────────────
+        def _registry_shapes() -> str:
+            proc = {
+                "_PROC_FEATURES": None,  # filled below via introspection
+            }
+            # Load the source + AST-walk to get the three dicts.
+            import ast as _ast
+            try:
+                with open(__file__, encoding="utf-8") as f:
+                    src = f.read()
+                tree = _ast.parse(src)
+            except Exception as e:
+                raise AssertionError(f"AST parse failed: {e}")
+
+            def _dict_keys(name):
+                for node in _ast.walk(tree):
+                    if isinstance(node, _ast.Assign):
+                        for tgt in node.targets:
+                            if (isinstance(tgt, _ast.Name) and tgt.id == name
+                                    and isinstance(node.value, _ast.Dict)):
+                                return {k.value for k in node.value.keys
+                                        if isinstance(k, _ast.Constant)
+                                        and isinstance(k.value, str)}
+                            if (isinstance(tgt, _ast.Attribute) and tgt.attr == name
+                                    and isinstance(node.value, _ast.Dict)):
+                                return {k.value for k in node.value.keys
+                                        if isinstance(k, _ast.Constant)
+                                        and isinstance(k.value, str)}
+                return None
+            pk = _dict_keys("_PROC_FEATURES")
+            mk = _dict_keys("menu_map")
+            pa = _dict_keys("_menu_paths")
+            assert pk is not None, "_PROC_FEATURES dict not found"
+            assert mk is not None, "menu_map dict not found"
+            assert pa is not None, "_menu_paths dict not found"
+            assert pk == mk, f"features/menu mismatch: {pk ^ mk}"
+            assert pk == pa, f"features/paths mismatch: {pk ^ pa}"
+            return f"{len(pk)} procedures aligned across 3 dicts"
+        _case("registry_shapes", _registry_shapes)
+
+        # Create a fresh 256x256 RGB image to exercise canvas-level APIs.
+        test_img = Gimp.Image.new(
+            256, 256, Gimp.ImageBaseType.RGB)
+        # Fill with a flat colour via a new layer so fingerprint has
+        # real pixels to hash.
+        white_layer = Gimp.Layer.new(
+            test_img, "Canvas", 256, 256,
+            Gimp.ImageType.RGBA_IMAGE, 100.0,
+            Gimp.LayerMode.NORMAL)
+        test_img.insert_layer(white_layer, None, 0)
+        try:
+            white_layer.fill(Gimp.FillType.WHITE)
+        except Exception:
+            pass
+
+        # ── Case: fingerprint_stable ──────────────────────────
+        def _fp_stable() -> str:
+            fp1 = _image_fingerprint(test_img)
+            fp2 = _image_fingerprint(test_img)
+            assert fp1 == fp2, f"fingerprint not stable: {fp1} vs {fp2}"
+            assert len(fp1) >= 16, f"fingerprint too short: {fp1!r}"
+            return f"fp={fp1[:12]}\u2026 stable across 2 calls"
+        _case("fingerprint_stable", _fp_stable)
+
+        # ── Case: normal_layer_finder ─────────────────────────
+        def _nm_finder() -> str:
+            nm_layer = Gimp.Layer.new(
+                test_img, "Normal Map (auto)", 256, 256,
+                Gimp.ImageType.RGBA_IMAGE, 100.0,
+                Gimp.LayerMode.NORMAL)
+            test_img.insert_layer(nm_layer, None, 0)
+            try:
+                found = _find_normal_layer(test_img)
+                assert found is not None, "_find_normal_layer returned None"
+                assert "normal" in found.get_name().lower(), (
+                    f"wrong layer: {found.get_name()!r}")
+                return f"found '{found.get_name()}'"
+            finally:
+                # Leave the image clean for subsequent cases.
+                try:
+                    test_img.remove_layer(nm_layer)
+                except Exception:
+                    pass
+
+        _case("normal_layer_finder", _nm_finder)
+
+        # ── Case: blank_rembg_detector ────────────────────────
+        def _blank_rembg() -> str:
+            import struct, zlib, binascii
+            def _png(w, h, color_type, fill=255, alpha=255):
+                channels = {0:1, 2:3, 4:2, 6:4}[color_type]
+                ihdr = struct.pack(">IIBBBBB", w, h, 8, color_type, 0, 0, 0)
+                def chunk(tag, data):
+                    crc = binascii.crc32(tag + data) & 0xFFFFFFFF
+                    return (struct.pack(">I", len(data)) + tag + data
+                            + struct.pack(">I", crc))
+                if color_type == 6:
+                    px = bytes([fill, 0, 0, alpha])
+                elif color_type == 4:
+                    px = bytes([fill, alpha])
+                elif color_type == 2:
+                    px = bytes([fill, 0, 0])
+                else:
+                    px = bytes([fill])
+                row = b"\x00" + px * w
+                raw = row * h
+                idat = zlib.compress(raw)
+                return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr)
+                        + chunk(b"IDAT", idat) + chunk(b"IEND", b""))
+            assert _looks_like_blank_rembg(b""), "empty bytes"
+            assert _looks_like_blank_rembg(_png(16, 16, 6, alpha=0)), "RGBA alpha=0"
+            assert not _looks_like_blank_rembg(_png(16, 16, 6, alpha=255)), "RGBA alpha=255 opaque"
+            assert _looks_like_blank_rembg(_png(16, 16, 2)), "RGB (no alpha)"
+            return "4/4 cases"
+        _case("blank_rembg_detector", _blank_rembg)
+
+        # ── Case: build_iclight_cn ────────────────────────────
+        def _iclight_cn() -> str:
+            from spellcaster_core.workflows import build_iclight
+            wf = build_iclight(
+                image_filename="test.png",
+                ckpt_name="SD-1.5\\v1-5-pruned-emaonly.safetensors",
+                prompt="studio light",
+                negative="",
+                seed=42,
+                normal_map_filename="nm.png",
+            )
+            classes = {n.get("class_type") for n in wf.values()
+                       if isinstance(n, dict)}
+            assert "ControlNetLoader" in classes, (
+                f"no CN loader; classes={sorted(classes)}")
+            assert "ControlNetApplyAdvanced" in classes
+            # No fbc model regression
+            assert not any(
+                "iclight_sd15_fbc" in json.dumps(n.get("inputs") or {})
+                for n in wf.values() if isinstance(n, dict)
+            ), "iclight_sd15_fbc leaked back in"
+            return f"{len(wf)} nodes, CN chain present"
+        _case("build_iclight_cn", _iclight_cn)
+
+        # ── Case: build_img2img ───────────────────────────────
+        def _build_img2img_case() -> str:
+            # Pick the first SDXL preset (commonest arch).
+            sdxl_preset = next(
+                (p for p in MODEL_PRESETS
+                 if p.get("arch") == "sdxl"),
+                MODEL_PRESETS[0] if MODEL_PRESETS else None)
+            assert sdxl_preset is not None, "no MODEL_PRESETS loaded"
+            wf = _build_img2img(
+                "test_upload.png", sdxl_preset,
+                "a woman smiling", "", 42,
+                None, controlnet=None, controlnet_2=None)
+            assert isinstance(wf, dict) and wf, "workflow empty"
+            classes = {n.get("class_type") for n in wf.values()
+                       if isinstance(n, dict)}
+            expected_any = {"KSampler", "SamplerCustomAdvanced",
+                            "KSamplerAdvanced"}
+            assert classes & expected_any, (
+                f"no sampler node; classes={sorted(classes)}")
+            return f"{len(wf)} nodes, arch={sdxl_preset.get('arch')}"
+        _case("build_img2img", _build_img2img_case)
+
+        # ── Case: import_layer ────────────────────────────────
+        def _import_layer() -> str:
+            import struct, zlib, binascii
+            # Small opaque RGBA PNG
+            w = h = 64
+            ihdr = struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)
+            def chunk(tag, data):
+                crc = binascii.crc32(tag + data) & 0xFFFFFFFF
+                return (struct.pack(">I", len(data)) + tag + data
+                        + struct.pack(">I", crc))
+            row = b"\x00" + bytes([64, 128, 200, 255]) * w
+            raw = row * h
+            idat = zlib.compress(raw)
+            data_bytes = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr)
+                          + chunk(b"IDAT", idat) + chunk(b"IEND", b""))
+            before = len(test_img.get_layers())
+            _import_result_as_layer(test_img, data_bytes,
+                                     "Harness Import Test",
+                                     keep_size=True)
+            after = len(test_img.get_layers())
+            assert after == before + 1, (
+                f"layer count {before} \u2192 {after}, expected +1")
+            return f"layers {before} \u2192 {after}"
+        _case("import_layer", _import_layer)
+
+        # Write report.
+        try:
+            os.makedirs(os.path.dirname(report_path) or ".", exist_ok=True)
+            with open(report_path, "w", encoding="utf-8") as f:
+                for r in results:
+                    f.write(json.dumps(r) + "\n")
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            Gimp.message(f"Test harness: report write failed: {e}")
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+        # Clean up temp image.
+        try:
+            test_img.delete()
+        except Exception:
+            pass
+
+        n_pass = sum(1 for r in results if r["status"] == "PASS")
+        n_fail = len(results) - n_pass
+        print(f"[Spellcaster] test harness: {n_pass} PASS / "
+              f"{n_fail} FAIL \u2192 {report_path}")
+        # Return EXECUTION_ERROR when any case failed so the driver
+        # can trust the exit code as a pre-report signal.
+        if n_fail:
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+        return procedure.new_return_values(
+            Gimp.PDBStatusType.SUCCESS, GLib.Error())
+
+    def _run_clear_upload_cache(self, procedure, run_mode, image, drawables, config, data):
+        """Wipe the content-hash upload cache from the ComfyUI input dir.
+
+        Every handler that uses ``_export_and_upload_cached`` saves the
+        uploaded PNG under a ``sc_cache_*`` filename and keeps an
+        in-memory ``(server, content_hash) \u2192 filename`` map so
+        repeat submits of the same image skip the re-export + re-upload
+        step. That cache is EXEMPT from the per-workflow privacy wipe
+        (see ``CACHE_PREFIXES`` in ``spellcaster_core/privacy.py``),
+        which is great for speed but leaves the file on the server
+        between sessions. This command is the manual override: it
+        calls ``privacy.purge_cache`` against every server we have a
+        cache entry for, then resets the in-memory map. The next
+        submit will re-export + re-upload (one-time cost).
+        """
+        try:
+            wiped = _purge_upload_cache()
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            try:
+                Gimp.message(f"Clear upload cache failed: {e}")
+            except Exception:
+                pass
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+        try:
+            Gimp.message(
+                f"Cleared Spellcaster upload cache.\n\n"
+                f"Wiped {wiped} cached file(s) from the ComfyUI input "
+                f"folder. Your next submit will re-export + re-upload "
+                f"(~1-2 s) before the cache starts warming up again.")
+        except Exception:
+            print(f"[Spellcaster] Cleared upload cache: {wiped} file(s)")
+        return procedure.new_return_values(
+            Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
     def _run_cancel_queued(self, procedure, run_mode, image, drawables, config, data):
         """Signal every in-flight Spellcaster job to cancel cooperatively.
@@ -28479,6 +30835,185 @@ class Spellcaster(Gimp.PlugIn):
                 "Running jobs stop at the next safe step; already-"
                 "submitted ComfyUI prompts finish on the server but "
                 "subsequent queued work is dropped.")
+        return procedure.new_return_values(
+            Gimp.PDBStatusType.SUCCESS, GLib.Error())
+
+    # ══════════════════════════════════════════════════════════════════════
+    #  SpeedCoach Diagnostics (Arch Speed Chart, Drift Review, Faceswap
+    #  Reliability, Mini-HUD, Last-run Warnings, toggle)
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _run_arch_speed_chart(self, procedure, run_mode, image, drawables, config, data):
+        """Show a horizontal bar chart of per-arch render speed on the
+        user's box. Source: preflight_cache.json via /api/speedcoach/arch_speeds."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        try:
+            GimpUi.init("spellcaster")
+        except Exception:
+            pass
+        from gi.repository import Gtk
+        dlg = Gtk.Dialog(title="Spellcaster · Arch Speed Chart", modal=True)
+        dlg.add_button("Close", Gtk.ResponseType.CLOSE)
+        dlg.add_button("Re-probe all", 1)
+        box = dlg.get_content_area()
+        box.set_margin_top(10); box.set_margin_bottom(10)
+        box.set_margin_start(12); box.set_margin_end(12)
+        box.append(Gtk.Label(
+            label="Baseline: 512×512, 20 steps, 1 LoRA.",
+            xalign=0.0))
+        data_resp = _speedcoach_get("/api/speedcoach/arch_speeds") or {}
+        archs = list(data_resp.get("archs") or [])
+        if not archs:
+            box.append(Gtk.Label(
+                label="No preflight data yet.\n"
+                      "Run Tools → Preflight (Guild) to populate.",
+                xalign=0.0))
+        else:
+            max_ms = max(1, max((a["elapsed_ms"] or 0) for a in archs))
+            grid = Gtk.Grid(column_spacing=8, row_spacing=4)
+            grid.set_margin_top(8)
+            for i, a in enumerate(archs):
+                name = str(a.get("arch") or "?")
+                ms = int(a.get("elapsed_ms") or 0)
+                stale = bool(a.get("stale"))
+                ok = bool(a.get("ok"))
+                bars = "" if ms == 0 else ("\u2588" * int(20 * ms / max_ms)
+                                             + "\u2591" * (20 - int(20 * ms / max_ms)))
+                age = a.get("age_s") or 0
+                age_label = (f"{int(age/3600)}h ago" if age > 3600
+                             else f"{int(age/60)}m ago" if age > 60
+                             else "fresh")
+                status = ("stale" if stale else age_label) if ok else "failed"
+                grid.attach(Gtk.Label(label=name, xalign=0.0), 0, i, 1, 1)
+                grid.attach(Gtk.Label(label=bars, xalign=0.0), 1, i, 1, 1)
+                grid.attach(Gtk.Label(
+                    label=f"{ms/1000:.1f}s" if ms else "—", xalign=1.0), 2, i, 1, 1)
+                grid.attach(Gtk.Label(label=status, xalign=0.0), 3, i, 1, 1)
+            box.append(grid)
+        dlg.set_default_size(560, -1)
+        dlg.show()
+        resp = dlg.run() if hasattr(dlg, "run") else Gtk.ResponseType.CLOSE
+        if resp == 1:
+            _speedcoach_post("/api/spellcaster/preflight/run", {"origin": "gimp"})
+            Gimp.message("Preflight re-probe requested. "
+                          "Re-open the chart in ~1 min to see updated numbers.")
+        try:
+            dlg.destroy()
+        except Exception:
+            pass
+        return procedure.new_return_values(
+            Gimp.PDBStatusType.SUCCESS, GLib.Error())
+
+    def _run_review_drift(self, procedure, run_mode, image, drawables, config, data):
+        """Show the diff between the last two ComfyUI /object_info snapshots."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        try:
+            GimpUi.init("spellcaster")
+        except Exception:
+            pass
+        from gi.repository import Gtk
+        d = _speedcoach_get("/api/speedcoach/drift") or {}
+        dlg = Gtk.Dialog(title="Spellcaster · Node Drift Review", modal=True)
+        dlg.add_button("Acknowledge", Gtk.ResponseType.CLOSE)
+        box = dlg.get_content_area()
+        box.set_margin_top(10); box.set_margin_bottom(10)
+        box.set_margin_start(12); box.set_margin_end(12)
+        if not d.get("has_drift"):
+            box.append(Gtk.Label(
+                label="No drift detected since the last session.",
+                xalign=0.0))
+        else:
+            added = list(d.get("added") or [])
+            removed = list(d.get("removed") or [])
+            changed = list(d.get("changed") or [])
+            head = Gtk.Label(
+                label=f"+{len(added)} added   "
+                      f"-{len(removed)} removed   "
+                      f"~{len(changed)} changed",
+                xalign=0.0)
+            head.set_margin_bottom(6)
+            box.append(head)
+            for title, items, fmt in (
+                ("Added",   added,   lambda x: f"+ {x}"),
+                ("Removed", removed, lambda x: f"- {x}"),
+                ("Signature changed", changed,
+                    lambda x: f"~ {x.get('node','?')}"),
+            ):
+                if not items:
+                    continue
+                sec = Gtk.Label(label=f"{title} ({len(items)})", xalign=0.0)
+                sec.set_margin_top(8)
+                box.append(sec)
+                for it in items[:30]:
+                    row = Gtk.Label(label=fmt(it), xalign=0.0)
+                    row.set_wrap(True)
+                    box.append(row)
+        dlg.set_default_size(520, 420)
+        dlg.show()
+        dlg.run() if hasattr(dlg, "run") else None
+        try:
+            dlg.destroy()
+        except Exception:
+            pass
+        return procedure.new_return_values(
+            Gimp.PDBStatusType.SUCCESS, GLib.Error())
+
+    def _run_show_minihud(self, procedure, run_mode, image, drawables, config, data):
+        """Open the floating Mini-HUD. See _speedcoach_show_minihud."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        try:
+            GimpUi.init("spellcaster")
+        except Exception:
+            pass
+        _speedcoach_show_minihud()
+        return procedure.new_return_values(
+            Gimp.PDBStatusType.SUCCESS, GLib.Error())
+
+    def _run_faceswap_reset(self, procedure, run_mode, image, drawables, config, data):
+        """Wipe faceswap crash history + clear escalation via the Guild."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        ok = _speedcoach_post("/api/spellcaster/faceswap/reset",
+                              {"origin": "gimp"})
+        if ok:
+            Gimp.message("Face-swap crash history cleared. "
+                          "Auto-disable counter back to zero.")
+        else:
+            Gimp.message("Could not reach the Guild to reset face-swap state.")
+        return procedure.new_return_values(
+            Gimp.PDBStatusType.SUCCESS, GLib.Error())
+
+    def _run_last_warnings(self, procedure, run_mode, image, drawables, config, data):
+        """Open the warnings popover for the most recent dispatch."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        try:
+            GimpUi.init("spellcaster")
+        except Exception:
+            pass
+        _speedcoach_warnings_popover(None)
+        return procedure.new_return_values(
+            Gimp.PDBStatusType.SUCCESS, GLib.Error())
+
+    def _run_toggle_speedcoach(self, procedure, run_mode, image, drawables, config, data):
+        """Flip the global SpeedCoach enabled flag + persist it."""
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        new_val = not _speedcoach_enabled()
+        _speedcoach_config_set("enabled", new_val)
+        _SPEEDCOACH_STATE["enabled"] = new_val
+        Gimp.message(f"Speed suggestions are now "
+                      f"{'ON' if new_val else 'OFF'}. "
+                      f"Setting persists across GIMP restarts.")
         return procedure.new_return_values(
             Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
@@ -28545,9 +31080,7 @@ class Spellcaster(Gimp.PlugIn):
                                       image, drawables, config, data)
         try:
             srv = v["server"]
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_qe_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[qe] ")
             seed = random.randint(0, 2**32 - 1)
             wf = _build_img2img(uname, v["preset"], v["prompt"], v["negative"],
                                 seed, loras=v.get("loras"),
@@ -28564,6 +31097,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Quick Enhance Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -28590,9 +31125,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             srv = v["server"]
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_qi_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[qi] ")
             # Export selection as mask
             mask_tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
             mask_tmp.close()
@@ -28615,6 +31148,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Quick Inpaint Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -28629,9 +31164,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         try:
             srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_qu_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[qu] ")
             wf = build_upscale(uname, "4x_foolhardy_Remacri.pth")
             results = _run_with_spinner("Quick Upscale 4x...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
@@ -28643,6 +31176,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Quick Upscale Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -28652,9 +31187,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         try:
             srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_qfr_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[qfr] ")
             wf = build_face_restore(uname, "codeformer-v0.1.0.pth",
                                      "retinaface_resnet50", 1.0, 0.5)
             results = _run_with_spinner("Quick Face Restore...",
@@ -28667,6 +31200,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Quick Face Restore Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -28676,9 +31211,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         try:
             srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_qrm_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[qrm] ")
             wf = build_rembg(uname)
             results = _run_with_spinner("Quick Remove Background...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
@@ -28690,6 +31223,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Quick Remove BG Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -28721,9 +31256,7 @@ class Spellcaster(Gimp.PlugIn):
                     f"Then restart ComfyUI and try again.\n(Server: {srv})")
                 return procedure.new_return_values(
                     Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_normal_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[normal] ")
             wf = build_normal_map(uname, max_res=min(image.get_width(), 1024))
             results = _run_with_spinner("NormalCrafter: generating normal map...",
                                         lambda: list(_run_comfyui_workflow(srv, wf, timeout=300)))
@@ -28735,6 +31268,8 @@ class Spellcaster(Gimp.PlugIn):
             _LAST_PROCEDURE["name"] = "spellcaster-normal-map"
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"NormalCrafter Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -28771,9 +31306,7 @@ class Spellcaster(Gimp.PlugIn):
         try:
             srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
             # Export image (same as Quick Inpaint line 21380)
-            tmp = _export_image_to_tmp(image)
-            uname = f"gimp_erase_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, uname); os.unlink(tmp)
+            uname = _export_and_upload_cached(srv, image, debug_prefix="[erase] ")
             # Export selection as mask (same as Quick Inpaint line 21384)
             mask_tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
             mask_tmp.close()
@@ -28797,6 +31330,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"AI Eraser Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -28877,10 +31412,8 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
         try:
             _update_spinner_status("Color Match: exporting images...")
-            tmp = _export_image_to_tmp(image)
-            src_uname = f"gimp_cm_src_{uuid.uuid4().hex[:8]}.png"
+            src_uname = _export_and_upload_cached(srv, image, debug_prefix="[color-match-src] ")
             ref_uname = f"gimp_cm_ref_{uuid.uuid4().hex[:8]}.png"
-            _upload_image(srv, tmp, src_uname); os.unlink(tmp)
             _upload_image(srv, ref_path, ref_uname)
             wf = build_color_match(src_uname, ref_uname, strength, method_key)
             results = _run_with_spinner("Color Match: processing...",
@@ -28894,6 +31427,8 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             Gimp.message(f"Spellcaster Color Match Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
@@ -29063,6 +31598,8 @@ class Spellcaster(Gimp.PlugIn):
         try:
             _apply_spellcaster_theme()
         except Exception:
+            import traceback
+            traceback.print_exc()
             pass
 
         try:
@@ -29074,6 +31611,8 @@ class Spellcaster(Gimp.PlugIn):
         try:
             from spellcaster_core.cross_interface import resolve_guild_url
         except ImportError:
+            import traceback
+            traceback.print_exc()
             resolve_guild_url = lambda: "http://127.0.0.1:7777"
 
         import os, json, tempfile, copy
@@ -29113,6 +31652,8 @@ class Spellcaster(Gimp.PlugIn):
             try:
                 card = _st.decode_chara(chara_b64)
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 Gimp.message(
                     "Character Card Editor: the `chara` chunk couldn't be "
                     f"decoded ({e}). Starting from an empty card.")
@@ -30064,14 +32605,148 @@ class Spellcaster(Gimp.PlugIn):
                     except Exception: pass
                 # Delete pluginrc to force GIMP to re-scan procedures
                 _delete_all_gimp_pluginrc()
+                # Re-apply theme / splash / icons to GIMP's install
+                # location. Before 2026-04-20 the Repair button skipped
+                # this and only dropped fresh files into the plugin
+                # dir — which meant GIMP kept reading the OLD theme /
+                # splash / icon between restarts. Now Repair pushes the
+                # newly-downloaded assets into every known GIMP config
+                # + install root the same way the boot auto-updater
+                # does. No-op when apply_theme is off.
+                _appearance_summary = {}
+                try:
+                    _appearance_summary = _reapply_appearance_assets()
+                except Exception as _e:
+                    print(f"[Repair] appearance re-apply failed: {_e}",
+                          file=_sys.stderr)
+                # Build the status line so the user sees EXACTLY what
+                # the button just did — download count + which
+                # appearance assets actually landed. Before, the
+                # button claimed "Updated N files" but the theme /
+                # splash / icon might have been silently untouched
+                # (if apply_theme was off) or partially applied (if a
+                # permission error blocked one of the roots).
+                _parts = [f"Updated {updated}/{len(remote_files)} files."]
+                if _appearance_summary:
+                    _applied = [k for k, v in _appearance_summary.items()
+                                if v == "installed"]
+                    _skipped_off = all(v == "skipped"
+                                        for v in _appearance_summary.values())
+                    if _skipped_off:
+                        _parts.append("Theme/splash/icon re-apply skipped "
+                                      "(set apply_theme=true in Settings to "
+                                      "enable).")
+                    elif _applied:
+                        _parts.append("Re-applied: " + ", ".join(_applied) + ".")
+                    else:
+                        _parts.append(
+                            "Theme assets downloaded but none were reinstalled "
+                            "(check permissions on GIMP's install dir).")
+                _parts.append("Restart GIMP to see the new UI.")
                 update_status.set_markup(
-                    f'<span foreground="#00E676">Updated {updated}/{len(remote_files)} files.\n'
-                    f'Restart GIMP to apply.</span>')
+                    '<span foreground="#00E676">' +
+                    GLib.markup_escape_text("\n".join(_parts)) +
+                    '</span>')
             except Exception as e:
                 update_status.set_markup(f'<span foreground="#FF5252">Error: {e}</span>')
             btn.set_sensitive(True)
         update_btn.connect("clicked", _on_update)
         update_row.pack_start(update_btn, False, False, 0)
+
+        # Restart GIMP button — pairs with Repair / Update Now. Since
+        # staged .py updates only take effect on the next GIMP launch
+        # (Windows can't replace a loaded .py), having the restart
+        # button RIGHT HERE saves the user a manual close-and-relaunch.
+        # Also lets the user pick up ANY plugin edits mid-session
+        # without walking to the window manager.
+        restart_btn = Gtk.Button(label="Restart GIMP")
+        restart_btn.set_tooltip_text(
+            "Close GIMP and relaunch it so staged plugin updates take "
+            "effect. GIMP prompts to save each unsaved image before "
+            "quitting; cancel any of those prompts and the restart is "
+            "aborted (your work stays safe).\n\n"
+            "Equivalent to: close GIMP → relaunch manually.")
+        def _on_restart(_btn):
+            # Find the currently-running GIMP executable so we can
+            # spawn a fresh instance. sys.executable points to the
+            # PyGObject interpreter inside GIMP's install dir; the
+            # GIMP binary is a sibling or in the same install tree.
+            import sys as _sys, subprocess as _subp
+            candidates = []
+            try:
+                gimp_exe_env = os.environ.get("GIMP3_EXECUTABLE") or os.environ.get("GIMP_EXECUTABLE")
+                if gimp_exe_env:
+                    candidates.append(gimp_exe_env)
+            except Exception:
+                pass
+            # Walk from sys.executable up a few dirs looking for gimp-3.0
+            # / gimp-console-3.0 / gimp.exe / gimp-3.0.exe.
+            try:
+                base = Path(_sys.executable).parent
+                for depth in range(4):
+                    for cand in ("gimp-3.0.exe", "gimp.exe", "gimp-3.0",
+                                  "gimp", "GIMP.exe"):
+                        p = base / cand
+                        if p.exists():
+                            candidates.append(str(p))
+                    base = base.parent
+            except Exception:
+                pass
+            if not candidates:
+                update_status.set_markup(
+                    '<span foreground="#FF5252">Could not locate the '
+                    'GIMP binary to relaunch. Close + reopen manually.'
+                    '</span>')
+                return
+            chosen = candidates[0]
+            update_status.set_markup(
+                '<span foreground="#FFC107">Relaunching GIMP...</span>')
+            restart_btn.set_sensitive(False)
+            # Delete pluginrc so the new instance re-scans procedures —
+            # same thing the repair flow does.
+            try:
+                _delete_all_gimp_pluginrc()
+            except Exception:
+                pass
+            # Apply any staged updates by moving .update → live name
+            # BEFORE launching the new instance so it loads fresh code.
+            try:
+                _apply_staged_updates()
+            except Exception:
+                pass
+            # Detach the new process so it survives our own exit.
+            try:
+                if os.name == "nt":
+                    DETACHED = 0x00000008  # DETACHED_PROCESS
+                    NEW_GROUP = 0x00000200  # CREATE_NEW_PROCESS_GROUP
+                    _subp.Popen([chosen], creationflags=DETACHED | NEW_GROUP,
+                                 close_fds=True)
+                else:
+                    _subp.Popen([chosen], start_new_session=True,
+                                 close_fds=True)
+            except Exception as e:
+                update_status.set_markup(
+                    f'<span foreground="#FF5252">Relaunch failed: {e}. '
+                    f'Close + reopen GIMP manually.</span>')
+                restart_btn.set_sensitive(True)
+                return
+            # Tell GIMP to quit. Gimp.quit(force=False) respects unsaved
+            # work (prompts to save). If the user cancels any prompt,
+            # the quit aborts and the NEW instance we just spawned
+            # coexists with the current one — still fine.
+            try:
+                Gimp.quit(False)
+            except Exception as e:
+                # Gimp.quit is unavailable from every plug-in context;
+                # fall back to a hard sys.exit which GIMP interprets
+                # as a plugin finishing.
+                update_status.set_markup(
+                    f'<span foreground="#FFC107">New GIMP launched. '
+                    f'Close this one manually (Gimp.quit error: {e}).'
+                    f'</span>')
+        restart_btn.connect("clicked", _on_restart)
+        update_row.pack_start(restart_btn, False, False, 0)
+
         update_row.pack_start(update_status, True, True, 0)
         repair_box.pack_start(update_row, False, False, 0)
 

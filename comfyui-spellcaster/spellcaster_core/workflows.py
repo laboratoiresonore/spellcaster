@@ -2515,6 +2515,8 @@ def build_iclight(image_filename, ckpt_name, prompt, negative, seed,
                    multiplier=0.18, steps=20, cfg=2.0,
                    sampler="euler", scheduler="normal", loras=None,
                    normal_map_filename=None,
+                   normal_map_cn_name="control_v11p_sd15_normalbae.pth",
+                   normal_map_cn_strength=0.85,
                    sam3_prompt=None, sam3_invert=False,
                    sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
     """IC-Light relighting: adjust light sources and illumination.
@@ -2595,6 +2597,23 @@ def build_iclight(image_filename, ckpt_name, prompt, negative, seed,
       - IC-Light only works with SD1.5 models
       - Uses CheckpointLoaderSimple to load SD-1.5 checkpoint
       - ICLightConditioning.foreground expects LATENT, not IMAGE
+      - Normal-map handling: always FC (foreground-only) IC-Light model
+        + a real normal-map ControlNet (``control_v11p_sd15_normalbae``
+        by default). Previously we used the FBC variant with the
+        normal-map latent in ``opt_background`` \u2014 which the model
+        interprets as a compositing backdrop, so the pastel RGB leaked
+        through as colour. Fixed 2026-04-20.
+
+    Args (added 2026-04-20):
+        normal_map_cn_name (str): ControlNet filename used when a
+            normal map is supplied. Default
+            ``"control_v11p_sd15_normalbae.pth"``. Pass ``""`` /
+            ``None`` to keep the normal map disabled even if
+            ``normal_map_filename`` is set (useful during debugging).
+        normal_map_cn_strength (float): ControlNet strength for the
+            normal-map guidance (default 0.85). Lower values give the
+            light-prompt more freedom; higher values preserve surface
+            geometry more strictly.
     """
     nf = NodeFactory()
     img_id = nf.load_image(image_filename, node_id="1")
@@ -2612,11 +2631,18 @@ def build_iclight(image_filename, ckpt_name, prompt, negative, seed,
     # VAEEncode foreground to latent (ICLightConditioning expects LATENT)
     latent_id = nf.vae_encode([img_id, 0], vae_ref, node_id="10")
 
-    # Load and apply IC-Light UNET
-    # FBC model required when using opt_background (normal map / background latent)
-    # FC model for foreground-only relighting (no background guidance)
-    iclight_model = ("SD-1.5\\iclight_sd15_fbc.safetensors" if normal_map_filename
-                     else "SD-1.5\\iclight_sd15_fc.safetensors")
+    # Load and apply IC-Light UNET.
+    # HISTORICAL BUG (fixed 2026-04-20): when a normal map was supplied
+    # we used to switch to iclight_sd15_fbc.safetensors and pass the
+    # normal-map latent to ICLightConditioning.opt_background. The FBC
+    # model treats opt_background as a *compositing* target ("paint the
+    # foreground into this scene"), so the pastel RGB of the normal
+    # map leaked through as colour \u2014 exactly the symptom users
+    # reported ("normal map used as colour template"). We now always
+    # use the FC (foreground-only) model and route the normal map
+    # through a proper normal-map ControlNet (``control_v11p_sd15_normalbae``)
+    # so the RGB is interpreted as surface geometry.
+    iclight_model = "SD-1.5\\iclight_sd15_fc.safetensors"
     iclight_id = nf.load_and_apply_iclight_unet(
         model_ref, iclight_model, node_id="3",
     )
@@ -2625,17 +2651,32 @@ def build_iclight(image_filename, ckpt_name, prompt, negative, seed,
     pos_id = nf.clip_encode(clip_ref, prompt, node_id="4")
     neg_id = nf.clip_encode(clip_ref, negative, node_id="5")
 
-    # Optional normal map → encode as background latent for surface guidance
-    normal_bg_ref = None
-    if normal_map_filename:
-        normal_img_id = nf.load_image(normal_map_filename, node_id="50")
-        normal_latent_id = nf.vae_encode([normal_img_id, 0], vae_ref, node_id="51")
-        normal_bg_ref = [normal_latent_id, 0]
+    # Normal-map ControlNet path (surface-aware 3D guidance).
+    # When a normal map is provided, load the normal-bae ControlNet and
+    # apply it to the text conditioning BEFORE it enters ICLightConditioning.
+    # The CN encoder interprets the normal map's RGB as surface normals
+    # (R=X, G=Y, B=Z) rather than as a colour reference.
+    pos_ref: list = [pos_id, 0]
+    neg_ref: list = [neg_id, 0]
+    if normal_map_filename and normal_map_cn_name:
+        nm_img_id = nf.load_image(normal_map_filename, node_id="50")
+        cn_id = nf.controlnet_loader(normal_map_cn_name, node_id="51")
+        cna_id = nf.controlnet_apply_advanced(
+            pos_ref, neg_ref, [cn_id, 0], [nm_img_id, 0],
+            strength=float(normal_map_cn_strength),
+            start_percent=0.0, end_percent=1.0,
+            node_id="52",
+        )
+        pos_ref = [cna_id, 0]
+        neg_ref = [cna_id, 1]
 
-    # ICLightConditioning (with optional normal map as background geometry)
+    # ICLightConditioning \u2014 FC mode only, opt_background always None.
+    # Surface guidance flows through the ControlNet above when a normal
+    # map was supplied; ICLightConditioning itself only handles light
+    # direction / intensity from the text prompt.
     cond_id = nf.iclight_conditioning(
-        [pos_id, 0], [neg_id, 0], vae_ref, [latent_id, 0],
-        multiplier=multiplier, opt_background_ref=normal_bg_ref,
+        pos_ref, neg_ref, vae_ref, [latent_id, 0],
+        multiplier=multiplier, opt_background_ref=None,
         node_id="6",
     )
 

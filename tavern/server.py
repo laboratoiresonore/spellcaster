@@ -1839,6 +1839,81 @@ def _server_init(comfy_url=None):
         set_cache_dir(_STATE_DIR)
     except Exception:
         pass
+    # SpeedCoach aggregator reads dispatch_log.jsonl, preflight_cache.json,
+    # faceswap_state.json, ratings.jsonl, videoshot_log.jsonl,
+    # object_info_last.json — all under _STATE_DIR. Also point it at
+    # our mailbox for SLA stats.
+    try:
+        from spellcaster_core import speedcoach as _speedcoach_mod
+        _speedcoach_mod.set_state_dir(_STATE_DIR)
+        try:
+            from spellcaster_core import mailbox as _mailbox_mod
+            def _mailbox_stats_cb():
+                try:
+                    per = _mailbox_mod.all_mailboxes() or {}
+                    if not isinstance(per, dict) or not per:
+                        return {}
+                    now = time.time()
+                    pending = 0
+                    delivered = 0
+                    consumed = 0
+                    dropped = 0
+                    oldest = 0.0
+                    for s in per.values():
+                        if not isinstance(s, dict):
+                            continue
+                        pending += int(s.get("pending") or 0)
+                        delivered += int(s.get("delivered") or 0)
+                        consumed += int(s.get("consumed") or 0)
+                        dropped += int(s.get("dropped") or 0)
+                        ts = float(s.get("last_delivery_ts") or 0.0)
+                        if ts and (not oldest or ts < oldest):
+                            oldest = ts
+                    oldest_s = int(max(0.0, now - oldest)) if oldest else 0
+                    return {
+                        "pending": pending,
+                        "delivered": delivered,
+                        "consumed": consumed,
+                        "dropped": dropped,
+                        "oldest_s": oldest_s,
+                        "interfaces": len(per),
+                        "per_interface": per,
+                    }
+                except Exception:
+                    return {}
+            _speedcoach_mod.set_mailbox_callback(_mailbox_stats_cb)
+        except Exception:
+            pass
+    except Exception:
+        pass
+    # Probe ComfyUI's /object_info once at boot so drift detection has
+    # a current snapshot to diff future sessions against.
+    def _boot_drift_probe():
+        try:
+            import urllib.request, urllib.error
+            req = urllib.request.Request(
+                (COMFYUI_URL or "").rstrip("/") + "/object_info")
+            with urllib.request.urlopen(req, timeout=10.0) as resp:
+                if resp.status != 200:
+                    return
+                info = json.loads(resp.read().decode("utf-8", errors="replace"))
+            if not isinstance(info, dict):
+                return
+            # Signature string per node = sorted(required_input_names)
+            nodes: dict[str, str] = {}
+            for name, meta in info.items():
+                try:
+                    req_inputs = ((meta or {}).get("input") or {}).get("required") or {}
+                    sig = ",".join(sorted(req_inputs.keys()))
+                    nodes[str(name)] = sig
+                except Exception:
+                    nodes[str(name)] = ""
+            from spellcaster_core import speedcoach as _sc
+            _sc.record_object_info_snapshot(nodes)
+        except Exception:
+            pass
+    threading.Thread(target=_boot_drift_probe, daemon=True,
+                      name="drift-probe").start()
     threading.Thread(
         target=_build_lora_registry, args=(url,), daemon=True
     ).start()
@@ -4921,6 +4996,183 @@ def _spellcaster_lora_knowledge_get(name: str, use_network: bool = True) -> tupl
     return (200, {"knowledge": k.to_dict()})
 
 
+def _spellcaster_lora_migrations_get() -> tuple[int, dict]:
+    """GET /api/spellcaster/lora/migrations — list orphaned registry
+    entries awaiting user resolution (ambiguous candidate set or no
+    candidate found). Auto-migrations have already been applied by
+    ``_build_lora_registry`` and are NOT returned here."""
+    return (200, {"pending": list(_LORA_MIGRATIONS_PENDING)})
+
+
+def _spellcaster_lora_migrations_resolve(old_name: str, new_name: str,
+                                         action: str = "apply") -> tuple[int, dict]:
+    """POST /api/spellcaster/lora/migrations/resolve — the user has
+    chosen a replacement for a pending orphan.
+
+    Body: ``{old_name, new_name, action}`` where ``action`` is one of:
+      - ``apply``  \u2014 rewrite all references from old_name to new_name
+      - ``dismiss`` \u2014 drop the orphan from the pending list without
+                      rewriting anything (the registry entry remains so
+                      the user can still delete it manually)
+      - ``delete``  \u2014 remove the orphan's registry entry outright
+
+    Returns ``{ok, summary}`` on success; ``{error}`` on failure with a
+    400 status so the frontend can show the message verbatim.
+    """
+    global _LORA_MIGRATIONS_PENDING
+    if not old_name:
+        return (400, {"error": "old_name is required"})
+    if action not in ("apply", "dismiss", "delete"):
+        return (400, {"error": f"unknown action: {action!r}"})
+
+    # Drop from pending either way \u2014 the user has made a decision.
+    _LORA_MIGRATIONS_PENDING = [m for m in _LORA_MIGRATIONS_PENDING
+                                if m.get("old_name") != old_name]
+
+    if action == "dismiss":
+        return (200, {"ok": True, "action": "dismiss"})
+    if action == "delete":
+        if old_name in _LORA_REGISTRY:
+            _LORA_REGISTRY.pop(old_name, None)
+            _save_lora_registry()
+        return (200, {"ok": True, "action": "delete"})
+
+    # apply — require new_name, validate it exists among current LoRAs
+    if not new_name:
+        return (400, {"error": "new_name is required for apply"})
+    current = _fetch_all_loras_from_comfyui(COMFYUI_URL) if COMFYUI_URL else []
+    if current and new_name not in current:
+        return (400, {"error": f"{new_name!r} is not on the ComfyUI server"})
+    try:
+        detail = _migrate_lora_references(old_name, new_name)
+    except Exception as e:
+        # Per the user ask: when auto-mapping fails, surface a clear
+        # error so they know to resolve manually.
+        return (400, {"error": f"migration failed: {e}",
+                      "hint": ("Edit the LoRA registry manually, or delete "
+                               "the orphan entry and let the new LoRA "
+                               "register fresh.")})
+    return (200, {"ok": True, "action": "apply", "summary": detail})
+
+
+def _speedcoach_route(path: str, params: dict) -> tuple[int, dict]:
+    """Read-side dispatcher for /api/speedcoach/*. All sub-paths are
+    pure read-aggregations; SpeedCoach never writes from a GET."""
+    try:
+        from spellcaster_core import speedcoach as sc
+    except Exception as e:
+        return (500, {"error": f"speedcoach unavailable: {e}"})
+    # Normalize querystring values — parse_qs returns list[str].
+    def _p(name, default=None):
+        v = params.get(name, [None])[0]
+        return v if v is not None else default
+
+    try:
+        if path == "/api/speedcoach/arch_speeds":
+            return (200, {"archs": sc.arch_speed_chart()})
+        if path == "/api/speedcoach/warnings_last":
+            return (200, sc.warnings_last_run().to_dict())
+        if path == "/api/speedcoach/drift":
+            return (200, sc.drift_since_last_session().to_dict())
+        if path == "/api/speedcoach/faceswap_reliability":
+            return (200, sc.faceswap_reliability())
+        if path == "/api/speedcoach/mailbox_stats":
+            return (200, sc.mailbox_stats() or {})
+        if path == "/api/speedcoach/lora_impact":
+            return (200, {"rows": sc.lora_impact()})
+        if path == "/api/speedcoach/queue_heatmap":
+            return (200, {"matrix": sc.queue_heatmap()})
+        if path == "/api/speedcoach/speed_leaderboard":
+            limit = int(_p("limit", 10))
+            return (200, {"rows": sc.speed_leaderboard(limit)})
+        if path == "/api/speedcoach/cost_vs_quality":
+            return (200, {"rows": sc.cost_vs_quality()})
+        if path == "/api/speedcoach/videoshot":
+            shot_id = _p("shot_id")
+            return (200, sc.videoshot_frame_times(shot_id))
+        if path == "/api/speedcoach/wizard_stats":
+            wid = _p("id") or _p("char_id") or ""
+            if not wid:
+                return (400, {"error": "id required"})
+            return (200, sc.wizard_profile_stats(wid))
+        if path == "/api/speedcoach/predicted":
+            arch = _p("arch") or ""
+            handler = _p("handler") or ""
+            steps = _p("steps")
+            upscale = _p("upscale")
+            lhash = _p("lora_stack_hash") or ""
+            spec = {"arch": arch, "handler": handler,
+                    "steps": int(steps) if steps and steps.isdigit() else None,
+                    "upscale": int(upscale) if upscale and upscale.isdigit() else None,
+                    "lora_stack_hash": lhash or None}
+            med, p95, n = sc.predicted_elapsed(spec)
+            return (200, {"median": med, "p95": p95, "sample_size": n})
+        if path == "/api/speedcoach/suggest":
+            arch = _p("arch") or ""
+            handler = _p("handler") or ""
+            steps = _p("steps")
+            upscale = _p("upscale")
+            lhash = _p("lora_stack_hash") or ""
+            spec = {"arch": arch, "handler": handler,
+                    "steps": int(steps) if steps and steps.isdigit() else None,
+                    "upscale": int(upscale) if upscale and upscale.isdigit() else None,
+                    "lora_stack_hash": lhash or None}
+            suggs = sc.suggest_alternatives(spec)
+            return (200, {"suggestions": [s.to_dict() for s in suggs]})
+        if path == "/api/speedcoach/estimate":
+            # Pre-dispatch ETA baseline. Adjusted for current queue
+            # depth + VRAM pressure + cold-model flag when supplied.
+            try:
+                from spellcaster_core import estimate as _est
+            except Exception as _e:
+                return (500, {"error": f"estimate module unavailable: {_e}"})
+            arch = _p("arch") or ""
+            handler = _p("handler") or ""
+            steps = _p("steps")
+            upscale = _p("upscale")
+            lhash = _p("lora_stack_hash") or ""
+            width = _p("width")
+            height = _p("height")
+            queue_ahead = _p("queue_ahead")
+            vram_pct = _p("vram_pct")
+            cold = _p("cold_model")
+            spec = {"arch": arch, "handler": handler,
+                    "steps": int(steps) if steps and steps.isdigit() else None,
+                    "upscale": int(upscale) if upscale and upscale.isdigit() else None,
+                    "lora_stack_hash": lhash or None,
+                    "width":  int(width)  if width  and width.isdigit()  else None,
+                    "height": int(height) if height and height.isdigit() else None}
+            pre = _est.estimate_pre_dispatch(
+                spec,
+                queue_ahead=int(queue_ahead) if queue_ahead and queue_ahead.isdigit() else 0,
+                vram_pct=float(vram_pct) if vram_pct else 0.0,
+                cold_model=(str(cold or "").strip().lower()
+                             in ("1", "true", "yes")),
+            )
+            pre["handler_key"] = handler
+            return (200, pre)
+        if path == "/api/speedcoach/insights":
+            # Composite bundle for the Insights tab — one round trip.
+            try:
+                drift = sc.drift_since_last_session().to_dict()
+            except Exception:
+                drift = {"has_drift": False}
+            return (200, {
+                "speed_leaderboard":  sc.speed_leaderboard(10),
+                "cost_vs_quality":    sc.cost_vs_quality(),
+                "lora_impact":        sc.lora_impact()[:15],
+                "queue_heatmap":      sc.queue_heatmap(),
+                "arch_speeds":        sc.arch_speed_chart(),
+                "faceswap":           sc.faceswap_reliability(),
+                "mailbox":            sc.mailbox_stats() or {},
+                "drift":              drift,
+                "warnings_last":      sc.warnings_last_run().to_dict(),
+            })
+    except Exception as e:
+        return (500, {"error": f"speedcoach {path}: {e}"})
+    return (404, {"error": f"unknown speedcoach path: {path}"})
+
+
 def _spellcaster_faceswap_health() -> tuple[int, dict]:
     """GET /api/spellcaster/faceswap/health — probe + full guard
     state.
@@ -5528,6 +5780,25 @@ def _spellcaster_lora_calibrate_auto_start(
         models = discover_models(COMFYUI_URL)
     except Exception as e:
         return (502, {"error": f"ComfyUI not reachable: {e}"})
+
+    # Pre-calibration metadata top-up. Any target LoRA still missing
+    # Civitai data at this point gets a synchronous lookup so the
+    # calibration recipe has proper trigger words / recommended weight /
+    # example prompts. We run it inline (bounded by the number of
+    # unknown targets) rather than re-using the background worker so
+    # the calibration job starts with full data instead of "maybe in a
+    # minute". Civitai rate-limit is respected via the per-call sleep.
+    if use_network:
+        missing = [t["name"] for t in final_targets
+                   if not _LORA_REGISTRY.get(t["name"], {}).get("civitai_trigger_words")
+                   and not _LORA_REGISTRY.get(t["name"], {}).get("civitai_url")]
+        if missing:
+            print(f"  [LoRA calibrate] prefetching Civitai metadata for "
+                  f"{len(missing)} target(s)...")
+            try:
+                _civitai_metadata_worker(missing)
+            except Exception as e:
+                print(f"  [LoRA calibrate] metadata prefetch failed: {e}")
 
     # Sanitise sweep_strengths: list of floats in (0, 1.5].
     sw: Optional[list[float]] = None
@@ -6157,6 +6428,414 @@ def _save_lora_registry():
             pass
 
 
+# ═══════════════════════════════════════════════════════════════════════
+#  LoRA version migration — auto-detect upgrades, rewrite all references
+# ═══════════════════════════════════════════════════════════════════════
+# When a user replaces MyLora_v1.safetensors with MyLora_v2.safetensors on
+# the ComfyUI server, every piece of state keyed on the old filename must
+# move: the registry entry (with user-confirmed triggers / strengths /
+# failure history), calibration recipes, user presets, wizard toggles,
+# session state. We do this in three stages:
+#   1. `_find_replacement_lora` scores every present LoRA against an
+#      orphaned registry entry and returns the best match + confidence.
+#   2. `_migrate_lora_references` rewrites every state file the app owns,
+#      backing up `lora_registry.json` to a timestamped sidecar first.
+#   3. Orphans that couldn't be mapped surface via
+#      `/api/spellcaster/lora/migrations` so the user can resolve them.
+#
+# Pending user-facing migrations (low-confidence or multiple candidates)
+# live here until the user confirms or dismisses through the LoRA manager
+# UI. Each entry: {old_name, candidates: [{name, confidence, reasons}]}.
+_LORA_MIGRATIONS_PENDING: list[dict] = []
+
+# Regexes used to normalise LoRA filenames into a stable "stem" that
+# survives version / epoch / rank / quantisation bumps.
+_LORA_VERSION_SUFFIXES = [
+    re.compile(r'[._-]?v\d+(?:\.\d+)*[a-z]?$', re.IGNORECASE),
+    re.compile(r'[._-]?version\d+$', re.IGNORECASE),
+    re.compile(r'[._-]?epoch[-_]?\d+$', re.IGNORECASE),
+    re.compile(r'[._-]?e\d{2,}$', re.IGNORECASE),
+    re.compile(r'[._-]?step\d+$', re.IGNORECASE),
+    re.compile(r'[._-]?rank[-_]?\d+$', re.IGNORECASE),
+    re.compile(r'[._-]?r\d{2,}$', re.IGNORECASE),
+    re.compile(r'[._-]?fp\d+(?:_scaled)?$', re.IGNORECASE),
+    re.compile(r'[._-]?bf\d+$', re.IGNORECASE),
+    re.compile(r'[._-]?q\d+(?:_\d*)?(?:_[kKmMsS])?$', re.IGNORECASE),
+    re.compile(r'[._-]?000\d{3}$'),
+    re.compile(r'[._-]?[a-f0-9]{8,40}$', re.IGNORECASE),
+    re.compile(r'[._-]?\d{4,6}$'),
+    re.compile(r'[._-]?final$', re.IGNORECASE),
+    re.compile(r'[._-]?new$', re.IGNORECASE),
+]
+
+
+def _lora_stem(name: str) -> str:
+    """Normalise a LoRA filename down to its canonical 'stem'.
+
+    Strips directory, extension, and trailing version/epoch/rank/
+    quant/hash suffixes until nothing more can come off. Case-
+    insensitive so ``MyLora_V2.safetensors`` and ``mylora_v3.safetensors``
+    yield the same stem ``mylora``.
+    """
+    s = str(name or "").replace("\\", "/").rsplit("/", 1)[-1]
+    if "." in s:
+        s = s.rsplit(".", 1)[0]
+    s = s.strip()
+    # Peel suffixes repeatedly — authors stack e.g. `_fp8_scaled_rank128`.
+    changed = True
+    while changed:
+        changed = False
+        for pat in _LORA_VERSION_SUFFIXES:
+            new = pat.sub("", s).strip("._- ")
+            if new and new != s:
+                s = new
+                changed = True
+    return s.lower()
+
+
+def _score_migration_candidate(old_name: str, old_entry: dict,
+                               new_name: str, new_entry: dict | None) -> tuple[float, list[str]]:
+    """Score how likely `new_name` is an upgrade of `old_name`.
+
+    Returns ``(confidence, reasons)`` where confidence is a float in [0, 1]
+    and reasons is a list of human-readable signals for the UI.
+    Confidence cutoffs:
+      - ``>= 0.9`` auto-apply (e.g. identical stem + identical Civitai model_id)
+      - ``>= 0.5`` present for user confirmation
+      - ``<  0.5`` ignore (too noisy to guess)
+    """
+    reasons: list[str] = []
+    score = 0.0
+
+    old_stem = _lora_stem(old_name)
+    new_stem = _lora_stem(new_name)
+    if old_stem and new_stem and old_stem == new_stem:
+        score += 0.7
+        reasons.append(f"same filename stem '{old_stem}'")
+    elif old_stem and new_stem and (old_stem in new_stem or new_stem in old_stem):
+        # Partial overlap handles cases like `stylev1` → `style_V2_upgraded`.
+        overlap = min(len(old_stem), len(new_stem)) / max(len(old_stem), len(new_stem))
+        if overlap >= 0.6:
+            score += 0.4 * overlap
+            reasons.append(f"partial stem overlap ({int(overlap * 100)}%)")
+
+    # Same Civitai model_id (different version) is the strongest signal
+    # — it's literally "same model, newer checkpoint".
+    old_mid = old_entry.get("civitai_model_id")
+    new_mid = (new_entry or {}).get("civitai_model_id")
+    if old_mid and new_mid and old_mid == new_mid:
+        score += 0.5
+        reasons.append(f"same Civitai model id {old_mid}")
+
+    # Same directory usually means "author's folder" — reinforces the match.
+    old_dir = old_name.replace("\\", "/").rsplit("/", 1)[0] if "/" in old_name.replace("\\", "/") else ""
+    new_dir = new_name.replace("\\", "/").rsplit("/", 1)[0] if "/" in new_name.replace("\\", "/") else ""
+    if old_dir and new_dir and old_dir.lower() == new_dir.lower():
+        score += 0.1
+        reasons.append("same folder")
+
+    # Arch alignment — the migration would make no sense if the new LoRA
+    # is for a different model family.
+    old_archs = set(old_entry.get("archs") or [])
+    new_archs = set((new_entry or {}).get("archs") or [])
+    if old_archs and new_archs and old_archs & new_archs:
+        score += 0.1
+        reasons.append(f"arch overlap {sorted(old_archs & new_archs)}")
+    elif old_archs and new_archs and not (old_archs & new_archs):
+        # Arch mismatch — downweight heavily; users shouldn't see this.
+        score -= 0.5
+        reasons.append("arch mismatch (reduced)")
+
+    return min(score, 1.0), reasons
+
+
+def _find_replacement_lora(old_name: str, old_entry: dict,
+                           present_names: list[str]) -> tuple[str | None, float, list[str], list[dict]]:
+    """Find the best replacement among currently-present LoRAs.
+
+    Returns ``(best_name, best_confidence, best_reasons, all_candidates)``.
+    ``best_name`` is None when no candidate clears the 0.5 threshold.
+    ``all_candidates`` is every candidate with confidence >= 0.5, sorted
+    best-first — used to present ambiguous choices to the user.
+    """
+    if not old_name or not present_names:
+        return None, 0.0, [], []
+    all_c: list[dict] = []
+    for new_name in present_names:
+        if new_name == old_name:
+            continue
+        new_entry = _LORA_REGISTRY.get(new_name) or {}
+        score, reasons = _score_migration_candidate(
+            old_name, old_entry, new_name, new_entry)
+        if score >= 0.5:
+            all_c.append({"name": new_name, "confidence": round(score, 2),
+                          "reasons": reasons})
+    all_c.sort(key=lambda c: c["confidence"], reverse=True)
+    if not all_c:
+        return None, 0.0, [], []
+    top = all_c[0]
+    return top["name"], top["confidence"], top["reasons"], all_c
+
+
+def _backup_lora_registry() -> str | None:
+    """Copy ``lora_registry.json`` to a timestamped sidecar.
+
+    Called before any migration rewrite so the user has a known-good
+    fallback if our heuristic got a match wrong. Returns the backup
+    path (for logging) or None if the source didn't exist.
+    """
+    if not os.path.exists(_LORA_REGISTRY_PATH):
+        return None
+    ts = time.strftime("%Y%m%d-%H%M%S")
+    backup = f"{_LORA_REGISTRY_PATH}.pre-migration-{ts}.bak"
+    try:
+        import shutil
+        shutil.copy2(_LORA_REGISTRY_PATH, backup)
+        return backup
+    except Exception as e:
+        print(f"  [LoRA migrate] backup failed: {e}")
+        return None
+
+
+def _rewrite_json_lora_refs(path: str, old_name: str, new_name: str) -> int:
+    """Rewrite every LoRA filename reference inside a JSON file.
+
+    Walks the file's top-level structure recursively, rewriting:
+      - dict keys that equal ``old_name`` (renames the key)
+      - string values that equal ``old_name``
+      - the ``"name"`` field of dicts inside any ``"loras"`` list
+    Returns the count of replacements. Writes atomically through a
+    temp file so a crash mid-write never corrupts user state.
+    """
+    if not os.path.exists(path):
+        return 0
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception as e:
+        print(f"  [LoRA migrate] cannot read {path}: {e}")
+        return 0
+
+    replacements = 0
+
+    def walk(obj):
+        nonlocal replacements
+        if isinstance(obj, dict):
+            # First, rename a matching key if present.
+            if old_name in obj:
+                obj[new_name] = obj.pop(old_name)
+                replacements += 1
+            for k, v in list(obj.items()):
+                if isinstance(v, str) and v == old_name:
+                    obj[k] = new_name
+                    replacements += 1
+                else:
+                    walk(v)
+        elif isinstance(obj, list):
+            for i, item in enumerate(obj):
+                if isinstance(item, str) and item == old_name:
+                    obj[i] = new_name
+                    replacements += 1
+                elif isinstance(item, list) and item and isinstance(item[0], str) and item[0] == old_name:
+                    # ``[name, model_str, clip_str]`` tuple format.
+                    item[0] = new_name
+                    replacements += 1
+                else:
+                    walk(item)
+
+    walk(data)
+    if replacements == 0:
+        return 0
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except Exception as e:
+        print(f"  [LoRA migrate] write failed for {path}: {e}")
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+        return 0
+    return replacements
+
+
+def _migrate_lora_references(old_name: str, new_name: str,
+                             *, extra_paths: list[str] | None = None) -> dict:
+    """Rewrite every reference from ``old_name`` to ``new_name``.
+
+    Touches (atomically, each file):
+      - ``_LORA_REGISTRY`` (in-memory + ``lora_registry.json``)
+      - every JSON file in ``_STATE_DIR`` (wizard state, scaffold overrides…)
+      - the LoRA calibration SFW/NSFW stores via their canonical API
+      - the GIMP plugin's ``user_presets.json`` and ``session_state.json``
+        if callers pass their paths via ``extra_paths``
+    Returns a summary dict ``{registry, files, total_replacements}``.
+    Raises ``ValueError`` if ``old_name == new_name`` or either is empty.
+    """
+    if not old_name or not new_name:
+        raise ValueError("old_name and new_name are both required")
+    if old_name == new_name:
+        raise ValueError("old_name and new_name are identical")
+
+    backup_path = _backup_lora_registry()
+    summary = {
+        "old_name": old_name,
+        "new_name": new_name,
+        "backup": backup_path,
+        "registry_migrated": False,
+        "files": [],
+        "total_replacements": 0,
+    }
+
+    # 1. The in-memory registry — merge old entry into new entry, keeping
+    #    user-confirmed fields from the old record. The new entry (if any)
+    #    was freshly discovered and carries only bare metadata.
+    if old_name in _LORA_REGISTRY:
+        old_entry = _LORA_REGISTRY.pop(old_name)
+        existing = _LORA_REGISTRY.get(new_name) or {}
+        # User-confirmed fields survive; newly-discovered Civitai fields
+        # on `existing` take precedence for raw metadata.
+        merged = dict(existing)
+        for key in ("archs", "purpose", "tags", "user_desc", "trigger_words",
+                    "default_strength", "approved", "user_keywords",
+                    "user_description", "user_default_strength",
+                    "user_default_subject", "failures", "preferred_for_purpose",
+                    "purpose_group"):
+            if old_entry.get(key) not in (None, "", [], 0, False) and not merged.get(key):
+                merged[key] = old_entry[key]
+        # Never drop the source provenance trail — tag it.
+        merged["migrated_from"] = old_name
+        merged["migrated_at"] = time.time()
+        _LORA_REGISTRY[new_name] = merged
+        summary["registry_migrated"] = True
+        _save_lora_registry()
+
+    # Also rewrite the interrogated flag if it was ever keyed by LoRA
+    # name (it isn't today — it's keyed by wizard_id — but guard future
+    # refactors cheaply).
+    if old_name in _LORA_INTERROGATED:
+        _LORA_INTERROGATED.discard(old_name)
+        _LORA_INTERROGATED.add(new_name)
+
+    # 2. Walk every JSON in _STATE_DIR rewriting string + tuple refs.
+    paths_to_rewrite = []
+    try:
+        for fn in os.listdir(_STATE_DIR):
+            if fn.endswith(".json"):
+                p = os.path.join(_STATE_DIR, fn)
+                if p != _LORA_REGISTRY_PATH:
+                    paths_to_rewrite.append(p)
+    except Exception:
+        pass
+    if extra_paths:
+        paths_to_rewrite.extend(extra_paths)
+
+    for p in paths_to_rewrite:
+        n = _rewrite_json_lora_refs(p, old_name, new_name)
+        if n:
+            summary["files"].append({"path": p, "replacements": n})
+            summary["total_replacements"] += n
+
+    # 3. Calibration store — has its own canonical read/write API.
+    try:
+        from spellcaster_core.lora_calibration_store import (
+            load_merged, write_calibration, sfw_path, nsfw_path)
+        merged = load_merged()
+        if old_name in merged:
+            entry = merged[old_name]
+            write_calibration(new_name, nsfw=bool(entry.get("nsfw")),
+                              payload=entry)
+            # Remove the old key — write_calibration doesn't delete, so
+            # manipulate the store file directly.
+            for store_path in (sfw_path(), nsfw_path()):
+                if not store_path or not os.path.exists(store_path):
+                    continue
+                try:
+                    with open(store_path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    loras_map = data.get("loras") or {}
+                    if old_name in loras_map:
+                        loras_map.pop(old_name)
+                        tmp = store_path + ".tmp"
+                        with open(tmp, 'w', encoding='utf-8') as f:
+                            json.dump(data, f, indent=2)
+                        os.replace(tmp, store_path)
+                        summary["files"].append({"path": store_path,
+                                                 "replacements": 1})
+                        summary["total_replacements"] += 1
+                except Exception as e:
+                    print(f"  [LoRA migrate] calibration store "
+                          f"{store_path}: {e}")
+    except Exception as e:
+        print(f"  [LoRA migrate] calibration-store hook skipped: {e}")
+
+    return summary
+
+
+def _detect_and_apply_lora_upgrades(present_names: list[str]) -> dict:
+    """For every registry entry whose file is no longer present, search
+    for a replacement. High-confidence matches (>= 0.9) auto-migrate;
+    ambiguous or low-confidence matches queue up in ``_LORA_MIGRATIONS_PENDING``
+    for the user to resolve in the LoRA manager.
+
+    Returns a summary dict suitable for the ``/api/spellcaster/lora/migrations``
+    endpoint.
+    """
+    global _LORA_MIGRATIONS_PENDING
+    summary = {"auto_applied": [], "pending": [], "unresolved": []}
+    if not present_names:
+        return summary
+    present_set = {n for n in present_names if n}
+    # Snapshot the registry keys — migration mutates the registry.
+    orphans = [name for name in list(_LORA_REGISTRY.keys())
+               if name not in present_set]
+    if not orphans:
+        _LORA_MIGRATIONS_PENDING = []
+        return summary
+
+    for orphan in orphans:
+        old_entry = _LORA_REGISTRY.get(orphan) or {}
+        best, conf, reasons, all_c = _find_replacement_lora(
+            orphan, old_entry, present_names)
+        if best is None:
+            summary["unresolved"].append({"old_name": orphan})
+            continue
+        if conf >= 0.9 and len(all_c) == 1:
+            # Unambiguous, high-confidence: auto-migrate.
+            try:
+                detail = _migrate_lora_references(orphan, best)
+                summary["auto_applied"].append({
+                    "old_name": orphan, "new_name": best,
+                    "confidence": conf, "reasons": reasons,
+                    "detail": detail,
+                })
+                print(f"  [LoRA migrate] auto: {orphan} -> {best} "
+                      f"(conf {conf:.2f})")
+            except Exception as e:
+                # If migration throws mid-way, surface as an unresolved
+                # error rather than silently continuing.
+                summary["unresolved"].append({
+                    "old_name": orphan,
+                    "error": f"migration failed: {e}",
+                    "proposed": best,
+                })
+        else:
+            summary["pending"].append({
+                "old_name": orphan, "candidates": all_c,
+            })
+
+    _LORA_MIGRATIONS_PENDING = list(summary["pending"]) + [
+        {"old_name": u["old_name"], "candidates": [],
+         "error": u.get("error")}
+        for u in summary["unresolved"]
+    ]
+    return summary
+
+
 _CKPT_LOADER_CLASSES = (
     "CheckpointLoaderSimple", "CheckpointLoader", "CheckpointLoaderNF4",
     "CheckpointLoaderGGUF", "UNETLoader", "UnetLoaderGGUF", "UNetLoader",
@@ -6535,7 +7214,13 @@ def _infer_lora_purpose(name, tags, description):
 def _build_lora_registry(comfy_url):
     """Discover all LoRAs from ComfyUI, match to architectures, fetch CivitAI metadata.
 
-    Merges with existing registry (preserves user descriptions).
+    Merges with existing registry (preserves user descriptions). Also
+    runs the version-migration detector: any registry entry whose file
+    has disappeared from the ComfyUI server is searched against the
+    current LoRA list. Unambiguous matches auto-migrate (registry +
+    every JSON under ``_STATE_DIR``); ambiguous matches queue up in
+    ``_LORA_MIGRATIONS_PENDING`` for the user to resolve through the
+    LoRA manager UI.
     """
     all_loras = _fetch_all_loras_from_comfyui(comfy_url)
     if not all_loras:
@@ -6543,6 +7228,25 @@ def _build_lora_registry(comfy_url):
         return
 
     print(f"  [LoRA] Discovered {len(all_loras)} LoRAs from ComfyUI")
+
+    # Run version-migration detection BEFORE the "already registered,
+    # skip" loop below. That way auto-migrated orphans keep their user-
+    # confirmed metadata instead of losing it when we skip the new name.
+    try:
+        mig = _detect_and_apply_lora_upgrades(all_loras)
+        if mig["auto_applied"]:
+            print(f"  [LoRA migrate] auto-applied "
+                  f"{len(mig['auto_applied'])} upgrade(s)")
+        if mig["pending"]:
+            print(f"  [LoRA migrate] {len(mig['pending'])} orphan(s) "
+                  f"awaiting user resolution")
+        if mig["unresolved"]:
+            print(f"  [LoRA migrate] {len(mig['unresolved'])} orphan(s) "
+                  f"with no candidate found")
+    except Exception as _migrate_err:
+        import traceback
+        print(f"  [LoRA migrate] detection crashed; skipping: {_migrate_err}")
+        traceback.print_exc()
 
     # Determine which architectures each LoRA is compatible with.
     # Matching is case-INsensitive on both the lora path and the prefix
@@ -10003,6 +10707,11 @@ class GuildHandler(SimpleHTTPRequestHandler):
         elif self.path == '/setup':
             # Legacy route — kept for bookmarks that hit the old wizard page.
             self.path = '/static/setup.html'
+        elif self.path == '/insights' or self.path.startswith('/insights?'):
+            # SpeedCoach Insights page — local read-only dashboard over
+            # the aggregator in spellcaster_core.speedcoach. Standalone
+            # so it opens in a new tab without steamrolling the chat UI.
+            self.path = '/static/insights.html'
 
         # ── Setup-mode API endpoints ──
         if self.path == '/api/setup/state':
@@ -10076,6 +10785,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 use_network=(params.get('network', ['1'])[0] != '0')))
         if self.path == '/api/spellcaster/lora/scorer/probe':
             return self.end_json(*_spellcaster_lora_scorer_probe())
+        if self.path == '/api/spellcaster/lora/migrations':
+            return self.end_json(*_spellcaster_lora_migrations_get())
         if self.path == '/api/spellcaster/faceswap/health':
             return self.end_json(*_spellcaster_faceswap_health())
         if self.path == '/api/spellcaster/faceswap/reset':
@@ -10083,6 +10794,12 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(*_spellcaster_faceswap_reset())
         if self.path == '/api/spellcaster/preflight/status':
             return self.end_json(*_spellcaster_preflight_status())
+        # ── SpeedCoach read-side endpoints ───────────────────────────
+        if self.path.startswith('/api/speedcoach/'):
+            qs = urllib.parse.urlparse(self.path).query
+            params = urllib.parse.parse_qs(qs)
+            return self.end_json(*_speedcoach_route(self.path.split('?')[0],
+                                                      params))
         if self.path == '/api/spellcaster/lora/calibrate/resumable':
             return self.end_json(*_spellcaster_lora_calibrate_resumable())
         if self.path.startswith('/api/spellcaster/lora/suggest'):
@@ -14351,6 +15068,11 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 data.get('purpose_group', ''),
                 data.get('winner', ''),
                 demote_losers=bool(data.get('demote_losers', True))))
+        if self.path == '/api/spellcaster/lora/migrations/resolve':
+            return self.end_json(*_spellcaster_lora_migrations_resolve(
+                old_name=data.get('old_name', ''),
+                new_name=data.get('new_name', ''),
+                action=data.get('action', 'apply')))
         if self.path == '/api/spellcaster/lora/approve':
             # Multi-approve: keep every LoRA the user wants, each tagged
             # with their own keywords so the Wizard Guild can auto-
@@ -15212,17 +15934,153 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(200, {"status": "ok"})
 
         # -- /api/telemetry/dispatch_ok -- record successful dispatches
+        # (enriched schema: elapsed, predicted_elapsed, arch, model,
+        # loras, steps, cfg, upscale, warnings, failed, error — all
+        # optional but all fuel SpeedCoach suggestions when present).
         elif self.path == '/api/telemetry/dispatch_ok':
-            build_fn = (data.get('build_fn') or '')[:80]
-            char_id = (data.get('char_id') or '')[:80]
-            ts = data.get('ts') or time.time()
+            record = {
+                "ts": data.get('ts') or time.time(),
+                "build_fn": (data.get('build_fn') or '')[:80],
+                "char_id":  (data.get('char_id')  or '')[:80],
+            }
+            for k in ("handler", "arch", "model"):
+                v = data.get(k)
+                if v:
+                    record[k] = str(v)[:120]
+            for k in ("elapsed", "predicted_elapsed", "cfg"):
+                v = data.get(k)
+                if v is not None:
+                    try:
+                        record[k] = float(v)
+                    except (TypeError, ValueError):
+                        pass
+            for k in ("steps", "upscale"):
+                v = data.get(k)
+                if v is not None:
+                    try:
+                        record[k] = int(v)
+                    except (TypeError, ValueError):
+                        pass
+            if data.get("loras"):
+                record["loras"] = data.get("loras")
+            if data.get("warnings"):
+                record["warnings"] = [str(w)[:200] for w in
+                                       (data.get("warnings") or [])][:20]
+            if data.get("failed"):
+                record["failed"] = bool(data.get("failed"))
+            if data.get("error"):
+                record["error"] = str(data.get("error"))[:400]
+            if data.get("job_id"):
+                record["job_id"] = str(data.get("job_id"))[:40]
             try:
-                log_path = os.path.join(_STATE_DIR, 'dispatch_log.jsonl')
-                with open(log_path, 'a', encoding='utf-8') as f:
-                    f.write(json.dumps({"ts": ts, "build_fn": build_fn,
-                                        "char_id": char_id}) + "\n")
+                from spellcaster_core import speedcoach as _sc
+                _sc.append_dispatch_record(record)
+            except Exception:
+                # Back-compat fallback: even if the aggregator import
+                # fails, still write the legacy minimal line so the
+                # pre-SpeedCoach parse_miss/logs-only callers aren't
+                # broken.
+                try:
+                    log_path = os.path.join(_STATE_DIR, 'dispatch_log.jsonl')
+                    with open(log_path, 'a', encoding='utf-8') as f:
+                        f.write(json.dumps(record) + "\n")
+                except Exception as e:
+                    print(f"  [Telemetry] dispatch_ok log failed: {e}")
+            # Emit typed event so Insights / subscribers can react.
+            try:
+                from spellcaster_core.events import DispatchCompleted, publish_event
+                from spellcaster_core.event_bus import EventBus
+                publish_event(
+                    EventBus.default(),
+                    DispatchCompleted(
+                        job_id=record.get("job_id") or "",
+                        handler=record.get("handler") or record.get("build_fn") or "",
+                        arch=record.get("arch") or "",
+                        elapsed=float(record.get("elapsed") or 0.0),
+                        predicted_elapsed=float(record.get("predicted_elapsed") or 0.0),
+                        failed=bool(record.get("failed")),
+                        warnings=list(record.get("warnings") or []),
+                    ),
+                    origin=(data.get("origin") or "guild"),
+                )
+            except Exception:
+                pass
+            return self.end_json(200, {"status": "ok"})
+
+        # -- /api/telemetry/rating -- thumbs up/down (new)
+        elif self.path == '/api/telemetry/rating':
+            verdict = str(data.get('verdict') or '')[:16]
+            if not verdict:
+                return self.end_json(400, {"error": "verdict required"})
+            record = {
+                "ts":          data.get('ts') or time.time(),
+                "verdict":     verdict,
+                "asset_hash":  (data.get('asset_hash') or '')[:64],
+                "char_id":     (data.get('char_id')    or '')[:80],
+                "handler":     (data.get('handler')    or '')[:80],
+                "build_fn":    (data.get('build_fn')   or '')[:80],
+                "arch":        (data.get('arch')       or '')[:40],
+                "loras":       data.get('loras') or [],
+            }
+            try:
+                from spellcaster_core import speedcoach as _sc
+                _sc.append_rating_record(record)
             except Exception as e:
-                print(f"  [Telemetry] dispatch_ok log failed: {e}")
+                print(f"  [Telemetry] rating write failed: {e}")
+            try:
+                from spellcaster_core.events import RatingSubmitted, publish_event
+                from spellcaster_core.event_bus import EventBus
+                publish_event(
+                    EventBus.default(),
+                    RatingSubmitted(
+                        asset_hash=record["asset_hash"],
+                        verdict=verdict,
+                        char_id=record["char_id"] or None,
+                        handler=record["handler"] or record["build_fn"] or None,
+                        arch=record["arch"] or None,
+                    ),
+                    origin=(data.get("origin") or "guild"),
+                )
+            except Exception:
+                pass
+            return self.end_json(200, {"status": "ok"})
+
+        # -- /api/telemetry/speedcoach_event -- UIs publish shown /
+        # accepted / dismissed for Insights' acceptance-rate card.
+        elif self.path == '/api/telemetry/speedcoach_event':
+            action = str(data.get('action') or '')[:20]
+            if action not in ('shown', 'accepted', 'dismissed'):
+                return self.end_json(400, {"error": "bad action"})
+            try:
+                from spellcaster_core.events import SpeedCoachSuggestion, publish_event
+                from spellcaster_core.event_bus import EventBus
+                publish_event(
+                    EventBus.default(),
+                    SpeedCoachSuggestion(
+                        action=action,
+                        kind=str(data.get('kind') or '')[:32],
+                        speedup_pct=int(data.get('speedup_pct') or 0),
+                        sample_size=int(data.get('sample_size') or 0),
+                        job_id=str(data.get('job_id') or '')[:40] or None,
+                    ),
+                    origin=(data.get("origin") or "guild"),
+                )
+            except Exception:
+                pass
+            # Also append to a log so Insights can tally historically.
+            try:
+                log_path = os.path.join(_STATE_DIR, 'speedcoach_events.jsonl')
+                with open(log_path, 'a', encoding='utf-8') as f:
+                    f.write(json.dumps({
+                        "ts": data.get('ts') or time.time(),
+                        "action": action,
+                        "kind": str(data.get('kind') or '')[:32],
+                        "speedup_pct": int(data.get('speedup_pct') or 0),
+                        "sample_size": int(data.get('sample_size') or 0),
+                        "job_id": str(data.get('job_id') or '')[:40] or "",
+                    }) + "\n")
+            except Exception:
+                pass
             return self.end_json(200, {"status": "ok"})
 
         # -- /api/probe_tool -- server-side health probe for the

@@ -6743,10 +6743,102 @@ loraBtn.addEventListener('click', async () => {
         }
 
         loraCountLabel.textContent = `${data.loras.length} compatible / ${data.total_registry} total`;
+
+        // Pending version migrations. Orphan entries whose file is
+        // gone from ComfyUI and whose auto-heuristic produced either
+        // multiple or no high-confidence candidates.
+        try {
+            const mig = await fetch('/api/spellcaster/lora/migrations').then(r => r.json());
+            renderLoraMigrations(mig.pending || []);
+        } catch (_) { /* endpoint optional on older builds */ }
     } catch(e) {
         loraList.innerHTML = `<p style="color:#ff4757;padding:12px;">${e.message}</p>`;
     }
 });
+
+function renderLoraMigrations(pending) {
+    const banner = document.getElementById('lora-migrations');
+    const list = document.getElementById('lora-migrations-list');
+    if (!banner || !list) return;
+    if (!pending.length) {
+        banner.style.display = 'none';
+        list.innerHTML = '';
+        return;
+    }
+    banner.style.display = 'block';
+    list.innerHTML = pending.map((p, i) => {
+        const candidates = p.candidates || [];
+        const short = p.old_name.replace(/\\/g, '/').split('/').pop();
+        const optionsHtml = candidates.length
+            ? candidates.map(c =>
+                `<option value="${c.name.replace(/"/g, '&quot;')}">${c.name.replace(/\\/g, '/').split('/').pop()} \u2014 ${Math.round(c.confidence * 100)}% (${(c.reasons || []).slice(0, 2).join(', ')})</option>`
+              ).join('')
+            : '';
+        const errorLine = p.error
+            ? `<div style="color:#fca5a5;font-size:11px;margin-top:4px;">\u26a0 ${p.error}</div>`
+            : '';
+        return `
+            <div data-mig-idx="${i}" style="padding:8px 10px;margin-bottom:6px;background:rgba(0,0,0,0.2);border-radius:6px;">
+                <div style="color:#eee;font-size:12px;margin-bottom:4px;" title="${p.old_name}">
+                    <strong>${short}</strong> no longer on server
+                </div>
+                ${errorLine}
+                <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;">
+                    ${candidates.length
+                        ? `<select data-mig-select="${i}" style="flex:1;min-width:200px;padding:4px 8px;border-radius:4px;border:1px solid #333;background:#151520;color:#eee;font-size:11px;">${optionsHtml}</select>
+                           <button data-mig-apply="${i}" style="padding:4px 10px;background:rgba(88,224,255,0.15);border:1px solid rgba(88,224,255,0.4);border-radius:4px;color:#7dd3fc;font-size:11px;cursor:pointer;">Apply</button>`
+                        : `<span style="flex:1;color:#888;font-size:11px;">No replacement candidate detected.</span>`}
+                    <button data-mig-dismiss="${i}" style="padding:4px 10px;background:transparent;border:1px solid #444;border-radius:4px;color:#aaa;font-size:11px;cursor:pointer;">Dismiss</button>
+                    <button data-mig-delete="${i}" title="Remove this entry from the registry entirely" style="padding:4px 10px;background:transparent;border:1px solid rgba(239,68,68,0.4);border-radius:4px;color:#fca5a5;font-size:11px;cursor:pointer;">Delete</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    async function doResolve(oldName, newName, action) {
+        try {
+            const r = await fetch('/api/spellcaster/lora/migrations/resolve', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ old_name: oldName, new_name: newName, action }),
+            });
+            const body = await r.json();
+            if (!r.ok) {
+                alert(body.error + (body.hint ? '\n\n' + body.hint : ''));
+                return;
+            }
+            // Refresh both the migration list and the LoRA list.
+            const mig = await fetch('/api/spellcaster/lora/migrations').then(rr => rr.json());
+            renderLoraMigrations(mig.pending || []);
+            if (activeCharacterId) {
+                const fresh = await fetch(`/api/lora_registry/${activeCharacterId}`).then(rr => rr.json());
+                if (fresh.loras) renderLoraList(fresh.loras, activeCharacterId);
+            }
+        } catch (e) {
+            alert('Migration failed: ' + e.message);
+        }
+    }
+
+    pending.forEach((p, i) => {
+        const applyBtn = list.querySelector(`button[data-mig-apply="${i}"]`);
+        const sel = list.querySelector(`select[data-mig-select="${i}"]`);
+        const dismissBtn = list.querySelector(`button[data-mig-dismiss="${i}"]`);
+        const deleteBtn = list.querySelector(`button[data-mig-delete="${i}"]`);
+        if (applyBtn && sel) {
+            applyBtn.addEventListener('click', () => doResolve(p.old_name, sel.value, 'apply'));
+        }
+        if (dismissBtn) {
+            dismissBtn.addEventListener('click', () => doResolve(p.old_name, '', 'dismiss'));
+        }
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', () => {
+                if (confirm(`Remove ${p.old_name} from the LoRA registry?`)) {
+                    doResolve(p.old_name, '', 'delete');
+                }
+            });
+        }
+    });
+}
 
 loraCloseBtn.addEventListener('click', () => loraModal.classList.add('hidden'));
 

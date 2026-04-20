@@ -275,6 +275,21 @@
         border-radius: 6px; overflow: hidden; position: relative;
       }
       .sc-calib-thumb img { width: 100%; height: 100%; object-fit: cover; }
+      .sc-calib-thumb.with-ref { display: flex; aspect-ratio: 2/1; }
+      .sc-calib-thumb.with-ref img { width: 50%; height: 100%; }
+      .sc-calib-thumb .sc-calib-ref {
+        border-left: 2px solid #B246F2;
+      }
+      .sc-calib-thumb.with-ref::before {
+        content: 'render'; position: absolute; top: 4px; left: 6px;
+        font-size: 9px; color: #aaa; background: rgba(0,0,0,0.55);
+        padding: 1px 5px; border-radius: 3px; pointer-events: none;
+      }
+      .sc-calib-thumb.with-ref::after {
+        content: 'trainer'; position: absolute; top: 4px; right: 6px;
+        font-size: 9px; color: #c4b5fd; background: rgba(0,0,0,0.55);
+        padding: 1px 5px; border-radius: 3px; pointer-events: none;
+      }
       .sc-calib-thumb .err {
         padding: 12px; color: #e03131; font-size: 11px; text-align: center;
       }
@@ -738,17 +753,26 @@
       const civ = rec.knowledge && rec.knowledge.civitai_url
           ? `<a href="${rec.knowledge.civitai_url}" target="_blank" style="color:#4dabf7;font-size:11px">civitai</a>`
           : '';
+      // Side-by-side reference thumbnail when Civitai metadata gave us
+      // a preview URL. The trainer's example is shown beside the render
+      // so users have ground truth for the "did it work?" judgement.
+      const refImg = rec.civitai_preview_b64
+          ? `<img class="sc-calib-ref" src="data:image/*;base64,${rec.civitai_preview_b64}" alt="Civitai reference" title="Trainer's example from Civitai">`
+          : (rec.civitai_preview_url
+              ? `<img class="sc-calib-ref" src="${rec.civitai_preview_url}" alt="Civitai reference" title="Trainer's example from Civitai" loading="lazy" onerror="this.style.display='none'">`
+              : '');
       el.innerHTML = `
-        <div class="sc-calib-thumb">
+        <div class="sc-calib-thumb${refImg ? ' with-ref' : ''}">
           ${ok ? `<img src="data:image/png;base64,${rec.image_b64}" alt="${rec.lora_name}">` : `<div class="err">${(rec.error || 'no sample').toString()}</div>`}
+          ${refImg}
           ${scoreChip(rec)}
         </div>
         <div class="sc-calib-name">${rec.lora_name}${nsfwTag}${extraBadges(rec)}</div>
         <div class="sc-calib-chips">${chipsFor(rec)}</div>
         ${trigs ? `<div class="sc-calib-trig">triggers: ${trigs}</div>` : ''}
         <div class="sc-calib-row">
-          <button class="sc-calib-confirm-btn" ${!ok ? 'disabled' : ''}>✓ Confirm</button>
-          <button class="sc-calib-custom-btn" title="Open manual shootout for this group">⚙</button>
+          <button class="sc-calib-confirm-btn" ${!ok ? 'disabled' : ''}>\u2713 Confirm</button>
+          <button class="sc-calib-custom-btn" title="Open manual shootout for this group">\u2699</button>
           ${civ ? `<span style="align-self:center">${civ}</span>` : ''}
         </div>
       `;

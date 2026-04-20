@@ -415,6 +415,48 @@ def _stitch_triggers_into_prompt(base_prompt: str, trigger_words: list[str]) -> 
     return ", ".join(to_add) + ", " + base_prompt
 
 
+_CIVITAI_REFERENCE_CACHE: dict[str, str] = {}
+_CIVITAI_REFERENCE_CACHE_MAX = 128
+
+
+def _fetch_civitai_reference_image(url: str, *, timeout: float = 8.0) -> str:
+    """Download a Civitai preview image and return it base64-encoded.
+
+    Cached per URL for the process lifetime so re-rendering the same
+    LoRA (stability_seeds, sweep_strengths) doesn't re-hit Civitai.
+    Silent on failure \u2014 calibration still works, just without the
+    side-by-side reference panel. Returns ``""`` on error.
+    """
+    if not url:
+        return ""
+    cached = _CIVITAI_REFERENCE_CACHE.get(url)
+    if cached is not None:
+        return cached
+    try:
+        import urllib.request
+        import base64
+        req = urllib.request.Request(
+            url, headers={
+                "User-Agent": "Spellcaster-Calibration/1.0",
+                "Accept": "image/*",
+            })
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if resp.status != 200:
+                return ""
+            data = resp.read(4 * 1024 * 1024)  # 4 MiB cap per image
+        b64 = base64.b64encode(data).decode("ascii")
+    except Exception:
+        b64 = ""
+    # Evict oldest entry if cache grows past the cap.
+    if len(_CIVITAI_REFERENCE_CACHE) >= _CIVITAI_REFERENCE_CACHE_MAX:
+        try:
+            _CIVITAI_REFERENCE_CACHE.pop(next(iter(_CIVITAI_REFERENCE_CACHE)))
+        except StopIteration:
+            pass
+    _CIVITAI_REFERENCE_CACHE[url] = b64
+    return b64
+
+
 def _pick_example_snippet(examples: list[str], max_words: int = 14) -> str:
     """Return a short, template-friendly snippet from a Civitai example
     prompt. We trim to `max_words` tokens, strip lora/embedding tags,
@@ -437,6 +479,76 @@ def _pick_example_snippet(examples: list[str], max_words: int = 14) -> str:
         if len(candidate) >= 8:
             return candidate
     return ""
+
+
+def _adapt_registry_override(override: Optional[dict]) -> Optional[dict]:
+    """Translate a Guild ``_LORA_REGISTRY`` entry into the shape
+    ``lora_knowledge.get_knowledge`` expects for ``user_override``.
+
+    The registry stores Civitai-fetched metadata under ``civitai_*``
+    prefixed keys so the UI can distinguish origin. The knowledge layer
+    looks at plain field names (``trigger_words`` as a list,
+    ``recommended_weight`` etc.). This shim promotes the Civitai-side
+    values into the expected shape WITHOUT overwriting any user-typed
+    or user-confirmed values. Called before the knowledge lookup so the
+    Civitai-downloaded info participates in the calibration recipe.
+    """
+    if not isinstance(override, dict):
+        return override
+    out = dict(override)
+
+    # Trigger words: registry stores user-typed as a comma-separated
+    # string and Civitai-trained as a list. The knowledge layer needs
+    # a list. User-typed string beats Civitai list.
+    raw_user = override.get("trigger_words")
+    civi_triggers = override.get("civitai_trigger_words") or []
+    resolved: list[str] = []
+    if isinstance(raw_user, str) and raw_user.strip():
+        resolved = [p.strip() for p in raw_user.split(",") if p.strip()]
+    elif isinstance(raw_user, list):
+        resolved = [str(t).strip() for t in raw_user if str(t).strip()]
+    elif isinstance(civi_triggers, list) and civi_triggers:
+        resolved = [str(t).strip() for t in civi_triggers if str(t).strip()]
+    if resolved:
+        out["trigger_words"] = resolved
+
+    # Recommended weight: user wins; Civitai-recommended fills the gap.
+    if out.get("recommended_weight") in (None, ""):
+        u_def = override.get("user_default_strength")
+        default_str = override.get("default_strength")
+        civ_w = override.get("civitai_recommended_weight")
+        if isinstance(u_def, (int, float)):
+            out["recommended_weight"] = float(u_def)
+        elif isinstance(default_str, (int, float)) and default_str not in (0, 0.7):
+            # 0.7 is the sentinel "unset" value; skip it.
+            out["recommended_weight"] = float(default_str)
+        elif isinstance(civ_w, (int, float)):
+            out["recommended_weight"] = float(civ_w)
+
+    # Sampler / CFG: Civitai-observed wins when nothing local was set.
+    if not out.get("recommended_sampler"):
+        civ_s = override.get("civitai_recommended_sampler")
+        if isinstance(civ_s, str) and civ_s:
+            out["recommended_sampler"] = civ_s
+    if out.get("recommended_cfg") in (None, ""):
+        civ_c = override.get("civitai_recommended_cfg")
+        if isinstance(civ_c, (int, float)):
+            out["recommended_cfg"] = float(civ_c)
+
+    # NSFW flag: any of the stored sources trips it.
+    if not out.get("nsfw") and (override.get("civitai_nsfw")
+                                  or override.get("civitai_nsfw") is True):
+        out["nsfw"] = True
+
+    # Example prompts aren't consumed by get_knowledge but the caller
+    # reads them off the recipe for seeding calibration prompts \u2014
+    # surface them on the override so they flow through unchanged.
+    if not out.get("example_prompts"):
+        civ_ex = override.get("civitai_example_prompts") or []
+        if isinstance(civ_ex, list) and civ_ex:
+            out["example_prompts"] = [str(p) for p in civ_ex if p]
+
+    return out
 
 
 def resolve_shootout_recipe_for_lora(
@@ -469,10 +581,17 @@ def resolve_shootout_recipe_for_lora(
         except ImportError:
             from lora_knowledge import get_knowledge, classify_nsfw  # type: ignore
 
+        # Promote civitai_* fields from the registry override into the
+        # standard field names the knowledge layer recognises. Without
+        # this adapter the new "metadata download for all LoRAs" toggle
+        # would populate the registry but never reach the calibration
+        # recipe.
+        adapted_override = _adapt_registry_override(user_override)
+
         k = get_knowledge(
             lora_name,
             path=lora_abs_path,
-            user_override=user_override,
+            user_override=adapted_override,
             use_network=use_network,
         )
     except Exception as e:
@@ -504,7 +623,16 @@ def resolve_shootout_recipe_for_lora(
     # context it was trained on so the comparison shootout actually
     # exercises the LoRA rather than just the base model.
     prompt = _stitch_triggers_into_prompt(base_pos, k.trigger_words)
-    snippet = _pick_example_snippet(k.example_prompts)
+    # Example-prompt source priority:
+    #   1. knowledge (hash-based Civitai lookup or sidecar)
+    #   2. adapted override's example_prompts (name-search Civitai stash
+    #      from the registry) \u2014 kicks in when the Guild has
+    #      "Metadata download for all LoRAs" enabled but doesn't have
+    #      the LoRA file locally to hash.
+    examples_source = list(k.example_prompts) if k.example_prompts else []
+    if not examples_source and isinstance(adapted_override, dict):
+        examples_source = list(adapted_override.get("example_prompts") or [])
+    snippet = _pick_example_snippet(examples_source)
     if snippet and snippet.lower() not in prompt.lower():
         prompt = prompt + ", " + snippet
 
@@ -530,6 +658,19 @@ def resolve_shootout_recipe_for_lora(
     except Exception:
         nsfw = bool(getattr(k, "nsfw", False))
 
+    # Reference image URL \u2014 when the registry has a Civitai preview
+    # URL, the caller can download it alongside the render so the UI
+    # shows "trainer's example vs your render" side-by-side. Pulled
+    # from the adapted override since the knowledge layer doesn't cache
+    # image URLs today.
+    civitai_preview_url = ""
+    civitai_url = ""
+    if isinstance(adapted_override, dict):
+        civitai_preview_url = str(adapted_override.get("civitai_preview_url") or "")
+        civitai_url = str(adapted_override.get("civitai_url") or "")
+    if not civitai_url:
+        civitai_url = str(getattr(k, "civitai_url", "") or "")
+
     return {
         "subject_key":   subj,
         "prompt":        prompt,
@@ -541,6 +682,8 @@ def resolve_shootout_recipe_for_lora(
         "nsfw":          nsfw,
         "provenance":    dict(k.provenance),
         "knowledge":     k.to_dict(),
+        "civitai_preview_url": civitai_preview_url,
+        "civitai_url":   civitai_url,
     }
 
 
@@ -1267,6 +1410,14 @@ def render_calibration_sample(
         use_network=use_network,
     )
 
+    # Download the Civitai reference image once per calibration (not per
+    # seed/strength iteration). Attached to every sample dict so the UI
+    # can show "trainer's example vs your render" side by side.
+    civitai_preview_url = recipe.get("civitai_preview_url") or ""
+    civitai_ref_b64 = ""
+    if use_network and civitai_preview_url:
+        civitai_ref_b64 = _fetch_civitai_reference_image(civitai_preview_url)
+
     def _one_render(strength_override: Optional[float], seed_used: int) -> dict:
         """Inner helper: render one sample at the given strength/seed
         and run optional scoring. Returns the sample dict."""
@@ -1298,6 +1449,11 @@ def render_calibration_sample(
             "model":         preferred_model or (
                                 _pick_representative_model(models, arch) or {}
                              ).get("name", ""),
+            # Reference image from Civitai \u2014 the UI uses this as
+            # a ground truth side-by-side with the render.
+            "civitai_preview_b64": civitai_ref_b64,
+            "civitai_preview_url": civitai_preview_url,
+            "civitai_url":   recipe.get("civitai_url") or "",
         })
         _score_sample_if_enabled(d, score_with_llm=score_with_llm,
                                   ollama_url=ollama_url,
