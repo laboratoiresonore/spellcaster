@@ -960,15 +960,30 @@ function init(router) {
             const b64Bad = _rejectOversizedB64(image_base64);
             if (b64Bad) return res.status(413).json(b64Bad);
 
+            // Wizard gate — if the user explicitly disabled video, refuse
+            // without burning ComfyUI queue time on a job they don't want.
+            // Explicit body.engine overrides the gate (escape hatch for
+            // power users).
+            if (SPELLCASTER_VIDEO_BACKEND === 'none' && !engine) {
+                return res.status(403).json({
+                    error: 'Video backend disabled in Spellcaster wizard. Re-run /spellcaster-wizard or pass engine="legacy" to override.',
+                });
+            }
+
             const wantLegacy = engine === "legacy";
             const effectivePrompt = String(prompt || 'subtle breathing, gentle movement, living portrait').slice(0, 2000);
 
             // Try the canonical Guild path first.
             if (!wantLegacy) {
                 try {
+                    // Preset order of precedence:
+                    //   1. Explicit body.engine ('ltx' | 'wan22' assumed via turbo)
+                    //   2. Wizard-selected backend (video_backend === 'wan22')
+                    //   3. Default: turbo ? lightning : hq
+                    const forceWan = SPELLCASTER_VIDEO_BACKEND === 'wan22';
                     const preset = (engine === "ltx")
                         ? 'ltx_distilled'
-                        : (turbo ? 'wan22_i2v_lightning' : 'wan22_i2v_hq');
+                        : (forceWan || turbo ? 'wan22_i2v_lightning' : 'wan22_i2v_hq');
                     const guildResult = await _animateViaGuild({
                         image_base64,
                         prompt: effectivePrompt,
@@ -1344,14 +1359,24 @@ async function detectBestModel() {
     try {
         const res = await fetchJSON(`${COMFYUI_URL}/object_info/CheckpointLoaderSimple`);
         const ckpts = res.data?.CheckpointLoaderSimple?.input?.required?.ckpt_name?.[0] || [];
-        // Prefer: flux > xl > juggernaut > anything
-        const priorities = ['flux', 'xl', 'jugger', 'reborn', 'realistic'];
         const pick = (m) => {
             _cachedModel = m;
             _cachedModelUrl = COMFYUI_URL;
             _cachedModelTs = Date.now();
             return m;
         };
+        // Wizard override — if the user picked a specific checkpoint AND
+        // ComfyUI still has it, honour the choice. Otherwise log and fall
+        // through to the keyword-priority heuristic so we never break
+        // generation because a user renamed a file.
+        if (SPELLCASTER_IMAGE_MODEL && ckpts.includes(SPELLCASTER_IMAGE_MODEL)) {
+            return pick(SPELLCASTER_IMAGE_MODEL);
+        }
+        if (SPELLCASTER_IMAGE_MODEL) {
+            console.warn(`[Spellcaster] Wizard-selected image_model not present on ComfyUI: ${SPELLCASTER_IMAGE_MODEL} — auto-picking fallback.`);
+        }
+        // Prefer: flux > xl > juggernaut > anything
+        const priorities = ['flux', 'xl', 'jugger', 'reborn', 'realistic'];
         for (const kw of priorities) {
             const match = ckpts.find(c => c.toLowerCase().includes(kw));
             if (match) return pick(match);
@@ -1361,14 +1386,42 @@ async function detectBestModel() {
     return null;
 }
 
+// Maps the wizard's quality_profile + architecture label onto a
+// (steps, cfg) tuple. JS-side builders are much thinner than the
+// Python workflow graph builders, so "quality" here is a coarse
+// adjustment rather than a full PAG/RescaleCFG stack. Keep the
+// arch-specific tuning in one place so the plain builders don't
+// each need their own quality switch.
+function qualityAdjust(baseSteps, baseCfg, arch = 'sdxl') {
+    const profile = SPELLCASTER_QUALITY_PROFILE || 'balanced';
+    if (profile === 'balanced') return { steps: baseSteps, cfg: baseCfg };
+
+    // Klein is a distilled 4-step model — never change its step count
+    // (raising wastes compute, lowering breaks output). Only CFG moves.
+    if (arch === 'klein9b' || arch === 'klein4b') {
+        if (profile === 'max')  return { steps: baseSteps, cfg: Math.min(baseCfg + 0.5, 3.5) };
+        if (profile === 'fast') return { steps: baseSteps, cfg: baseCfg };
+    }
+    // Kontext edits — mild movement
+    if (arch === 'kontext') {
+        if (profile === 'max')  return { steps: Math.round(baseSteps * 1.2), cfg: baseCfg };
+        if (profile === 'fast') return { steps: Math.max(4, Math.round(baseSteps * 0.7)), cfg: baseCfg };
+    }
+    // SDXL / SD 1.5 / everything else — generic percentage scaling
+    if (profile === 'max')  return { steps: Math.round(baseSteps * 1.3), cfg: Math.min(baseCfg + 0.5, 9.0) };
+    if (profile === 'fast') return { steps: Math.max(6, Math.round(baseSteps * 0.65)), cfg: Math.max(baseCfg - 0.5, 4.0) };
+    return { steps: baseSteps, cfg: baseCfg };
+}
+
 // ═══════════════════════════════════════════════════════════════════
 //  Workflow Builders (minimal self-contained — no Python dependency)
 // ═══════════════════════════════════════════════════════════════════
 
 function buildTxt2ImgWorkflow(prompt, negative, width, height, seed, modelName) {
+    const q = qualityAdjust(25, 7.0, 'sdxl');
     return {
         "3": { "class_type": "KSampler", "inputs": {
-            "seed": seed, "steps": 25, "cfg": 7.0,
+            "seed": seed, "steps": q.steps, "cfg": q.cfg,
             "sampler_name": "dpmpp_2m", "scheduler": "karras",
             "denoise": 1.0, "model": ["4", 0],
             "positive": ["6", 0], "negative": ["7", 0],
@@ -1396,11 +1449,12 @@ function buildTxt2ImgWorkflow(prompt, negative, width, height, seed, modelName) 
 }
 
 function buildImg2ImgWorkflow(imageName, prompt, negative, denoise, modelName) {
+    const q = qualityAdjust(25, 7.0, 'sdxl');
     return {
         "1": { "class_type": "LoadImage", "inputs": { "image": imageName }},
         "3": { "class_type": "KSampler", "inputs": {
             "seed": Math.floor(Math.random() * 2147483647),
-            "steps": 25, "cfg": 7.0,
+            "steps": q.steps, "cfg": q.cfg,
             "sampler_name": "dpmpp_2m", "scheduler": "karras",
             "denoise": denoise, "model": ["4", 0],
             "positive": ["6", 0], "negative": ["7", 0],
@@ -1812,6 +1866,7 @@ async function detectEditEngine() {
 function buildSceneCompositeWorkflow(scenePrompt, characters, modelName) {
     // characters: [{ bodyImageName, placement: {x, y, scale} }]
     const seed = Math.floor(Math.random() * 2147483647);
+    const q = qualityAdjust(25, 7.0, 'sdxl');
     const workflow = {
         // Generate scene background
         "4": { "class_type": "CheckpointLoaderSimple", "inputs": {
@@ -1829,7 +1884,7 @@ function buildSceneCompositeWorkflow(scenePrompt, characters, modelName) {
             "clip": ["4", 1],
         }},
         "3": { "class_type": "KSampler", "inputs": {
-            "seed": seed, "steps": 25, "cfg": 7.0,
+            "seed": seed, "steps": q.steps, "cfg": q.cfg,
             "sampler_name": "dpmpp_2m", "scheduler": "karras",
             "denoise": 1.0, "model": ["4", 0],
             "positive": ["6", 0], "negative": ["7", 0],
