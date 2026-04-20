@@ -175,16 +175,48 @@ def main() -> int:
         return _run_baked(argv)
 
     print(_BANNER)
+
+    # Splash: give the user immediate feedback while the fetch runs.
+    # Under `--windowed` the console print above is invisible; the
+    # splash is the only thing users see before install.py paints its
+    # real window. Silent fallback if Tk isn't available.
+    try:
+        from . import splash as _splash  # type: ignore
+    except Exception:  # noqa: BLE001
+        try:
+            import splash as _splash  # type: ignore
+        except Exception:  # noqa: BLE001
+            _splash = None
+
+    sp = _splash.show_splash() if _splash is not None else None
+    def _say(msg: str) -> None:
+        if sp is not None:
+            try: sp.status(msg)
+            except Exception: pass  # noqa: BLE001
+
     temp = Path(tempfile.mkdtemp(prefix="spellcaster-installer-"))
     try:
+        _say("Checking for the latest installer…")
         if _fetch_latest(temp):
             print(f"[bootstrap] Fetched latest installer ({len(FETCH_FILES)} files)")
             print("[bootstrap] Running updated code...\n")
+            _say("Launching the updated installer…")
+            if sp is not None:
+                try: sp.close()
+                except Exception: pass  # noqa: BLE001
             return _run_fetched(temp, argv)
         else:
             print("[bootstrap] Using baked-in installer (network unavailable)\n")
+            _say("Offline — launching the bundled installer…")
+            if sp is not None:
+                try: sp.close()
+                except Exception: pass  # noqa: BLE001
             return _run_baked(argv)
     finally:
+        try:
+            if sp is not None: sp.close()
+        except Exception:
+            pass
         try:
             shutil.rmtree(temp, ignore_errors=True)
         except Exception:
@@ -243,37 +275,85 @@ def _show_crash_dialog(exc: BaseException, logpath: Path | None) -> None:
     dialog isn't an option. The log file is the fallback."""
     try:
         import tkinter as _tk
-        from tkinter import messagebox, scrolledtext
+        from tkinter import scrolledtext
         import traceback as _tb
     except Exception:
         return
     try:
+        from . import theme  # type: ignore
+    except Exception:  # noqa: BLE001
+        try:
+            import theme  # type: ignore
+        except Exception:  # noqa: BLE001
+            theme = None  # crash dialog must survive a broken bundle
+
+    BG = getattr(theme, "BG", "#0B0715")
+    TEXT = getattr(theme, "TEXT", "#FFFFFF")
+    ACCENT = getattr(theme, "ACCENT", "#D122E3")
+    ACCENT_HOVER = getattr(theme, "ACCENT_HOVER", "#E84DF7")
+    BG_CARD = getattr(theme, "BG_CARD", "#110A1F")
+    TEXT_MUTED = getattr(theme, "TEXT_MUTED", "#8E889D")
+    BORDER = getattr(theme, "BORDER", "#3A2863")
+
+    try:
         root = _tk.Tk()
         root.title("Spellcaster Installer — startup error")
-        root.geometry("720x440")
+        root.geometry("760x480")
+        root.configure(bg=BG)
+        if theme is not None:
+            theme.apply_tk_theme(root)
+            theme.try_set_window_icon(root)
+
+        # Header strip with an accent bar for brand recognition
+        accent_bar = _tk.Frame(root, bg=ACCENT, height=3)
+        accent_bar.pack(fill="x")
+
         header = _tk.Label(
             root, anchor="w", justify="left",
-            font=("Segoe UI", 10, "bold"),
-            text=("The installer crashed during startup.\n"
-                   "Please paste this log into "
-                   "github.com/laboratoiresonore/spellcaster/issues/7"))
-        header.pack(fill="x", padx=12, pady=(12, 4))
+            font=("Segoe UI", 12, "bold"),
+            bg=BG, fg=TEXT,
+            text="💎 Spellcaster Installer — startup error")
+        header.pack(fill="x", padx=16, pady=(14, 2))
+
+        subtitle = _tk.Label(
+            root, anchor="w", justify="left",
+            font=("Segoe UI", 10),
+            bg=BG, fg=TEXT_MUTED,
+            text=("The installer crashed before it could draw its main "
+                   "window.  Paste the log below into\n"
+                   "github.com/laboratoiresonore/spellcaster/issues/7 "
+                   "so we can fix it."))
+        subtitle.pack(fill="x", padx=16, pady=(0, 8))
+
         if logpath:
             pathlbl = _tk.Label(
                 root, anchor="w", justify="left",
                 font=("Consolas", 9),
+                bg=BG, fg=TEXT_MUTED,
                 text=f"Log file: {logpath}")
-            pathlbl.pack(fill="x", padx=12)
+            pathlbl.pack(fill="x", padx=16)
+
         body = scrolledtext.ScrolledText(
-            root, font=("Consolas", 9), wrap="word")
-        body.pack(fill="both", expand=True, padx=12, pady=8)
+            root, font=("Consolas", 9), wrap="word",
+            bg=BG_CARD, fg=TEXT, insertbackground=ACCENT,
+            relief="flat", bd=0, padx=10, pady=8,
+            highlightbackground=BORDER, highlightthickness=1,
+        )
+        body.pack(fill="both", expand=True, padx=16, pady=10)
         tb_text = "".join(_tb.format_exception(
             type(exc), exc, exc.__traceback__))
         body.insert("1.0", tb_text)
         body.configure(state="disabled")
-        btn = _tk.Button(root, text="Close", command=root.destroy,
-                          font=("Segoe UI", 10), width=10)
-        btn.pack(pady=(0, 12))
+
+        btn = _tk.Button(
+            root, text="Close", command=root.destroy, width=14,
+            bg=ACCENT, fg=TEXT,
+            activebackground=ACCENT_HOVER, activeforeground=TEXT,
+            relief="flat", bd=0, padx=16, pady=8,
+            font=("Segoe UI", 10, "bold"), cursor="hand2",
+            highlightthickness=0,
+        )
+        btn.pack(pady=(0, 16))
         root.mainloop()
     except Exception:
         # If Tk is broken too, at least we have the log file.
