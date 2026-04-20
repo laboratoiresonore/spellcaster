@@ -79,7 +79,11 @@ gemini-output/
 tools/generate_readme_gifs.py
 test_live.py
 test_guild.py
-tests/
+tests/*
+# carve-outs: canonical shared harnesses (per-dev scratch tests stay
+# ignored; whitelist the files that should travel with the repo)
+!tests/e2e_audit.py
+!tests/e2e_report.md
 audit_*.py
 
 # Spell icons (user-generated during install, not source)
