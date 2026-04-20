@@ -1789,6 +1789,14 @@ def _server_init(comfy_url=None):
         set_calibration_persist_dir(_STATE_DIR)
     except Exception:
         pass
+    # Inject the guild config reader into the faceswap guard so the
+    # user can shut face-swap off via guild_config.json when they've
+    # hit the native TensorRT crash path on comfy-mtb / ReActor.
+    try:
+        from spellcaster_core.faceswap_health import set_config_lookup
+        set_config_lookup(_guided_install_load_config)
+    except Exception:
+        pass
     threading.Thread(
         target=_build_lora_registry, args=(url,), daemon=True
     ).start()
@@ -4781,6 +4789,29 @@ def _spellcaster_lora_knowledge_get(name: str, use_network: bool = True) -> tupl
     except Exception as e:
         return (500, {"error": f"knowledge lookup failed: {e}"})
     return (200, {"knowledge": k.to_dict()})
+
+
+def _spellcaster_faceswap_health() -> tuple[int, dict]:
+    """GET /api/spellcaster/faceswap/health — probe ComfyUI's
+    /object_info for ReActor / comfy-mtb node classes and report
+    whether the face-swap chain is REGISTERED (note: this doesn't
+    guarantee the native TensorRT layer will load cleanly — that
+    failure is only visible at model-load time and can crash the
+    server). Also reports whether the user has opted out via env
+    var or config flag.
+    """
+    try:
+        from spellcaster_core.faceswap_health import (
+            probe_faceswap_nodes, is_faceswap_disabled,
+        )
+    except Exception as e:
+        return (500, {"error": f"faceswap_health module unavailable: {e}"})
+    health = probe_faceswap_nodes(COMFYUI_URL)
+    disabled, why = is_faceswap_disabled()
+    out = health.to_dict()
+    out["disabled"] = disabled
+    out["disabled_reason"] = why
+    return (200, out)
 
 
 def _spellcaster_lora_scorer_probe() -> tuple[int, dict]:
@@ -9196,6 +9227,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 use_network=(params.get('network', ['1'])[0] != '0')))
         if self.path == '/api/spellcaster/lora/scorer/probe':
             return self.end_json(*_spellcaster_lora_scorer_probe())
+        if self.path == '/api/spellcaster/faceswap/health':
+            return self.end_json(*_spellcaster_faceswap_health())
         if self.path == '/api/spellcaster/lora/calibrate/resumable':
             return self.end_json(*_spellcaster_lora_calibrate_resumable())
         if self.path.startswith('/api/spellcaster/lora/suggest'):
