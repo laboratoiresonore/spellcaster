@@ -880,11 +880,11 @@ _STUDIO_BY_ID = {c["id"]: c for c in STUDIO_CHARACTERS}
 # Rebuilt once per 60s. Consulted by _studio_scaffold_ctx() which feeds
 # scaffold/studio_scaffold.py. Keeps /api/system_prompt/<id> fast because
 # the LLM hits it on every chat turn.
-_CAP_PROBE_CACHE: dict[str, Any] = {"ts": 0.0, "archs": set(), "nodes": set()}
+_CAP_PROBE_CACHE = {"ts": 0.0, "archs": set(), "nodes": set()}
 _CAP_PROBE_TTL_S = 60.0
 
 
-def _probe_capabilities(comfy_url: str) -> dict[str, Any]:
+def _probe_capabilities(comfy_url):
     """Return {archs, node_classes} for the ComfyUI server at `comfy_url`.
 
     archs        set of architecture keys derivable from installed checkpoints
@@ -945,7 +945,7 @@ def _probe_capabilities(comfy_url: str) -> dict[str, Any]:
     return {"archs": archs, "node_classes": nodes}
 
 
-def _studio_scaffold_ctx(char_id: str) -> dict[str, Any]:
+def _studio_scaffold_ctx(char_id):
     """Build the ctx dict that scaffold/studio_scaffold.build_prompt wants."""
     caps = _probe_capabilities(COMFYUI_URL) if COMFYUI_URL else {"archs": set(), "node_classes": set()}
 

@@ -472,7 +472,8 @@ def stop_service(service: str, cfg: dict[str, Any]) -> dict[str, Any]:
         except Exception as e:  # noqa: BLE001
             err = f"{type(e).__name__}: {e}"
     if not killed_by:
-        svc_cfg = (cfg.get("services") or {}).get(service, {})
+        _svc_raw = cfg.get("services") or {}
+        svc_cfg = _svc_raw.get(service, {}) if isinstance(_svc_raw, dict) else {}
         port = 0
         try:
             port = int(svc_cfg.get("port") or 0)
