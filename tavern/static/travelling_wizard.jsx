@@ -1501,6 +1501,172 @@ function LoraSlotManager({ scaffold, onChange }) {
 
 // ─── Scaffold Editor ──────────────────────────────────────────────
 
+// ─── Scaffold overview card (shown in place of an empty step list) ──
+//
+// Every wizard the Guild ships with — studios, model_wizards,
+// comfyui_models — has its scaffold expressed via the system prompt
+// + build_fns rather than a pre-wired step chain. The earlier UI
+// just showed "Workflow Steps" with nothing under it for those,
+// making the whole Scaffolds tab look broken. This card makes the
+// wizard's real scaffold visible at a glance: the archetype, the
+// tools it can invoke, its default model + arch, a preview of the
+// system prompt, and a "Seed steps from tools" CTA so anyone who
+// wants a step-based flow can start from a populated chain instead
+// of an empty canvas.
+function ScaffoldOverviewCard({ scaffold, onSeedSteps, onAddBlankStep, onEditRules, onEditProps }) {
+  const toolCount = (scaffold.build_fns || []).length;
+  const rawPrompt = scaffold._raw_system_prompt || scaffold.system_prompt_header || "";
+  const promptLen = rawPrompt.length;
+  const archKey = scaffold.default_arch || "";
+  const meta = (typeof window !== "undefined" && window.ARCH_META)
+    ? window.ARCH_META[archKey] : null;
+
+  return (
+    <div className="space-y-3">
+      {/* Identity strip — archetype + arch pill + model filename */}
+      <div className="bg-slate-950 border border-amber-600/20 rounded-lg p-3 relative overflow-hidden"
+        style={meta ? {
+          boxShadow: `inset 4px 0 16px rgba(${meta.glow}, 0.15), 0 0 18px rgba(${meta.glow}, 0.08)`,
+        } : undefined}>
+        {meta && (
+          <div className="absolute top-0 left-0 bottom-0 w-1"
+            style={{ background: `linear-gradient(180deg, ${meta.c1}, ${meta.c2})` }} />
+        )}
+        <div className="flex items-start justify-between gap-3 pl-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <span className="text-xs uppercase tracking-wider text-slate-500">Archetype</span>
+              {meta && (
+                <span className="text-[10px] px-1.5 py-0 rounded font-medium"
+                  style={{
+                    color: meta.c1,
+                    background: `rgba(${meta.glow}, 0.14)`,
+                    border: `1px solid rgba(${meta.glow}, 0.35)`,
+                  }}>
+                  {meta.icon} {meta.fullName}
+                </span>
+              )}
+              {scaffold.type && (
+                <span className="text-[10px] px-1.5 py-0 rounded text-slate-400 bg-slate-800/50 border border-slate-700">
+                  {scaffold.type.replace(/_/g, " ")}
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-amber-100 italic leading-snug">
+              {scaffold.archetype || <span className="text-slate-500 not-italic">(no archetype set)</span>}
+            </p>
+          </div>
+        </div>
+        {scaffold.default_model && (
+          <div className="mt-2 pl-2 flex items-center gap-2">
+            <span className="text-xs uppercase tracking-wider text-slate-500">Model</span>
+            <code className="text-xs text-slate-300 font-mono truncate" title={scaffold.default_model}>
+              {scaffold.default_model.split(/[/\\]/).pop()}
+            </code>
+          </div>
+        )}
+      </div>
+
+      {/* Build functions — the actual tools the wizard invokes ────────
+          For wizards with only a system prompt (studios especially) this
+          is the single most useful thing to show: "this wizard calls
+          THESE Spellcaster functions when it decides to generate". */}
+      {toolCount > 0 && (
+        <div className="bg-slate-950 border border-cyan-600/20 rounded-lg p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs uppercase tracking-wider text-cyan-300">Tools</span>
+              <span className="text-[10px] text-slate-500">{toolCount} available</span>
+            </div>
+            <button onClick={onSeedSteps}
+              className="text-[10px] px-2 py-0.5 rounded bg-cyan-900/40 text-cyan-200 hover:bg-cyan-800/60 hover:text-white border border-cyan-500/30 transition-colors">
+              Seed steps from tools →
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {(scaffold.build_fns || []).map(fn => (
+              <span key={fn}
+                className="text-[10px] px-2 py-0.5 rounded bg-slate-800/70 text-cyan-200 border border-cyan-700/40 font-mono">
+                {fn.replace(/^build_/, "")}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* System prompt preview — collapsed to first ~300 chars with a
+          link to jump to the Rules tab where the full thing is editable. */}
+      {promptLen > 0 && (
+        <div className="bg-slate-950 border border-purple-600/20 rounded-lg p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs uppercase tracking-wider text-purple-300">System prompt</span>
+              <span className="text-[10px] text-slate-500">{promptLen.toLocaleString()} chars</span>
+              {(scaffold.system_prompt_rules || []).length > 0 && (
+                <span className="text-[10px] text-emerald-400">
+                  {scaffold.system_prompt_rules.length} rules parsed
+                </span>
+              )}
+            </div>
+            <button onClick={onEditRules}
+              className="text-[10px] px-2 py-0.5 rounded bg-purple-900/40 text-purple-200 hover:bg-purple-800/60 hover:text-white border border-purple-500/30 transition-colors">
+              Edit in Rules →
+            </button>
+          </div>
+          <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap line-clamp-6"
+            style={{ display: "-webkit-box", WebkitLineClamp: 6, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+            {rawPrompt.slice(0, 600)}{promptLen > 600 ? "…" : ""}
+          </p>
+        </div>
+      )}
+
+      {/* Workflow source — parsed-from-JSON wizards carry extra meta
+          from workflow_parser (node count, category, original path). */}
+      {scaffold.workflow_source && (
+        <div className="bg-slate-950 border border-blue-600/20 rounded-lg p-3">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs uppercase tracking-wider text-blue-300">Workflow source</span>
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-400">
+            <span>Type:</span><span className="text-slate-300">{scaffold.workflow_source.workflow_type || "—"}</span>
+            <span>Nodes:</span><span className="text-slate-300">{scaffold.workflow_source.node_count || "?"}</span>
+            <span>Category:</span><span className="text-slate-300">{scaffold.workflow_source.category || "root"}</span>
+          </div>
+          {scaffold.workflow_source.path && (
+            <p className="text-xs text-slate-500 mt-1 font-mono truncate" title={scaffold.workflow_source.path}>
+              {scaffold.workflow_source.path}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Call-to-action row. The scaffold works AS-IS via its system
+          prompt — the user doesn't need to build a step chain to use
+          the wizard. These buttons let them opt in to a step-based
+          flow when they want one. */}
+      <div className="bg-slate-950/60 border border-amber-600/20 rounded-lg p-3 flex items-start gap-3">
+        <div className="flex-1">
+          <p className="text-sm text-amber-200">This scaffold runs prompt-driven</p>
+          <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
+            No pre-wired step chain. The Guild's 7B model reads the system prompt + rules, decides which tool to invoke from the list above, and collects parameters conversationally. Add explicit steps only when you want to force a specific order.
+          </p>
+        </div>
+        <div className="flex flex-col gap-1">
+          <button onClick={onAddBlankStep}
+            className={btnSmall + " bg-purple-800/40 text-purple-300 hover:text-amber-300 whitespace-nowrap"}>
+            <Icons.Plus /> Blank step
+          </button>
+          <button onClick={onEditProps}
+            className={btnSmall + " bg-slate-800/60 text-slate-300 hover:text-amber-300 whitespace-nowrap"}>
+            <Icons.Settings /> Props
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 function ScaffoldEditor({ scaffolds, setScaffolds }) {
   const [selectedId, setSelectedId] = useState(scaffolds[0]?.id || null);
   const [rightPanel, setRightPanel] = useState("props");
@@ -1696,18 +1862,57 @@ function ScaffoldEditor({ scaffolds, setScaffolds }) {
           {scaffolds.map(s => {
             const src = s.workflow_source;
             const typeBadge = src?.workflow_type;
+            // Pick the most informative secondary line per scaffold:
+            //   1. N steps   — if the wizard has an explicit step machine
+            //   2. N tools   — if it's prompt-driven via build_fns
+            //   3. "prompt"  — if it's purely system-prompt driven (no steps, no tools)
+            const stepCount = s.steps?.length || 0;
+            const toolCount = s.build_fns?.length || 0;
+            let secondary = null;
+            if (stepCount > 0) {
+              secondary = `${stepCount} step${stepCount === 1 ? "" : "s"}`;
+            } else if (toolCount > 0) {
+              secondary = `${toolCount} tool${toolCount === 1 ? "" : "s"}`;
+            } else if ((s.system_prompt_header || "").length > 100) {
+              secondary = "prompt-driven";
+            }
+            // Arch pill — carries the ARCH_META colour if we know the
+            // wizard's default_arch. Lets the left rail visually group
+            // SDXL vs Flux Klein vs Chroma vs video etc at a glance.
+            const archKey = s.default_arch || "";
+            const meta = (typeof window !== "undefined" && window.ARCH_META)
+              ? window.ARCH_META[archKey] : null;
             return (
               <button key={s.id} onClick={() => setSelectedId(s.id)}
                 className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
                   s.id === selectedId ? "bg-amber-600/40 text-amber-50 border border-amber-500/50" : "bg-slate-800/50 text-slate-400 hover:text-amber-300"
-                }`}>
+                }`}
+                style={meta && s.id !== selectedId
+                  ? { borderLeft: `2px solid ${meta.c1}` }
+                  : undefined}>
                 <p className="font-medium truncate">{s.name}</p>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-xs text-slate-500">{s.steps?.length || 0} steps</span>
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                  {secondary && (
+                    <span className="text-[10px] text-slate-500">{secondary}</span>
+                  )}
+                  {meta && (
+                    <span className="text-[9px] px-1.5 py-0 rounded"
+                      style={{
+                        color: meta.c1,
+                        background: `rgba(${meta.glow}, 0.12)`,
+                        border: `1px solid rgba(${meta.glow}, 0.35)`,
+                      }}>{meta.short || archKey}</span>
+                  )}
                   {typeBadge && (
                     <span className={`text-[9px] px-1.5 py-0 rounded border ${WORKFLOW_TYPE_COLORS[typeBadge] || WORKFLOW_TYPE_COLORS.General}`}>
                       {typeBadge}
                     </span>
+                  )}
+                  {s.nsfw && (
+                    <span className="text-[9px] px-1.5 py-0 rounded bg-red-900/30 text-red-300 border border-red-500/30">NSFW</span>
+                  )}
+                  {s.admin_only && (
+                    <span className="text-[9px] px-1.5 py-0 rounded bg-amber-900/30 text-amber-300 border border-amber-500/30">admin</span>
                   )}
                   {src?.type === "parsed" && <span className="text-[9px] text-blue-400">parsed</span>}
                 </div>
@@ -1725,30 +1930,73 @@ function ScaffoldEditor({ scaffolds, setScaffolds }) {
         </div>
       </div>
 
-      {/* Center: Steps */}
+      {/* Center: Steps + prompt-driven scaffold overview ──────────────
+          Wizards that ship with no explicit step machine (every studio
+          and every auto-generated model_wizard — their scaffold is
+          expressed via the system prompt + build_fns) used to show a
+          blank section labelled "Workflow Steps" with nothing under it,
+          which read as "the scaffold is empty". The overview card below
+          surfaces what the wizard actually does: its archetype, the
+          tools it invokes (build_fns), default model + arch, a preview
+          of the system prompt, and the workflow source when present.
+          When the user starts adding steps, the step list replaces the
+          overview. */}
       <div className="col-span-2 bg-slate-900 border border-amber-600/30 rounded-xl p-4 overflow-y-auto">
         <div className="flex items-center gap-2 mb-3">
-          <h3 className="text-sm font-medium text-amber-200">Workflow Steps</h3>
+          <h3 className="text-sm font-medium text-amber-200">
+            {scaffold.steps.length > 0 ? "Workflow Steps" : "Scaffold Overview"}
+          </h3>
           {saveStatus === "saving" && <span className="text-[10px] text-slate-500 animate-pulse">saving...</span>}
           {saveStatus === "saved" && <span className="text-[10px] text-emerald-400">saved</span>}
           {saveStatus === "error" && <span className="text-[10px] text-red-400">save failed</span>}
         </div>
-        <div className="space-y-2">
-          {scaffold.steps.map((step, idx) => (
-            <StepCard key={step.id} step={step} index={idx} total={scaffold.steps.length}
-              isSelected={selectedStep === step.id}
-              onSelect={() => setSelectedStep(selectedStep === step.id ? null : step.id)}
-              onMove={(fromIdx, toIdx) => {
-                const newSteps = [...scaffold.steps];
-                [newSteps[fromIdx], newSteps[toIdx]] = [newSteps[toIdx], newSteps[fromIdx]];
-                updateScaffold({ ...scaffold, steps: newSteps });
-              }}
-              onDelete={() => updateScaffold({ ...scaffold, steps: scaffold.steps.filter((_, i) => i !== idx) })}
-            />
-          ))}
-        </div>
-        <button onClick={() => updateScaffold({ ...scaffold, steps: [...scaffold.steps, newStep()] })}
-          className={btnSmall + " mt-4 bg-purple-800/40 text-purple-300 hover:text-amber-300"}><Icons.Plus /> Add Step</button>
+        {scaffold.steps.length > 0 ? (
+          <>
+            <div className="space-y-2">
+              {scaffold.steps.map((step, idx) => (
+                <StepCard key={step.id} step={step} index={idx} total={scaffold.steps.length}
+                  isSelected={selectedStep === step.id}
+                  onSelect={() => setSelectedStep(selectedStep === step.id ? null : step.id)}
+                  onMove={(fromIdx, toIdx) => {
+                    const newSteps = [...scaffold.steps];
+                    [newSteps[fromIdx], newSteps[toIdx]] = [newSteps[toIdx], newSteps[fromIdx]];
+                    updateScaffold({ ...scaffold, steps: newSteps });
+                  }}
+                  onDelete={() => updateScaffold({ ...scaffold, steps: scaffold.steps.filter((_, i) => i !== idx) })}
+                />
+              ))}
+            </div>
+            <button onClick={() => updateScaffold({ ...scaffold, steps: [...scaffold.steps, newStep()] })}
+              className={btnSmall + " mt-4 bg-purple-800/40 text-purple-300 hover:text-amber-300"}><Icons.Plus /> Add Step</button>
+          </>
+        ) : (
+          <ScaffoldOverviewCard
+            scaffold={scaffold}
+            onSeedSteps={() => {
+              // Seed a step chain from the wizard's build_fns so the
+              // user has a starting point to reorder + customise.
+              const seeded = (scaffold.build_fns || []).slice(0, 8)
+                .map((fn, i) => {
+                  const step = newStep("execute");
+                  step.label = fn.replace(/^build_/, "").replace(/_/g, " ");
+                  step.params = step.params || {};
+                  step.params.build_fn = fn;
+                  return step;
+                });
+              if (!seeded.length) {
+                // No build_fns — seed a single prompt step so the user
+                // has somewhere to start.
+                seeded.push(newStep("prompt"));
+              }
+              updateScaffold({ ...scaffold, steps: seeded });
+            }}
+            onAddBlankStep={() => {
+              updateScaffold({ ...scaffold, steps: [...scaffold.steps, newStep()] });
+            }}
+            onEditRules={() => setRightPanel("rules")}
+            onEditProps={() => setRightPanel("props")}
+          />
+        )}
       </div>
 
       {/* Right: Details */}
@@ -3479,25 +3727,60 @@ function SignalBridgeSettings() {
           const existingIds = new Set(prev.map(s => s.id));
           const newOnes = serverScaffs
             .filter(s => !existingIds.has(s.id))
-            .map(s => ({
-              id: s.id,
-              name: s.name,
-              description: s.description || s.subtext || "",
-              workflow_key: s.workflow_key || s.id,
-              system_prompt_header: s.system_prompt || "",
-              system_prompt_rules: [],
-              steps: s.steps || [],
-              nsfw: !!s.nsfw,
-              admin_only: !!s.admin_only,
-              lora_slots: s.lora_slots || [],
-              color1: s.color1 || "",
-              color2: s.color2 || "",
-              archetype: s.archetype || "",
-              source: s.source || "auto_model",
-              banished: s.banished || false,
-              default_model: s.default_model || "",
-              default_arch: s.default_arch || "",
-            }));
+            .map(s => {
+              // Split the server's flat `system_prompt` into an editable
+              // header + a list of `- …` bullet rules. The server ships
+              // wizards with no explicit step list — the scaffold is
+              // expressed via the system prompt + build_fns — so surfacing
+              // the structured form here lets the user edit it instead of
+              // staring at a single 3000-char textarea.
+              const sp = s.system_prompt || "";
+              const lines = sp.split("\n");
+              const ruleIdxs = [];
+              lines.forEach((ln, i) => {
+                if (/^\s*[-*•]\s+/.test(ln)) ruleIdxs.push(i);
+              });
+              let header = sp;
+              let rules = [];
+              if (ruleIdxs.length >= 2) {
+                // Treat everything up to the first "- " line as the header,
+                // everything from there on (that matches "- …") as rules.
+                const firstRuleAt = ruleIdxs[0];
+                header = lines.slice(0, firstRuleAt).join("\n").trim();
+                rules = lines.slice(firstRuleAt)
+                  .filter(ln => /^\s*[-*•]\s+/.test(ln))
+                  .map(ln => ln.replace(/^\s*[-*•]\s+/, "").trim())
+                  .filter(Boolean);
+              }
+              return {
+                id: s.id,
+                name: s.name,
+                description: s.description || s.subtext || "",
+                subtext: s.subtext || "",
+                type: s.type || "",                 // studio / model_wizard / comfyui_model / custom_…
+                workflow_key: s.workflow_key || s.id,
+                system_prompt_header: header,
+                system_prompt_rules: rules,
+                // Keep the raw prompt around so we can render a preview
+                // without re-joining the split pieces every render. The
+                // editor writes back through updateScaffold → persistScaffold
+                // which rebuilds the flat string from header + rules.
+                _raw_system_prompt: sp,
+                steps: s.steps || [],
+                build_fns: s.build_fns || [],       // tools the wizard invokes
+                nsfw: !!s.nsfw,
+                admin_only: !!s.admin_only,
+                lora_slots: s.lora_slots || [],
+                color1: s.color1 || "",
+                color2: s.color2 || "",
+                archetype: s.archetype || "",
+                source: s.source || "auto_model",
+                banished: s.banished || false,
+                default_model: s.default_model || "",
+                default_arch: s.default_arch || "",
+                workflow_source: s.workflow_source || null,
+              };
+            });
           return newOnes.length ? [...prev, ...newOnes] : prev;
         });
       })
