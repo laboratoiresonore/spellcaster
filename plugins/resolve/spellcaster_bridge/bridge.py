@@ -38,6 +38,35 @@ from .media_pool_sync import MediaPoolSync
 _HEARTBEAT_INTERVAL_S = 10.0
 
 
+def _resolve_host() -> str:
+    """Short, LAN-safe hostname for instance_id disambiguation."""
+    try:
+        import socket
+        raw = (socket.gethostname() or "").strip().split(".")[0][:64]
+    except Exception:
+        raw = ""
+    allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                  "0123456789-_")
+    cleaned = "".join(c for c in raw if c in allowed)
+    return cleaned or "resolve-host"
+
+
+_RESOLVE_HOST = _resolve_host()
+
+# Presence broker metadata — matches the shape the other plugins use so
+# the ComfyUI pack can enumerate this interface as a peer even when the
+# Guild is restarting (see AUDIT_CROSS_APP_DISCOVERY.md §6.5).
+_RESOLVE_PRESENCE_META = {
+    "key": "resolve",
+    "label": "DaVinci Resolve",
+    "icon": "🎬",
+    "version": "mvp",
+    "capabilities": ["receive_image", "receive_video", "timeline_import"],
+    "host": _RESOLVE_HOST,
+    "instance_id": f"resolve@{_RESOLVE_HOST}",
+}
+
+
 class Bridge:
     def __init__(self):
         self.config = BridgeConfig()
@@ -54,6 +83,10 @@ class Bridge:
         self._hb_thread: threading.Thread | None = None
         self._bus_stop = threading.Event()
         self._bus_thread: threading.Thread | None = None
+        # Resolved on first heartbeat via GET {guild}/api/config; Resolve
+        # doesn't configure this directly (it's Guild-centric by design).
+        self._comfyui_url: str | None = None
+        self._comfyui_url_checked = False
 
     # ── Lifecycle ────────────────────────────────────────────────────
 
@@ -101,14 +134,15 @@ class Bridge:
         self._hb_thread.start()
 
     def _send_heartbeat(self):
+        meta = {
+            "bridge_version": "mvp",
+            "imported": self.sync.imported_count(),
+            "sse_mode": self.sse.mode,
+        }
         try:
             body = json.dumps({
                 "interface": "resolve",
-                "meta": {
-                    "bridge_version": "mvp",
-                    "imported": self.sync.imported_count(),
-                    "sse_mode": self.sse.mode,
-                },
+                "meta": meta,
             }).encode("utf-8")
             req = urllib.request.Request(
                 f"{self.guild.base_url}/api/interfaces/heartbeat",
@@ -117,6 +151,53 @@ class Bridge:
             urllib.request.urlopen(req, timeout=3.0).close()
         except Exception:
             # Silent — the bridge remains useful even if heartbeat fails
+            pass
+        # Mirror to ComfyUI's presence broker so peer plugins see us even
+        # when the Guild is momentarily down.
+        self._send_comfyui_presence(meta)
+
+    # ── ComfyUI presence broker mirror ───────────────────────────────
+
+    def _resolve_comfyui_url(self) -> str | None:
+        """One-shot lookup of the ComfyUI URL via {guild}/api/config.
+
+        Resolve's BridgeConfig doesn't carry comfyui_url — the Guild owns
+        that setting. We fetch once, cache, and tolerate the Guild being
+        down (returns None; presence silently skipped).
+        """
+        if self._comfyui_url_checked:
+            return self._comfyui_url
+        self._comfyui_url_checked = True
+        try:
+            req = urllib.request.Request(
+                f"{self.guild.base_url}/api/config",
+                headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=3.0) as r:
+                cfg = json.loads(r.read().decode("utf-8", errors="replace"))
+            url = (cfg.get("comfyui_url") or "").strip()
+            if url:
+                self._comfyui_url = url.rstrip("/")
+        except Exception:
+            self._comfyui_url = None
+        return self._comfyui_url
+
+    def _send_comfyui_presence(self, meta: dict):
+        url = self._resolve_comfyui_url()
+        if not url:
+            return
+        body = dict(_RESOLVE_PRESENCE_META)
+        body["url"] = self.guild.base_url
+        body["meta"] = meta
+        try:
+            data = json.dumps(body).encode("utf-8")
+            req = urllib.request.Request(
+                f"{url}/spellcaster/presence/heartbeat",
+                data=data, method="POST",
+                headers={"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=2.0).close()
+        except Exception:
+            # ComfyUI might be off or not running the Spellcaster pack;
+            # Guild heartbeat already succeeded so this is a bonus.
             pass
 
     # ── Cross-interface event subscription ───────────────────────────
