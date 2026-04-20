@@ -24,6 +24,14 @@ let GUILD_URL = 'http://127.0.0.1:7777';
 // Backgrounds directory (SillyTavern stores them here)
 let BG_DIR = '';
 
+// Wizard-provisioned defaults. Mirror the three settings the ST-side
+// wizard writes so downstream workflow builders can read them. Empty
+// string on IMAGE_MODEL means "let getBestModel() auto-pick" (the
+// pre-wizard behaviour, preserved when no wizard choice was made).
+let SPELLCASTER_IMAGE_MODEL = '';
+let SPELLCASTER_VIDEO_BACKEND = 'auto';   // 'auto' | 'wan22' | 'none'
+let SPELLCASTER_QUALITY_PROFILE = 'balanced'; // 'fast' | 'balanced' | 'max'
+
 // Max base64 body size (~20 MB decoded). 20 * 1024 * 1024 * 4/3 ≈ 27.97 MB chars.
 const MAX_B64_CHARS = 28 * 1024 * 1024;
 const MAX_FETCH_BYTES = 50 * 1024 * 1024;
@@ -354,13 +362,118 @@ function init(router) {
             if (!path.isAbsolute(d)) return res.status(400).json({ error: 'backgrounds_dir must be absolute' });
             BG_DIR = d;
         }
+        // Wizard-provisioned defaults. Whitelist enum fields; validate the
+        // free-form checkpoint filename for shape only — we can't confirm
+        // presence without a /object_info round-trip and won't block on
+        // that here (the request may beat a ComfyUI cold-start).
+        if (Object.prototype.hasOwnProperty.call(req.body, 'image_model')) {
+            const raw = String(req.body.image_model || '').trim();
+            // Empty string = auto-pick. A filename may legitimately carry
+            // a subfolder prefix but must not traverse upward.
+            if (raw && /\.\.[\\/]/.test(raw)) {
+                return res.status(400).json({
+                    error: 'image_model: path traversal not allowed',
+                });
+            }
+            SPELLCASTER_IMAGE_MODEL = raw;
+        }
+        if (Object.prototype.hasOwnProperty.call(req.body, 'video_backend')) {
+            const raw = String(req.body.video_backend || 'auto').trim();
+            if (!['auto', 'wan22', 'none'].includes(raw)) {
+                return res.status(400).json({
+                    error: "video_backend must be 'auto', 'wan22', or 'none'",
+                });
+            }
+            SPELLCASTER_VIDEO_BACKEND = raw;
+        }
+        if (Object.prototype.hasOwnProperty.call(req.body, 'quality_profile')) {
+            const raw = String(req.body.quality_profile || 'balanced').trim();
+            if (!['fast', 'balanced', 'max'].includes(raw)) {
+                return res.status(400).json({
+                    error: "quality_profile must be 'fast', 'balanced', or 'max'",
+                });
+            }
+            SPELLCASTER_QUALITY_PROFILE = raw;
+        }
         autoDetectBgDir();
         res.json({
             status: 'ok',
-            comfyui_url: COMFYUI_URL,
-            guild_url: GUILD_URL,
-            bg_dir: BG_DIR,
+            comfyui_url:     COMFYUI_URL,
+            guild_url:       GUILD_URL,
+            bg_dir:          BG_DIR,
+            image_model:     SPELLCASTER_IMAGE_MODEL,
+            video_backend:   SPELLCASTER_VIDEO_BACKEND,
+            quality_profile: SPELLCASTER_QUALITY_PROFILE,
         });
+    });
+
+    // GET /models — group /object_info's checkpoint + UNET lists by
+    // architecture + report which video backends are installed. Used
+    // by the first-run wizard's image-model + video-backend pickers.
+    router.get('/models', async (req, res) => {
+        let catalog;
+        try {
+            const r = await fetchJSON(`${COMFYUI_URL}/object_info`);
+            catalog = r.data;
+        } catch (e) {
+            return res.status(502).json({
+                error: 'ComfyUI unreachable: ' + e.message,
+                comfyui: COMFYUI_URL,
+            });
+        }
+        if (typeof catalog !== 'object' || catalog === null) {
+            return res.status(502).json({ error: 'unexpected /object_info shape' });
+        }
+        const ckpts = catalog?.CheckpointLoaderSimple?.input?.required?.ckpt_name?.[0] || [];
+        const unets = catalog?.UNETLoader?.input?.required?.unet_name?.[0] || [];
+        // Filename-heuristic arch classification. Keys match the
+        // comfyui-spellcaster arch registry so a wizard round-trip
+        // survives unchanged through the workflow builders.
+        const groups = {
+            klein9b: [], klein4b: [], fluxkontext: [],
+            flux1dev: [], sdxl: [], illustrious: [], sd15: [],
+            zit: [], chroma: [],
+        };
+        const bucket = (name, isUnet) => {
+            const n = String(name).toLowerCase();
+            if (n.includes('klein')) {
+                if (n.includes('9b')) return 'klein9b';
+                if (n.includes('4b')) return 'klein4b';
+                return 'klein9b';
+            }
+            if (n.includes('kontext')) return 'fluxkontext';
+            if (isUnet && (n.includes('flux') || n.includes('flux1'))) return 'flux1dev';
+            if (n.includes('chroma')) return 'chroma';
+            if (n.includes('z-image') || n.includes('z_image') || n.includes('zimage')
+                || n.includes('turbo-z') || n.includes('zit')) return 'zit';
+            if (n.includes('illust') || n.includes('pony') || n.includes('noobai')) return 'illustrious';
+            if (n.includes('sdxl') || n.includes('xl') || n.includes('jugger')
+                || n.includes('realistic') || n.includes('zavy')) return 'sdxl';
+            if (n.includes('sd15') || n.includes('sd-15') || n.includes('1.5')) return 'sd15';
+            // Default: treat as SDXL checkpoint (most common untagged case).
+            // UNETs without identifying markers go uncategorized rather than
+            // dumped into sdxl — UNETs are arch-specific and misfiling is
+            // louder there.
+            return isUnet ? null : 'sdxl';
+        };
+        for (const c of ckpts) {
+            const k = bucket(c, false);
+            if (k) groups[k].push(c);
+        }
+        for (const u of unets) {
+            const k = bucket(u, true);
+            if (k) groups[k].push(u);
+        }
+        const image = {};
+        for (const [k, v] of Object.entries(groups)) {
+            if (v.length) image[k] = v.sort();
+        }
+        const nodes = new Set(Object.keys(catalog));
+        const video = {
+            wan: nodes.has('WanImageToVideo') || nodes.has('LoadWanVideoModel'),
+            ltx: nodes.has('LTXVImgToVideo'),
+        };
+        res.json({ comfyui: COMFYUI_URL, image, video });
     });
 
     // ══════════════════════════════════════════════════════════════════
