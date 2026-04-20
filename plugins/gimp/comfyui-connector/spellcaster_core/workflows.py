@@ -7344,7 +7344,15 @@ def build_ltx_video(preset, prompt_text, seed,
                      loras=None, interpolate=False, rtx_scale=0,
                      fps=25, pingpong=False,
                      image_filename=None, i2v_strength=0.9,
-                     negative_text=None):
+                     negative_text=None,
+                     # Optional quality / speed patches (CLAUDE.md §16.3).
+                     # Each defaults to None — caller decides via an
+                     # /object_info probe whether the node exists on the
+                     # target server, passes True/False, and gets fail-loud
+                     # behavior if the chosen node isn't installed.
+                     enable_sage=False, enable_cfg_zero=False,
+                     # Per-call tuning (None = use canon default).
+                     sampler_name=None, stg_layers=None, chunk_size=None):
     # ═══════════════════════════════════════════════════════════════════
     #  CANONICAL LTX 2.3 BUILDER — DO NOT DIVERGE
     # ═══════════════════════════════════════════════════════════════════
@@ -7455,9 +7463,34 @@ def build_ltx_video(preset, prompt_text, seed,
             lid = nf.lora_loader_model_only(model_ref, ln, ls, node_id=nid)
             model_ref = [lid, 0]
 
-    # VRAM optimization + STG
-    chunk_id = nf.ltxv_chunk_feed_forward(model_ref, chunks=4, node_id="2")
-    stg_model_id = nf.ltxv_apply_stg([chunk_id, 0], "14, 19", node_id="3")
+    # ── Optional quality/speed patches (pre-chunk) ────────────────
+    # SAGE (PatchSageAttentionKJ): rewires attention to the faster
+    # SageAttention kernel. 50-100% speedup on RTX 40/50xx, neutral
+    # quality. Applied BEFORE chunk_feed_forward so the rest of the
+    # chain inherits the patched attention. Requires ComfyUI-KJNodes.
+    if enable_sage:
+        sage_id = nf._add("PatchSageAttentionKJ", {
+            "model": model_ref, "sage_attention": "auto",
+        }, node_id="2a")
+        model_ref = [sage_id, 0]
+
+    # VRAM optimization + STG. `chunk_size` and `stg_layers` default to
+    # the canonical values (CLAUDE.md §16.3); callers can override for
+    # low-VRAM tuning or alternative STG layer exploration.
+    _chunks = int(chunk_size) if chunk_size else 4
+    _stg_layers = stg_layers if stg_layers else "14, 19"
+    chunk_id = nf.ltxv_chunk_feed_forward(model_ref, chunks=_chunks, node_id="2")
+    stg_model_id = nf.ltxv_apply_stg([chunk_id, 0], _stg_layers, node_id="3")
+
+    # CFG Zero Star: sets CFG=0 on the first sampling step to reduce
+    # burn-in. Only meaningful when cfg > 1 — distilled mode (cfg=1)
+    # gets no benefit, so we silently skip even if the caller asked
+    # for it. Core ComfyUI on recent builds.
+    if enable_cfg_zero and not distilled:
+        czs_id = nf._add("CFGZeroStar", {
+            "model": [stg_model_id, 0],
+        }, node_id="3a")
+        stg_model_id = czs_id
 
     # ── Text encoding ─────────────────────────────────────────────
     # R133: the LTX-2.3 distilled training corpus includes subtitled /
@@ -7485,7 +7518,12 @@ def build_ltx_video(preset, prompt_text, seed,
     sched_id = nf.ltxv_scheduler(steps=steps, node_id="15")
     guider_id = nf.stg_guider([stg_model_id, 0], [cond_id, 0], [cond_id, 1],
                                cfg=cfg, stg=stg, rescale=rescale, node_id="16")
-    sampler_id = nf.ksampler_select("euler", node_id="17")
+    # Sampler selection. Canon default is "euler" (matches the LTX team's
+    # reference workflow). Callers can try "dpmpp_2m_sde" or "heun" for
+    # full-step runs — distilled mode is tuned for euler and usually
+    # regresses on other samplers.
+    _sampler = sampler_name or "euler"
+    sampler_id = nf.ksampler_select(_sampler, node_id="17")
     noise_id = nf.random_noise(seed, node_id="18")
 
     # ── I2V conditioning (optional) ─────────────────────────────────────────────

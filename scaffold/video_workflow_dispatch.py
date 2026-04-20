@@ -529,6 +529,17 @@ def build_native_workflow(preset_key: str, *, prompt: str,
                            # canonical builder — Kijai reference schedule).
                            sampler_name: Optional[str] = None,
                            scheduler: Optional[str] = None,
+                           # LTX-specific overrides (CLAUDE.md §16.3).
+                           # None = let the preset's default ride. Used by
+                           # the GIMP dialog's Advanced section, Darktable
+                           # LTX section, and any future Guild clients.
+                           steps: Optional[int] = None,
+                           cfg: Optional[float] = None,
+                           stg: Optional[float] = None,
+                           rescale: Optional[float] = None,
+                           i2v_strength: Optional[float] = None,
+                           stg_layers: Optional[str] = None,
+                           chunk_size: Optional[int] = None,
                            ) -> Tuple[Optional[dict], Optional[str]]:
     """Build a ComfyUI workflow dict for `preset_key`.
 
@@ -605,6 +616,7 @@ def build_native_workflow(preset_key: str, *, prompt: str,
         _ensure_spellcaster_core_on_path()
         try:
             from spellcaster_core.workflows import build_ltx_video  # type: ignore
+            from spellcaster_core import video_presets as _vp  # type: ignore
         except ImportError as e:
             return None, f"spellcaster_core.workflows.build_ltx_video missing: {e}"
         models = probe_comfyui_models(comfyui_base_url)
@@ -618,6 +630,39 @@ def build_native_workflow(preset_key: str, *, prompt: str,
         task = (spec.get("task") or "").lower()
         if task in ("i2v",) and not image_filename:
             return None, "this preset needs a reference image (i2v)"
+
+        # Resolve (distilled, two_stage) via the canonical helper — this
+        # mirrors the GIMP / Guild path and keeps every LTX caller
+        # agreeing on the mode → kwargs translation (CLAUDE.md §16.4
+        # rule #2). The mode name is implicit in the hint dict.
+        if hint.get("distilled") and not hint.get("two_stage"):
+            _mode = "i2v" if image_filename else "distilled"
+        elif hint.get("two_stage"):
+            _mode = "two_stage"
+        else:
+            _mode = "full"
+        try:
+            mode_kwargs = _vp.ltx_mode_kwargs(_mode)
+        except Exception:
+            mode_kwargs = {
+                "distilled": bool(hint.get("distilled", False)),
+                "two_stage": bool(hint.get("two_stage", False)),
+            }
+
+        # Conditional passthrough — only include caller overrides when
+        # they are set so the canonical builder's defaults stay intact.
+        extra = {}
+        if steps        is not None: extra["steps"]        = steps
+        if cfg          is not None: extra["cfg"]          = cfg
+        if stg          is not None: extra["stg"]          = stg
+        if rescale      is not None: extra["rescale"]      = rescale
+        if i2v_strength is not None: extra["i2v_strength"] = i2v_strength
+        if sampler_name:             extra["sampler_name"] = sampler_name
+        if stg_layers:               extra["stg_layers"]   = stg_layers
+        if chunk_size   is not None: extra["chunk_size"]   = chunk_size
+        if enable_sage     is not None: extra["enable_sage"]     = bool(enable_sage)
+        if enable_cfg_zero is not None: extra["enable_cfg_zero"] = bool(enable_cfg_zero)
+
         try:
             # Pass the caller's negative verbatim so shot.negative
             # reaches the sampler. Defaulting to None lets
@@ -628,13 +673,14 @@ def build_native_workflow(preset_key: str, *, prompt: str,
                 seed=seed,
                 width=width, height=height,
                 num_frames=length,
-                two_stage=bool(hint.get("two_stage", False)),
-                distilled=bool(hint.get("distilled", False)),
+                **mode_kwargs,
                 interpolate=bool(hint.get("interpolate", False)),
                 rtx_scale=int(hint.get("rtx_scale", 0)),
                 fps=fps,
+                pingpong=bool(pingpong),
                 image_filename=image_filename,
                 negative_text=(negative or None),
+                **extra,
             )
         except Exception as e:  # noqa: BLE001
             return None, f"build_ltx_video raised: {e}"
