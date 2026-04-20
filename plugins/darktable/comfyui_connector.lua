@@ -1031,6 +1031,75 @@ local function curl_download(url, out)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════
+-- Canonical-builder dispatch — talk to spellcaster_core via the Guild.
+-- ═══════════════════════════════════════════════════════════════════════
+--
+-- CLAUDE.md §3 ("ONE SOURCE OF TRUTH"): every workflow builder lives in
+-- comfyui-spellcaster/spellcaster_core/workflows.py. Inlining a Klein /
+-- WAN / LTX workflow as JSON in Lua duplicates ~100-300 lines per
+-- function and guarantees we'll diverge on the next bug fix. The
+-- Guild's POST /api/run_builder takes a builder name + params dict and
+-- runs the Python builder on our behalf.
+--
+-- Use ``_run_builder`` to call any build_* function and ``_download_guild_assets``
+-- to pull the resulting /api/assets/<hash> URLs into Darktable's library.
+-- For new image-editing features, prefer this path over inlining.
+
+local function _run_builder(builder_name, params_json)
+  -- ``params_json`` MUST already be a valid JSON object literal (e.g.
+  -- '{"image_filename":"foo.png","prompt_text":"a cat"}'). Caller is
+  -- responsible for json_escape on string values — we pass through as-is.
+  local guild = get_guild_url()
+  if not guild or guild == "" then
+    return nil, "Guild URL not configured (Settings > Spellcaster > guild_url)"
+  end
+  local server = get_server() or ""
+  local body = string.format(
+    '{"builder":"%s","comfy_url":"%s","params":%s}',
+    json_escape(builder_name),
+    json_escape(server),
+    params_json or "{}")
+  local resp = curl_post_json(guild .. "/api/run_builder", body)
+  if not resp or resp == "" then
+    return nil, "No response from Guild — is " .. guild .. " reachable?"
+  end
+  -- Cheap JSON-shape inspection (no full parser needed for our envelope).
+  if resp:find('"ok"%s*:%s*false') then
+    local err = resp:match('"error"%s*:%s*"(.-)"') or "unknown error"
+    return nil, err
+  end
+  local urls_block = resp:match('"urls"%s*:%s*%[(.-)%]') or ""
+  local urls = {}
+  for u in urls_block:gmatch('"([^"]+)"') do
+    table.insert(urls, u)
+  end
+  return urls
+end
+
+local function _download_guild_assets(urls, prefix)
+  -- Guild returns canonical /api/assets/<hash> URLs (AssetGallery
+  -- backed). Resolve to absolute, fetch, and import each into the
+  -- Darktable library so the user sees the result alongside the
+  -- original. Files are stored under tmp_dir() so the OS reaps them
+  -- on next reboot.
+  local guild = get_guild_url()
+  if not guild or guild == "" then return 0 end
+  prefix = prefix or "spellcaster_result"
+  local imported = 0
+  for j, u in ipairs(urls or {}) do
+    local full = u
+    if u:sub(1, 1) == "/" then full = guild .. u end
+    -- All current image builders emit PNG. If we add video builders
+    -- here later, switch on the content-type or pass an explicit ext.
+    local out = tmp_dir() .. sep .. prefix .. "_" .. os.time() .. "_" .. j .. ".png"
+    curl_download(full, out)
+    -- import returns the new dt_image_t on success; nil on failure.
+    if dt.database.import(out) then imported = imported + 1 end
+  end
+  return imported
+end
+
+-- ═══════════════════════════════════════════════════════════════════════
 -- CROSS-INTERFACE BACKBONE — heartbeat + event emit to the Wizard Guild
 -- ═══════════════════════════════════════════════════════════════════════
 -- The Guild's /api/interfaces registry expects each frontend (GIMP,
@@ -4144,6 +4213,98 @@ local function process_lama(image, mask_path)
   dt.print(_("Object removal complete!"))
 end
 
+-- ── Klein Inpaint (canonical) ──────────────────────────────────────────
+-- Routes through POST /api/run_builder → spellcaster_core.workflows.build_klein_inpaint.
+-- The Lua plugin used to do all inpainting via SDXL/KSampler; this path
+-- gets the architecturally correct Klein workflow (UNETLoader +
+-- Flux2Scheduler + SamplerCustomAdvanced + the Klein enhancer chain)
+-- without duplicating the 200-line builder JSON. Mask is uploaded to
+-- ComfyUI directly (same as LaMa) so the builder's image_filename /
+-- mask_filename args see the names ComfyUI's LoadImage expects.
+local function process_klein_inpaint(image, mask_path, klein_model_label,
+                                      prompt, denoise)
+  local server = get_server()
+
+  dt.print(_("Exporting for Klein inpaint..."))
+  local path, fname = export_to_temp(image)
+  if not path then dt.print(_("Export failed")); return end
+
+  dt.print(_("Uploading image to ComfyUI..."))
+  local img_name = "dt_kinp_img_" .. os.time() .. "_" .. math.random(10000, 99999) .. ".png"
+  curl_upload(server .. "/upload/image", path, img_name)
+  os.remove(path)
+
+  dt.print(_("Uploading mask to ComfyUI..."))
+  local mask_name = "dt_kinp_mask_" .. os.time() .. "_" .. math.random(10000, 99999) .. ".png"
+  curl_upload(server .. "/upload/image", mask_path, mask_name)
+
+  local seed = math.random(1, 2^31 - 1)
+  local params = string.format(
+    '{"image_filename":"%s","mask_filename":"%s","prompt_text":"%s",'
+    .. '"seed":%d,"klein_model_key":"%s","denoise":%.2f,"enhance":true}',
+    json_escape(img_name),
+    json_escape(mask_name),
+    json_escape(prompt or ""),
+    seed,
+    json_escape(klein_model_label or "Klein 9B"),
+    denoise or 0.92)
+
+  dt.print(_("Klein inpaint running (this may take a minute)..."))
+  local urls, err = _run_builder("build_klein_inpaint", params)
+  if not urls then
+    dt.print(_("Klein inpaint failed: ") .. tostring(err))
+    return
+  end
+  if #urls == 0 then
+    dt.print(_("Klein inpaint returned no images"))
+    return
+  end
+  local imported = _download_guild_assets(urls, "klein_inpaint")
+  dt.print(string.format(_("Klein inpaint done — %d image(s) imported"), imported))
+end
+
+-- ── Klein Re-pose (canonical) ──────────────────────────────────────────
+-- Routes through POST /api/run_builder → build_klein_repose. Uses
+-- Klein's ReferenceLatent + BasicScheduler so the input photo's
+-- structure is preserved as a soft guide while the prompt drives the
+-- new pose / framing. Lower denoise = closer to the original;
+-- higher denoise = freer reinterpretation.
+local function process_klein_repose(image, klein_model_label, prompt, denoise)
+  local server = get_server()
+
+  dt.print(_("Exporting for Klein re-pose..."))
+  local path, fname = export_to_temp(image)
+  if not path then dt.print(_("Export failed")); return end
+
+  dt.print(_("Uploading to ComfyUI..."))
+  local img_name = "dt_krep_" .. os.time() .. "_" .. math.random(10000, 99999) .. ".png"
+  curl_upload(server .. "/upload/image", path, img_name)
+  os.remove(path)
+
+  local seed = math.random(1, 2^31 - 1)
+  local params = string.format(
+    '{"image_filename":"%s","prompt_text":"%s","seed":%d,'
+    .. '"klein_model_key":"%s","denoise":%.2f,"enhance":true}',
+    json_escape(img_name),
+    json_escape(prompt or ""),
+    seed,
+    json_escape(klein_model_label or "Klein 9B"),
+    denoise or 0.65)
+
+  dt.print(_("Klein re-pose running (this may take a minute)..."))
+  local urls, err = _run_builder("build_klein_repose", params)
+  if not urls then
+    dt.print(_("Klein re-pose failed: ") .. tostring(err))
+    return
+  end
+  if #urls == 0 then
+    dt.print(_("Klein re-pose returned no images"))
+    return
+  end
+  local imported = _download_guild_assets(urls, "klein_repose")
+  dt.print(string.format(_("Klein re-pose done — %d image(s) imported"), imported))
+end
+
 -- ── Color Grading / LUT processing ────────────────────────────────────
 local function process_lut(image, lut_file, strength)
   local server = get_server()
@@ -7071,6 +7232,113 @@ local lama_send_btn = dt.new_widget("button") {
 }
 
 -- ═══════════════════════════════════════════════════════════════════════
+-- Klein Inpaint + Klein Re-pose GUI widgets (canonical builder dispatch)
+-- ═══════════════════════════════════════════════════════════════════════
+-- Both flows talk to the Guild's /api/run_builder so the actual workflow
+-- JSON stays in spellcaster_core/workflows.py — bug fixes there reach
+-- Darktable for free. KLEIN_MODELS is the local model table (line ~2830)
+-- that already drives the existing Klein img2img controls.
+
+local klein_model_selector = dt.new_widget("combobox") {
+  label = _("Klein Model"),
+  tooltip = _("9B = best quality, more VRAM. 4B fp8 = faster, fits 12GB."),
+  selected = 1,
+  KLEIN_MODELS[1].label,
+  KLEIN_MODELS[2].label,
+}
+
+-- Klein Inpaint controls
+local klein_inpaint_mask_entry = dt.new_widget("entry") {
+  text = "",
+  placeholder = _("Path to mask image (white=inpaint area)..."),
+  tooltip = _("Full path to a mask PNG — white pixels mark the area Klein will regenerate"),
+  editable = true,
+}
+
+local klein_inpaint_prompt_entry = dt.new_widget("entry") {
+  text = "",
+  placeholder = _("What should appear in the masked area..."),
+  tooltip = _("Klein uses natural language — 'a vintage brass lamp' beats 'lamp, vintage, brass'"),
+  editable = true,
+}
+
+local klein_inpaint_denoise_slider = dt.new_widget("slider") {
+  label = _("Denoise"),
+  tooltip = _("How strongly the masked area is regenerated. 0.6 = subtle fix, 0.92 = full replace."),
+  soft_min = 0.30, soft_max = 1.00,
+  hard_min = 0.10, hard_max = 1.00,
+  step = 0.02, digits = 2, value = 0.92,
+}
+
+local klein_inpaint_send_btn = dt.new_widget("button") {
+  label = _("Klein Inpaint"),
+  tooltip = _("Regenerate the masked region with Flux 2 Klein (canonical workflow via the Guild)"),
+  clicked_callback = function()
+    local images = dt.gui.selection()
+    if #images == 0 then dt.print(_("No images selected")); return end
+    if #images > 1 then dt.print(_("Klein inpaint processes one image at a time — using first selected")); end
+    local mask_path = klein_inpaint_mask_entry.text
+    if not mask_path or mask_path == "" then
+      dt.print(_("Enter mask image path first")); return
+    end
+    local mf = io.open(mask_path, "r")
+    if not mf then dt.print(_("Mask image not found: ") .. mask_path); return end
+    mf:close()
+    local prompt = klein_inpaint_prompt_entry.text or ""
+    if prompt == "" then
+      dt.print(_("Enter a prompt describing what should appear in the masked area")); return
+    end
+    local model_idx = klein_model_selector.selected or 1
+    local model_label = KLEIN_MODELS[model_idx] and KLEIN_MODELS[model_idx].label or "Klein 9B"
+    local denoise = klein_inpaint_denoise_slider.value
+    local ok, err = pcall(process_klein_inpaint, images[1], mask_path,
+                          model_label, prompt, denoise)
+    if not ok then
+      dt.print(_("Error: ") .. tostring(err))
+      dt.print_error("Spellcaster Klein inpaint error: " .. tostring(err))
+    end
+  end
+}
+
+-- Klein Re-pose controls
+local klein_repose_prompt_entry = dt.new_widget("entry") {
+  text = "",
+  placeholder = _("Describe the new pose / camera angle / framing..."),
+  tooltip = _("Natural language prompt — 'three-quarter portrait turned to the right, looking at camera'"),
+  editable = true,
+}
+
+local klein_repose_denoise_slider = dt.new_widget("slider") {
+  label = _("Denoise"),
+  tooltip = _("How far the result drifts from the source. 0.4 = subtle nudge, 0.85 = bold reinterpretation."),
+  soft_min = 0.30, soft_max = 0.95,
+  hard_min = 0.10, hard_max = 1.00,
+  step = 0.02, digits = 2, value = 0.65,
+}
+
+local klein_repose_send_btn = dt.new_widget("button") {
+  label = _("Klein Re-pose"),
+  tooltip = _("Change pose / angle / framing while keeping the subject's identity (canonical workflow via the Guild)"),
+  clicked_callback = function()
+    local images = dt.gui.selection()
+    if #images == 0 then dt.print(_("No images selected")); return end
+    if #images > 1 then dt.print(_("Klein re-pose processes one image at a time — using first selected")); end
+    local prompt = klein_repose_prompt_entry.text or ""
+    if prompt == "" then
+      dt.print(_("Enter a prompt describing the new pose")); return
+    end
+    local model_idx = klein_model_selector.selected or 1
+    local model_label = KLEIN_MODELS[model_idx] and KLEIN_MODELS[model_idx].label or "Klein 9B"
+    local denoise = klein_repose_denoise_slider.value
+    local ok, err = pcall(process_klein_repose, images[1], model_label, prompt, denoise)
+    if not ok then
+      dt.print(_("Error: ") .. tostring(err))
+      dt.print_error("Spellcaster Klein re-pose error: " .. tostring(err))
+    end
+  end
+}
+
+-- ═══════════════════════════════════════════════════════════════════════
 -- Color Grading / LUT GUI widgets
 -- ═══════════════════════════════════════════════════════════════════════
 
@@ -8774,6 +9042,21 @@ local module_widget = dt.new_widget("box") {
   dt.new_widget("label") { label = _("Mask Image Path (white=remove):") },
   lama_mask_entry,
   lama_send_btn,
+  dt.new_widget("separator") {},
+
+  -- Klein Inpaint + Re-pose (canonical builders, dispatched via the Guild)
+  dt.new_widget("label") { label = _("\xe2\x9c\xa6 KLEIN SURGICAL EDITS") },
+  klein_model_selector,
+  dt.new_widget("label") { label = _("Inpaint mask path (white=replace):") },
+  klein_inpaint_mask_entry,
+  dt.new_widget("label") { label = _("Inpaint prompt:") },
+  klein_inpaint_prompt_entry,
+  klein_inpaint_denoise_slider,
+  klein_inpaint_send_btn,
+  dt.new_widget("label") { label = _("Re-pose prompt:") },
+  klein_repose_prompt_entry,
+  klein_repose_denoise_slider,
+  klein_repose_send_btn,
   dt.new_widget("separator") {},
 
   -- Color Grading / LUT section
