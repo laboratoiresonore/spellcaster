@@ -4218,11 +4218,15 @@ end
 -- The Lua plugin used to do all inpainting via SDXL/KSampler; this path
 -- gets the architecturally correct Klein workflow (UNETLoader +
 -- Flux2Scheduler + SamplerCustomAdvanced + the Klein enhancer chain)
--- without duplicating the 200-line builder JSON. Mask is uploaded to
--- ComfyUI directly (same as LaMa) so the builder's image_filename /
--- mask_filename args see the names ComfyUI's LoadImage expects.
+-- without duplicating the 200-line builder JSON.
+--
+-- Mask source — pass either ``mask_path`` (file on disk) OR
+-- ``sam3_prompt`` (text describing what to mask, segmentation built
+-- server-side via SAM3). When both are set, SAM3 wins because typing
+-- a prompt is the explicit "I don't want to deal with mask files"
+-- gesture. Either-or is enforced in the canonical builder.
 local function process_klein_inpaint(image, mask_path, klein_model_label,
-                                      prompt, denoise)
+                                      prompt, denoise, sam3_prompt)
   local server = get_server()
 
   dt.print(_("Exporting for Klein inpaint..."))
@@ -4234,20 +4238,33 @@ local function process_klein_inpaint(image, mask_path, klein_model_label,
   curl_upload(server .. "/upload/image", path, img_name)
   os.remove(path)
 
-  dt.print(_("Uploading mask to ComfyUI..."))
-  local mask_name = "dt_kinp_mask_" .. os.time() .. "_" .. math.random(10000, 99999) .. ".png"
-  curl_upload(server .. "/upload/image", mask_path, mask_name)
+  -- Mask param — SAM3 prompt takes precedence over file path
+  local mask_param
+  if sam3_prompt and sam3_prompt ~= "" then
+    mask_param = string.format(
+      ',"sam3_prompt":"%s","sam3_expand":6,"sam3_blur":4',
+      json_escape(sam3_prompt))
+    dt.print(_("Building SAM3 mask: ") .. sam3_prompt)
+  elseif mask_path and mask_path ~= "" then
+    dt.print(_("Uploading mask to ComfyUI..."))
+    local mask_name = "dt_kinp_mask_" .. os.time() .. "_" .. math.random(10000, 99999) .. ".png"
+    curl_upload(server .. "/upload/image", mask_path, mask_name)
+    mask_param = string.format(',"mask_filename":"%s"', json_escape(mask_name))
+  else
+    dt.print(_("Klein inpaint: provide either a mask path or a SAM3 mask prompt"))
+    return
+  end
 
   local seed = math.random(1, 2^31 - 1)
   local params = string.format(
-    '{"image_filename":"%s","mask_filename":"%s","prompt_text":"%s",'
-    .. '"seed":%d,"klein_model_key":"%s","denoise":%.2f,"enhance":true}',
+    '{"image_filename":"%s","prompt_text":"%s",'
+    .. '"seed":%d,"klein_model_key":"%s","denoise":%.2f,"enhance":true%s}',
     json_escape(img_name),
-    json_escape(mask_name),
     json_escape(prompt or ""),
     seed,
     json_escape(klein_model_label or "Klein 9B"),
-    denoise or 0.92)
+    denoise or 0.92,
+    mask_param)
 
   dt.print(_("Klein inpaint running (this may take a minute)..."))
   local urls, err = _run_builder("build_klein_inpaint", params)
@@ -4261,6 +4278,48 @@ local function process_klein_inpaint(image, mask_path, klein_model_label,
   end
   local imported = _download_guild_assets(urls, "klein_inpaint")
   dt.print(string.format(_("Klein inpaint done — %d image(s) imported"), imported))
+end
+
+-- ── LaMa Object Removal (canonical, with SAM3 support) ─────────────────
+-- The legacy build_lama_json + process_lama path requires a mask file.
+-- This canonical path accepts a SAM3 prompt instead, so the user can
+-- type "the trash can" and never leave Darktable.
+local function process_lama_canon(image, mask_path, sam3_prompt)
+  local server = get_server()
+
+  dt.print(_("Exporting for LaMa removal..."))
+  local path, fname = export_to_temp(image)
+  if not path then dt.print(_("Export failed")); return end
+
+  dt.print(_("Uploading image to ComfyUI..."))
+  local img_name = "dt_lama2_img_" .. os.time() .. "_" .. math.random(10000, 99999) .. ".png"
+  curl_upload(server .. "/upload/image", path, img_name)
+  os.remove(path)
+
+  local mask_param
+  if sam3_prompt and sam3_prompt ~= "" then
+    mask_param = string.format(
+      ',"sam3_prompt":"%s","sam3_expand":8,"sam3_blur":6',
+      json_escape(sam3_prompt))
+    dt.print(_("SAM3 mask: ") .. sam3_prompt)
+  elseif mask_path and mask_path ~= "" then
+    dt.print(_("Uploading mask to ComfyUI..."))
+    local mask_name = "dt_lama2_mask_" .. os.time() .. "_" .. math.random(10000, 99999) .. ".png"
+    curl_upload(server .. "/upload/image", mask_path, mask_name)
+    mask_param = string.format(',"mask_filename":"%s"', json_escape(mask_name))
+  else
+    dt.print(_("LaMa Remove: provide either a mask path or a SAM3 mask prompt"))
+    return
+  end
+
+  local params = string.format('{"image_filename":"%s"%s}',
+                               json_escape(img_name), mask_param)
+  dt.print(_("LaMa Remove running..."))
+  local urls, err = _run_builder("build_lama_remove", params)
+  if not urls then dt.print(_("LaMa Remove failed: ") .. tostring(err)); return end
+  if #urls == 0 then dt.print(_("LaMa Remove returned no images")); return end
+  local imported = _download_guild_assets(urls, "lama_remove")
+  dt.print(string.format(_("LaMa Remove done — %d image(s) imported"), imported))
 end
 
 -- ── Klein Re-pose (canonical) ──────────────────────────────────────────
@@ -7389,20 +7448,35 @@ local klein_inpaint_denoise_slider = dt.new_widget("slider") {
   step = 0.02, digits = 2, value = 0.92,
 }
 
+-- Shared SAM3 mask prompt entry — feeds Klein Inpaint, LaMa (canonical),
+-- and the smart-action buttons. When this is non-empty, the mask file
+-- path is ignored: SAM3 builds the mask server-side from the text. UX
+-- win: photographers describe what to mask in plain English instead of
+-- bouncing to GIMP to draw a PNG.
+local klein_sam3_prompt_entry = dt.new_widget("entry") {
+  text = "",
+  placeholder = _("...or SAM3 mask prompt: 'the sky', 'her face', 'the trash can'..."),
+  tooltip = _("Type what you want masked. SAM3 segments the image server-side. Leave empty to fall back to the mask path above."),
+  editable = true,
+}
+
 local klein_inpaint_send_btn = dt.new_widget("button") {
   label = _("Klein Inpaint"),
-  tooltip = _("Regenerate the masked region with Flux 2 Klein (canonical workflow via the Guild)"),
+  tooltip = _("Regenerate the masked region with Flux 2 Klein. Use SAM3 prompt for hands-free masking, or supply a mask file."),
   clicked_callback = function()
     local images = dt.gui.selection()
     if #images == 0 then dt.print(_("No images selected")); return end
     if #images > 1 then dt.print(_("Klein inpaint processes one image at a time — using first selected")); end
-    local mask_path = klein_inpaint_mask_entry.text
-    if not mask_path or mask_path == "" then
-      dt.print(_("Enter mask image path first")); return
+    local sam3 = klein_sam3_prompt_entry.text or ""
+    local mask_path = klein_inpaint_mask_entry.text or ""
+    if (sam3 == "") and (mask_path == "") then
+      dt.print(_("Enter a SAM3 mask prompt OR a mask image path")); return
     end
-    local mf = io.open(mask_path, "r")
-    if not mf then dt.print(_("Mask image not found: ") .. mask_path); return end
-    mf:close()
+    if mask_path ~= "" and sam3 == "" then
+      local mf = io.open(mask_path, "r")
+      if not mf then dt.print(_("Mask image not found: ") .. mask_path); return end
+      mf:close()
+    end
     local prompt = klein_inpaint_prompt_entry.text or ""
     if prompt == "" then
       dt.print(_("Enter a prompt describing what should appear in the masked area")); return
@@ -7411,10 +7485,118 @@ local klein_inpaint_send_btn = dt.new_widget("button") {
     local model_label = KLEIN_MODELS[model_idx] and KLEIN_MODELS[model_idx].label or "Klein 9B"
     local denoise = klein_inpaint_denoise_slider.value
     local ok, err = pcall(process_klein_inpaint, images[1], mask_path,
-                          model_label, prompt, denoise)
+                          model_label, prompt, denoise, sam3)
     if not ok then
       dt.print(_("Error: ") .. tostring(err))
       dt.print_error("Spellcaster Klein inpaint error: " .. tostring(err))
+    end
+  end
+}
+
+-- LaMa Remove with SAM3 — sibling button to the legacy mask-path lama
+-- button up above. Reuses the shared klein_sam3_prompt_entry so the
+-- user types the target object once and can run either Klein Inpaint
+-- (regenerate) or LaMa Remove (deterministic erase) against the same
+-- mask description.
+local lama_sam3_send_btn = dt.new_widget("button") {
+  label = _("LaMa Remove (SAM3)"),
+  tooltip = _("Erase the SAM3-described region with LaMa. Deterministic, no diffusion — best for small objects."),
+  clicked_callback = function()
+    local images = dt.gui.selection()
+    if #images == 0 then dt.print(_("No images selected")); return end
+    if #images > 1 then dt.print(_("LaMa Remove processes one image at a time — using first selected")); end
+    local sam3 = klein_sam3_prompt_entry.text or ""
+    local mask_path = klein_inpaint_mask_entry.text or ""
+    if (sam3 == "") and (mask_path == "") then
+      dt.print(_("Enter a SAM3 mask prompt (or a mask image path) first")); return
+    end
+    local ok, err = pcall(process_lama_canon, images[1], mask_path, sam3)
+    if not ok then
+      dt.print(_("Error: ") .. tostring(err))
+      dt.print_error("Spellcaster LaMa SAM3 error: " .. tostring(err))
+    end
+  end
+}
+
+-- ── Smart Actions ──────────────────────────────────────────────────────
+-- One-click, no-mask, no-prompt photo edits. Each chains a fixed SAM3
+-- mask prompt + a fixed Klein Inpaint refinement to give photographers
+-- workflow buttons rather than tool buttons. Internally identical to a
+-- normal Klein Inpaint with the values pre-filled.
+local function _smart_klein_inpaint(image, sam3_target, refinement_prompt, denoise)
+  local model_idx = klein_model_selector.selected or 1
+  local model_label = KLEIN_MODELS[model_idx] and KLEIN_MODELS[model_idx].label or "Klein 9B"
+  return process_klein_inpaint(image, "", model_label, refinement_prompt,
+                                denoise, sam3_target)
+end
+
+local smart_skin_btn = dt.new_widget("button") {
+  label = _("✨ Smooth Skin"),
+  tooltip = _("Auto-mask all visible skin via SAM3, then run Klein with the skin-texture refinement."),
+  clicked_callback = function()
+    local images = dt.gui.selection()
+    if #images == 0 then dt.print(_("No images selected")); return end
+    for i, img in ipairs(images) do
+      dt.print(string.format(_("Smooth Skin %d/%d"), i, #images))
+      local ok, err = pcall(_smart_klein_inpaint, img, "skin",
+        "detailed skin texture, realistic skin pores, natural skin surface, subsurface scattering, photorealistic skin detail",
+        0.45)
+      if not ok then dt.print(_("Smooth Skin error: ") .. tostring(err)) end
+    end
+  end
+}
+
+local smart_eyes_btn = dt.new_widget("button") {
+  label = _("✨ Brighten Eyes"),
+  tooltip = _("Auto-mask the eyes via SAM3, then run Klein with the iris-detail refinement."),
+  clicked_callback = function()
+    local images = dt.gui.selection()
+    if #images == 0 then dt.print(_("No images selected")); return end
+    for i, img in ipairs(images) do
+      dt.print(string.format(_("Brighten Eyes %d/%d"), i, #images))
+      local ok, err = pcall(_smart_klein_inpaint, img, "eyes",
+        "beautiful detailed eyes, perfect symmetrical eyes, clear sharp iris, realistic eye reflections, natural eye color, detailed eyelashes",
+        0.65)
+      if not ok then dt.print(_("Brighten Eyes error: ") .. tostring(err)) end
+    end
+  end
+}
+
+-- The sky button takes the prompt entry's contents to drive the new sky
+-- (defaulting to a dramatic stormy sky). It's the one smart action that
+-- benefits from a knob; the others have a single canonical refinement.
+local smart_sky_btn = dt.new_widget("button") {
+  label = _("✨ Replace Sky"),
+  tooltip = _("Auto-mask the sky via SAM3, then run Klein Inpaint with the prompt above (defaults to a dramatic sky)."),
+  clicked_callback = function()
+    local images = dt.gui.selection()
+    if #images == 0 then dt.print(_("No images selected")); return end
+    local prompt = klein_inpaint_prompt_entry.text or ""
+    if prompt == "" then
+      prompt = "dramatic stormy sky with golden hour clouds, cinematic lighting, high dynamic range, photorealistic"
+      dt.print(_("Replace Sky: using default dramatic-sky prompt (set Inpaint prompt to override)"))
+    end
+    for i, img in ipairs(images) do
+      dt.print(string.format(_("Replace Sky %d/%d"), i, #images))
+      local ok, err = pcall(_smart_klein_inpaint, img, "sky", prompt, 0.92)
+      if not ok then dt.print(_("Replace Sky error: ") .. tostring(err)) end
+    end
+  end
+}
+
+local smart_bg_remove_btn = dt.new_widget("button") {
+  label = _("✨ Remove Background"),
+  tooltip = _("Auto-mask the main subject via SAM3 (inverted), then erase the background with LaMa."),
+  clicked_callback = function()
+    local images = dt.gui.selection()
+    if #images == 0 then dt.print(_("No images selected")); return end
+    -- LaMa with SAM3 prompt "background" — sam3_invert is set in the
+    -- builder defaults to false; here we want literal background. SAM3
+    -- knows that label well enough to produce a usable mask.
+    for i, img in ipairs(images) do
+      dt.print(string.format(_("Remove Background %d/%d"), i, #images))
+      local ok, err = pcall(process_lama_canon, img, "", "background")
+      if not ok then dt.print(_("Remove Background error: ") .. tostring(err)) end
     end
   end
 }
@@ -9338,10 +9520,17 @@ local module_widget = dt.new_widget("box") {
   klein_model_selector,
   dt.new_widget("label") { label = _("Inpaint mask path (white=replace):") },
   klein_inpaint_mask_entry,
+  klein_sam3_prompt_entry,
   dt.new_widget("label") { label = _("Inpaint prompt:") },
   klein_inpaint_prompt_entry,
   klein_inpaint_denoise_slider,
   klein_inpaint_send_btn,
+  lama_sam3_send_btn,
+  dt.new_widget("label") { label = _("\xe2\x9c\xa8 SMART ACTIONS (SAM3-driven, no mask file needed):") },
+  smart_skin_btn,
+  smart_eyes_btn,
+  smart_sky_btn,
+  smart_bg_remove_btn,
   dt.new_widget("label") { label = _("Re-pose prompt:") },
   klein_repose_prompt_entry,
   klein_repose_denoise_slider,
