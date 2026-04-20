@@ -211,6 +211,7 @@ The **Antenna** is a small always-on bridge that lets Spellcaster on your laptop
 <td width="33%" align="center" valign="top">
   <img src="assets/wizardguild.png" alt="Wizard Guild — chat UI" width="100%"/>
   <img src="assets/wizardguild2.png" alt="Travelling Wizard — visual scaffold editor" width="100%"/>
+  <img src="assets/t3.png" alt="Wizard Guild — third view" width="100%"/>
   <br/><br/>
   <strong>🧙 Wizard Guild</strong><br/>
   <sub>The chat UI. AI wizard characters walk you through every tool conversationally. "Restore this photo." "Make the sky orange." "Turn this into a video." No menus, no modes. <a href="DEEP_DIVE.md#the-wizard-guild-chat-interface">How it works →</a></sub>
