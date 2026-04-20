@@ -102,8 +102,16 @@ class SpellcasterPlugin:
         return name
 
     def txt2img(self, prompt, negative="", arch="", model="",
-                width=0, height=0, steps=0, cfg=None, seed=-1, loras=None):
-        """Generate an image from text and insert as layer."""
+                width=0, height=0, steps=0, cfg=None, seed=-1, loras=None,
+                quality="balanced", fast_mode=False):
+        """Generate an image from text and insert as layer.
+
+        quality: "fast" | "balanced" (default) | "max". Controls the
+            per-arch quality booster stack (PAG, RescaleCFG, FreeU_V2,
+            SLG, AYS) wired by workflows.build_txt2img.
+        fast_mode: opt-in TeaCache for Flux 1 Dev. Requires the
+            ComfyUI-TeaCache custom pack on the server.
+        """
         if not arch:
             rec = recommend(prompt, server=self.server)
             arch = rec["arch"]
@@ -123,17 +131,24 @@ class SpellcasterPlugin:
         if a and a.supports_negative and a.quality_negative:
             negative = f"{negative}, {a.quality_negative}" if negative else a.quality_negative
 
-        wf = build_txt2img(preset, prompt, negative, seed, loras=loras)
+        wf = build_txt2img(preset, prompt, negative, seed, loras=loras,
+                           quality=quality, fast_mode=fast_mode)
         return self._run_workflow(wf, "txt2img")
 
-    def img2img(self, prompt, negative="", denoise=0.55, arch="sdxl", model=""):
-        """Transform the canvas with a prompt and insert result as layer."""
+    def img2img(self, prompt, negative="", denoise=0.55, arch="sdxl", model="",
+                 quality="balanced", fast_mode=False):
+        """Transform the canvas with a prompt and insert result as layer.
+
+        See :meth:`txt2img` for quality/fast_mode semantics.
+        """
         name = self.upload_canvas()
         preset = self._make_preset(arch, model)
         if not preset:
             return
         import random
-        wf = build_img2img(name, preset, prompt, negative, random.randint(1, 2**32 - 1))
+        wf = build_img2img(name, preset, prompt, negative,
+                            random.randint(1, 2**32 - 1),
+                            quality=quality, fast_mode=fast_mode)
         return self._run_workflow(wf, "img2img")
 
     def upscale(self, upscale_model="4x-UltraSharp.pth"):

@@ -91,20 +91,34 @@ class Pipeline:
         return self
 
     def txt2img(self, prompt, negative="", arch="sdxl", model="",
-                width=0, height=0, steps=0, cfg=None, seed=-1, loras=None):
-        """Generate an image from text."""
+                width=0, height=0, steps=0, cfg=None, seed=-1, loras=None,
+                quality="balanced", fast_mode=False):
+        """Generate an image from text.
+
+        quality: "fast" | "balanced" (default) | "max". Controls the
+            PAG/RescaleCFG/FreeU_V2/SLG/AYS quality-booster stack
+            wired into workflows.build_txt2img.
+        fast_mode: opt-in TeaCache for Flux 1 Dev. Requires the
+            ComfyUI-TeaCache custom pack on the server.
+        """
         self._steps.append(("txt2img", {
             "prompt": prompt, "negative": negative, "arch": arch,
             "model": model, "width": width, "height": height,
             "steps": steps, "cfg": cfg, "seed": seed, "loras": loras,
+            "quality": quality, "fast_mode": fast_mode,
         }))
         return self
 
-    def img2img(self, prompt, negative="", denoise=0.65, arch="sdxl", model=""):
-        """Transform the previous output with a new prompt."""
+    def img2img(self, prompt, negative="", denoise=0.65, arch="sdxl", model="",
+                quality="balanced", fast_mode=False):
+        """Transform the previous output with a new prompt.
+
+        See :meth:`txt2img` for quality/fast_mode semantics.
+        """
         self._steps.append(("img2img", {
             "prompt": prompt, "negative": negative,
             "denoise": denoise, "arch": arch, "model": model,
+            "quality": quality, "fast_mode": fast_mode,
         }))
         return self
 
@@ -462,7 +476,9 @@ class Pipeline:
             seed = random.randint(1, 2**32 - 1)
         wf = build_txt2img(preset, params["prompt"],
                            params.get("negative", ""), seed,
-                           loras=params.get("loras"))
+                           loras=params.get("loras"),
+                           quality=params.get("quality", "balanced"),
+                           fast_mode=params.get("fast_mode", False))
         return self._run_simple(wf)
 
     def _run_img2img(self, image, params):
@@ -470,7 +486,9 @@ class Pipeline:
         preset = self._make_preset(arch, params.get("model", ""))
         seed = random.randint(1, 2**32 - 1)
         wf = build_img2img(image, preset, params["prompt"],
-                           params.get("negative", ""), seed)
+                           params.get("negative", ""), seed,
+                           quality=params.get("quality", "balanced"),
+                           fast_mode=params.get("fast_mode", False))
         return self._run_simple(wf)
 
     def _run_upscale(self, image, params):

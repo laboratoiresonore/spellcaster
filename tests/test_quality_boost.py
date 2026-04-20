@@ -591,6 +591,45 @@ def case_fast_mode_skipped_on_sdxl():
     assert count(g, "ApplyTeaCachePatch") == 0
 
 
+# --- Dispatcher-layer forwarding -----------------------------------------
+# Light-weight guards so a refactor of pipeline.py / plugin_base.py can't
+# silently drop the new kwargs before they reach the workflow builders.
+
+def case_pipeline_forwards_quality_and_fast_mode():
+    """Pipeline.txt2img / img2img store the quality + fast_mode flags so
+    the downstream _run_txt2img / _run_img2img can read them back. This
+    is the hand-off surface between the UI caller and the workflow layer.
+    """
+    from spellcaster_core import pipeline as pipe_mod
+    # The Pipeline class is the fluent builder users chain methods on.
+    # We only use its recording side, not the actual run.
+    p = pipe_mod.Pipeline()
+    p.txt2img("cat", quality="max", fast_mode=True)
+    p.img2img("dog", quality="fast")
+    kinds = [k for k, _ in p._steps]
+    assert kinds == ["txt2img", "img2img"]
+
+    t2i_params = p._steps[0][1]
+    assert t2i_params.get("quality") == "max"
+    assert t2i_params.get("fast_mode") is True
+
+    i2i_params = p._steps[1][1]
+    assert i2i_params.get("quality") == "fast"
+    assert i2i_params.get("fast_mode") is False  # default preserved
+
+
+def case_pipeline_defaults_are_balanced_and_safe():
+    """Omitting quality/fast_mode should yield backward-compatible
+    defaults: quality="balanced", fast_mode=False."""
+    from spellcaster_core import pipeline as pipe_mod
+    p = pipe_mod.Pipeline()
+    p.txt2img("cat")
+    p.img2img("dog")
+    for _kind, params in p._steps:
+        assert params.get("quality") == "balanced"
+        assert params.get("fast_mode") is False
+
+
 def case_ays_node_id_tranches_disjoint():
     """Ensure each builder's AYS tranche is unique — if we accidentally
     stamped two builders with the same ays_node_base a multi-builder
@@ -672,6 +711,9 @@ CASES = [
     ("TeaCache | sdxl fast_mode refused",              case_fast_mode_skipped_on_sdxl),
 
     ("AYS invariant: tranches disjoint",               case_ays_node_id_tranches_disjoint),
+
+    ("Pipeline forwards quality + fast_mode",          case_pipeline_forwards_quality_and_fast_mode),
+    ("Pipeline defaults balanced/False",               case_pipeline_defaults_are_balanced_and_safe),
 ]
 
 
