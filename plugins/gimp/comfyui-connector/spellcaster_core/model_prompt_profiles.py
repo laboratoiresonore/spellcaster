@@ -134,11 +134,190 @@ NSFW_ZIT_POS = ""
 NSFW_GENERIC_NEG = ""
 
 
+# ═══════════════════════════════════════════════════════════════════════
+#  Special per-family detectors + applicators — promoted to first-class
+#  functions so each can encode quirky per-model logic that the plain
+#  prefix/suffix/strip keys cannot express.
+#
+#  Two models surfaced as prompt-shaping failures in production:
+#
+#    1. Stock SD 1.5 base (v1-5-pruned-emaonly and re-uploads). The
+#       generic `sd15` family fallback is tuned for photoreal finetunes
+#       (Juggernaut Reborn / RealisticVision) and force-injects `RAW
+#       photo, DSLR, Fujifilm XT3` plus a style-banning negative. That
+#       shoves every base-model output into a flat grainy photo look
+#       and makes the model refuse to draw when asked for illustration.
+#
+#    2. GonzaloMo Zpop v3 AIO (Z-Image-Turbo all-in-one merge). The
+#       pre-existing profile forced `vibrant pop art, bold outlines,
+#       saturated colors` on every prompt even though the AIO is
+#       explicitly multi-style. The catch-all `"zpop"` entry below is
+#       still correct for pure pop-art Zpop variants, but the AIO
+#       specifically needs only the `zpop style` trigger token and
+#       nothing else.
+#
+#  The two detectors below fire on more filenames than just the literal
+#  ones — they pick up common renames and look-alike merges. Negative
+#  guards keep them from swallowing known finetunes that have their own
+#  profiles already.
+# ═══════════════════════════════════════════════════════════════════════
+
+# Filename markers that uniquely identify a stock/base SD 1.5 release.
+# These tokens only appear in the HuggingFace reference upload and
+# direct re-uploads; every community finetune has its own distinctive
+# filename and falls into its own profile instead.
+_STOCK_SD15_MARKERS = (
+    "v1-5-pruned",              # catches v1-5-pruned-emaonly, v1-5-pruned-fp16, …
+    "v1_5_pruned",
+    "sd-v1-5",                  # Some re-uploads drop the hyphen/underscore
+    "sd_v1-5",
+    "stable-diffusion-v1-5",    # HF reference repo name
+    "stable_diffusion_v1-5",
+    "sd15-base",
+    "sd-1.5-base",
+)
+
+
+def _is_stock_sd15(filename: str) -> bool:
+    """True for base SD 1.5 checkpoints.
+
+    Returns False for every community finetune (Juggernaut Reborn,
+    RealisticVision, DreamShaper, AbsoluteReality, Deliberate, etc.)
+    because those have their own prompt profiles further up the
+    PROFILES list and get matched first.
+    """
+    n = (filename or "").lower()
+    return any(m in n for m in _STOCK_SD15_MARKERS)
+
+
+def _is_zpop_aio(filename: str) -> bool:
+    """True for all-in-one Zpop merges (GonzaloMo Zpop v3 AIO and look-alikes).
+
+    The AIO merges differ from pure pop-art Zpop checkpoints in that
+    they can render photo / cinematic / anime / realistic styles on
+    demand, so the prompt profile must NOT force the pop-art aesthetic.
+    Pure pop-art Zpop variants keep hitting the generic `"zpop"`
+    string-matcher entry below this function which injects the bold-
+    outlines / saturated-colours bias they're tuned for.
+    """
+    n = (filename or "").lower()
+    if "zpop" not in n:
+        return False
+    # Explicit "aio" marker anywhere in the filename — most reliable signal.
+    if "aio" in n:
+        return True
+    # GonzaloMo Zpop 3.x is published as v30AIO / v3_0_AIO / v3aio.
+    # Version 2.x and earlier are pre-AIO pure pop-art.
+    if "gonzalomozpop" in n and any(
+        v in n for v in ("v30", "v3_0", "v3.0", "v3aio", "-v3")):
+        return True
+    return False
+
+
+def _apply_stock_sd15(prompt: str, negative: str) -> tuple[str, str]:
+    """Prompt shaping for stock SD 1.5 base checkpoints.
+
+    Base SD 1.5 is a *general-purpose* model, not a photoreal finetune,
+    and under-responds to the prompt at default CFG. The right mix is:
+
+      * Soft, style-neutral quality tags (no camera body / film-stock
+        branding) so the user can still request illustrations, cartoons,
+        anime, paintings, etc.
+      * Anatomy-and-artifact negatives only. NO style bans — the model
+        needs to be able to draw cartoons / paintings when asked.
+      * Tell the caller to use the recommended settings (see the PROFILE
+        entry's `recommended` dict — 30 steps, CFG 8.0, 512x512).
+
+    Returns (prompt, negative) tuple.
+    """
+    POS = "masterpiece, best quality, highly detailed, sharp focus"
+    NEG = (
+        "lowres, bad anatomy, bad hands, missing fingers, extra digit, "
+        "jpeg artifacts, blurry, watermark, signature, worst quality, "
+        "low quality, deformed, disfigured, mutated"
+    )
+    prompt = (POS + ", " + (prompt or "")).strip(", ").strip()
+    negative = (NEG + ", " + (negative or "")).strip(", ").strip()
+    return prompt, negative
+
+
+def _apply_zpop_aio(prompt: str, negative: str) -> tuple[str, str]:
+    """Prompt shaping for GonzaloMo Zpop v3 AIO and compatible AIO merges.
+
+    The model REQUIRES the `zpop style` trigger token somewhere in the
+    positive prompt to activate its style head — but that's the ONLY
+    forced token. Pop-art / bold-outline injection is deliberately
+    omitted so the AIO can still produce photo / anime / cinematic
+    output when the user asks for it.
+
+    If the user already typed `zpop style` (any casing) we don't
+    duplicate the trigger.
+    """
+    user_prompt = prompt or ""
+    trigger = "zpop style"
+    if trigger not in user_prompt.lower():
+        user_prompt = trigger + ", " + user_prompt
+    # Light quality suffix that doesn't bias style. Keep it short —
+    # at ZIT's CFG 1.0-2.0, every token carries significant weight.
+    user_prompt = (user_prompt + ", detailed, sharp focus").strip(", ").strip()
+    NEG = "lowres, blurry, watermark, worst quality, low quality"
+    negative = (NEG + ", " + (negative or "")).strip(", ").strip()
+    return user_prompt, negative
+
+
 # ─── Per-model profiles. Matched by substring against the filename
 # (case-insensitive). First match wins, so list MORE specific names
-# first. Generic arch-family fallbacks live at the tail. ──────────────
+# first. Generic arch-family fallbacks live at the tail.
+#
+# `match` may be a substring, a compiled regex, OR a callable(str)->bool
+# — see profile_for() for dispatch order. Profiles can also supply an
+# `applicator` callable that fully owns prompt shaping, bypassing the
+# prefix/suffix/strip engine. ─────────────────────────────────────────
 
 PROFILES: list[dict[str, Any]] = [
+    # ── Stock SD 1.5 base (callable detector — picks up rename variants) ──
+    {
+        "match": _is_stock_sd15,
+        "arch_family": "sd15",
+        "applicator": _apply_stock_sd15,
+        # Kept for introspection + NSFW-build compatibility; the
+        # applicator owns the actual prompt shaping.
+        "prompt_prefix": "", "prompt_suffix": "",
+        "negative_prefix": "", "negative_suffix": "",
+        "nsfw_prompt_additions": "", "nsfw_negative_additions": "",
+        "strip_tokens": [], "strip_quality": False,
+        "recommended": {"steps": 30, "cfg": 8.0, "sampler": "dpmpp_2m",
+                         "scheduler": "karras", "resolution": (512, 512)},
+        "notes": "Stock SD 1.5 base (v1-5-pruned / v1-5-pruned-emaonly / "
+                 "stable-diffusion-v1-5 and HF re-uploads). Style-neutral "
+                 "quality tags and anatomy-only negatives; base SD 1.5 is "
+                 "not a photoreal finetune and must stay able to draw "
+                 "illustrations, cartoons, paintings on request. Higher "
+                 "CFG (8.0) because the base model under-responds. 512x512 "
+                 "is the training resolution.",
+    },
+
+    # ── GonzaloMo Zpop v3 AIO + look-alikes (callable detector) ─────────
+    {
+        "match": _is_zpop_aio,
+        "arch_family": "zit",
+        "applicator": _apply_zpop_aio,
+        "prompt_prefix": "", "prompt_suffix": "",
+        "negative_prefix": "", "negative_suffix": "",
+        "nsfw_prompt_additions": "", "nsfw_negative_additions": "",
+        "strip_tokens": [], "strip_quality": False,
+        "recommended": {"steps": 8, "cfg": 2.0, "sampler": "euler",
+                         "scheduler": "simple", "resolution": (1024, 1024)},
+        "notes": "GonzaloMo Zpop v3 AIO + compatible all-in-one Zpop "
+                 "merges. Forces ONLY the `zpop style` trigger (required "
+                 "by the model's style head) so the AIO can still render "
+                 "photo / cinematic / anime output when the user asks for "
+                 "it. Pure pop-art Zpop variants — which DO want the bold-"
+                 "outline / saturated-colour forcing — fall through to "
+                 "the `\"zpop\"` catch-all entry further down.",
+    },
+
+    # ── SDXL photoreal finetunes ────────────────────────────────────
     # ── SDXL photoreal finetunes ────────────────────────────────────
     {
         "match": "juggernautxl",
@@ -681,7 +860,18 @@ def profile_for(model_name: str,
     found: Optional[dict] = None
     for prof in PROFILES:
         m = prof["match"]
-        if isinstance(m, re.Pattern):
+        # Callable detector wins first — tested before the regex/string
+        # branches so a function can subsume/extend substring matching.
+        if callable(m) and not isinstance(m, (str, re.Pattern)):
+            try:
+                if m(name_l):
+                    found = prof
+                    break
+            except Exception:
+                # A buggy detector must not crash prompt resolution;
+                # skip and fall through to the next candidate.
+                continue
+        elif isinstance(m, re.Pattern):
             if m.search(name_l):
                 found = prof
                 break
@@ -713,11 +903,29 @@ def apply_profile(prompt: str, negative: str,
 
     Returns the modified (prompt, negative) tuple. If profile is None, the
     inputs are returned unchanged so callers can unconditionally call this.
+
+    Precedence:
+      1. If `profile["applicator"]` is a callable, delegate entirely —
+         the applicator fully owns prompt shaping for that model. Used
+         for models whose quirks can't be expressed as plain prefix/
+         suffix/strip rules (see _apply_stock_sd15 + _apply_zpop_aio).
+      2. Otherwise fall back to the prefix/suffix/strip engine.
     """
     prompt = prompt or ""
     negative = negative or ""
     if not profile:
         return prompt, negative
+
+    # Callable applicator path — profile is entirely in charge.
+    applicator = profile.get("applicator")
+    if callable(applicator):
+        try:
+            return applicator(prompt, negative)
+        except Exception:
+            # A broken applicator must not crash the workflow. Fall
+            # through to the default engine so at least the prefix/
+            # suffix keys still apply.
+            pass
 
     # Strip rules come first so we don't double-add a token that was
     # already cleaned out by the user.
