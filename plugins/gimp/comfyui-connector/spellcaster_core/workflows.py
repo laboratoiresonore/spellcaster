@@ -368,6 +368,7 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
       - ControlNet requires matching architecture preprocessor
       - Second ControlNet chains from first's output if both present
     """
+    _assert_method_for_preset(preset, "img2img")
     nf = NodeFactory()
 
     # 1. Load model stack (architecture-aware)
@@ -526,6 +527,7 @@ def build_txt2img(preset, prompt_text, negative_text, seed, loras=None,
       - Output dimensions must be specified in preset (width, height)
       - Takes longer than img2img due to generating from scratch
     """
+    _assert_method_for_preset(preset, "txt2img")
     nf = NodeFactory()
 
     model_ref, clip_ref, vae_ref = load_model_stack(nf, preset, "1")
@@ -1589,6 +1591,73 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
 #  Face Swap — ReActor with quality presets and double-pass
 # ═══════════════════════════════════════════════════════════════════════════
 
+class UnsupportedMethodError(RuntimeError):
+    """Raised when a workflow builder is called with an architecture
+    whose `supported_methods` doesn't include the requested method.
+
+    This is how the `supported_methods` gating declared in
+    `architectures.py` manifests at dispatch time: the UI filters based
+    on the same data but if something slips through, the builder
+    refuses to assemble a workflow that would crash at the sampler.
+    """
+
+
+def _assert_method(arch_key: str, method: str) -> None:
+    """Verify that `arch_key` supports `method` before building the
+    workflow. Pass silently when either input is missing (keeps the
+    helper lenient for callers that haven't been migrated yet) and
+    when the resolved ArchConfig has never declared method support
+    (backward-compat for custom user-registered archs).
+
+    Raises `UnsupportedMethodError` when the arch IS registered and
+    explicitly doesn't support the method — that's the signal case
+    we want to surface loudly (e.g. `build_txt2img` called with
+    an `sd3` stub, or `build_wan_video` called with an `sdxl` preset).
+    """
+    if not arch_key or not method:
+        return
+    try:
+        from spellcaster_core.architectures import ARCHITECTURES
+    except ImportError:
+        try:
+            from architectures import ARCHITECTURES  # type: ignore
+        except ImportError:
+            return
+    arch = ARCHITECTURES.get(arch_key)
+    if arch is None:
+        # Unknown arch — we don't know its capabilities. Don't block.
+        return
+    sm = getattr(arch, "supported_methods", None)
+    if not sm:
+        # Stub registration (e.g. sd3 / hunyuan_dit) — explicitly no
+        # methods. Refuse; user needs a dispatch-capable arch here.
+        if getattr(arch, "registered", True) is False:
+            raise UnsupportedMethodError(
+                f"Architecture '{arch_key}' is detected but not yet "
+                f"fully scaffolded in Spellcaster — no builder chain "
+                f"exists for method '{method}'. Use a registered arch "
+                f"(SDXL / SD1.5 / Illustrious / ZIT / Flux / Klein / "
+                f"Chroma / Kontext / WAN / LTX) or wait for an update."
+            )
+        # Registered but empty supported_methods: weird, but don't block.
+        return
+    if method not in sm:
+        raise UnsupportedMethodError(
+            f"Architecture '{arch_key}' does not support method "
+            f"'{method}'. Supported methods: {', '.join(sm) or '(none)'}. "
+            f"The UI should have hidden this action; if you reached this "
+            f"point via a direct API call, pick a different checkpoint."
+        )
+
+
+def _assert_method_for_preset(preset: dict, method: str) -> None:
+    """Convenience wrapper: extract `arch` from a preset dict and
+    delegate to `_assert_method`. Used at the entry of every builder
+    that takes a preset (txt2img, img2img, inpaint, etc)."""
+    if isinstance(preset, dict):
+        _assert_method(preset.get("arch") or "", method)
+
+
 def _faceswap_guard(feature: str) -> None:
     """Raise FaceswapDisabledError if the user has opted face-swap off.
     Wrapper around faceswap_health.guard_faceswap that degrades to a
@@ -2072,6 +2141,7 @@ def build_detail_hallucinate(image_filename, upscale_model, preset,
       - cfg > 15.0 can cause the diffusion to diverge from upscaled structure
       - Negative prompt is critical to prevent artifact hallucination
     """
+    _assert_method_for_preset(preset, "detail_hallucinate")
     nf = NodeFactory()
     img_id = nf.load_image(image_filename, node_id="1")
 
@@ -2186,6 +2256,7 @@ def build_colorize(image_filename, preset, prompt_text, negative_text, seed,
     When sam3_prompt is set, the transform is composited back onto the original
     using a SAM3 mask so only the described region changes.
     """
+    _assert_method_for_preset(preset, "colorize")
     nf = NodeFactory()
     arch_key = preset.get("arch", "sdxl")
     res = max(preset.get("width", 1024), preset.get("height", 1024))
@@ -2365,6 +2436,7 @@ def build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
       - Full canvas generation, not refinement
       - Preprocessor extracts spatial constraints from reference, doesn't use it directly
     """
+    _assert_method_for_preset(preset, "controlnet_gen")
     nf = NodeFactory()
     arch_key = preset.get("arch", "sdxl")
 
@@ -2844,6 +2916,7 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
       - Masked area sometimes shows "corruption" at edges; lower cfg or increase blur
       - Denoise < 1.0 in masked area may not fully regenerate detail
     """
+    _assert_method_for_preset(preset, "inpaint")
     nf = NodeFactory()
 
     # Model loading
@@ -3054,6 +3127,7 @@ def build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
       - Large padding (> 512 pixels per side) may cause memory issues
       - Sky/background extensions often work better than complex foreground
     """
+    _assert_method_for_preset(preset, "outpaint")
     nf = NodeFactory()
     arch_key = preset.get("arch", "sdxl")
     is_klein = arch_key == "flux2klein"
@@ -3910,6 +3984,7 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
       - Loop requires matching start/end semantically
       - Motion masks must match frame dimensions exactly
     """
+    _assert_method_for_preset(preset, "video_gen")
     nf = NodeFactory()
     steps = steps or preset["steps"]
     cfg = cfg if cfg is not None else preset["cfg"]
@@ -4588,6 +4663,7 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
     When sam3_prompt is set, the transform is composited back onto the TARGET
     image using a SAM3 mask so only the described region changes.
     """
+    _assert_method_for_preset(preset, "style_transfer")
     nf = NodeFactory()
     arch_key = preset.get("arch", "sdxl")
 
@@ -4712,6 +4788,7 @@ def build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_t
     For scale > 1x: upscale with model to target factor, then img2img.
     For 1x: straight img2img on original.
     """
+    _assert_method_for_preset(preset, "seedv2r")
     nf = NodeFactory()
     arch_key = preset.get("arch", "sdxl")
 
@@ -7603,6 +7680,7 @@ def build_ltx_video(preset, prompt_text, seed,
     Returns:
         dict: ComfyUI workflow
     """
+    _assert_method_for_preset(preset, "video_gen")
     nf = NodeFactory()
 
     # Resolve parameters from preset
