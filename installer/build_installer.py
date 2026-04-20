@@ -71,6 +71,8 @@ def build(target_platform: str, onedir: bool = False):
         "--hidden-import", "tkinter.ttk",           # themed widgets
         "--hidden-import", "installer_gui",         # our GUI module, loaded at runtime
         "--hidden-import", "install",               # install.py imported by bootstrap at runtime
+        "--hidden-import", "theme",                 # shared palette (bootstrap crash dialog + splash)
+        "--hidden-import", "splash",                # startup splash while bootstrap fetches latest code
         "--collect-all", "customtkinter",             # third-party modern tkinter theme (needs data files + submodules)
         "--hidden-import", "darkdetect",             # customtkinter dependency
         "--hidden-import", "PIL",                   # Pillow — image handling for icons/splash

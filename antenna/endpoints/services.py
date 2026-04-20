@@ -107,12 +107,15 @@ def register_service(ctx: dict[str, Any]) -> tuple[int, dict]:
         cfg = _config.load_config()
     except Exception as e:  # noqa: BLE001
         return 500, {"error": f"config load failed: {e}"}
-    services = dict(cfg.get("services") or {})
-    if not isinstance(services, dict):
-        # Legacy schema: services was a list of keys. Convert to dict
-        # so we can store per-service overrides without breaking older
-        # consumers (they still read the keys via services.keys()).
-        services = {k: {} for k in services}
+    # Legacy schema: services was a list of keys. Convert to dict so we
+    # can store per-service overrides without breaking older consumers.
+    raw = cfg.get("services") or {}
+    if isinstance(raw, dict):
+        services = dict(raw)
+    elif isinstance(raw, list):
+        services = {str(k): {} for k in raw if k}
+    else:
+        services = {}
     svc_entry = dict(services.get(name) or {})
     svc_entry["launcher"] = launcher
     if body.get("root"):

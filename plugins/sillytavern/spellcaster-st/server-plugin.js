@@ -986,89 +986,90 @@ function buildCastWorkflow(avatarUploadName, faceModelName) {
     };
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  Klein 2 Config — canonical Spellcaster Klein models
+//  Mirrors KLEIN_MODELS in spellcaster_core/workflows.py
+// ═══════════════════════════════════════════════════════════════════
+const KLEIN_UNET = "A-Flux\\Flux2\\flux-2-klein-9b.safetensors";
+const KLEIN_CLIP = "qwen_3_8b.safetensors";
+const FLUX2_VAE  = "flux2-vae.safetensors";
+
 /**
- * Build workflow: txt2img body → face swap (using avatar image) → remove background.
+ * Build workflow: Klein 2 advanced image-to-image from the avatar.
  * Result: transparent PNG of the character's full body.
- * Uses source_image (the avatar) directly for face swap — no saved face model needed.
+ *
+ * Klein's ReferenceLatent preserves face/identity from the avatar while
+ * inventing the body from the prompt — no ReActor face-swap needed.
+ * Follows the pattern of `build_klein_img2img` in spellcaster_core.
  */
-function buildBodyWorkflow(avatarImageName, bodyPrompt, modelName) {
+function buildBodyWorkflow(avatarImageName, bodyPrompt, _unusedModelName) {
     const seed = Math.floor(Math.random() * 2147483647);
     return {
-        // Generate full body from text
-        "4": { "class_type": "CheckpointLoaderSimple", "inputs": {
-            "ckpt_name": modelName,
+        // ── Klein 9B + matching CLIP + flux2 VAE ──
+        "1":  { "class_type": "UNETLoader", "inputs": {
+            "unet_name": KLEIN_UNET, "weight_dtype": "default",
         }},
-        "5": { "class_type": "EmptyLatentImage", "inputs": {
-            "width": 512, "height": 768, "batch_size": 1,
+        "2":  { "class_type": "CLIPLoader", "inputs": {
+            "clip_name": KLEIN_CLIP, "type": "flux2", "device": "default",
         }},
-        "6": { "class_type": "CLIPTextEncode", "inputs": {
-            "text": `${bodyPrompt}, full body, standing, looking at viewer, high quality, detailed, 8k`,
-            "clip": ["4", 1],
+        "3":  { "class_type": "VAELoader", "inputs": { "vae_name": FLUX2_VAE }},
+        // ── Conditioning (Klein uses zero-out for negative) ──
+        "4":  { "class_type": "CLIPTextEncode", "inputs": {
+            "text": `${bodyPrompt}, full body portrait, standing, looking at viewer, neutral solid background, detailed, sharp focus`,
+            "clip": ["2", 0],
         }},
-        "7": { "class_type": "CLIPTextEncode", "inputs": {
-            "text": "blurry, low quality, distorted, deformed, watermark, text, cropped, partial body",
-            "clip": ["4", 1],
+        "5":  { "class_type": "ConditioningZeroOut", "inputs": {
+            "conditioning": ["4", 0],
         }},
-        "3": { "class_type": "KSampler", "inputs": {
-            "seed": seed, "steps": 25, "cfg": 7.0,
-            "sampler_name": "dpmpp_2m", "scheduler": "karras",
-            "denoise": 1.0, "model": ["4", 0],
-            "positive": ["6", 0], "negative": ["7", 0],
-            "latent_image": ["5", 0],
+        // ── Avatar reference image → 1MP latent ──
+        "10": { "class_type": "LoadImage", "inputs": { "image": avatarImageName }},
+        "11": { "class_type": "ImageScaleToTotalPixels", "inputs": {
+            "image": ["10", 0], "upscale_method": "lanczos", "megapixels": 1.0,
         }},
-        "8": { "class_type": "VAEDecode", "inputs": {
-            "samples": ["3", 0], "vae": ["4", 2],
+        "12": { "class_type": "VAEEncode", "inputs": {
+            "pixels": ["11", 0], "vae": ["3", 0],
         }},
-        // Face swap using avatar image directly as source
-        "10": { "class_type": "LoadImage", "inputs": {
-            "image": avatarImageName,
+        // ── ReferenceLatent wrapping — ties conditioning to the avatar ──
+        "20": { "class_type": "ReferenceLatent", "inputs": {
+            "conditioning": ["4", 0], "latent": ["12", 0],
         }},
-        "20": { "class_type": "ReActorOptions", "inputs": {
-            "input_faces_order": "left-right",
-            "input_faces_index": "0",
-            "detect_gender_input": "no",
-            "source_faces_order": "left-right",
-            "source_faces_index": "0",
-            "detect_gender_source": "no",
-            "console_log_level": 0,
-            "restore_swapped_only": true,
+        "21": { "class_type": "ReferenceLatent", "inputs": {
+            "conditioning": ["5", 0], "latent": ["12", 0],
         }},
-        "21": { "class_type": "ReActorFaceBoost", "inputs": {
-            "enabled": true,
-            "boost_model": "GFPGANv1.4.pth",
-            "interpolation": "Bicubic",
-            "visibility": 1.0,
-            "codeformer_weight": 0.7,
-            "restore_with_main_after": false,
+        // ── Custom sampler: CFGGuider + BasicScheduler + SamplerCustomAdvanced ──
+        "30": { "class_type": "CFGGuider", "inputs": {
+            "model": ["1", 0], "positive": ["20", 0], "negative": ["21", 0],
+            "cfg": 1.0,
         }},
-        "25": { "class_type": "ReActorFaceSwapOpt", "inputs": {
-            "enabled": true,
-            "input_image": ["8", 0],
-            "source_image": ["10", 0],
-            "swap_model": "reswapper_256.onnx",
-            "facedetection": "retinaface_resnet50",
-            "face_restore_model": "codeformer-v0.1.0.pth",
-            "face_restore_visibility": 1.0,
-            "codeformer_weight": 0.6,
-            "options": ["20", 0],
-            "face_boost": ["21", 0],
+        "31": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "euler" }},
+        // High denoise (~0.88) so the body is reinvented; face stays via RefLatent.
+        "32": { "class_type": "BasicScheduler", "inputs": {
+            "model": ["1", 0], "scheduler": "simple", "steps": 6, "denoise": 0.88,
         }},
-        // Remove background → transparent PNG
-        "30": { "class_type": "Image Rembg (Remove Background)", "inputs": {
-            "images": ["25", 0],
+        "33": { "class_type": "RandomNoise", "inputs": { "noise_seed": seed }},
+        "40": { "class_type": "SamplerCustomAdvanced", "inputs": {
+            "noise": ["33", 0], "guider": ["30", 0], "sampler": ["31", 0],
+            "sigmas": ["32", 0], "latent_image": ["12", 0],
+        }},
+        "50": { "class_type": "VAEDecode", "inputs": {
+            "samples": ["40", 0], "vae": ["3", 0],
+        }},
+        // ── Remove background → transparent PNG ──
+        "60": { "class_type": "Image Rembg (Remove Background)", "inputs": {
+            "images": ["50", 0],
             "transparency": true,
             "model": "isnet-general-use",
-            "post_processing": false,
+            "post_processing": true,
             "only_mask": false,
-            "alpha_matting": false,
+            "alpha_matting": true,
             "alpha_matting_foreground_threshold": 240,
             "alpha_matting_background_threshold": 10,
             "alpha_matting_erode_size": 10,
             "background_color": "none",
         }},
-        "9": { "class_type": "SaveImage", "inputs": {
-            "filename_prefix": "Spellcaster_body",
-            "images": ["30", 0],
+        "9":  { "class_type": "SaveImage", "inputs": {
+            "filename_prefix": "Spellcaster_body_klein",
+            "images": ["60", 0],
         }},
     };
 }
@@ -1109,8 +1110,16 @@ function buildSceneCompositeWorkflow(scenePrompt, characters, modelName) {
     };
 
     // Composite each character onto the scene
+    // AILab_ImageCombiner clamps position_x/position_y to [0..100].
+    // Cap at 4 bodies to keep spacing readable and to stay within range.
+    const toComp = characters.slice(0, 4);
+    const denom = Math.max(1, toComp.length - 1);
+    const clamp01 = (v, fb) => {
+        const n = Number.isFinite(v) ? v : fb;
+        return Math.max(0, Math.min(100, Math.round(n)));
+    };
     let currentImageRef = ["8", 0];  // Start with the scene
-    characters.forEach((char, i) => {
+    toComp.forEach((char, i) => {
         const loadId = `${50 + i}`;
         const compId = `${60 + i}`;
 
@@ -1118,41 +1127,76 @@ function buildSceneCompositeWorkflow(scenePrompt, characters, modelName) {
             "image": char.bodyImageName,
         }};
 
+        const evenX = toComp.length === 1 ? 50
+            : toComp.length === 2 ? (i === 0 ? 35 : 65)
+            : Math.round(15 + (i * 70) / denom);
+
         workflow[compId] = { "class_type": "AILab_ImageCombiner", "inputs": {
             "foreground": [loadId, 0],
             "background": currentImageRef,
             "mode": "normal",
             "foreground_opacity": 1.0,
             "foreground_scale": char.placement?.scale || 0.45,
-            "position_x": char.placement?.x || (30 + i * 30),
-            "position_y": char.placement?.y || 70,
+            "position_x": clamp01(char.placement?.x, evenX),
+            "position_y": clamp01(char.placement?.y, 70),
         }};
 
         currentImageRef = [compId, 0];
     });
 
-    // Harmonization pass — low-denoise img2img to blend characters into scene
-    workflow["70"] = { "class_type": "VAEEncode", "inputs": {
-        "pixels": currentImageRef, "vae": ["4", 2],
+    // ── Harmonization pass: Klein 2 low-denoise blend ──
+    // Mirrors `build_klein_blend` in spellcaster_core/workflows.py.
+    // Keeps AILab composition (alpha-aware) then runs it through Klein at
+    // denoise 0.25 with ReferenceLatent so the characters integrate into the
+    // scene's lighting/palette without being repainted. This is the "top-notch
+    // layer blender" from Spellcaster.
+    workflow["90"] = { "class_type": "UNETLoader", "inputs": {
+        "unet_name": KLEIN_UNET, "weight_dtype": "default",
     }};
-    workflow["71"] = { "class_type": "CLIPTextEncode", "inputs": {
-        "text": `${scenePrompt}, people naturally in scene, matching lighting and shadows, cohesive composition, cinematic, 8k`,
-        "clip": ["4", 1],
+    workflow["91"] = { "class_type": "CLIPLoader", "inputs": {
+        "clip_name": KLEIN_CLIP, "type": "flux2", "device": "default",
     }};
-    workflow["72"] = { "class_type": "KSampler", "inputs": {
-        "seed": seed + 1, "steps": 20, "cfg": 5.0,
-        "sampler_name": "dpmpp_2m", "scheduler": "karras",
-        "denoise": 0.25,   // Low denoise — preserve composition, blend lighting
-        "model": ["4", 0],
-        "positive": ["71", 0], "negative": ["7", 0],
-        "latent_image": ["70", 0],
+    workflow["92"] = { "class_type": "VAELoader", "inputs": {
+        "vae_name": FLUX2_VAE,
     }};
-    workflow["73"] = { "class_type": "VAEDecode", "inputs": {
-        "samples": ["72", 0], "vae": ["4", 2],
+    workflow["70"] = { "class_type": "ImageScaleToTotalPixels", "inputs": {
+        "image": currentImageRef, "upscale_method": "lanczos", "megapixels": 1.0,
+    }};
+    workflow["71"] = { "class_type": "VAEEncode", "inputs": {
+        "pixels": ["70", 0], "vae": ["92", 0],
+    }};
+    workflow["75"] = { "class_type": "CLIPTextEncode", "inputs": {
+        "text": `${scenePrompt}, people naturally in scene, matching lighting and shadows, cohesive composition, cinematic`,
+        "clip": ["91", 0],
+    }};
+    workflow["76"] = { "class_type": "ConditioningZeroOut", "inputs": {
+        "conditioning": ["75", 0],
+    }};
+    workflow["77"] = { "class_type": "ReferenceLatent", "inputs": {
+        "conditioning": ["75", 0], "latent": ["71", 0],
+    }};
+    workflow["78"] = { "class_type": "ReferenceLatent", "inputs": {
+        "conditioning": ["76", 0], "latent": ["71", 0],
+    }};
+    workflow["80"] = { "class_type": "CFGGuider", "inputs": {
+        "model": ["90", 0], "positive": ["77", 0], "negative": ["78", 0],
+        "cfg": 1.0,
+    }};
+    workflow["81"] = { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "euler" }};
+    workflow["82"] = { "class_type": "BasicScheduler", "inputs": {
+        "model": ["90", 0], "scheduler": "simple", "steps": 6, "denoise": 0.25,
+    }};
+    workflow["83"] = { "class_type": "RandomNoise", "inputs": { "noise_seed": seed + 1 }};
+    workflow["84"] = { "class_type": "SamplerCustomAdvanced", "inputs": {
+        "noise": ["83", 0], "guider": ["80", 0], "sampler": ["81", 0],
+        "sigmas": ["82", 0], "latent_image": ["71", 0],
+    }};
+    workflow["85"] = { "class_type": "VAEDecode", "inputs": {
+        "samples": ["84", 0], "vae": ["92", 0],
     }};
     workflow["9"] = { "class_type": "SaveImage", "inputs": {
-        "filename_prefix": "Spellcaster_studio_scene",
-        "images": ["73", 0],
+        "filename_prefix": "Spellcaster_studio_klein",
+        "images": ["85", 0],
     }};
 
     return workflow;
@@ -1179,44 +1223,6 @@ function buildAnimationWorkflow(imageName, prompt, numFrames) {
         "7": { "class_type": "CLIPTextEncode", "inputs": {
             "text": "static, frozen, still, blurry, low quality, deformed",
             "clip": ["4", 1]
-        }},
-        "10": { "class_type": "RepeatLatentBatch", "inputs": {
-            "samples": ["5", 0], "amount": numFrames
-        }},
-        "11": { "class_type": "InjectLatentNoise+", "inputs": {
-            "latent": ["10", 0], "noise_seed": seed, "noise_strength": 0.12
-        }},
-        "3": { "class_type": "KSampler", "inputs": {
-            "seed": seed, "steps": 8, "cfg": 5.0,
-            "sampler_name": "euler", "scheduler": "normal",
-            "denoise": 0.15, "model": ["4", 0],
-            "positive": ["6", 0], "negative": ["7", 0],
-            "latent_image": ["11", 0]
-        }},
-        "8": { "class_type": "VAEDecode", "inputs": {
-            "samples": ["3", 0], "vae": ["4", 2]
-        }},
-        "20": { "class_type": "VHS_VideoCombine", "inputs": {
-            "images": ["8", 0], "frame_rate": 8.0,
-            "loop_count": 0, "filename_prefix": "Spellcaster_ST_anim",
-            "format": "image/gif", "pingpong": true,
-            "save_output": true
-        }}
-    };
-}
-
-function exit() {
-    console.log('[Spellcaster] Server plugin unloaded.');
-}
-
-const info = {
-    id: 'spellcaster',
-    name: 'Spellcaster',
-    description: 'ComfyUI integration — living scenes, character restyling, autonomous image generation',
-};
-
-export { info, init, exit };
-1]
         }},
         "10": { "class_type": "RepeatLatentBatch", "inputs": {
             "samples": ["5", 0], "amount": numFrames
