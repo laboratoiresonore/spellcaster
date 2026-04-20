@@ -5060,32 +5060,66 @@ def cn_modes_for_arch(modes_dict, target_arch):
 
 
 def _filter_loras_for_arch(all_loras, arch):
-    """Return only LoRAs compatible with `arch`.
+    """Return LoRAs compatible with ``arch``.
 
-    Two gates:
-      1. Folder prefix must match `ARCH_LORA_PREFIXES[arch]` (checks
-         both backslash and forward-slash variants — ComfyUI returns
-         either depending on the OS).
-      2. For image architectures, filename must NOT trigger
-         `_looks_like_video_lora` — this catches WAN/LTX/SeedVR
-         LoRAs that slipped through the folder prefix (e.g. user
-         dropped `wan2.2-i2v-lightning.safetensors` directly into
-         SDXL\\ by mistake; the prefix passes but the filename tags
-         it as video-only).
+    Three gates, each progressively more permissive:
+
+    1. **Folder-prefix match** — if the LoRA's path starts with one
+       of ``ARCH_LORA_PREFIXES[arch]``, it's in. Case-insensitive
+       (Linux/Mac ComfyUI reports lowercase paths like ``sdxl/foo``
+       but our prefixes use ``SDXL\\``) and slash-agnostic (server
+       may emit either ``\\`` or ``/``).
+    2. **Root-folder LoRAs** for image arches — a LoRA stored
+       directly at ``loras/my_lora.safetensors`` has no subfolder
+       and can't strictly be arch-typed. For image arches, let it
+       through (minus video markers) so users who keep LoRAs flat
+       aren't locked out. The picker's tooltip tells the user the
+       LoRA might not match their arch.
+    3. **Empty-prefix arches** (``sd15``, ``chroma``) — these arches
+       historically had no dedicated LoRA folders. Fall through to
+       "every image LoRA except video markers" so users can still
+       pick LoRAs from any subfolder.
+
+    In all three gates, filename-level video markers
+    (``_looks_like_video_lora``) reject WAN/LTX/SeedVR LoRAs so a
+    cross-arch mismatch can't slip through.
     """
-    prefixes = ARCH_LORA_PREFIXES.get(arch, [])
-    if not prefixes:
-        return []
     is_image_arch = arch in _IMAGE_ARCHS
+    prefixes = ARCH_LORA_PREFIXES.get(arch, [])
+    # Pre-lower the prefix list (with both slash variants) so the
+    # per-LoRA check is one lowercased startswith() comparison.
+    prefix_variants = []
+    for p in prefixes:
+        pl = p.lower()
+        alt = pl.replace("\\", "/") if "\\" in pl else pl.replace("/", "\\")
+        prefix_variants.append(pl)
+        if alt != pl:
+            prefix_variants.append(alt)
+
     result = []
     for lora in all_loras:
-        for p in prefixes:
-            alt = p.replace("\\", "/") if "\\" in p else p.replace("/", "\\")
-            if lora.startswith(p) or lora.startswith(alt):
-                if is_image_arch and _looks_like_video_lora(lora):
-                    break  # filename-level blocklist rejects video LoRAs
-                result.append(lora)
-                break
+        lora_lower = lora.lower()
+        # Filename-level video gate applies to every path for image arches.
+        if is_image_arch and _looks_like_video_lora(lora):
+            continue
+        # Gate 1 — canonical folder prefix match (case-insensitive).
+        if prefix_variants and any(
+                lora_lower.startswith(p) for p in prefix_variants):
+            result.append(lora)
+            continue
+        # Gate 2 — root-folder LoRA (no subfolder separator). Only
+        # admitted for image arches so we don't surface bare video
+        # LoRAs in image dialogs — the video-marker check above is
+        # the backstop.
+        has_separator = ("\\" in lora) or ("/" in lora)
+        if is_image_arch and not has_separator:
+            result.append(lora)
+            continue
+        # Gate 3 — empty-prefix image arches: let ANY non-video LoRA
+        # through so users with sd15/chroma setups see their library.
+        if is_image_arch and not prefixes:
+            result.append(lora)
+            continue
     return result
 
 
@@ -12381,6 +12415,20 @@ class FaceIDDialog(Gtk.Dialog):
 
         box.show_all()
 
+        # Route through the central per-arch optimizer so the arch hint
+        # + cfg/steps tooltip ranges match every other dialog. FaceID
+        # preset keys are "SD1.5 — ..." / "SDXL — ..." so _faceid_arch()
+        # returns sd15/sdxl and the helper renders the matching row.
+        # Also re-fired from the preset-change handler below so the
+        # hint tracks the user's pick.
+        _apply_arch_optimizations(self, self._faceid_arch())
+        try:
+            self.preset_combo.connect(
+                "changed",
+                lambda *_a: _apply_arch_optimizations(self, self._faceid_arch()))
+        except Exception:
+            pass
+
     def _faceid_arch(self):
         """Determine architecture from the current FaceID preset key."""
         key = self.preset_combo.get_active_id() or ""
@@ -12626,6 +12674,19 @@ class PulidFluxDialog(Gtk.Dialog):
         _add_runs_spinner(self, box)
 
         box.show_all()
+
+        # Route through the central per-arch optimizer so PuLID gets
+        # the same arch hint + cfg/steps tooltip wording every Flux
+        # dialog uses. _pulid_arch() returns flux1dev or flux_kontext
+        # depending on which Flux UNET the user picked; re-fire on
+        # model-change so the hint tracks the selection.
+        _apply_arch_optimizations(self, self._pulid_arch())
+        try:
+            self.model_combo.connect(
+                "changed",
+                lambda *_a: _apply_arch_optimizations(self, self._pulid_arch()))
+        except Exception:
+            pass
 
     def _pulid_arch(self):
         """Return turbo architecture key based on the selected Flux model."""
@@ -12914,6 +12975,12 @@ class KleinDialog(Gtk.Dialog):
         box.show_all()
         GLib.idle_add(self._on_fetch_loras, None)
 
+        # Klein is always arch=flux2klein — route through the central
+        # optimizer so the arch hint + cfg/steps tooltip wording match
+        # every other dialog. The Klein-model combobox picks between
+        # 9B / 4B / 4B-base but all three map to the same arch.
+        _apply_arch_optimizations(self, "flux2klein")
+
     def _on_fetch_loras(self, _btn):
         server = self.server_entry.get_text().strip(); _propagate_server_url(server)
         try:
@@ -13145,6 +13212,13 @@ class KontextDialog(Gtk.Dialog):
 
         box.show_all()
         GLib.idle_add(self._on_fetch_loras, None)
+
+        # Kontext is always arch=flux_kontext (edit-instruction Flux
+        # variant). Route through the central per-arch optimizer so
+        # the arch hint label surfaces the "edit instructions, NO
+        # negative, NO ControlNet" guidance and the cfg/steps tooltips
+        # match the rest of the app.
+        _apply_arch_optimizations(self, "flux_kontext")
 
     def _on_task_changed(self, combo):
         task_key = combo.get_active_id()
@@ -22542,8 +22616,23 @@ class Spellcaster(Gimp.PlugIn):
         hb3 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         hb3.pack_start(Gtk.Label(label="Upscale Model:"), False, False, 0)
         up_combo = Gtk.ComboBoxText()
-        up_combo.set_tooltip_text("Super-resolution model for the initial upscale step.\nThe image is upscaled first, then detail is hallucinated via img2img.")
-        for label in UPSCALE_PRESETS:
+        up_combo.set_tooltip_text(
+            "Super-resolution model for the initial upscale step.\n"
+            "The image is upscaled first, then detail is hallucinated via img2img.\n\n"
+            "Note: the 'WaveSpeed AI' entries are standalone AI upscalers "
+            "and don't chain with detail_hallucinate — use Spellcaster > "
+            "Upscale for those. Only the classic .pth/.safetensors models "
+            "are listed here.")
+        # Filter out the WaveSpeed sentinels — they're not real model
+        # filenames. build_detail_hallucinate feeds the value straight
+        # to UpscaleModelLoader, which would reject them with "Value
+        # not in list" at workflow submit (the bug the user reported
+        # as "I keep getting errors when I try to submit anything").
+        # _run_upscale handles them via build_wavespeed_upscale; this
+        # dialog can't chain that step so we hide the options.
+        for label, fname in UPSCALE_PRESETS.items():
+            if isinstance(fname, str) and fname.startswith("__wavespeed_"):
+                continue
             up_combo.append(label, label)
         up_combo.set_active(0)
         up_combo.set_hexpand(True)
@@ -22750,7 +22839,14 @@ class Spellcaster(Gimp.PlugIn):
         detail_key = detail_combo.get_active_id()
         h_preset = HALLUCINATE_PRESETS[detail_key]
         up_key = up_combo.get_active_id()
-        upscale_model = UPSCALE_PRESETS[up_key]
+        # Defense in depth: the dropdown now filters WaveSpeed entries
+        # (they aren't real model filenames), but if session restore
+        # or a future UI change lets one through, silently fall back
+        # to "no upscale" rather than crashing UpscaleModelLoader with
+        # "Value not in list" at workflow submit.
+        upscale_model = UPSCALE_PRESETS.get(up_key)
+        if isinstance(upscale_model, str) and upscale_model.startswith("__wavespeed_"):
+            upscale_model = None
         idx = model_combo.get_active()
         preset = dict(MODEL_PRESETS[idx] if idx >= 0 else MODEL_PRESETS[0])
         pbuf = prompt_tv.get_buffer()
@@ -22851,8 +22947,20 @@ class Spellcaster(Gimp.PlugIn):
         hb_up = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         hb_up.pack_start(Gtk.Label(label="Upscale Model:"), False, False, 0)
         up_combo = Gtk.ComboBoxText()
-        up_combo.set_tooltip_text("Super-resolution model for the initial upscale step.\nImage is upscaled first, then refined with AI detail.")
-        for label in UPSCALE_PRESETS:
+        up_combo.set_tooltip_text(
+            "Super-resolution model for the initial upscale step.\n"
+            "Image is upscaled first, then refined with AI detail.\n\n"
+            "Note: the 'WaveSpeed AI' entries are standalone AI upscalers "
+            "and don't chain with SeedV2R — use Spellcaster > Upscale for "
+            "those. Only the classic .pth/.safetensors models are listed "
+            "here.")
+        # Same filter as detail_hallucinate — WaveSpeed sentinels aren't
+        # real filenames and UpscaleModelLoader rejects them. Hide them
+        # from the dropdown so users can't pick a combination that
+        # would crash at workflow submit.
+        for label, fname in UPSCALE_PRESETS.items():
+            if isinstance(fname, str) and fname.startswith("__wavespeed_"):
+                continue
             up_combo.append(label, label)
         up_combo.set_active(0)
         up_combo.set_hexpand(True)
@@ -23077,7 +23185,10 @@ class Spellcaster(Gimp.PlugIn):
         idx = model_combo.get_active()
         preset = dict(MODEL_PRESETS[idx] if idx >= 0 else MODEL_PRESETS[0])
         up_key = up_combo.get_active_id()
-        upscale_model = UPSCALE_PRESETS[up_key]
+        # Defense in depth: see matching block in _run_detail_hallucinate.
+        upscale_model = UPSCALE_PRESETS.get(up_key)
+        if isinstance(upscale_model, str) and upscale_model.startswith("__wavespeed_"):
+            upscale_model = None
         scale_idx = scale_combo.get_active()
         _scale_label, scale_factor = SEEDV2R_SCALE_OPTIONS[scale_idx]
         hall_idx = hall_combo.get_active()
