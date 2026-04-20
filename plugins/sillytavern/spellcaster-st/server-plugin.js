@@ -776,7 +776,10 @@ function init(router) {
                         wanPreset,
                         {
                             length: length || 33,
-                            turbo:    turbo    !== undefined ? !!turbo    : true,
+                            // Default OFF — see buildWanI2VWorkflow's
+                            // turbo comment. Safe, slower path wins
+                            // until the caller explicitly opts in.
+                            turbo:    turbo    !== undefined ? !!turbo    : false,
                             pingpong: pingpong !== undefined ? !!pingpong : true,
                             endImage: endUploadName,
                         },
@@ -804,10 +807,21 @@ function init(router) {
 
             if (workflow === null) {
                 // No preset available, or the caller forced legacy mode.
+                // The legacy builder needs a real SDXL/SD-1.5 checkpoint
+                // that exists on the server — detect one now. If even
+                // that's missing the user has no generative models
+                // installed and we surface a helpful error.
+                const fallbackModel = await detectBestModel();
+                if (!fallbackModel) {
+                    return res.status(500).json({
+                        error: 'No video engine (WAN / LTX) installed and no SDXL fallback checkpoint found on ComfyUI. Install at least one generative model via the Spellcaster installer.',
+                    });
+                }
                 workflow = buildAnimationWorkflow(
                     uploadName,
                     prompt || 'subtle animation, gentle movement',
                     length || 8,
+                    fallbackModel,
                 );
             }
 
@@ -1705,17 +1719,105 @@ function buildSceneCompositeWorkflow(scenePrompt, characters, modelName) {
 // plugin in the supported install (both run on the user's
 // workstation), so localhost:7777 is the usual target. GUILD_URL is
 // configurable via the `/settings` endpoint.
+//
+// Graceful degradation: when the Guild is unreachable OR running an
+// older build that lacks /api/video_preset (the endpoint was added
+// post-ST-audit and users on stale Guilds hit 404), we fall back to
+// a minimal JS-side WAN detector that probes ComfyUI directly. The
+// JS detector can't replicate every nuance of the canonical Python
+// one (VAE pairing, I2V-safe accel LoRA selection) but produces a
+// workable preset for the common case of a user with Wan 2.2 14B
+// I2V HIGH+LOW + wan_2.1_vae + umt5 CLIP already installed.
 async function fetchVideoPreset(engine = "wan") {
+    // Preferred: Guild-side canonical detector.
     try {
         const comfyParam = encodeURIComponent(COMFYUI_URL);
         const url = `${GUILD_URL}/api/video_preset?engine=${engine}&comfy_url=${comfyParam}`;
         const r = await fetchJSON(url);
-        if (r.status !== 200) return null;
-        const p = r.data && r.data.preset;
-        return p || null;
-    } catch {
-        return null;
+        if (r.status === 200 && r.data && r.data.preset) {
+            return r.data.preset;
+        }
+    } catch { /* fall through to JS detector */ }
+    // Fallback: direct /object_info probe. Limited to WAN right now —
+    // LTX has more moving parts (Gemma TE + connector) that are
+    // harder to pick correctly without the canonical detector.
+    if (engine === "wan") {
+        return await _detectWanPresetDirect();
     }
+    return null;
+}
+
+async function _probeComboChoices(nodeClass, inputName) {
+    try {
+        const r = await fetchJSON(`${COMFYUI_URL}/object_info/${nodeClass}`);
+        const required = r.data?.[nodeClass]?.input?.required?.[inputName];
+        if (!required) return [];
+        // Legacy shape: [[list], {config}]. Modern COMBO shape: ["COMBO", {options: [...]}]
+        if (Array.isArray(required[0])) return required[0];
+        if (required[1]?.options) return required[1].options;
+        return [];
+    } catch { return []; }
+}
+
+async function _detectWanPresetDirect() {
+    // Enumerate UNETs from both loaders (safetensors + GGUF).
+    const unets = await _probeComboChoices("UNETLoader", "unet_name");
+    const ggufUnets = await _probeComboChoices("UnetLoaderGGUF", "unet_name");
+    const allUnets = [...unets, ...ggufUnets];
+    const lc = s => (s || "").toLowerCase();
+    const isI2vHigh = m => lc(m).includes("wan") && lc(m).includes("i2v")
+                          && lc(m).includes("high") && !lc(m).includes("t2v");
+    const isI2vLow  = m => lc(m).includes("wan") && lc(m).includes("i2v")
+                          && lc(m).includes("low")  && !lc(m).includes("t2v");
+    const high = allUnets.find(isI2vHigh);
+    const low  = allUnets.find(isI2vLow);
+    if (!high) return null;
+
+    // VAE — prefer wan_2.1_vae for 14B I2V, else any WAN VAE that isn't 5B.
+    const vaes = await _probeComboChoices("VAELoader", "vae_name");
+    const avoid5B = v => !lc(v).includes("wan2.2_vae");
+    const is14B  = lc(high).includes("14b");
+    let vae = null;
+    if (is14B) {
+        vae = vaes.find(v => /wan.?2[._]?1/.test(lc(v)) && avoid5B(v))
+           || vaes.find(v => lc(v).includes("wan") && avoid5B(v));
+    } else {
+        vae = vaes.find(v => lc(v).includes("wan2.2_vae"))
+           || vaes.find(v => lc(v).includes("wan"));
+    }
+    if (!vae) return null;
+
+    // CLIP — prefer GGUF umt5, else fp8 safetensors.
+    const ggufClips = await _probeComboChoices("CLIPLoaderGGUF", "clip_name");
+    let clip = ggufClips.find(c => /umt5|t5xxl/.test(lc(c)) && lc(c).endsWith(".gguf"));
+    let clipIsGguf = !!clip;
+    if (!clip) {
+        const stdClips = await _probeComboChoices("CLIPLoader", "clip_name");
+        clip = stdClips.find(c => /umt5|t5xxl/.test(lc(c)));
+    }
+    if (!clip) return null;
+
+    // Accel LoRAs (optional; only populated for turbo).
+    const loras = await _probeComboChoices("LoraLoaderModelOnly", "lora_name");
+    const isWanAccel = l => lc(l).includes("wan") &&
+        (lc(l).includes("lightx2v") || lc(l).includes("lightning") || lc(l).includes("accel")) &&
+        !lc(l).includes("t2v");
+    const highAccel = loras.find(l => isWanAccel(l) && lc(l).includes("high"));
+    const lowAccel  = loras.find(l => isWanAccel(l) && lc(l).includes("low"));
+
+    const preset = {
+        arch: "wan",
+        high_model: high,
+        low_model: low || high,
+        clip, clip_is_gguf: clipIsGguf,
+        vae,
+        steps: 6, cfg: 1.0, shift: 8.0, second_step: 3,
+        is_i2v: true,
+    };
+    if (highAccel) { preset.high_accel_lora = highAccel; preset.accel_strength = 1.5; }
+    if (lowAccel)  { preset.low_accel_lora = lowAccel; }
+    console.log('[Spellcaster] JS fallback WAN preset built:', preset.high_model);
+    return preset;
 }
 
 // Build the canonical WAN 2.2 I2V workflow. `preset` is the dict
@@ -1732,7 +1834,16 @@ function buildWanI2VWorkflow(avatarImage, prompt, preset, opts = {}) {
         width = 512, height = 512,       // mod-16 square for ST avatars
         length = 33,                      // 33 frames ≈ 2s @ 16fps
         fps = 16,
-        turbo = true,                     // preset defaults are already turbo
+        // Default to full-step. Live-testing on the RTX 5060 Ti with
+        // Wan 2.2 I2V A14B + the shipped LightX2V 4-step LoRAs
+        // produced pure-black output (mean luminance 0 / 255) at the
+        // preset's turbo defaults (6 steps, cfg=1.0, second_step=3).
+        // CLAUDE.md §16.2 documents this as the canonical failure
+        // mode for that model/LoRA combo. Full-step (30 steps,
+        // cfg=3.5, second_step=15, accel LoRAs skipped) is the
+        // reliable path; pass turbo:true explicitly when the user
+        // knows their server's LoRAs tolerate the distillation.
+        turbo = false,
         pingpong = true,                  // looping avatar is the common case
         negative_prompt = null,
         endImage = null,                  // optional FLF target frame
@@ -2043,7 +2154,7 @@ function buildLtxI2VWorkflow(avatarImage, prompt, preset, opts = {}) {
     return wf;
 }
 
-function buildAnimationWorkflow(imageName, prompt, numFrames) {
+function buildAnimationWorkflow(imageName, prompt, numFrames, modelName) {
     // FALLBACK path — img2img with low-denoise noise injection on a
     // latent batch. This was the ST plugin's original animation
     // implementation; it's NOT real video, just 8 slightly-different
@@ -2051,11 +2162,20 @@ function buildAnimationWorkflow(imageName, prompt, numFrames) {
     // ComfyUI server lacks WAN / LTX / Kijai nodes (the animate
     // endpoint checks the WAN preset first and only lands here on
     // preset miss). Do not route new callers through this.
+    //
+    // `modelName` is the SDXL/SD-1.5 checkpoint chosen by
+    // detectBestModel(). The previous build hardcoded a NoobAI
+    // filename that didn't exist on most servers — fallback 500'd
+    // before the first frame. Accept the caller's detected model.
     const seed = Math.floor(Math.random() * 2147483647);
+    const ckpt = modelName || _cachedModel;
+    if (!ckpt) {
+        throw new Error('No checkpoint available for animation fallback — install WAN / LTX via the Spellcaster installer for real video.');
+    }
     return {
         "1": { "class_type": "LoadImage", "inputs": { "image": imageName }},
         "4": { "class_type": "CheckpointLoaderSimple", "inputs": {
-            "ckpt_name": _cachedModel || "SDXL\\NoobAI-XL-v1.1.safetensors"
+            "ckpt_name": ckpt,
         }},
         "5": { "class_type": "VAEEncode", "inputs": {
             "pixels": ["1", 0], "vae": ["4", 2]
@@ -2071,8 +2191,12 @@ function buildAnimationWorkflow(imageName, prompt, numFrames) {
         "10": { "class_type": "RepeatLatentBatch", "inputs": {
             "samples": ["5", 0], "amount": numFrames
         }},
+        // `normalize` became required on a recent ComfyUI node refresh.
+        // Default "false" matches the node's declared default and
+        // preserves the original noise-injection behaviour.
         "11": { "class_type": "InjectLatentNoise+", "inputs": {
-            "latent": ["10", 0], "noise_seed": seed, "noise_strength": 0.12
+            "latent": ["10", 0], "noise_seed": seed, "noise_strength": 0.12,
+            "normalize": "false",
         }},
         "3": { "class_type": "KSampler", "inputs": {
             "seed": seed, "steps": 8, "cfg": 5.0,
