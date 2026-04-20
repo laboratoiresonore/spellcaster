@@ -7,17 +7,38 @@ import os
 # image with an animated progress overlay and a breathing opacity effect.
 # Exits when the lock file is deleted by the Lua plugin.
 
-# Theme constants
-_BG = '#0B0715'
-_ACCENT = '#D122E3'
-_TEXT = '#E2DFEB'
-_SUBTEXT = '#8B7CA8'
-_FONTS = ("Segoe UI", "Inter", "Cantarell", "Arial")
+# ── Theme constants (mirror the Wizard Guild / GIMP theme palette) ──
+# Keep these in lockstep with tavern/static/style.css :root and with
+# plugins/gimp/comfyui-connector/spellcaster-theme.css so the three
+# surfaces look like the same product.
+_BG         = '#12101d'   # Guild --bg-main
+_BAR_TRACK  = '#1a1730'   # Guild --bg-panel (progress bar trough)
+_ACCENT     = '#ffd700'   # Guild --accent (gold)
+_PURPLE     = '#B246F2'   # Guild --primary-purple
+_TEXT       = '#e8e6f5'   # Guild --text-main (lavender)
+_SUBTEXT    = '#c4b8e3'   # Guild --text-muted
+_FONTS = ("Segoe UI Variable", "Segoe UI", "Inter",
+          "Roboto", "Cantarell", "Arial")
 
-def _best_font(size=16, bold=False):
-    """Return a font tuple using the first available font family."""
+
+def _best_font(root, size=16, bold=False):
+    """Return a font tuple using the first available font family.
+    Walks the preference list against tkinter.font.families() so the
+    splash never ends up on Times New Roman when Segoe UI is missing.
+    Pass the Tk root so font introspection has a master window."""
     weight = "bold" if bold else "normal"
-    return (_FONTS[0], size, weight)
+    try:
+        import tkinter.font as tkfont
+        try:
+            avail = set(tkfont.families(root=root))
+        except Exception:
+            avail = set()
+        for fam in _FONTS:
+            if fam in avail:
+                return (fam, size, weight)
+    except Exception:
+        pass
+    return ("TkDefaultFont", size, weight)
 
 
 def show_splash():
@@ -37,6 +58,22 @@ def show_splash():
 
     root.splash_img = None
     target = 500  # desired max dimension in pixels
+
+    # Force a modern ttk theme so any ttk widget inside the splash
+    # renders styled instead of falling back to a Motif-looking
+    # default on machines where the theme pack is missing.
+    try:
+        from tkinter import ttk
+        _style = ttk.Style()
+        for _t in ("vista", "xpnative", "winnative", "aqua", "clam", "default"):
+            if _t in _style.theme_names():
+                try:
+                    _style.theme_use(_t)
+                    break
+                except Exception:
+                    continue
+    except Exception:
+        pass
 
     # ── Main container ──
     container = tk.Frame(root, bg=_BG, bd=0)
@@ -64,7 +101,7 @@ def show_splash():
     title_label = tk.Label(
         overlay,
         text="Spellcaster",
-        font=_best_font(14, bold=True),
+        font=_best_font(root, 14, bold=True),
         fg=_ACCENT,
         bg=_BG,
         anchor='w'
@@ -75,7 +112,7 @@ def show_splash():
     status_label = tk.Label(
         overlay,
         text="Processing with AI...",
-        font=_best_font(11),
+        font=_best_font(root, 11),
         fg=_TEXT,
         bg=_BG,
         anchor='w'
@@ -83,7 +120,7 @@ def show_splash():
     status_label.pack(fill='x')
 
     # ── Progress bar ──
-    bar_frame = tk.Frame(overlay, bg='#21153B', height=4, bd=0)
+    bar_frame = tk.Frame(overlay, bg=_BAR_TRACK, height=4, bd=0)
     bar_frame.pack(fill='x', pady=(6, 0))
     bar_frame.pack_propagate(False)
 
@@ -135,16 +172,19 @@ def show_splash():
 
     root.after(100, animate_bar)
 
-    # ── Breathing / pulsing opacity on the title ──
-    # Simulate pulsing by cycling the title color brightness
+    # ── Breathing / pulsing title colour ──
+    # Cycles the title between primary purple and gold — the two
+    # Guild brand colours — so the splash lives in the same visual
+    # world as the Wizard Guild chat UI. Same 40-step ramp: 20 steps
+    # up, 20 back down, so the transition breathes smoothly.
     pulse_state = {'step': 0}
     _PULSE_COLORS = []
-    # Pre-compute 40 color steps: from accent (#D122E3) dimmed to bright and back
+    # Purple start: #B246F2 (178, 70, 242) → Gold end: #ffd700 (255, 215, 0)
     for i in range(20):
         t = i / 19.0  # 0.0 .. 1.0
-        r = int(140 + t * (209 - 140))
-        g = int(20 + t * (34 - 20))
-        b = int(160 + t * (227 - 160))
+        r = int(178 + t * (255 - 178))
+        g = int(70 + t * (215 - 70))
+        b = int(242 + t * (0 - 242))
         _PULSE_COLORS.append(f'#{r:02x}{g:02x}{b:02x}')
     _PULSE_COLORS += list(reversed(_PULSE_COLORS))
 
