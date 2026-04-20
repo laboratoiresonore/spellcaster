@@ -1737,6 +1737,7 @@ def build_face_restore(image_filename, model_name, facedetection,
     When sam3_prompt is set, the transform is composited back onto the original
     using a SAM3 mask so only the described region changes.
     """
+    _faceswap_guard("face_restore")
     nf = NodeFactory()
     img_id = nf.load_image(image_filename, node_id="1")
     img_ref = [img_id, 0]
@@ -3379,6 +3380,7 @@ def build_klein_headswap(target_filename, source_filename, klein_model_key,
         * Klein fails: prompt too aggressive or denoise too high
       - Swapped face quality depends on source image quality and angle match
     """
+    _faceswap_guard("klein_headswap")
     if klein_models is None:
         klein_models = KLEIN_MODELS
 
