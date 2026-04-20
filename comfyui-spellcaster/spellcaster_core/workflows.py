@@ -1126,10 +1126,14 @@ def _klein_enhance_model(nf, model_ref, conditioning_ref,
 # Node-ID tranche for quality boosts: 700-739 (disjoint from the 770-999
 # enhancer tranche). Each builder passes its own node_base_id in that range.
 
-_QUALITY_ARCHES_PAG = {"sdxl", "illustrious", "flux1dev", "chroma", "flux_kontext"}
+_QUALITY_ARCHES_PAG = {"sdxl", "illustrious", "flux1dev", "chroma", "flux_kontext", "zit"}
 _QUALITY_ARCHES_RESCALE = {"sd15", "sdxl", "illustrious"}
 _QUALITY_ARCHES_FREEU = {"sdxl"}  # not illustrious — FreeU hurts anime
-_QUALITY_ARCHES_SLG = {"flux1dev", "flux_kontext"}  # DiT architectures only
+# DiT architectures: Flux 1, Flux Kontext, and Z-Image-Turbo (MMDiT).
+# SLG drops transformer blocks from the guidance branch — only meaningful
+# when the model HAS transformer blocks. SD1/SDXL/Klein use different
+# samplers (or in Klein's case its own enhancer) and don't benefit.
+_QUALITY_ARCHES_SLG = {"flux1dev", "flux_kontext", "zit"}
 
 
 def _apply_quality_boost(nf, model_ref, arch_key, *,
@@ -1155,7 +1159,12 @@ def _apply_quality_boost(nf, model_ref, arch_key, *,
     nid = node_base_id
 
     if arch_key in _QUALITY_ARCHES_PAG:
-        pag = nf.perturbed_attention_guidance(model_ref, scale=3.0,
+        # Distilled DiT (zit, ~6 steps, cfg 1-2) is sensitive to high
+        # PAG scale — scale 3.0 (Flux/SDXL default) over-corrects and
+        # can produce washed-out colours. 1.5 keeps the structural
+        # benefit without trampling the distilled prior.
+        pag_scale = 1.5 if arch_key == "zit" else 3.0
+        pag = nf.perturbed_attention_guidance(model_ref, scale=pag_scale,
                                                node_id=str(nid))
         model_ref = [pag, 0]
         nid += 1
@@ -1171,7 +1180,17 @@ def _apply_quality_boost(nf, model_ref, arch_key, *,
         nid += 1
 
     if quality == "max" and arch_key in _QUALITY_ARCHES_SLG:
-        slg = nf.skip_layer_guidance_dit(model_ref, node_id=str(nid))
+        # SLG layer indices vary by architecture. Flux's MMDiT exposes
+        # both double-stream and single-stream blocks 7-9; Z-Image-Turbo's
+        # MMDiT shares the double-stream layout but its later blocks
+        # already handle most of the prompt fidelity, so skipping
+        # blocks 7-9 hits the sweet spot for both. The 0.01-0.15 sampling
+        # window is the empirically-tested distilled range — applying SLG
+        # outside it hurts at low step counts.
+        slg_scale = 2.0 if arch_key == "zit" else 3.0
+        slg = nf.skip_layer_guidance_dit(model_ref,
+                                          scale=slg_scale,
+                                          node_id=str(nid))
         model_ref = [slg, 0]
         nid += 1
 
@@ -1180,9 +1199,12 @@ def _apply_quality_boost(nf, model_ref, arch_key, *,
 
 def _apply_speedup(nf, model_ref, arch_key, *, fast_mode=False, node_id=None):
     """Wire TeaCache on the model when fast_mode=True AND the arch
-    benefits. Currently limited to flux1dev / flux_kontext — TeaCache
+    benefits. Supported arches: flux1dev, flux_kontext, zit. TeaCache
     on SDXL/SD1.5 works but the quality trade at rel_l1_thresh=0.4 is
-    more noticeable there (PAG hides its artefacts on Flux).
+    more noticeable there (PAG hides its artefacts on transformer-based
+    models). Z-Image-Turbo runs at 6 distilled steps; the cache benefit
+    is smaller per-step but real on repeat-gen workflows (batch, seed
+    sweep, calibration shootouts).
 
     The caller MUST have the ComfyUI-TeaCache custom pack installed or
     the workflow fails at submit with "unknown class_type
@@ -1191,9 +1213,14 @@ def _apply_speedup(nf, model_ref, arch_key, *, fast_mode=False, node_id=None):
     """
     if not fast_mode:
         return model_ref
-    if arch_key not in ("flux1dev", "flux_kontext"):
+    if arch_key not in ("flux1dev", "flux_kontext", "zit"):
         return model_ref
-    tc = nf.apply_tea_cache_patch(model_ref, rel_l1_thresh=0.4,
+    # Slightly lower threshold for zit — distilled steps already differ
+    # more between adjacent denoising iterations than full-step Flux,
+    # so the cache hits less often at the same threshold. 0.3 keeps
+    # the speedup meaningful without re-introducing artefacts.
+    thresh = 0.3 if arch_key == "zit" else 0.4
+    tc = nf.apply_tea_cache_patch(model_ref, rel_l1_thresh=thresh,
                                     node_id=node_id)
     return [tc, 0]
 
