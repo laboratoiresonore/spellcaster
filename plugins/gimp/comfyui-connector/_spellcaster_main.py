@@ -11704,6 +11704,11 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-send-to-resolve": None,
             "spellcaster-send-to-darktable": None,
             "spellcaster-send-to-sillytavern": None,
+            # Character card editor — imports a SillyTavern PNG, lets
+            # the user repaint the art + edit V2 metadata (with LLM
+            # scaffolded auto-optimization), and re-saves a spec-
+            # compliant card with the original tEXt chunks preserved.
+            "spellcaster-character-card-editor": None,
             # R106: reverse direction — pull anything other apps have
             # published toward GIMP (frames from Resolve, references
             # from SillyTavern, etc.) and open each as a new image.
@@ -11917,6 +11922,9 @@ class Spellcaster(Gimp.PlugIn):
                                                "Publish this image to Darktable for grading"),
             "spellcaster-send-to-sillytavern": ("💎 Send to SillyTavern", self._run_send_to_sillytavern,
                                                  "Publish this image to SillyTavern as a character / scene asset"),
+            "spellcaster-character-card-editor": ("💎 Character Card Editor (SillyTavern)",
+                                                    self._run_character_card_editor,
+                                                    "Import a SillyTavern .png character card, edit the V2 metadata with LLM-scaffolded optimization, and re-save without damaging the embedded data"),
             # R106: receive side — pull pending assets other apps have
             # sent toward GIMP and open each as a new image.
             "spellcaster-check-inbox": ("💎 Check Spellcaster Inbox", self._run_check_inbox,
@@ -12032,6 +12040,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-send-to-resolve":      f"{_S}/Cross-App",
             "spellcaster-send-to-darktable":    f"{_S}/Cross-App",
             "spellcaster-send-to-sillytavern":  f"{_S}/Cross-App",
+            "spellcaster-character-card-editor": f"{_S}/Cross-App",
             "spellcaster-check-inbox":          f"{_S}/Cross-App",
         }
 
@@ -24664,6 +24673,500 @@ class Spellcaster(Gimp.PlugIn):
         return procedure.new_return_values(
             Gimp.PDBStatusType.SUCCESS if ok
             else Gimp.PDBStatusType.EXECUTION_ERROR,
+            GLib.Error())
+
+    def _run_character_card_editor(self, procedure, run_mode, image,
+                                     drawables, config, data):
+        """Import a SillyTavern character card PNG, edit its V2 metadata
+        in a large scrolled Gtk dialog (with per-field + all-field LLM
+        scaffolded auto-optimization), then export a PNG whose `chara`
+        tEXt chunk carries the edited data and whose pixels are the
+        current GIMP canvas.
+
+        The round-trip is loss-free: metadata chunks we don't touch
+        (pose, etc.) survive verbatim; the `chara` chunk is rebuilt
+        from the edited fields. Implementation lives in
+        spellcaster_core.sillytavern_card — do NOT duplicate the PNG
+        chunk IO or the best-practice scaffolds here.
+        """
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        try:
+            GimpUi.init("spellcaster")
+        except Exception:
+            pass
+        try:
+            _apply_spellcaster_theme()
+        except Exception:
+            pass
+
+        try:
+            from spellcaster_core import sillytavern_card as _st
+        except ImportError as e:
+            Gimp.message(f"Character Card Editor: helper module missing — {e}")
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+        try:
+            from spellcaster_core.cross_interface import resolve_guild_url
+        except ImportError:
+            resolve_guild_url = lambda: "http://127.0.0.1:7777"
+
+        import os, json, tempfile, copy
+        import urllib.request as _ur
+        import urllib.error as _ue
+
+        # ── 1. File picker ──────────────────────────────────────────
+        fc = Gtk.FileChooserDialog(
+            title="Import SillyTavern Character Card",
+            action=Gtk.FileChooserAction.OPEN)
+        fc.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        fc.add_button("_Open", Gtk.ResponseType.OK)
+        ff = Gtk.FileFilter()
+        ff.set_name("SillyTavern Character Cards (*.png)")
+        ff.add_pattern("*.png")
+        ff.add_pattern("*.PNG")
+        fc.add_filter(ff)
+        resp = fc.run()
+        src_path = fc.get_filename() if resp == Gtk.ResponseType.OK else None
+        fc.destroy()
+        if not src_path:
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
+
+        # ── 2. Parse tEXt chunks + decode chara ─────────────────────
+        try:
+            with open(src_path, "rb") as f:
+                original_bytes = f.read()
+        except Exception as e:
+            Gimp.message(f"Character Card Editor: read failed — {e}")
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+        chunks_in = _st.extract_text_chunks(original_bytes)
+        chara_b64 = chunks_in.get("chara") or chunks_in.get("ccv3")
+        if chara_b64:
+            try:
+                card = _st.decode_chara(chara_b64)
+            except Exception as e:
+                Gimp.message(
+                    "Character Card Editor: the `chara` chunk couldn't be "
+                    f"decoded ({e}). Starting from an empty card.")
+                card = {}
+        else:
+            Gimp.message(
+                "Character Card Editor: this PNG has no embedded SillyTavern "
+                "character data. Starting from an empty card — you can fill "
+                "in the fields and save as a new card.")
+            card = {}
+
+        # Original fields for later diff / cancel-revert.
+        fields = _st.card_fields(card)
+
+        # ── 3. Open the PNG in GIMP so the user can repaint art ─────
+        try:
+            gfile = Gio.File.new_for_path(src_path)
+            loaded = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, gfile)
+            if loaded is not None:
+                Gimp.Display.new(loaded)
+        except Exception as e:
+            loaded = None
+            Gimp.message(
+                "Character Card Editor: GIMP couldn't open the PNG for "
+                f"editing ({e}). The dialog will still work — the saved "
+                "card will reuse the original pixels.")
+
+        # ── 4. Build the editor dialog ──────────────────────────────
+        title = f"Character Card Editor — {os.path.basename(src_path)}"
+        dialog = Gtk.Dialog(title=title, flags=0)
+        dialog.set_default_size(900, 760)
+        try:
+            _style_dialog_buttons(dialog)
+        except Exception:
+            pass
+        content = dialog.get_content_area()
+        content.set_spacing(8)
+        content.set_border_width(10)
+
+        # Info banner
+        info = Gtk.Label()
+        info.set_markup(
+            "<b>Round-trip-safe card editor.</b> Edit any field below, "
+            "paint over the image in GIMP, then Save. The V2 <tt>chara</tt> "
+            "chunk is rebuilt from these fields; any other tEXt metadata "
+            "(pose, etc.) survives verbatim.")
+        info.set_line_wrap(True)
+        info.set_xalign(0.0)
+        content.pack_start(info, False, False, 0)
+
+        # Scrolled area holding the field grid.
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.AUTOMATIC,
+                         Gtk.PolicyType.AUTOMATIC)
+        scroll.set_hexpand(True)
+        scroll.set_vexpand(True)
+        field_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        field_box.set_border_width(4)
+        scroll.add(field_box)
+        content.pack_start(scroll, True, True, 0)
+
+        # Widget registry so Optimize/Save can read them back.
+        widgets: dict[str, object] = {}
+        buffers: dict[str, Gtk.TextBuffer] = {}
+
+        # Single-line fields get Gtk.Entry, multi-line get Gtk.TextView.
+        SINGLE_LINE = {"name", "creator", "character_version", "tags"}
+
+        # Per-field labels + hints.
+        _LABELS = {
+            "name":                      "Name",
+            "description":               "Description",
+            "personality":               "Personality",
+            "scenario":                  "Scenario",
+            "first_mes":                 "First Message",
+            "mes_example":               "Example Messages",
+            "system_prompt":             "System Prompt",
+            "post_history_instructions": "Post-History Instructions",
+            "creator":                   "Creator",
+            "character_version":         "Version",
+            "creator_notes":             "Creator Notes",
+            "tags":                      "Tags (comma-separated)",
+        }
+
+        # Fields optimizable by the LLM scaffold (the rest are bookkeeping).
+        _OPTIMIZABLE = {
+            "description", "personality", "scenario", "first_mes",
+            "mes_example", "system_prompt", "post_history_instructions",
+            "creator_notes",
+        }
+
+        def _make_row(key: str):
+            row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+            lbl = Gtk.Label()
+            lbl.set_markup(f"<b>{_LABELS[key]}</b>")
+            lbl.set_xalign(0.0)
+            header.pack_start(lbl, True, True, 0)
+            if key in _OPTIMIZABLE:
+                opt_btn = Gtk.Button(label="🪄 Optimize")
+                opt_btn.set_tooltip_text(
+                    f"Rewrite {_LABELS[key]} via the scaffolded LLM using "
+                    "best-practice SillyTavern card conventions.")
+                header.pack_end(opt_btn, False, False, 0)
+                opt_btn.connect("clicked", lambda _b, k=key: _optimize_field(k))
+            row.pack_start(header, False, False, 0)
+
+            val = fields.get(key, "")
+            if key == "tags":
+                val = ", ".join(val) if isinstance(val, list) else str(val)
+
+            if key in SINGLE_LINE:
+                entry = Gtk.Entry()
+                entry.set_text(str(val))
+                row.pack_start(entry, False, False, 0)
+                widgets[key] = entry
+            else:
+                # Multiline — size per field.
+                height_map = {
+                    "description": 140, "personality": 80, "scenario": 80,
+                    "first_mes": 160, "mes_example": 160,
+                    "system_prompt": 80, "post_history_instructions": 70,
+                    "creator_notes": 70,
+                }
+                tv = Gtk.TextView()
+                tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+                tv.set_accepts_tab(False)
+                buf = tv.get_buffer()
+                buf.set_text(str(val))
+                sw = Gtk.ScrolledWindow()
+                sw.set_policy(Gtk.PolicyType.AUTOMATIC,
+                              Gtk.PolicyType.AUTOMATIC)
+                sw.set_min_content_height(height_map.get(key, 100))
+                sw.add(tv)
+                row.pack_start(sw, False, False, 0)
+                widgets[key] = tv
+                buffers[key] = buf
+
+            field_box.pack_start(row, False, False, 0)
+            field_box.pack_start(Gtk.Separator(
+                orientation=Gtk.Orientation.HORIZONTAL),
+                False, False, 0)
+
+        # Build rows in display order.
+        for key in ("name", "description", "personality", "scenario",
+                    "first_mes", "mes_example", "system_prompt",
+                    "post_history_instructions", "creator",
+                    "character_version", "creator_notes", "tags"):
+            _make_row(key)
+
+        # ── Read/write widgets ──────────────────────────────────────
+        def _read_widget(key: str) -> str:
+            w = widgets.get(key)
+            if w is None:
+                return ""
+            if key in SINGLE_LINE:
+                return w.get_text()
+            buf = buffers[key]
+            start, end = buf.get_bounds()
+            return buf.get_text(start, end, True)
+
+        def _write_widget(key: str, value):
+            w = widgets.get(key)
+            if w is None:
+                return
+            text = ", ".join(value) if isinstance(value, list) else str(value)
+            if key in SINGLE_LINE:
+                w.set_text(text)
+            else:
+                buffers[key].set_text(text)
+
+        def _current_card() -> dict:
+            """Merge widget state into a fresh copy of the original card."""
+            edits = {k: _read_widget(k) for k in _LABELS}
+            c = copy.deepcopy(card) if card else {}
+            _st.apply_card_fields(c, edits)
+            return c
+
+        # ── LLM call ────────────────────────────────────────────────
+        guild_base = resolve_guild_url()
+        llm_url = f"{guild_base}/api/llm_generate"
+
+        def _llm_call(prompt: str, max_tokens: int = 700) -> str:
+            req = _ur.Request(
+                llm_url,
+                data=json.dumps({
+                    "prompt": prompt,
+                    "max_length": max_tokens,
+                    "temperature": 0.7,
+                }).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST")
+            with _ur.urlopen(req, timeout=180) as resp:
+                body = json.loads(resp.read())
+            try:
+                return body["results"][0]["text"]
+            except (KeyError, IndexError, TypeError):
+                return ""
+
+        def _optimize_field(field: str):
+            try:
+                prompt = _st.build_optimize_prompt(_current_card(), field=field)
+            except Exception as e:
+                Gimp.message(f"Optimize {field}: prompt build failed — {e}")
+                return
+            try:
+                raw = _llm_call(prompt, max_tokens=600)
+            except (_ue.URLError, TimeoutError, OSError) as e:
+                Gimp.message(
+                    "Optimize: the Guild LLM isn't reachable at "
+                    f"{llm_url} — {e}.\nStart the Wizard Guild and try again.")
+                return
+            except Exception as e:
+                Gimp.message(f"Optimize {field}: LLM error — {e}")
+                return
+            cleaned = _st.parse_optimize_response(raw, field=field)
+            if cleaned and isinstance(cleaned, str):
+                _write_widget(field, cleaned)
+
+        def _optimize_all(_btn):
+            try:
+                prompt = _st.build_optimize_prompt(_current_card(), field=None)
+            except Exception as e:
+                Gimp.message(f"Optimize All: prompt build failed — {e}")
+                return
+            try:
+                raw = _llm_call(prompt, max_tokens=2400)
+            except (_ue.URLError, TimeoutError, OSError) as e:
+                Gimp.message(
+                    "Optimize All: the Guild LLM isn't reachable at "
+                    f"{llm_url} — {e}.\nStart the Wizard Guild and try again.")
+                return
+            except Exception as e:
+                Gimp.message(f"Optimize All: LLM error — {e}")
+                return
+            try:
+                obj = _st.parse_optimize_response(raw, field=None)
+            except Exception as e:
+                Gimp.message(
+                    f"Optimize All: LLM reply wasn't valid JSON — {e}\n\n"
+                    f"Reply:\n{raw[:500]}")
+                return
+            if not isinstance(obj, dict):
+                Gimp.message("Optimize All: LLM reply was not a JSON object.")
+                return
+            applied = 0
+            for k, v in obj.items():
+                if k in _LABELS and v:
+                    _write_widget(k, v)
+                    applied += 1
+            Gimp.message(
+                f"Optimize All: rewrote {applied} field(s). Review and edit "
+                "before saving.")
+
+        # ── Bottom button row ───────────────────────────────────────
+        btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        btn_row.set_margin_top(4)
+        opt_all_btn = Gtk.Button(label="🪄 Optimize All (Scaffolded)")
+        opt_all_btn.set_tooltip_text(
+            "Run the LLM scaffold across every optimizable field using "
+            "SillyTavern V2 best practices. Review each field and tweak "
+            "before saving.")
+        opt_all_btn.connect("clicked", _optimize_all)
+        btn_row.pack_start(opt_all_btn, False, False, 0)
+
+        spacer = Gtk.Label()
+        btn_row.pack_start(spacer, True, True, 0)
+
+        cancel_btn = Gtk.Button(label="Cancel")
+        save_btn = Gtk.Button(label="💾 Save Card As…")
+        save_btn.get_style_context().add_class("suggested-action")
+        btn_row.pack_start(cancel_btn, False, False, 0)
+        btn_row.pack_start(save_btn, False, False, 0)
+        content.pack_start(btn_row, False, False, 0)
+
+        result = {"saved": False, "path": None}
+
+        cancel_btn.connect("clicked", lambda _b: dialog.response(Gtk.ResponseType.CANCEL))
+
+        def _export_image_for_card(img) -> bytes:
+            """Flatten `img` and write to a temp PNG via Gimp.file_save,
+            then read the bytes back. PNG-only (not the JPEG-fast path
+            used elsewhere — we need lossless pixels AND we post-process
+            the chunks, so JPEG is a non-starter)."""
+            if img is None:
+                raise RuntimeError("no image loaded in GIMP")
+            dup = img.duplicate()
+            try:
+                dup.flatten()
+                layers = dup.get_layers()
+                flat = layers[0] if layers else None
+                tmp = tempfile.NamedTemporaryFile(
+                    suffix=".png", delete=False,
+                    prefix="spellcaster_stcard_")
+                tmp.close()
+                gf = Gio.File.new_for_path(tmp.name)
+                try:
+                    Gimp.file_save(
+                        Gimp.RunMode.NONINTERACTIVE,
+                        dup, [flat] if flat else [], gf)
+                except Exception:
+                    pdb = Gimp.get_pdb()
+                    for pname in ("file-png-export", "file-png-save"):
+                        if pdb.lookup_procedure(pname):
+                            _pdb_run(pname, {
+                                "run-mode": Gimp.RunMode.NONINTERACTIVE,
+                                "image": dup,
+                                "file": gf,
+                            })
+                            break
+                with open(tmp.name, "rb") as f:
+                    png_bytes = f.read()
+                try:
+                    os.unlink(tmp.name)
+                except Exception:
+                    pass
+                if not png_bytes or not png_bytes.startswith(b"\x89PNG"):
+                    raise RuntimeError("export produced no/invalid PNG")
+                return png_bytes
+            finally:
+                try:
+                    dup.delete()
+                except Exception:
+                    pass
+
+        def _do_save(_btn):
+            # Ask for output path.
+            sf = Gtk.FileChooserDialog(
+                title="Save SillyTavern Character Card",
+                action=Gtk.FileChooserAction.SAVE)
+            sf.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+            sf.add_button("_Save", Gtk.ResponseType.OK)
+            sf.set_do_overwrite_confirmation(True)
+            base, ext = os.path.splitext(os.path.basename(src_path))
+            sf.set_current_name(f"{base}_edited.png")
+            folder = os.path.dirname(src_path) or os.path.expanduser("~")
+            try:
+                sf.set_current_folder(folder)
+            except Exception:
+                pass
+            gf = Gtk.FileFilter()
+            gf.set_name("PNG")
+            gf.add_pattern("*.png")
+            sf.add_filter(gf)
+            sresp = sf.run()
+            dest = sf.get_filename() if sresp == Gtk.ResponseType.OK else None
+            sf.destroy()
+            if not dest:
+                return
+            if not dest.lower().endswith(".png"):
+                dest += ".png"
+
+            # Export the GIMP image (current canvas) to temp PNG, or
+            # fall back to the original pixel bytes if GIMP didn't
+            # open the image.
+            try:
+                exported_bytes = _export_image_for_card(loaded)
+            except Exception as e:
+                Gimp.message(
+                    "Save: couldn't export the GIMP canvas — falling back "
+                    f"to the original pixels. ({e})")
+                exported_bytes = original_bytes
+
+            # Build the new chunk set: all original chunks preserved,
+            # chara/ccv3 replaced with the edited state.
+            new_chunks: dict[str, str] = dict(chunks_in)
+            final_card = _current_card()
+            new_chunks["chara"] = _st.encode_chara(final_card)
+            # Drop ccv3 to avoid a stale V3 spec wrapper conflicting with
+            # the rebuilt V2 payload; SillyTavern falls back to chara.
+            new_chunks.pop("ccv3", None)
+
+            try:
+                final = _st.inject_text_chunks(exported_bytes, new_chunks)
+            except Exception as e:
+                Gimp.message(
+                    f"Save: tEXt chunk injection failed — {e}\n"
+                    "No file written.")
+                return
+            try:
+                with open(dest, "wb") as f:
+                    f.write(final)
+            except Exception as e:
+                Gimp.message(f"Save: write failed — {e}")
+                return
+
+            # Verify round-trip.
+            try:
+                with open(dest, "rb") as f:
+                    verify = _st.extract_text_chunks(f.read())
+                if "chara" not in verify:
+                    Gimp.message(
+                        f"Save: wrote {dest} but the `chara` chunk isn't "
+                        "readable after write. SillyTavern may not load it.")
+                    return
+            except Exception:
+                pass
+
+            result["saved"] = True
+            result["path"] = dest
+            dialog.response(Gtk.ResponseType.OK)
+
+        save_btn.connect("clicked", _do_save)
+
+        dialog.show_all()
+        rv = dialog.run()
+        dialog.destroy()
+
+        if result["saved"]:
+            Gimp.message(
+                f"✨ Saved character card:\n{result['path']}\n\n"
+                f"Embedded {len(_current_card().get('data', {}))} V2 "
+                "fields. Original non-chara metadata preserved.")
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        return procedure.new_return_values(
+            Gimp.PDBStatusType.CANCEL if rv == Gtk.ResponseType.CANCEL
+            else Gimp.PDBStatusType.SUCCESS,
             GLib.Error())
 
     def _run_check_inbox(self, procedure, run_mode, image,

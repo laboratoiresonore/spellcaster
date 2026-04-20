@@ -1,0 +1,188 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e5]:
+    - generic [ref=e6]:
+      - button "" [ref=e49] [cursor=pointer]
+      - text:                                        + No items                         ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☑ ☰ ☑ ☰ ☑ ☰ ☑ ☰ ☑ ☰ ☑ ☰ ☐ ☰ ☐ ☰ ☐ ☰                                  + No items      ☰ ☰ ☰ ☰ ☰ ☰ ☰  ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰  ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰  ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰ ☰                  +     No items 
+    - generic [ref=e9]:
+      - button "" [ref=e50] [cursor=pointer]
+      - text:                                                                       
+    - generic [ref=e12]:
+      - button "" [ref=e51] [cursor=pointer]
+      - text:                                               
+    - generic [ref=e15]:
+      - button "" [ref=e52] [cursor=pointer]
+      - text:                +     
+    - generic [ref=e18]:
+      - button "" [ref=e53] [cursor=pointer]
+      - text:                                   
+    - generic [ref=e21]:
+      - generic "Change Background Image" [ref=e22]:
+        - button "" [ref=e54] [cursor=pointer]
+      - text:       +                                       
+    - generic [ref=e24]:
+      - button "" [ref=e55] [cursor=pointer]
+      - text:         +               +                                  +   + +  +     +        +        +        +                                              
+    - generic [ref=e27]:
+      - button "" [ref=e56] [cursor=pointer]
+      - text:                    
+    - generic [ref=e30]:
+      - button "" [ref=e57] [cursor=pointer]
+      - text:                                                     Group is empty.          No characters available                                        
+  - generic:                      +                                                                                +    + +                  
+  - generic:                  
+  - generic [ref=e33]:
+    - text: 
+    - generic [ref=e34]:
+      - generic [ref=e58]:
+        - generic [ref=e59]:
+          - img "SillyTavern Logo" [ref=e60]
+          - generic [ref=e61]: SillyTavern 1.17.0 'release' (004f133)
+          - text: 
+          - button "" [ref=e62] [cursor=pointer]:
+            - generic [ref=e63]: 
+        - generic [ref=e64]:
+          - generic [ref=e65]: Recent Chats
+          - generic [ref=e66]:
+            - button " Docs" [ref=e67] [cursor=pointer]:
+              - generic [ref=e68]: 
+              - generic [ref=e69]: Docs
+            - button " GitHub" [ref=e70] [cursor=pointer]:
+              - generic [ref=e71]: 
+              - generic [ref=e72]: GitHub
+            - button " Discord" [ref=e73] [cursor=pointer]:
+              - generic [ref=e74]: 
+              - generic [ref=e75]: Discord
+            - generic [ref=e76]: "|"
+            - button " Temporary Chat" [ref=e77] [cursor=pointer]:
+              - generic [ref=e78]: 
+              - generic [ref=e79]: Temporary Chat
+        - list [ref=e81]:
+          - listitem [ref=e82] [cursor=pointer]:
+            - 'generic "[Group] Group: Sceneshifter (1)" [ref=e83]':
+              - img "img1" [ref=e84]
+              - img "img2" [ref=e85]
+              - img "img3" [ref=e86]
+            - generic [ref=e87]:
+              - generic [ref=e88]:
+                - generic "2026-04-19@14h03m51s641ms.jsonl" [ref=e89]:
+                  - strong [ref=e90]: "Group: Sceneshifter (1)"
+                  - text: – 2026-04-19@14h03m51s641ms
+                - generic "19 April 2026 14:19" [ref=e91]: 19/4/2026
+                - generic [ref=e92]:
+                  - button "" [ref=e93]:
+                    - generic [ref=e94]: 
+                  - button "" [ref=e95]:
+                    - generic [ref=e96]: 
+                  - button "" [ref=e97]:
+                    - generic [ref=e98]: 
+              - generic [ref=e99]:
+                - generic "\"Seraphina, that's incredible! The aurora seems to be reacting to your energy. Do you think you can try to channel its power and guide it towards a specific location?\" <START>" [ref=e100]
+                - generic [ref=e101]:
+                  - generic [ref=e102]:
+                    - generic [ref=e103]: 
+                    - generic [ref=e104]: "9"
+                    - text: "|"
+                  - generic [ref=e105]: 7.58KB
+          - listitem [ref=e106] [cursor=pointer]:
+            - 'generic "[Character] Sceneshifter File: Sceneshifter.png" [ref=e107]':
+              - img "Sceneshifter" [ref=e108]
+            - generic [ref=e109]:
+              - generic [ref=e110]:
+                - generic "Sceneshifter - 2026-04-19@14h02m16s475ms.jsonl" [ref=e111]:
+                  - strong [ref=e112]: Sceneshifter
+                  - text: – Sceneshifter - 2026-04-19@14h02m16s475ms
+                - generic "19 April 2026 14:03" [ref=e113]: 19/4/2026
+                - generic [ref=e114]:
+                  - button "" [ref=e115]:
+                    - generic [ref=e116]: 
+                  - button "" [ref=e117]:
+                    - generic [ref=e118]: 
+                  - button "" [ref=e119]:
+                    - generic [ref=e120]: 
+              - generic [ref=e121]:
+                - generic [ref=e122]
+                - generic [ref=e123]:
+                  - generic [ref=e124]:
+                    - generic [ref=e125]: 
+                    - generic [ref=e126]: "1"
+                    - text: "|"
+                  - generic [ref=e127]: 1.17KB
+          - listitem [ref=e128] [cursor=pointer]:
+            - 'generic "[Character] Assistant File: default_Assistant.png" [ref=e129]':
+              - img "Assistant" [ref=e130]
+            - generic [ref=e131]:
+              - generic [ref=e132]:
+                - generic "Assistant - 2026-04-19@14h02m40s691ms.jsonl" [ref=e133]:
+                  - strong [ref=e134]: Assistant
+                  - text: – Assistant - 2026-04-19@14h02m40s691ms
+                - generic "19 April 2026 14:02" [ref=e135]: 19/4/2026
+                - generic [ref=e136]:
+                  - button "" [ref=e137]:
+                    - generic [ref=e138]: 
+                  - button "" [ref=e139]:
+                    - generic [ref=e140]: 
+                  - button "" [ref=e141]:
+                    - generic [ref=e142]: 
+              - generic [ref=e143]:
+                - generic "*You gaze in awe at the magnificent sight of the cavern. Its walls glisten with a multitude of gemstones. The sound of dripping water echoes through the vast chamber. A cool breeze brushes past your face, carrying with it the scent of damp earth and crystal. As you make your way deeper into the cavern, you notice a path ahead of you, leading to an area of even more concentrated gemstones.*" [ref=e144]
+                - generic [ref=e145]:
+                  - generic [ref=e146]:
+                    - generic [ref=e147]: 
+                    - generic [ref=e148]: "2"
+                    - text: "|"
+                  - generic [ref=e149]: 2.01KB
+          - button "" [ref=e150] [cursor=pointer]:
+            - generic [ref=e151]: 
+      - generic [ref=e152]:
+        - img [ref=e155] [cursor=pointer]
+        - generic [ref=e156]:
+          - generic [ref=e157]:
+            - generic [ref=e159]:
+              - generic [ref=e160]: Assistant
+              - text: 
+              - generic [ref=e161]: 19 April 2026 19:55
+            - generic [ref=e162]:                
+            - text:       
+          - text:       
+          - generic [ref=e163]:
+            - paragraph [ref=e164]: If you're connected to an API, try asking me something!
+            - separator [ref=e165]
+            - paragraph [ref=e166]:
+              - strong [ref=e167]: "Hint:"
+              - text: Set any character as your welcome page assistant from their "More…" menu.
+      - generic [ref=e169]:
+        - text:                               
+        - generic [ref=e171]:
+          - button " API Connections" [ref=e172] [cursor=pointer]:
+            - generic [ref=e173]: 
+            - generic [ref=e174]: API Connections
+          - button " Character Management" [ref=e175] [cursor=pointer]:
+            - generic [ref=e176]: 
+            - generic [ref=e177]: Character Management
+          - button " Extensions" [ref=e178] [cursor=pointer]:
+            - generic [ref=e179]: 
+            - generic [ref=e180]: Extensions
+    - generic [ref=e36]:
+      - text:  
+      - generic [ref=e37]:
+        - generic [ref=e38]:
+          - generic [ref=e39] [cursor=pointer]: 
+          - generic "Extensions" [ref=e182] [cursor=pointer]: 
+        - textbox "Type a message, or /? for help" [ref=e183]
+        - generic [ref=e41]:
+          - text:      
+          - generic "Send a message" [ref=e184] [cursor=pointer]: 
+  - text:                       1  
+  - generic [ref=e185]: 
+  - status [ref=e186]
+  - status [ref=e187]
+  - status [ref=e188]
+  - status [ref=e189]
+  - status [ref=e190]
+  - status [ref=e191]
+  - status [ref=e192]
+  - status [ref=e193]
+  - status [ref=e194]
+  - status [ref=e195]
+  - status [ref=e196]
+  - status [ref=e197]

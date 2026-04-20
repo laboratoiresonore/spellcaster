@@ -174,16 +174,73 @@ async function dispatchWorkflow(workflow, timeoutMs = 180000) {
     throw new Error('Timeout waiting for ComfyUI');
 }
 
+// Validate image bytes by magic-header sniffing. Node doesn't ship
+// an image decoder, but every modern image format has a deterministic
+// header — enough to catch the "SillyTavern sent us HTML or a
+// truncated base64 string" case before it burns 40 s of WAN model
+// load on an eventual LoadImage failure.
+//
+// Returns { ok, kind, mime, reason } — ok=false bubbles up to the
+// caller as an HTTP 400. kind is 'png'|'jpeg'|'webp'|'gif'|'bmp'|'tiff'.
+function _sniffImage(buf) {
+    if (!buf || buf.length < 16) {
+        return { ok: false, reason: `empty or truncated (${buf ? buf.length : 0} bytes)` };
+    }
+    const b = buf;
+    // PNG: 89 50 4E 47 0D 0A 1A 0A
+    if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) {
+        return { ok: true, kind: 'png', mime: 'image/png' };
+    }
+    // JPEG: FF D8 FF
+    if (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) {
+        return { ok: true, kind: 'jpeg', mime: 'image/jpeg' };
+    }
+    // WebP: "RIFF....WEBP"
+    if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46
+        && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) {
+        return { ok: true, kind: 'webp', mime: 'image/webp' };
+    }
+    // GIF: "GIF87a" / "GIF89a"
+    if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) {
+        return { ok: true, kind: 'gif', mime: 'image/gif' };
+    }
+    // BMP: "BM"
+    if (b[0] === 0x42 && b[1] === 0x4D) {
+        return { ok: true, kind: 'bmp', mime: 'image/bmp' };
+    }
+    // TIFF: "II*\0" (little-endian) or "MM\0*" (big-endian)
+    if ((b[0] === 0x49 && b[1] === 0x49 && b[2] === 0x2A && b[3] === 0x00)
+        || (b[0] === 0x4D && b[1] === 0x4D && b[2] === 0x00 && b[3] === 0x2A)) {
+        return { ok: true, kind: 'tiff', mime: 'image/tiff' };
+    }
+    const head = Array.from(b.slice(0, 8))
+        .map(n => n.toString(16).padStart(2, '0')).join(' ');
+    return { ok: false, reason: `unrecognised magic bytes (${head})` };
+}
+
 /**
  * Upload an image to ComfyUI's input folder.
+ *
+ * Validates the buffer is an image before upload — WAN's LoadImage
+ * would otherwise silently accept any bytes and crash mid-render
+ * inside the 14B model load. TIFF/BMP/GIF/WebP/JPEG/PNG all pass
+ * through with their proper mime type so ComfyUI's Pillow-based
+ * LoadImage can decode them.
+ *
+ * Throws a specific Error on bad bytes so the caller can surface a
+ * "not an image" message to the SillyTavern user.
  */
 async function uploadToComfyUI(imageBuffer, filename) {
+    const sniff = _sniffImage(imageBuffer);
+    if (!sniff.ok) {
+        throw new Error(`Upload rejected: ${filename} is not an image — ${sniff.reason}`);
+    }
     const boundary = '----SpellcasterUpload' + Date.now();
     const body = Buffer.concat([
         Buffer.from(
             `--${boundary}\r\n` +
             `Content-Disposition: form-data; name="image"; filename="${filename}"\r\n` +
-            `Content-Type: image/png\r\n\r\n`
+            `Content-Type: ${sniff.mime}\r\n\r\n`
         ),
         imageBuffer,
         Buffer.from(`\r\n--${boundary}--\r\n`),
@@ -1903,9 +1960,11 @@ function buildLtxI2VWorkflow(avatarImage, prompt, preset, opts = {}) {
         modelRef = ["1b", 0];
     }
 
-    // VRAM chunking + Spatial-Temporal Guidance
+    // VRAM chunking + Spatial-Temporal Guidance. Defaults mirror the
+    // node's declared schema — dim_threshold 4096 is the published
+    // sweet spot that only triggers chunking on high-dim activations.
     wf["2"] = { class_type: "LTXVChunkFeedForward", inputs: {
-        model: modelRef, chunks: 4,
+        model: modelRef, chunks: 4, dim_threshold: 4096,
     }};
     wf["3"] = { class_type: "LTXVApplySTG", inputs: {
         model: ["2", 0], block_indices: "14, 19",
@@ -1935,7 +1994,13 @@ function buildLtxI2VWorkflow(avatarImage, prompt, preset, opts = {}) {
         frame_rate: fps,
     }};
 
-    wf["15"] = { class_type: "LTXVScheduler", inputs: { steps }};
+    // LTXVScheduler wants the full shift/stretch/terminal set — use
+    // the node's declared defaults so output quality matches ComfyUI's
+    // reference LTX workflow.
+    wf["15"] = { class_type: "LTXVScheduler", inputs: {
+        steps, max_shift: 2.05, base_shift: 0.95,
+        stretch: true, terminal: 0.1,
+    }};
     wf["16"] = { class_type: "STGGuider", inputs: {
         model: ["3", 0],
         positive: ["12", 0], negative: ["12", 1],
@@ -1964,6 +2029,7 @@ function buildLtxI2VWorkflow(avatarImage, prompt, preset, opts = {}) {
         spatial_tiles: 4, spatial_overlap: 1,
         temporal_tile_length: 16, temporal_overlap: 1,
         last_frame_fix: false,
+        working_device: "auto", working_dtype: "auto",
     }};
 
     // GIF output so the existing markdown client renders inline
@@ -1977,7 +2043,7 @@ function buildLtxI2VWorkflow(avatarImage, prompt, preset, opts = {}) {
     return wf;
 }
 
-function buildAnimationWorkflow(imageName, prompt, numFrames) {
+function buildAnimationWorkflow(imageName, prompt, numFrames, modelName) {
     // FALLBACK path — img2img with low-denoise noise injection on a
     // latent batch. This was the ST plugin's original animation
     // implementation; it's NOT real video, just 8 slightly-different
@@ -1985,11 +2051,20 @@ function buildAnimationWorkflow(imageName, prompt, numFrames) {
     // ComfyUI server lacks WAN / LTX / Kijai nodes (the animate
     // endpoint checks the WAN preset first and only lands here on
     // preset miss). Do not route new callers through this.
+    //
+    // `modelName` is the SDXL/SD-1.5 checkpoint chosen by
+    // detectBestModel(). The previous build hardcoded a NoobAI
+    // filename that didn't exist on most servers — fallback 500'd
+    // before the first frame. Accept the caller's detected model.
     const seed = Math.floor(Math.random() * 2147483647);
+    const ckpt = modelName || _cachedModel;
+    if (!ckpt) {
+        throw new Error('No checkpoint available for animation fallback — install WAN / LTX via the Spellcaster installer for real video.');
+    }
     return {
         "1": { "class_type": "LoadImage", "inputs": { "image": imageName }},
         "4": { "class_type": "CheckpointLoaderSimple", "inputs": {
-            "ckpt_name": _cachedModel || "SDXL\\NoobAI-XL-v1.1.safetensors"
+            "ckpt_name": ckpt,
         }},
         "5": { "class_type": "VAEEncode", "inputs": {
             "pixels": ["1", 0], "vae": ["4", 2]
@@ -2005,8 +2080,12 @@ function buildAnimationWorkflow(imageName, prompt, numFrames) {
         "10": { "class_type": "RepeatLatentBatch", "inputs": {
             "samples": ["5", 0], "amount": numFrames
         }},
+        // `normalize` became required on a recent ComfyUI node refresh.
+        // Default "false" matches the node's declared default and
+        // preserves the original noise-injection behaviour.
         "11": { "class_type": "InjectLatentNoise+", "inputs": {
-            "latent": ["10", 0], "noise_seed": seed, "noise_strength": 0.12
+            "latent": ["10", 0], "noise_seed": seed, "noise_strength": 0.12,
+            "normalize": "false",
         }},
         "3": { "class_type": "KSampler", "inputs": {
             "seed": seed, "steps": 8, "cfg": 5.0,

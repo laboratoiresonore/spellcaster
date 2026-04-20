@@ -102,7 +102,8 @@ class ComfyUIRunner:
     # ------------------------------------------------------------------
 
     def upload_image(self, image_bytes: bytes, filename: str = "input.png",
-                     image_type: str = "input") -> dict:
+                     image_type: str = "input", *,
+                     validate: bool = True) -> dict:
         """Upload an image to ComfyUI's /upload/image endpoint.
 
         Constructs a multipart/form-data request with the image file and uploads
@@ -118,13 +119,44 @@ class ComfyUIRunner:
             image_type:  ComfyUI directory type — "input", "output", or "temp"
                          (default: "input"). This controls where on disk the
                          file is stored.
+            validate:    When True (default), PIL-decode the bytes and
+                         re-encode as PNG before upload. Catches corrupt
+                         / non-image blobs up front so WAN / LTX / Klein
+                         LoadImage doesn't fail 40 s into a render with
+                         ``UnidentifiedImageError``. Set to False to
+                         upload raw bytes unchanged (videos, intentional
+                         non-image data).
 
         Returns:
             dict with 'name', 'subfolder', 'type' keys confirming the upload
 
         Raises:
+            ValueError: If ``validate`` is True and the bytes don't decode.
             urllib.error.URLError: If the server is unreachable
         """
+        if validate:
+            try:
+                from PIL import Image as _PILImage
+                import io as _io
+                img = _PILImage.open(_io.BytesIO(image_bytes))
+                img.load()
+            except Exception as e:  # noqa: BLE001
+                raise ValueError(
+                    f"Upload rejected: {filename!r} is not a valid image "
+                    f"({type(e).__name__}: {e}). Supported: PNG, JPEG, "
+                    "WebP, GIF, TIFF, BMP."
+                ) from e
+            # Normalize to PNG — WAN / LTX / Klein LoadImage all
+            # accept JPEG/WebP/etc too but PNG is the one format
+            # guaranteed across every ComfyUI LoadImage variant.
+            if img.mode not in ("RGB", "RGBA"):
+                img = img.convert("RGB")
+            buf = _io.BytesIO()
+            img.save(buf, format="PNG", optimize=False)
+            image_bytes = buf.getvalue()
+            import os as _os
+            base = _os.path.splitext(filename)[0]
+            filename = f"{base}.png"
         boundary = uuid.uuid4().hex
         body = (
             f"--{boundary}\r\n"

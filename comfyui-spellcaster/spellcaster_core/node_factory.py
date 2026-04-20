@@ -1549,8 +1549,16 @@ class NodeFactory:
                            filename_prefix="spellcaster",
                            format_type="video/h264-mp4",
                            pingpong=False, save_output=True,
+                           pix_fmt="yuv420p", crf=19,
+                           save_metadata=True, trim_to_audio=False,
                            node_id=None):
-        """VHS_VideoCombine — combine frames into video."""
+        """VHS_VideoCombine — combine frames into video.
+
+        Modern VHS schema requires per-format inputs for h264-mp4:
+        pix_fmt, crf, save_metadata, trim_to_audio. Omitting them
+        works (VHS defaults) but logs warnings every render. Set
+        them explicitly to silence + gain per-format control.
+        """
         return self._add("VHS_VideoCombine", {
             "images": images_ref,
             "frame_rate": frame_rate,
@@ -1559,6 +1567,10 @@ class NodeFactory:
             "format": format_type,
             "pingpong": pingpong,
             "save_output": save_output,
+            "pix_fmt": pix_fmt,
+            "crf": crf,
+            "save_metadata": save_metadata,
+            "trim_to_audio": trim_to_audio,
         }, node_id)
 
     def rife_vfi(self, frames_ref, multiplier=2, batch_size=1,

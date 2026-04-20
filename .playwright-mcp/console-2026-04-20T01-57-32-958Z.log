@@ -12,3 +12,44 @@
 [     196ms] [WARNING] GSAP target #splash-pupil not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
 [     469ms] [LOG] [Guild] Synced 43 pre-generated assets from server @ http://127.0.0.1:7777/app.js?v=20260420a:305
 [     488ms] [LOG] [Guild] Synced 105 identity field(s) from server @ http://127.0.0.1:7777/app.js?v=20260420a:333
+[  206387ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:7777/api/wizard_info/comfyui_Flux_FLUX1%20Dev%20fp8_safetensors:0
+[  220216ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:7777/api/wizard_info/comfyui_Flux_FLUX1%20Dev%20fp8_safetensors:0
+[  243075ms] [WARNING] GSAP target #splash-ring-outer not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  243076ms] [WARNING] GSAP target #splash-ring-inner not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  243076ms] [WARNING] GSAP target #splash-star not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  243076ms] [WARNING] GSAP target #splash-star not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  243077ms] [WARNING] GSAP target #splash-eye not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  243077ms] [WARNING] GSAP target #splash-pupil not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  243218ms] [LOG] [Guild] Synced 43 pre-generated assets from server @ http://127.0.0.1:7777/app.js?v=20260420a:305
+[  243225ms] [LOG] [Guild] Synced 105 identity field(s) from server @ http://127.0.0.1:7777/app.js?v=20260420a:333
+[  249319ms] [WARNING] GSAP target #splash-ring-outer not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  249319ms] [WARNING] GSAP target #splash-ring-inner not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  249319ms] [WARNING] GSAP target #splash-star not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  249319ms] [WARNING] GSAP target #splash-star not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  249320ms] [WARNING] GSAP target #splash-eye not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  249320ms] [WARNING] GSAP target #splash-pupil not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  249438ms] [LOG] [Guild] Synced 43 pre-generated assets from server @ http://127.0.0.1:7777/app.js?v=20260420a:305
+[  249467ms] [LOG] [Guild] Synced 105 identity field(s) from server @ http://127.0.0.1:7777/app.js?v=20260420a:333
+[  253422ms] [WARNING] GSAP target #splash-ring-outer not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  253423ms] [WARNING] GSAP target #splash-ring-inner not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  253423ms] [WARNING] GSAP target #splash-star not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  253423ms] [WARNING] GSAP target #splash-star not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  253423ms] [WARNING] GSAP target #splash-eye not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  253423ms] [WARNING] GSAP target #splash-pupil not found. https://gsap.com @ https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js:9
+[  253571ms] [LOG] [Guild] Synced 43 pre-generated assets from server @ http://127.0.0.1:7777/app.js?v=20260420a:305
+[  253634ms] [LOG] [Guild] Synced 105 identity field(s) from server @ http://127.0.0.1:7777/app.js?v=20260420a:333
+[  260336ms] [LOG] [Guild] Skipped 2 built-in wizard(s) — tick "Include built-in wizards" to animate them too. @ http://127.0.0.1:7777/app.js?v=20260420a:3168
+[  260336ms] [LOG] [Guild] Queuing 23 animated avatar(s) to ComfyUI... @ http://127.0.0.1:7777/app.js?v=20260420a:3181
+[  268142ms] [LOG] [Guild] 17 animated avatar(s) queued. Polling for results... @ http://127.0.0.1:7777/app.js?v=20260420a:3213
+[  273452ms] [LOG] [Guild] Animated avatar ready: Fluxx the Whisperer @ http://127.0.0.1:7777/app.js?v=20260420a:3239
+[  273453ms] [LOG] [Guild] Animated avatar ready: Flux Whisperer @ http://127.0.0.1:7777/app.js?v=20260420a:3239
+[  273453ms] [LOG] [Guild] Animated avatar ready: Flux Whisperer @ http://127.0.0.1:7777/app.js?v=20260420a:3239
+[  273454ms] [LOG] [Guild] Animated avatar ready: ChromaWhisperer @ http://127.0.0.1:7777/app.js?v=20260420a:3239
+[  273455ms] [LOG] [Guild] Animated avatar ready: Chroma Kali @ http://127.0.0.1:7777/app.js?v=20260420a:3239
+[  273456ms] [LOG] [Guild] Animated avatar ready: Sparkle Flux @ http://127.0.0.1:7777/app.js?v=20260420a:3239
+[  323612ms] [LOG] [Guild] Animated avatar ready: Flux Hydra @ http://127.0.0.1:7777/app.js?v=20260420a:3239
+[  377207ms] [LOG] [Guild] Animated avatar ready: Sloppy Mix Wizard @ http://127.0.0.1:7777/app.js?v=20260420a:3239
+[ 2880490ms] [WARNING] cdn.tailwindcss.com should not be used in production. To use Tailwind CSS in production, install it as a PostCSS plugin or use the Tailwind CLI: https://tailwindcss.com/docs/installation @ https://cdn.tailwindcss.com/:63
+[ 2880576ms] [WARNING] You are using the in-browser Babel transformer. Be sure to precompile your scripts for production - https://babeljs.io/docs/setup/ @ https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js:0
+[ 2883662ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5001/api/tags:0
+[ 2883919ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5001/api/v1/model:0
