@@ -1243,13 +1243,20 @@ def _apply_speedup(nf, model_ref, arch_key, *, fast_mode=False, node_id=None):
 
 
 _AYS_ARCHES = {"sd15", "sdxl", "illustrious"}
+# Detail Daemon high-frequency boost — only fires at quality="max" and
+# only on arches where the wrap is known to help. ZIT is the headline
+# target (6-step distillation gains visible micro-detail). SD1/SDXL
+# already have AYS at "max" so DD layering is overkill; Klein has its
+# own enhancer chain and shouldn't double-process.
+_DETAIL_DAEMON_ARCHES = {"zit"}
 
 
 def _emit_sampler(nf, *, model_ref, pos_ref, neg_ref, latent_ref,
                     seed, steps, cfg, sampler, scheduler, denoise,
                     node_id,
                     arch_key=None, quality="balanced",
-                    ays_override=None, ays_node_base=670):
+                    ays_override=None, ays_node_base=670,
+                    detail_daemon_node_base=685):
     """Emit the final sampling node, choosing between:
 
       * plain KSampler                 (default — preserves previous
@@ -1258,6 +1265,9 @@ def _emit_sampler(nf, *, model_ref, pos_ref, neg_ref, latent_ref,
       * AYS custom-advanced pipeline   (5 nodes: AYSScheduler +
                                         KSamplerSelect + CFGGuider +
                                         RandomNoise + SamplerCustomAdvanced)
+      * Detail Daemon custom-advanced  (5 nodes: BasicScheduler +
+                                        KSamplerSelect + DetailDaemonSamplerNode +
+                                        CFGGuider + RandomNoise + SamplerCustomAdvanced)
 
     AYS is chosen when:
       * ays_override is explicitly True, OR
@@ -1265,6 +1275,12 @@ def _emit_sampler(nf, *, model_ref, pos_ref, neg_ref, latent_ref,
         Steps threshold is NOT enforced — AYS is never worse than Karras,
         just has diminishing returns at >20 steps. Users who set max
         knowingly accept the (negligible) extra cost.
+
+    Detail Daemon is chosen when:
+      * quality == "max" and arch_key in _DETAIL_DAEMON_ARCHES (zit).
+        Distilled DiT gains visible micro-detail from the noise-schedule
+        wrap; AYS does not apply (its sigma table is SD-only) so DD is
+        the equivalent quality-pass for these architectures.
 
     AYS is skipped for Flux/Klein/ZIT/Chroma — its sigma table is
     hard-coded for SD1/SDXL only and would produce garbage elsewhere.
@@ -1274,27 +1290,58 @@ def _emit_sampler(nf, *, model_ref, pos_ref, neg_ref, latent_ref,
     VAEDecode wiring stays unchanged.
     """
     use_ays = False
+    use_detail_daemon = False
     if ays_override is True:
         use_ays = True
     elif ays_override is None and quality == "max":
-        use_ays = arch_key in _AYS_ARCHES
+        if arch_key in _AYS_ARCHES:
+            use_ays = True
+        elif arch_key in _DETAIL_DAEMON_ARCHES:
+            use_detail_daemon = True
 
-    if not use_ays:
+    if not use_ays and not use_detail_daemon:
         return nf.ksampler(
             model_ref, pos_ref, neg_ref, latent_ref,
             seed, steps, cfg, sampler, scheduler, denoise, node_id=node_id,
         )
 
-    # AYS chain. model_type "SD1" for sd15, else "SDXL" (covers illustrious).
-    model_type = "SD1" if arch_key == "sd15" else "SDXL"
-    sched_id = nf.align_your_steps_scheduler(
-        model_type, steps, denoise, node_id=str(ays_node_base))
-    sel_id = nf.ksampler_select(sampler, node_id=str(ays_node_base + 1))
+    if use_ays:
+        # AYS chain. model_type "SD1" for sd15, else "SDXL" (covers illustrious).
+        model_type = "SD1" if arch_key == "sd15" else "SDXL"
+        sched_id = nf.align_your_steps_scheduler(
+            model_type, steps, denoise, node_id=str(ays_node_base))
+        sel_id = nf.ksampler_select(sampler, node_id=str(ays_node_base + 1))
+        guider_id = nf.cfg_guider(model_ref, pos_ref, neg_ref, cfg,
+                                   node_id=str(ays_node_base + 2))
+        noise_id = nf.random_noise(seed, node_id=str(ays_node_base + 3))
+        return nf.sampler_custom_advanced(
+            [noise_id, 0], [guider_id, 0], [sel_id, 0],
+            [sched_id, 0], latent_ref, node_id=node_id,
+        )
+
+    # Detail Daemon chain — same custom-advanced shape as AYS but the
+    # SAMPLER ref is wrapped with DetailDaemonSamplerNode for its
+    # noise-schedule modulation. BasicScheduler (model-driven) supplies
+    # the sigmas because there's no ZIT-specific sigma table to plug in.
+    sched_id = nf.basic_scheduler(model_ref, steps=steps, denoise=denoise,
+                                   scheduler=scheduler,
+                                   node_id=str(detail_daemon_node_base))
+    sel_id = nf.ksampler_select(sampler,
+                                 node_id=str(detail_daemon_node_base + 1))
+    # Distilled DiT: small detail_amount keeps the wrap subtle. The
+    # 0.2-0.8 sampling window is the muerrilla default and works well
+    # at 6-8 steps (ZIT's distilled regime).
+    dd_id = nf.detail_daemon_sampler(
+        [sel_id, 0], detail_amount=0.10,
+        start=0.2, end=0.8, bias=0.5, exponent=1.0,
+        smooth=True,
+        node_id=str(detail_daemon_node_base + 2))
     guider_id = nf.cfg_guider(model_ref, pos_ref, neg_ref, cfg,
-                               node_id=str(ays_node_base + 2))
-    noise_id = nf.random_noise(seed, node_id=str(ays_node_base + 3))
+                               node_id=str(detail_daemon_node_base + 3))
+    noise_id = nf.random_noise(seed,
+                                node_id=str(detail_daemon_node_base + 4))
     return nf.sampler_custom_advanced(
-        [noise_id, 0], [guider_id, 0], [sel_id, 0],
+        [noise_id, 0], [guider_id, 0], [dd_id, 0],
         [sched_id, 0], latent_ref, node_id=node_id,
     )
 

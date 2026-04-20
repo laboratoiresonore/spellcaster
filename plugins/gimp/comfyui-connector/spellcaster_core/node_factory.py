@@ -604,6 +604,39 @@ class NodeFactory:
         return self._add("KSamplerSelect",
                          {"sampler_name": sampler_name}, node_id)
 
+    def detail_daemon_sampler(self, sampler_ref, *,
+                                detail_amount=0.1, start=0.2, end=0.8,
+                                bias=0.5, exponent=1.0,
+                                start_offset=0.0, end_offset=0.0,
+                                fade=0.0, smooth=True,
+                                cfg_scale_override=0.0, node_id=None):
+        """DetailDaemonSamplerNode — wraps a SAMPLER with a noise-schedule
+        modulation that pumps high-frequency detail into the active
+        sampling window (default 0.2-0.8 of progress).
+
+        For distilled samplers (zit, Flux Schnell), `detail_amount` of
+        0.05-0.15 is the safe range — higher values over-sharpen and
+        produce halos. The wrapped sampler must feed
+        SamplerCustomAdvanced (won't work with the legacy KSampler
+        node). Outputs: [0]=SAMPLER (drop-in replacement).
+
+        Source: muerrilla / Jonseed's "Detail Daemon" node pack
+        (custom_nodes/comfyui_essentials_mb in many bundles).
+        """
+        return self._add("DetailDaemonSamplerNode", {
+            "sampler": sampler_ref,
+            "detail_amount": detail_amount,
+            "start": start,
+            "end": end,
+            "bias": bias,
+            "exponent": exponent,
+            "start_offset": start_offset,
+            "end_offset": end_offset,
+            "fade": fade,
+            "smooth": smooth,
+            "cfg_scale_override": cfg_scale_override,
+        }, node_id)
+
     def cfg_guider(self, model_ref, positive_ref, negative_ref, cfg,
                    node_id=None):
         """CFGGuider — wraps model + conditioning for SamplerCustomAdvanced.
