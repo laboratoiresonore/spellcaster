@@ -247,3 +247,247 @@
     transform: translateY(0);
     box-shadow: 0 0 6px var(--sp-accent-soft);
 }
+
+/* ───────────────────────── Wizard modal ───────────────────────── */
+/* Purple-tinted fullscreen overlay for the first-run wizard.
+ * Matches the existing spellcaster-panel visual language.
+ * Top-level IDs/classes use scw- prefix to keep them easy to grep and
+ * to avoid colliding with anything ST itself ships. */
+
+.spellcaster-wizard-btn {
+    margin-left: auto;
+    padding: 4px 10px !important;
+    font-size: 11px !important;
+}
+
+#spellcaster-wizard-root {
+    /* Container only — layout handled by children. */
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    font-family: inherit;
+    color: #e8e8f0;
+}
+
+.scw-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(8, 5, 20, 0.72);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+
+.scw-modal {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(620px, calc(100vw - 32px));
+    max-height: calc(100vh - 48px);
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(180deg, #1b1430 0%, #0e0a22 100%);
+    border: 1px solid var(--sp-accent-soft, #6b3fa8);
+    border-radius: 14px;
+    box-shadow: 0 0 40px rgba(124, 58, 237, 0.35),
+                inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+    overflow: hidden;
+}
+
+.scw-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 18px;
+    border-bottom: 1px solid rgba(107, 63, 168, 0.35);
+    background: rgba(124, 58, 237, 0.08);
+}
+.scw-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    font-size: 15px;
+}
+.scw-step-label {
+    margin-left: 8px;
+    font-weight: 400;
+    opacity: 0.75;
+    font-size: 13px;
+}
+.scw-emoji { font-size: 18px; }
+.scw-close {
+    margin-left: auto;
+    background: transparent;
+    border: none;
+    color: #cfc0ee;
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 6px;
+}
+.scw-close:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+
+.scw-progress {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(107, 63, 168, 0.2);
+}
+.scw-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: #302245;
+    transition: all 0.2s;
+}
+.scw-dot-active {
+    background: var(--sp-accent, #a855f7);
+    box-shadow: 0 0 10px var(--sp-accent-glow, rgba(168, 85, 247, 0.5));
+}
+.scw-dot-done { background: #6b3fa8; }
+
+.scw-body {
+    padding: 18px 22px;
+    overflow-y: auto;
+    flex: 1 1 auto;
+    font-size: 14px;
+    line-height: 1.45;
+}
+.scw-body p { margin: 0 0 10px; }
+.scw-body ul { margin: 0 0 12px 20px; }
+.scw-body code {
+    background: rgba(124, 58, 237, 0.15);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+.scw-hint { opacity: 0.7; font-size: 12px; }
+.scw-loading { opacity: 0.7; font-style: italic; }
+.scw-err { color: #ff7a7a; }
+.scw-ok  { color: #7ed957; }
+
+.scw-field, .scw-field-inline {
+    display: block;
+    margin: 10px 0;
+}
+.scw-field > span { display: block; margin-bottom: 4px; font-weight: 500; }
+.scw-field input[type="text"],
+.scw-field input[type="number"] {
+    width: 100%;
+    background: #0a0819;
+    border: 1px solid rgba(107, 63, 168, 0.4);
+    color: #e8e8f0;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+}
+.scw-field-inline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.scw-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin: 8px 0;
+}
+.scw-status { font-size: 12px; opacity: 0.9; }
+
+.scw-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+}
+.scw-card {
+    display: grid;
+    grid-template-columns: 18px 1fr;
+    grid-template-rows: auto auto;
+    gap: 4px 10px;
+    padding: 10px 14px;
+    border: 1px solid rgba(107, 63, 168, 0.4);
+    border-radius: 8px;
+    background: rgba(124, 58, 237, 0.04);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.scw-card:hover { background: rgba(124, 58, 237, 0.10); }
+.scw-card.scw-selected {
+    border-color: var(--sp-accent, #a855f7);
+    background: rgba(124, 58, 237, 0.14);
+    box-shadow: 0 0 10px rgba(168, 85, 247, 0.25);
+}
+.scw-card.scw-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.scw-card input[type="radio"] {
+    grid-row: 1 / span 2;
+    grid-column: 1;
+    align-self: start;
+    margin-top: 4px;
+}
+.scw-card strong { grid-column: 2; grid-row: 1; }
+.scw-card .scw-hint,
+.scw-card > span.scw-hint { grid-column: 2; grid-row: 2; }
+.scw-card select {
+    grid-column: 2;
+    grid-row: 2;
+    margin-top: 2px;
+    background: #0a0819;
+    border: 1px solid rgba(107, 63, 168, 0.4);
+    color: #e8e8f0;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    max-width: 100%;
+}
+
+.scw-review {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    gap: 6px 12px;
+    margin: 0;
+}
+.scw-review dt { opacity: 0.7; font-weight: 500; }
+.scw-review dd { margin: 0; }
+
+.scw-footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 18px;
+    border-top: 1px solid rgba(107, 63, 168, 0.35);
+    background: rgba(10, 8, 25, 0.6);
+}
+.scw-btn {
+    padding: 8px 18px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s;
+}
+.scw-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.scw-primary {
+    background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
+    color: #fff;
+    border-color: rgba(168, 85, 247, 0.7);
+}
+.scw-primary:hover:not(:disabled) {
+    box-shadow: 0 0 12px rgba(168, 85, 247, 0.5);
+    transform: translateY(-1px);
+}
+.scw-secondary {
+    background: rgba(255, 255, 255, 0.04);
+    color: #d0c2ee;
+    border-color: rgba(107, 63, 168, 0.4);
+}
+.scw-secondary:hover:not(:disabled) {
+    background: rgba(124, 58, 237, 0.15);
+    border-color: var(--sp-accent-soft, #6b3fa8);
+}

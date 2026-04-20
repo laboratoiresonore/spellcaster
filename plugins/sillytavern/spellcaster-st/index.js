@@ -48,6 +48,15 @@ const DEFAULT_SETTINGS = {
     restyle_denoise: 0.55,
     restyle_prompt: 'photorealistic portrait, professional photography, detailed skin texture, 8k',
     last_scene_description: '',    // Dedup: skip if same scene detected again
+
+    // Wizard-selected defaults. Empty strings mean "let the server auto-pick
+    // based on what's installed" (backward compatible — pre-wizard users
+    // continue to get automatic model selection by keyword priority).
+    // Populated by the first-run wizard or by /spellcaster-wizard.
+    image_model: '',               // Specific checkpoint filename, or '' for auto
+    video_backend: 'auto',         // 'auto' | 'wan22' | 'none'
+    quality_profile: 'balanced',   // 'fast' | 'balanced' | 'max'
+    wizard_completed: false,       // First-run wizard flag; shown once on load
 };
 
 function getSettings() {
@@ -1133,6 +1142,17 @@ function registerSlashCommands() {
         helpString: 'Probe the configured ComfyUI and report which Spellcaster architectures are installed (Klein, Flux Kontext, Wan, LTX, SUPIR, etc.).',
     }));
 
+    // /spellcaster-wizard — re-open the first-run configuration wizard
+    // anytime. Same modal the user sees on a brand-new install.
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'spellcaster-wizard',
+        callback: async () => {
+            openWizard();
+            return 'Opening Spellcaster wizard…';
+        },
+        helpString: 'Run the Spellcaster configuration wizard (ComfyUI URL, image model, video backend, quality, automation).',
+    }));
+
     // /sc-inbox — pull + display pending inbox items for this SillyTavern
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'sc-inbox',
@@ -1311,6 +1331,505 @@ function registerFunctionTools() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+//  First-Run Wizard
+// ═══════════════════════════════════════════════════════════════════
+// Modal 7-step wizard that walks a user through the settings that
+// matter: ComfyUI URL, image model, video backend, quality profile,
+// and automation toggles. The existing settings panel is kept for
+// incremental edits; the wizard is for first-run and "I want to
+// reconfigure everything" moments. Launch paths:
+//   * Automatic on first load when wizard_completed=false
+//   * "Run wizard" button in the settings panel
+//   * /spellcaster-wizard slash command
+
+const WIZARD_STEPS = [
+    { id: 'welcome',     title: 'Welcome' },
+    { id: 'connection',  title: 'ComfyUI Server' },
+    { id: 'image',       title: 'Image Model' },
+    { id: 'video',       title: 'Video Backend' },
+    { id: 'quality',     title: 'Quality Profile' },
+    { id: 'automation',  title: 'Automation' },
+    { id: 'review',      title: 'Review & Save' },
+];
+
+// Transient wizard state — NOT persisted until Save & Finish clicked.
+// Aborting or closing without finishing discards changes.
+let _wizardState = null;
+
+function newWizardState() {
+    const s = getSettings();
+    return {
+        step: 0,
+        // Lazy-loaded on reaching the relevant step.
+        capabilities: null, // { available:[arch,…], missing:[arch,…] }
+        models: null,       // { image:{arch:[ckpt,…]}, video:{wan,ltx} }
+        // Draft: edits pile up here until the user hits Save.
+        draft: {
+            comfyui_url:              s.comfyui_url,
+            image_model:              s.image_model || '',
+            video_backend:            s.video_backend || 'auto',
+            quality_profile:          s.quality_profile || 'balanced',
+            auto_background:          !!s.auto_background,
+            auto_background_interval: s.auto_background_interval || 3,
+            auto_expressions:         !!s.auto_expressions,
+            auto_cast:                !!s.auto_cast,
+        },
+        // UI scratch: most recent connection probe result.
+        connection: { tested: false, ok: false, message: '' },
+    };
+}
+
+function openWizard() {
+    _wizardState = newWizardState();
+    renderWizard();
+}
+
+function closeWizard() {
+    _wizardState = null;
+    const host = document.getElementById('spellcaster-wizard-root');
+    if (host && host.parentNode) host.parentNode.removeChild(host);
+}
+
+function wizardGo(delta) {
+    if (!_wizardState) return;
+    const next = Math.max(0, Math.min(WIZARD_STEPS.length - 1,
+                                        _wizardState.step + delta));
+    _wizardState.step = next;
+    renderWizard();
+}
+
+function wizardFinish() {
+    if (!_wizardState) return;
+    const s = getSettings();
+    Object.assign(s, _wizardState.draft);
+    s.wizard_completed = true;
+    saveSettings();
+    // Push the new connection + per-workflow defaults to the server so
+    // subsequent /scene, /portrait, /animate pick up the choices.
+    spellcasterAPI('/settings', {
+        comfyui_url:     _wizardState.draft.comfyui_url,
+        image_model:     _wizardState.draft.image_model,
+        video_backend:   _wizardState.draft.video_backend,
+        quality_profile: _wizardState.draft.quality_profile,
+    }).catch(() => { /* best-effort */ });
+    closeWizard();
+    // Re-render the flat settings panel so it reflects the new values
+    // without forcing the user to reopen Extensions.
+    try { renderSettingsPanel(); } catch { /* panel may not be mounted */ }
+}
+
+function renderWizard() {
+    // Mount root once. We rebuild only the inner body on step change to
+    // avoid re-initialising listeners we don't need to.
+    let host = document.getElementById('spellcaster-wizard-root');
+    if (!host) {
+        host = document.createElement('div');
+        host.id = 'spellcaster-wizard-root';
+        document.body.appendChild(host);
+    }
+    const state = _wizardState;
+    const step = WIZARD_STEPS[state.step];
+    const progressDots = WIZARD_STEPS.map((s, i) => {
+        const cls = i === state.step ? 'active'
+                  : i <  state.step ? 'done' : 'upcoming';
+        return `<span class="scw-dot scw-dot-${cls}" title="${s.title}"></span>`;
+    }).join('');
+    const bodyHtml = _renderWizardStep(step.id, state);
+    const canBack = state.step > 0;
+    const isLast  = state.step === WIZARD_STEPS.length - 1;
+    host.innerHTML = `
+    <div class="scw-backdrop" id="scw-backdrop"></div>
+    <div class="scw-modal" role="dialog" aria-label="Spellcaster Wizard">
+        <div class="scw-header">
+            <div class="scw-title">
+                <span class="scw-emoji">🧙‍♂️</span>
+                Spellcaster Wizard
+                <span class="scw-step-label">${step.title}</span>
+            </div>
+            <button class="scw-close" id="scw-close" aria-label="Close">×</button>
+        </div>
+        <div class="scw-progress">${progressDots}</div>
+        <div class="scw-body">${bodyHtml}</div>
+        <div class="scw-footer">
+            <button class="scw-btn scw-secondary" id="scw-back"
+                    ${canBack ? '' : 'disabled'}>Back</button>
+            <button class="scw-btn scw-primary" id="scw-next">
+                ${isLast ? 'Save & Apply' : 'Next'}
+            </button>
+        </div>
+    </div>`;
+    // Wire nav / close
+    host.querySelector('#scw-close')?.addEventListener('click', closeWizard);
+    host.querySelector('#scw-backdrop')?.addEventListener('click', closeWizard);
+    host.querySelector('#scw-back')?.addEventListener('click', () => wizardGo(-1));
+    host.querySelector('#scw-next')?.addEventListener('click', () => {
+        if (isLast) wizardFinish();
+        else wizardGo(+1);
+    });
+    // Per-step listeners (kept local to the step renderer via data-scw
+    // attributes resolved below).
+    _attachStepListeners(step.id, state, host);
+}
+
+// Step renderers — each takes state, returns an HTML string. Per-step
+// DOM listeners are attached in _attachStepListeners so the wiring
+// stays adjacent to the markup.
+
+function _renderWizardStep(id, state) {
+    const d = state.draft;
+    switch (id) {
+        case 'welcome':
+            return `
+                <p>This wizard sets Spellcaster's defaults in 6 quick steps.
+                You can change any choice later via the Extensions panel
+                or by re-running <code>/spellcaster-wizard</code>.</p>
+                <p><strong>What you'll configure:</strong></p>
+                <ul>
+                    <li>ComfyUI server URL</li>
+                    <li>Default image model (for /scene, /portrait)</li>
+                    <li>Video backend (for /animate)</li>
+                    <li>Quality profile (speed vs fidelity)</li>
+                    <li>Automation toggles (auto-background, expressions)</li>
+                </ul>
+                <p class="scw-hint">Safe to skip: pressing Next keeps the
+                current value at each step.</p>`;
+        case 'connection':
+            return `
+                <label class="scw-field">
+                    <span>ComfyUI URL</span>
+                    <input type="text" id="scw-comfyui-url"
+                           value="${_escape(d.comfyui_url)}" />
+                </label>
+                <div class="scw-row">
+                    <button class="scw-btn scw-secondary" id="scw-test-conn">
+                        Test connection
+                    </button>
+                    <span id="scw-conn-status" class="scw-status">
+                        ${state.connection.tested
+                            ? (state.connection.ok
+                                ? '<span class="scw-ok">✓ '+_escape(state.connection.message)+'</span>'
+                                : '<span class="scw-err">✗ '+_escape(state.connection.message)+'</span>')
+                            : ''}
+                    </span>
+                </div>
+                <p class="scw-hint">Default <code>http://127.0.0.1:8188</code>
+                is correct for a ComfyUI running on this machine. For
+                remote servers use the LAN IP, e.g.
+                <code>http://192.168.1.50:8188</code>.</p>`;
+        case 'image': {
+            const loading = !state.models;
+            if (loading) {
+                _loadModelsAsync(state);
+                return `<p class="scw-loading">Probing ComfyUI for installed models…</p>`;
+            }
+            const groups = state.models.image || {};
+            const groupKeys = Object.keys(groups).filter(k => groups[k]?.length);
+            if (groupKeys.length === 0) {
+                return `<p class="scw-err">No image models detected on
+                ${_escape(d.comfyui_url)}. Install at least one checkpoint
+                in ComfyUI/models/checkpoints before using /scene or
+                /portrait.</p>`;
+            }
+            // Radio card per arch, each with a nested select for the
+            // specific checkpoint. "Let Spellcaster pick" radio at top
+            // maps to draft.image_model = ''.
+            const autoChecked = !d.image_model ? 'checked' : '';
+            const cards = groupKeys.map((arch, i) => {
+                const opts = groups[arch].map(m =>
+                    `<option value="${_escape(m)}" ${m === d.image_model ? 'selected' : ''}>
+                        ${_escape(_prettyModelName(m))}
+                    </option>`).join('');
+                const thisArchSelected = groups[arch].includes(d.image_model);
+                return `
+                <label class="scw-card ${thisArchSelected ? 'scw-selected' : ''}">
+                    <input type="radio" name="scw-image-arch"
+                           value="${_escape(arch)}"
+                           ${thisArchSelected ? 'checked' : ''}
+                           data-scw-arch="${_escape(arch)}" />
+                    <strong>${_escape(_prettyArchLabel(arch))}</strong>
+                    <select data-scw-arch-select="${_escape(arch)}">
+                        ${opts}
+                    </select>
+                </label>`;
+            }).join('');
+            return `
+                <p>Pick the default checkpoint for <code>/scene</code> and
+                <code>/portrait</code>. You can always override per-command
+                later.</p>
+                <label class="scw-card ${!d.image_model ? 'scw-selected' : ''}">
+                    <input type="radio" name="scw-image-arch" value="__auto__"
+                           ${autoChecked} id="scw-image-auto" />
+                    <strong>Let Spellcaster pick automatically</strong>
+                    <span class="scw-hint">Recommended — Klein 9B &gt; SDXL
+                    &gt; Juggernaut &gt; anything installed.</span>
+                </label>
+                <div class="scw-cards">${cards}</div>`;
+        }
+        case 'video': {
+            const loading = !state.models;
+            if (loading) {
+                _loadModelsAsync(state);
+                return `<p class="scw-loading">Checking video backends…</p>`;
+            }
+            const v = state.models.video || {};
+            const wanOK = !!v.wan;
+            const choice = d.video_backend || 'auto';
+            return `
+                <p>Pick which engine <code>/animate</code> should prefer.</p>
+                <label class="scw-card ${choice === 'auto' ? 'scw-selected' : ''}">
+                    <input type="radio" name="scw-video" value="auto"
+                           ${choice === 'auto' ? 'checked' : ''} />
+                    <strong>Auto (recommended)</strong>
+                    <span class="scw-hint">Use whatever's installed; fall
+                    back to legacy if none.</span>
+                </label>
+                <label class="scw-card ${choice === 'wan22' ? 'scw-selected' : ''}
+                                     ${wanOK ? '' : 'scw-disabled'}">
+                    <input type="radio" name="scw-video" value="wan22"
+                           ${choice === 'wan22' ? 'checked' : ''}
+                           ${wanOK ? '' : 'disabled'} />
+                    <strong>Wan 2.2 I2V</strong>
+                    <span class="scw-hint">
+                        ${wanOK
+                            ? 'Detected on this server. High quality, ~2–5 min per clip on a 16 GB GPU.'
+                            : 'Not installed. Add WanImageToVideo + LoadWanVideoModel custom nodes.'}
+                    </span>
+                </label>
+                <label class="scw-card ${choice === 'none' ? 'scw-selected' : ''}">
+                    <input type="radio" name="scw-video" value="none"
+                           ${choice === 'none' ? 'checked' : ''} />
+                    <strong>Disable video</strong>
+                    <span class="scw-hint"><code>/animate</code> will return an
+                    error rather than run any workflow. Useful on
+                    low-VRAM servers.</span>
+                </label>`;
+        }
+        case 'quality': {
+            const q = d.quality_profile;
+            return `
+                <p>Controls the quality-booster stack wired into every
+                generation (PAG, RescaleCFG, FreeU_V2, SLG, AYS — picked
+                per architecture).</p>
+                <label class="scw-card ${q === 'fast' ? 'scw-selected' : ''}">
+                    <input type="radio" name="scw-quality" value="fast"
+                           ${q === 'fast' ? 'checked' : ''} />
+                    <strong>Fast</strong>
+                    <span class="scw-hint">No extra passes. Use when you
+                    need throughput, not polish. Flux foundational
+                    boosters still apply (they're correctness, not
+                    optional).</span>
+                </label>
+                <label class="scw-card ${q === 'balanced' ? 'scw-selected' : ''}">
+                    <input type="radio" name="scw-quality" value="balanced"
+                           ${q === 'balanced' ? 'checked' : ''} />
+                    <strong>Balanced (default)</strong>
+                    <span class="scw-hint">PAG + RescaleCFG on SDXL/Flux1.
+                    Strict improvement over plain KSampler at ~15% more
+                    compute. The sensible default.</span>
+                </label>
+                <label class="scw-card ${q === 'max' ? 'scw-selected' : ''}">
+                    <input type="radio" name="scw-quality" value="max"
+                           ${q === 'max' ? 'checked' : ''} />
+                    <strong>Max</strong>
+                    <span class="scw-hint">Adds FreeU_V2 (SDXL), SLG
+                    (Flux), AYS scheduler (SD1/SDXL). ~30% slower but
+                    noticeably cleaner at low step counts.</span>
+                </label>`;
+        }
+        case 'automation':
+            return `
+                <p>Passive features that trigger without an explicit
+                command. All opt-in.</p>
+                <label class="scw-field-inline">
+                    <input type="checkbox" id="scw-auto-bg"
+                           ${d.auto_background ? 'checked' : ''} />
+                    <span>Auto-generate scene backgrounds from narrative</span>
+                </label>
+                <label class="scw-field">
+                    <span>Background interval (every N messages)</span>
+                    <input type="number" id="scw-bg-interval" min="1" max="20"
+                           value="${d.auto_background_interval}" />
+                </label>
+                <label class="scw-field-inline">
+                    <input type="checkbox" id="scw-auto-expr"
+                           ${d.auto_expressions ? 'checked' : ''} />
+                    <span>Auto-generate character expressions from mood</span>
+                </label>
+                <label class="scw-field-inline">
+                    <input type="checkbox" id="scw-auto-cast"
+                           ${d.auto_cast ? 'checked' : ''} />
+                    <span>Auto-cast characters on startup
+                        <em class="scw-hint">(queues Klein jobs at launch —
+                         slow; expect multi-minute warm-up)</em></span>
+                </label>`;
+        case 'review':
+            return `
+                <p>Review and click <strong>Save & Apply</strong> to
+                commit. Nothing is written until you click that button.</p>
+                <dl class="scw-review">
+                    <dt>ComfyUI</dt><dd><code>${_escape(d.comfyui_url)}</code></dd>
+                    <dt>Image model</dt>
+                    <dd>${d.image_model
+                            ? '<code>'+_escape(d.image_model)+'</code>'
+                            : '<em>auto-pick</em>'}</dd>
+                    <dt>Video backend</dt>
+                    <dd>${_escape(_prettyVideoLabel(d.video_backend))}</dd>
+                    <dt>Quality profile</dt>
+                    <dd>${_escape(d.quality_profile)}</dd>
+                    <dt>Auto-backgrounds</dt>
+                    <dd>${d.auto_background
+                        ? 'every '+d.auto_background_interval+' messages'
+                        : '<em>off</em>'}</dd>
+                    <dt>Auto-expressions</dt>
+                    <dd>${d.auto_expressions ? 'on' : '<em>off</em>'}</dd>
+                    <dt>Auto-cast on startup</dt>
+                    <dd>${d.auto_cast ? 'on' : '<em>off</em>'}</dd>
+                </dl>`;
+    }
+    return `<p><em>Unknown step: ${id}</em></p>`;
+}
+
+function _attachStepListeners(id, state, host) {
+    const d = state.draft;
+    switch (id) {
+        case 'connection': {
+            const urlEl = host.querySelector('#scw-comfyui-url');
+            urlEl?.addEventListener('input', (e) => {
+                d.comfyui_url = e.target.value.trim().replace(/\/+$/, '');
+                state.connection.tested = false;
+                // Invalidate the models probe — we may be pointing at a
+                // different server now.
+                state.models = null;
+            });
+            host.querySelector('#scw-test-conn')?.addEventListener('click',
+                async () => {
+                    state.connection.tested = true;
+                    state.connection.ok = false;
+                    state.connection.message = 'Testing…';
+                    renderWizard();
+                    try {
+                        const r = await fetch(`${API_BASE}/health`).then(x => x.json());
+                        state.connection.ok = !!r.comfyui_ok;
+                        state.connection.message = r.comfyui_ok
+                            ? `Online. ${r.models ?? ''} checkpoints detected.`
+                            : (r.error || 'ComfyUI unreachable');
+                    } catch (e) {
+                        state.connection.message = e?.message || 'Probe failed';
+                    }
+                    renderWizard();
+                });
+            return;
+        }
+        case 'image': {
+            host.querySelector('#scw-image-auto')?.addEventListener('change', () => {
+                d.image_model = '';
+                renderWizard();
+            });
+            host.querySelectorAll('[data-scw-arch]').forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    const arch = e.target.getAttribute('data-scw-arch');
+                    // Take the first model in the arch group; user can
+                    // refine via the inner <select>.
+                    const group = (state.models?.image || {})[arch] || [];
+                    d.image_model = group[0] || '';
+                    renderWizard();
+                });
+            });
+            host.querySelectorAll('[data-scw-arch-select]').forEach(sel => {
+                sel.addEventListener('change', (e) => {
+                    d.image_model = e.target.value;
+                    renderWizard();
+                });
+            });
+            return;
+        }
+        case 'video': {
+            host.querySelectorAll('input[name="scw-video"]').forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    d.video_backend = e.target.value;
+                    renderWizard();
+                });
+            });
+            return;
+        }
+        case 'quality': {
+            host.querySelectorAll('input[name="scw-quality"]').forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    d.quality_profile = e.target.value;
+                    renderWizard();
+                });
+            });
+            return;
+        }
+        case 'automation': {
+            host.querySelector('#scw-auto-bg')?.addEventListener('change',
+                (e) => { d.auto_background = e.target.checked; });
+            host.querySelector('#scw-bg-interval')?.addEventListener('change',
+                (e) => { d.auto_background_interval = Math.max(1,
+                    Math.min(20, parseInt(e.target.value, 10) || 3)); });
+            host.querySelector('#scw-auto-expr')?.addEventListener('change',
+                (e) => { d.auto_expressions = e.target.checked; });
+            host.querySelector('#scw-auto-cast')?.addEventListener('change',
+                (e) => { d.auto_cast = e.target.checked; });
+            return;
+        }
+    }
+}
+
+async function _loadModelsAsync(state) {
+    // Called from the image/video step renderers when models haven't been
+    // probed yet. The renderer initially returns a "Loading…" view; we
+    // re-render once the probe resolves.
+    try {
+        const r = await fetch(`${API_BASE}/models`).then(x => x.json());
+        state.models = r && typeof r === 'object' ? r : { image: {}, video: {} };
+    } catch (e) {
+        state.models = { image: {}, video: {}, error: e?.message || 'probe failed' };
+    }
+    // Renderer keyed on _wizardState — only re-render if the user didn't
+    // close the wizard in the meantime.
+    if (_wizardState === state) renderWizard();
+}
+
+// Small display helpers. Keep pure (no DOM, no state) so they're easy to
+// reason about / test / reuse.
+
+function _prettyArchLabel(arch) {
+    const labels = {
+        klein9b:    'Flux 2 Klein 9B',
+        klein4b:    'Flux 2 Klein 4B',
+        fluxkontext:'Flux Kontext',
+        flux1dev:   'Flux 1 Dev',
+        sdxl:       'SDXL',
+        illustrious:'Illustrious / Pony',
+        sd15:       'SD 1.5',
+        zit:        'Z-Image Turbo',
+        chroma:     'Chroma',
+    };
+    return labels[arch] || arch;
+}
+
+function _prettyModelName(filename) {
+    // Drop the subfolder prefix + .safetensors suffix for display.
+    return String(filename)
+        .replace(/^.*[\\/]/, '')
+        .replace(/\.(safetensors|ckpt|gguf|pt)$/, '');
+}
+
+function _prettyVideoLabel(choice) {
+    return {
+        auto:  'Auto (pick best available)',
+        wan22: 'Wan 2.2 I2V',
+        none:  'Disabled',
+    }[choice] || choice;
+}
+
+function _escape(s) {
+    return String(s ?? '').replace(/[&<>"']/g,
+        c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
+// ═══════════════════════════════════════════════════════════════════
 //  Settings UI Panel
 // ═══════════════════════════════════════════════════════════════════
 
@@ -1322,6 +1841,10 @@ function renderSettingsPanel() {
             <span class="spellcaster-icon">🧙</span>
             <strong>Spellcaster</strong>
             <span id="spellcaster-status" class="spellcaster-status">checking...</span>
+            <button id="spellcaster-open-wizard" class="spellcaster-wizard-btn"
+                    title="Step through Spellcaster's main settings one question at a time.">
+                Run Wizard
+            </button>
         </div>
 
         <label class="spellcaster-toggle">
@@ -1436,6 +1959,9 @@ function renderSettingsPanel() {
             settings.restyle_denoise = parseFloat(e.target.value);
             document.getElementById('spellcaster-denoise-val').textContent = settings.restyle_denoise;
             saveSettings();
+        });
+        document.getElementById('spellcaster-open-wizard')?.addEventListener('click', () => {
+            openWizard();
         });
 
         // Check health
@@ -1625,9 +2151,28 @@ async function autoCastOnStartup() {
     // Render settings panel
     renderSettingsPanel();
 
-    // Configure server plugin
+    // Configure server plugin with whatever the wizard already saved
+    // (or the defaults). Backwards-compatible: the server silently
+    // ignores unknown keys, so older server-plugin.js won't break
+    // until image_model / video_backend / quality_profile land there.
     const settings = getSettings();
-    spellcasterAPI('/settings', { comfyui_url: settings.comfyui_url }).catch(() => {});
+    spellcasterAPI('/settings', {
+        comfyui_url:     settings.comfyui_url,
+        image_model:     settings.image_model || '',
+        video_backend:   settings.video_backend || 'auto',
+        quality_profile: settings.quality_profile || 'balanced',
+    }).catch(() => {});
+
+    // First-run wizard: open automatically if the user has never saved
+    // a pass. Defer so ST's own UI has finished painting — otherwise
+    // the modal can end up behind a late-opened drawer.
+    if (!settings.wizard_completed) {
+        setTimeout(() => {
+            // Re-check: user may have dismissed the auto-open by
+            // clicking Finish during the delay window.
+            if (!getSettings().wizard_completed) openWizard();
+        }, 2000);
+    }
 
     // Auto-cast all characters in background (non-blocking, 5s delay).
     // Swallow any unhandled rejection — the function is best-effort;
