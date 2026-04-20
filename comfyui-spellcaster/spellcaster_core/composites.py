@@ -589,6 +589,20 @@ def inject_controlnet(nf, controlnet_config, guide_modes, arch_key,
     preprocessor = guide.get("preprocessor")
     cn_image_ref = image_ref
 
+    # Optional ref-image override: caller can pass a separate file
+    # (already uploaded to ComfyUI's input/) as the CN input instead of
+    # the primary canvas. Used by the GIMP normal-map picker: the user
+    # picks a normal-map layer, the handler uploads it separately, and
+    # stores the filename under `ref_image_filename`. We load it here
+    # as a fresh LoadImage node so the preprocessor (or raw CN path)
+    # operates on the normal map, not the canvas.
+    ref_filename = controlnet_config.get("ref_image_filename")
+    if ref_filename:
+        ref_load_id = nf.load_image(ref_filename,
+                                    node_id=str(cn_base_id) + "ref")
+        cn_image_ref = [ref_load_id, 0]
+        image_ref = [ref_load_id, 0]
+
     if preprocessor:
         pre_id = nf.preprocessor(preprocessor, image_ref,
                                  node_id=str(cn_base_id))
