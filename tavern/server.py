@@ -11947,6 +11947,14 @@ class GuildHandler(SimpleHTTPRequestHandler):
             import os as _os, sys as _sys, shlex as _shlex
             import tempfile as _tf
             argv = list(_sys.argv)
+            # The user is already looking at the GUI when they press
+            # Restart — they don't need a fresh browser tab popping
+            # open behind the one they're staring at. Inject
+            # --no-browser into the relauncher argv unless the launcher
+            # was already invoked with it. The launcher honours
+            # args.no_browser regardless of the auto_open_browser config.
+            if "--no-browser" not in argv:
+                argv.append("--no-browser")
             exe = _sys.executable
             env = dict(_os.environ)
             parent_cwd = _os.getcwd()
