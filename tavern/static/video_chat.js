@@ -47,6 +47,24 @@
     videoChatActive = !videoChatActive;
 
     if (videoChatActive) {
+      // Auto-select the Videomancer wizard on activation — the
+      // cinematographer mode lives under Videomancer, so the header
+      // portrait + active chip should reflect that. Click is a no-op
+      // if Videomancer is already active. Using the exported
+      // selectCharacter keeps us in sync with the rest of app.js
+      // (chat history swap, LoRA refresh, etc.).
+      try {
+        if (typeof window.selectCharacter === 'function') {
+          window.selectCharacter('studio_videomancer');
+        } else {
+          // Fallback: click the sidebar card directly so the user sees
+          // SOMETHING change even if the JS hook isn't exported.
+          const card = document.querySelector(
+            '[data-id="studio_videomancer"]');
+          if (card) card.click();
+        }
+      } catch (err) { /* non-fatal */ }
+
       btn.style.opacity = '1';
       btn.style.background = 'rgba(59,130,246,0.2)';
       indicator.style.display = 'block';
