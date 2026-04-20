@@ -425,13 +425,15 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
         model_ref = _apply_quality_boost(
             nf, model_ref, arch_key,
             quality=quality, cfg=sampler_cfg, node_base_id=700)
-        samp_id = nf.ksampler(
-            model_ref,
-            pos_ref_boosted, [neg_id, 0], [enc_id, 0],
-            seed, preset["steps"], preset["cfg"],
-            preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
-            preset.get("denoise", 0.65),
+        samp_id = _emit_sampler(
+            nf, model_ref=model_ref, pos_ref=pos_ref_boosted,
+            neg_ref=[neg_id, 0], latent_ref=[enc_id, 0],
+            seed=seed, steps=preset["steps"], cfg=preset["cfg"],
+            sampler=preset.get("sampler", "euler"),
+            scheduler=preset.get("scheduler", "normal"),
+            denoise=preset.get("denoise", 0.65),
             node_id="6",
+            arch_key=arch_key, quality=quality, ays_node_base=670,
         )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="7")
     # Optional SAM3 scoping — gate the transform with a SAM3 mask so only
@@ -556,13 +558,15 @@ def build_txt2img(preset, prompt_text, negative_text, seed, loras=None,
         model_ref = _apply_quality_boost(
             nf, model_ref, arch_key,
             quality=quality, cfg=preset.get("cfg"), node_base_id=705)
-        samp_id = nf.ksampler(
-            model_ref,
-            pos_ref_boosted, [neg_id, 0], [empty_id, 0],
-            seed, preset["steps"], preset["cfg"],
-            preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
-            1.0,  # denoise always 1.0 for txt2img
+        samp_id = _emit_sampler(
+            nf, model_ref=model_ref, pos_ref=pos_ref_boosted,
+            neg_ref=[neg_id, 0], latent_ref=[empty_id, 0],
+            seed=seed, steps=preset["steps"], cfg=preset["cfg"],
+            sampler=preset.get("sampler", "euler"),
+            scheduler=preset.get("scheduler", "normal"),
+            denoise=1.0,  # denoise always 1.0 for txt2img
             node_id="5",
+            arch_key=arch_key, quality=quality, ays_node_base=675,
         )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="6")
     nf.save_image([dec_id, 0], "gimp_comfy", node_id="7")
@@ -1163,6 +1167,63 @@ def _apply_quality_boost(nf, model_ref, arch_key, *,
     return model_ref
 
 
+_AYS_ARCHES = {"sd15", "sdxl", "illustrious"}
+
+
+def _emit_sampler(nf, *, model_ref, pos_ref, neg_ref, latent_ref,
+                    seed, steps, cfg, sampler, scheduler, denoise,
+                    node_id,
+                    arch_key=None, quality="balanced",
+                    ays_override=None, ays_node_base=670):
+    """Emit the final sampling node, choosing between:
+
+      * plain KSampler                 (default — preserves previous
+                                        behaviour on every caller that
+                                        doesn't opt into max quality)
+      * AYS custom-advanced pipeline   (5 nodes: AYSScheduler +
+                                        KSamplerSelect + CFGGuider +
+                                        RandomNoise + SamplerCustomAdvanced)
+
+    AYS is chosen when:
+      * ays_override is explicitly True, OR
+      * quality == "max" and arch_key in {sd15, sdxl, illustrious}.
+        Steps threshold is NOT enforced — AYS is never worse than Karras,
+        just has diminishing returns at >20 steps. Users who set max
+        knowingly accept the (negligible) extra cost.
+
+    AYS is skipped for Flux/Klein/ZIT/Chroma — its sigma table is
+    hard-coded for SD1/SDXL only and would produce garbage elsewhere.
+
+    Returns the samp_id (node producing sampled LATENT at slot 0). The
+    returned node_id equals the caller's `node_id` so downstream
+    VAEDecode wiring stays unchanged.
+    """
+    use_ays = False
+    if ays_override is True:
+        use_ays = True
+    elif ays_override is None and quality == "max":
+        use_ays = arch_key in _AYS_ARCHES
+
+    if not use_ays:
+        return nf.ksampler(
+            model_ref, pos_ref, neg_ref, latent_ref,
+            seed, steps, cfg, sampler, scheduler, denoise, node_id=node_id,
+        )
+
+    # AYS chain. model_type "SD1" for sd15, else "SDXL" (covers illustrious).
+    model_type = "SD1" if arch_key == "sd15" else "SDXL"
+    sched_id = nf.align_your_steps_scheduler(
+        model_type, steps, denoise, node_id=str(ays_node_base))
+    sel_id = nf.ksampler_select(sampler, node_id=str(ays_node_base + 1))
+    guider_id = nf.cfg_guider(model_ref, pos_ref, neg_ref, cfg,
+                               node_id=str(ays_node_base + 2))
+    noise_id = nf.random_noise(seed, node_id=str(ays_node_base + 3))
+    return nf.sampler_custom_advanced(
+        [noise_id, 0], [guider_id, 0], [sel_id, 0],
+        [sched_id, 0], latent_ref, node_id=node_id,
+    )
+
+
 def _apply_flux1_boosters(nf, model_ref, pos_cond_ref, preset, *,
                            node_base_id=740):
     """Apply Flux 1 Dev foundational boosters:
@@ -1745,7 +1806,7 @@ def build_detail_hallucinate(image_filename, upscale_model, preset,
                               guide_modes=None,
                               sam3_prompt=None, sam3_invert=False,
                               sam3_confidence=0.6, sam3_expand=4, sam3_blur=4,
-                              enhance=True):
+                              enhance=True, quality="balanced"):
     """Super-resolution with detail hallucination via img2img diffusion.
 
     When sam3_prompt is set, the transform is composited back onto the original
@@ -1869,9 +1930,14 @@ def build_detail_hallucinate(image_filename, upscale_model, preset,
             [sched_id, 0], [enc_id, 0], node_id="8",
         )
     else:
+        model_ref, pos_boosted = _apply_flux1_boosters(
+            nf, model_ref, [pos_id, 0], preset, node_base_id=640)
+        model_ref = _apply_quality_boost(
+            nf, model_ref, arch_key,
+            quality=quality, cfg=cfg, node_base_id=600)
         samp_id = nf.ksampler(
             model_ref,
-            [pos_id, 0], [neg_id, 0], [enc_id, 0],
+            pos_boosted, [neg_id, 0], [enc_id, 0],
             seed, steps or preset["steps"], cfg,
             preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
             denoise, node_id="8",
@@ -1923,7 +1989,7 @@ def build_colorize(image_filename, preset, prompt_text, negative_text, seed,
                     lineart_models=None,
                     sam3_prompt=None, sam3_invert=False,
                     sam3_confidence=0.6, sam3_expand=4, sam3_blur=4,
-                    enhance=True):
+                    enhance=True, quality="balanced"):
     """Colorize B&W photo. Drop-in for _build_colorize().
 
     lineart_models: CONTROLNET_LINEART_MODELS dict from main plugin.
@@ -1995,9 +2061,17 @@ def build_colorize(image_filename, preset, prompt_text, negative_text, seed,
             [sched_id, 0], [enc_id, 0], node_id="9",
         )
     else:
+        # Positive here is the CN-augmented conditioning; FluxGuidance
+        # (if applicable) wraps that just like a raw positive.
+        model_ref, pos_boosted = _apply_flux1_boosters(
+            nf, model_ref, [cn_apply_id, 0], preset, node_base_id=645)
+        model_ref = _apply_quality_boost(
+            nf, model_ref, arch_key,
+            quality=quality, cfg=cfg or preset.get("cfg"),
+            node_base_id=605)
         samp_id = nf.ksampler(
             model_ref,
-            [cn_apply_id, 0], [cn_apply_id, 1], [enc_id, 0],
+            pos_boosted, [cn_apply_id, 1], [enc_id, 0],
             seed, steps or preset["steps"], cfg or preset["cfg"],
             preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
             denoise, node_id="9",
@@ -2033,7 +2107,7 @@ def build_colorize(image_filename, preset, prompt_text, negative_text, seed,
 def build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
                           preset, prompt, negative, seed, width, height,
                           steps, cfg, sampler, scheduler, cn_strength=0.8,
-                          loras=None, enhance=True):
+                          loras=None, enhance=True, quality="balanced"):
     """Text-to-image generation with ControlNet spatial constraint.
 
     Generates an image from scratch (empty latent) with spatial guidance from
@@ -2137,9 +2211,15 @@ def build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
             [sched_id, 0], [empty_id, 0], node_id="9",
         )
     else:
+        arch_key = preset.get("arch", "sdxl")
+        model_ref, pos_boosted = _apply_flux1_boosters(
+            nf, model_ref, [cn_apply_id, 0], preset, node_base_id=650)
+        model_ref = _apply_quality_boost(
+            nf, model_ref, arch_key,
+            quality=quality, cfg=cfg, node_base_id=610)
         samp_id = nf.ksampler(
             model_ref,
-            [cn_apply_id, 0], [cn_apply_id, 1], [empty_id, 0],
+            pos_boosted, [cn_apply_id, 1], [empty_id, 0],
             seed, steps, cfg, sampler, scheduler, 1.0, node_id="9",
         )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="10")
@@ -2654,12 +2734,15 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
         model_ref = _apply_quality_boost(
             nf, model_ref, arch_key,
             quality=quality, cfg=preset.get("cfg"), node_base_id=710)
-        samp_id = nf.ksampler(
-            model_ref,
-            pos_ref_boosted, [neg_id, 0], [masked_id, 0],
-            seed, preset["steps"], preset["cfg"],
-            preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
-            preset.get("denoise", 0.65), node_id="8",
+        samp_id = _emit_sampler(
+            nf, model_ref=model_ref, pos_ref=pos_ref_boosted,
+            neg_ref=[neg_id, 0], latent_ref=[masked_id, 0],
+            seed=seed, steps=preset["steps"], cfg=preset["cfg"],
+            sampler=preset.get("sampler", "euler"),
+            scheduler=preset.get("scheduler", "normal"),
+            denoise=preset.get("denoise", 0.65),
+            node_id="8",
+            arch_key=arch_key, quality=quality, ays_node_base=680,
         )
 
     # Decode → restore to original size → save
@@ -2831,12 +2914,15 @@ def build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
         model_ref = _apply_quality_boost(
             nf, model_ref, arch_key,
             quality=quality, cfg=preset.get("cfg"), node_base_id=715)
-        samp_id = nf.ksampler(
-            model_ref,
-            pos_ref_boosted, [neg_id, 0], [masked_id, 0],
-            seed, preset["steps"], preset["cfg"],
-            preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
-            0.85, node_id="8",
+        samp_id = _emit_sampler(
+            nf, model_ref=model_ref, pos_ref=pos_ref_boosted,
+            neg_ref=[neg_id, 0], latent_ref=[masked_id, 0],
+            seed=seed, steps=preset["steps"], cfg=preset["cfg"],
+            sampler=preset.get("sampler", "euler"),
+            scheduler=preset.get("scheduler", "normal"),
+            denoise=0.85,
+            node_id="8",
+            arch_key=arch_key, quality=quality, ays_node_base=685,
         )
 
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="9")
@@ -2867,7 +2953,7 @@ def build_faceid_img2img(target_filename, face_ref_filename, preset,
                           faceid_preset="FACEID PLUS V2",
                           lora_strength=0.6, weight=0.85, weight_v2=1.0,
                           denoise=None, steps=None, cfg=None,
-                          loras=None, enhance=True):
+                          loras=None, enhance=True, quality="balanced"):
     """IPAdapter FaceID img2img. Drop-in for _build_faceid_img2img().
 
     preset: dict with ckpt, arch, width, height, steps, cfg, denoise, sampler, scheduler.
@@ -2925,9 +3011,16 @@ def build_faceid_img2img(target_filename, face_ref_filename, preset,
             [sched_id, 0], [enc_id, 0], node_id="9",
         )
     else:
+        # Model chain: loader -> IPAdapter FaceID -> Flux boosters ->
+        # Quality boosters -> KSampler.
+        model_for_sampler, pos_boosted = _apply_flux1_boosters(
+            nf, [faceid_id, 0], [pos_id, 0], preset, node_base_id=655)
+        model_for_sampler = _apply_quality_boost(
+            nf, model_for_sampler, arch_key,
+            quality=quality, cfg=cfg, node_base_id=615)
         samp_id = nf.ksampler(
-            [faceid_id, 0],
-            [pos_id, 0], [neg_id, 0], [enc_id, 0],
+            model_for_sampler,
+            pos_boosted, [neg_id, 0], [enc_id, 0],
             seed, steps, cfg, sampler, scheduler, denoise, node_id="9",
         )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="11")
@@ -4201,7 +4294,7 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
                           guide_modes=None,
                           sam3_prompt=None, sam3_invert=False,
                           sam3_confidence=0.6, sam3_expand=4, sam3_blur=4,
-                          enhance=True):
+                          enhance=True, quality="balanced"):
     """Style transfer via IPAdapter. Drop-in for _build_style_transfer().
 
     Pipeline: model stack → IPAdapterUnifiedLoader → IPAdapterAdvanced(style transfer)
@@ -4269,9 +4362,15 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
             [sched_id, 0], [enc_id, 0], node_id="9",
         )
     else:
+        # Model chain: loader -> IPAdapter -> Flux boosters -> Quality -> KSampler.
+        model_for_sampler, pos_boosted = _apply_flux1_boosters(
+            nf, [ipa_id, 0], [pos_id, 0], preset, node_base_id=660)
+        model_for_sampler = _apply_quality_boost(
+            nf, model_for_sampler, arch_key,
+            quality=quality, cfg=preset.get("cfg"), node_base_id=620)
         samp_id = nf.ksampler(
-            [ipa_id, 0],
-            [pos_id, 0], [neg_id, 0], [enc_id, 0],
+            model_for_sampler,
+            pos_boosted, [neg_id, 0], [enc_id, 0],
             seed, preset["steps"], preset["cfg"],
             preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
             denoise, node_id="9",
@@ -4320,7 +4419,7 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
 def build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_text,
                    seed, denoise, cfg, steps, scale_factor, orig_width, orig_height,
                    controlnet=None, controlnet_2=None, guide_modes=None,
-                   loras=None, enhance=True):
+                   loras=None, enhance=True, quality="balanced"):
     """SeedV2R: upscale + img2img. Drop-in for _build_seedv2r().
 
     For scale > 1x: upscale with model to target factor, then img2img.
@@ -4378,9 +4477,14 @@ def build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_t
             [sched_id, 0], [enc_id, 0], node_id="8",
         )
     else:
+        model_ref, pos_boosted = _apply_flux1_boosters(
+            nf, model_ref, [pos_id, 0], preset, node_base_id=665)
+        model_ref = _apply_quality_boost(
+            nf, model_ref, arch_key,
+            quality=quality, cfg=cfg, node_base_id=625)
         samp_id = nf.ksampler(
             model_ref,
-            [pos_id, 0], [neg_id, 0], [enc_id, 0],
+            pos_boosted, [neg_id, 0], [enc_id, 0],
             seed, steps, cfg,
             preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
             denoise, node_id="8",
