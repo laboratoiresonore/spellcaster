@@ -7033,22 +7033,65 @@ def _looks_like_blank_rembg(png_bytes: bytes) -> bool:
         opaque_ish = sum(hist[11:])  # pixels with alpha > 10
         return (opaque_ish / total) < 0.005
     except ImportError:
-        # Without PIL, parse the PNG IHDR to at least catch the
-        # "node returned a non-alpha image" case (color type 6 = RGBA,
-        # 4 = LA; anything else has no alpha channel, which rembg /
-        # BiRefNet must emit if it worked). PNG signature is 8 bytes,
-        # then a 4-byte IHDR length, "IHDR", 13-byte IHDR data:
-        #   width (4) + height (4) + bit_depth (1) + color_type (1) + ...
+        # PIL isn't always present (GIMP 3.2's bundled Python lacks
+        # it). When absent, do a pure-Python alpha sampling of the
+        # PNG. Only supports 8-bit RGBA / LA with filter type 0 on
+        # every row \u2014 the shape rembg and BiRefNet emit. Real-
+        # world PNGs with other filters fall through to fail-open.
         try:
             if len(png_bytes) < 29 or png_bytes[:8] != b"\x89PNG\r\n\x1a\n":
                 return True
-            color_type = png_bytes[25]
-            if color_type not in (4, 6):
+            # Parse IHDR.
+            import struct as _struct
+            ihdr_len = _struct.unpack(">I", png_bytes[8:12])[0]
+            if png_bytes[12:16] != b"IHDR" or ihdr_len != 13:
+                return False
+            w, h, bit_depth, color_type = _struct.unpack(
+                ">IIBB", png_bytes[16:26])
+            if bit_depth != 8 or color_type not in (4, 6):
+                return True if color_type not in (4, 6) else False
+            channels = 4 if color_type == 6 else 2
+            alpha_offset = 3 if color_type == 6 else 1
+            # Walk chunks, collect IDATs.
+            import zlib as _zlib
+            idat = bytearray()
+            pos = 8 + 4 + 4 + ihdr_len + 4  # sig + len + type + data + crc
+            while pos + 12 <= len(png_bytes):
+                clen = _struct.unpack(">I", png_bytes[pos:pos+4])[0]
+                ctype = png_bytes[pos+4:pos+8]
+                if ctype == b"IDAT":
+                    idat += png_bytes[pos+8:pos+8+clen]
+                elif ctype == b"IEND":
+                    break
+                pos += 8 + clen + 4
+            try:
+                raw = _zlib.decompress(bytes(idat))
+            except Exception:
+                return False
+            # Each scanline: 1 filter byte + w*channels pixel bytes.
+            stride = 1 + w * channels
+            if len(raw) < stride * h:
+                return False
+            # Check every row's filter is 0 (None). If any row uses
+            # another filter, give up and fail-open.
+            for y in range(h):
+                if raw[y * stride] != 0:
+                    return False
+            # Sample alpha bytes across the image.
+            non_blank = 0
+            total = 0
+            step_y = max(1, h // 32)
+            step_x = max(1, w // 32)
+            for y in range(0, h, step_y):
+                row_off = y * stride + 1
+                for x in range(0, w, step_x):
+                    a = raw[row_off + x * channels + alpha_offset]
+                    total += 1
+                    if a > 10:
+                        non_blank += 1
+            if not total:
                 return True
-            # Deeper analysis would need zlib-decoding; we skip that
-            # and fail-open here so the rare "RGBA but mostly empty"
-            # case doesn't gratuitously retry on PIL-less installs.
-            return False
+            return (non_blank / total) < 0.005
         except Exception:
             return False
     except Exception:

@@ -96,6 +96,7 @@ tests/*
 !tests/test_model_coverage.py
 !tests/test_cn_compat.py
 !tests/test_auto_updater.py
+!tests/gimp_batch.py
 audit_*.py
 
 # Spell icons (user-generated during install, not source)

@@ -1,6 +1,6 @@
 # Spellcaster E2E Audit
 
-_Ran at_: 2026-04-20 15:40:00
+_Ran at_: 2026-04-20 16:21:08
 _Totals_: **66** pass · **0** fail · **0** warn · **0** skip
 
 ## Event schema
@@ -36,11 +36,11 @@ _Totals_: **66** pass · **0** fail · **0** warn · **0** skip
 |---|---|---|---|
 | PASS | spellcaster_core | 40/485 referenced (8%) | 0 |
 | PASS | comfyui_pack | 40/495 referenced (8%) | 0 |
-| PASS | gimp_plugin | 41/571 referenced (7%) | 0 |
+| PASS | gimp_plugin | 41/572 referenced (7%) | 0 |
 | PASS | resolve_shared | 1/42 referenced (2%) | 0 |
 | PASS | resolve_bridge | 1/16 referenced (6%) | 0 |
 | PASS | guild_tavern | 1/28 referenced (4%) | 0 |
-| PASS | TOTAL across all surfaces | 124/1637 public fns referenced (8%) | 0 |
+| PASS | TOTAL across all surfaces | 124/1638 public fns referenced (8%) | 0 |
 
 ## Upload cache & privacy
 
@@ -69,7 +69,7 @@ _Totals_: **66** pass · **0** fail · **0** warn · **0** skip
 | PASS | uniform: all-white L |  | 0 |
 | PASS | uniform: mixed L |  | 0 |
 | PASS | uniform: empty |  | 0 |
-| PASS | section complete |  | 2059 |
+| PASS | section complete |  | 2506 |
 
 ## IC-Light normal-map routing
 
@@ -81,7 +81,7 @@ _Totals_: **66** pass · **0** fail · **0** warn · **0** skip
 | PASS | CN model is normalbae (surface-aware) | cn_names=['control_v11p_sd15_normalbae.pth'] | 0 |
 | PASS | normal map loaded as image (not latent) |  | 0 |
 | PASS | no-normal path does NOT include ControlNet | classes=['CLIPTextEncode', 'CheckpointLoaderSimple', 'ICLightConditioning', 'KSampler', 'LoadAndApplyICLightUnet', 'LoadImage', 'SaveImage', 'VAEDecode', 'VAEEncode'] | 0 |
-| PASS | section complete |  | 5 |
+| PASS | section complete |  | 4 |
 
 ## Plugin surface (AST)
 
@@ -97,4 +97,4 @@ _Totals_: **66** pass · **0** fail · **0** warn · **0** skip
 | PASS | _download_image results aren't stored as '*_path' |  | 0 |
 | PASS | upload-cache migration (cached=63, legacy=9) | 9 legacy idioms remain (budget 12; helper leaves are expected) | 0 |
 | PASS | sc_cache_* literals use content-hash suffix |  | 0 |
-| PASS | section complete |  | 6591 |
+| PASS | section complete |  | 8803 |
