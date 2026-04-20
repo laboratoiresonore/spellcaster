@@ -838,6 +838,16 @@ def install_wizard_guild(server_url: str, llm_url: str,
         nsfw_dir.mkdir(parents=True, exist_ok=True)
         token_path = nsfw_dir / ".github_token"
         token_path.write_text(nsfw_token, encoding="utf-8")
+        # Lock the token file to the owner. Without this it inherits
+        # the process umask (often 0o644) and any other user on the
+        # box can read the private-repo PAT.
+        try:
+            os.chmod(token_path, 0o600)
+        except OSError:
+            # Windows NTFS doesn't honor POSIX bits the same way; the
+            # ACL is already owner-restricted by default. Don't fail
+            # the install just because chmod is a no-op here.
+            pass
         log_ok(f"NSFW token written → {token_path}")
         log_info("Guild will auto-update from NSFW repo")
     elif nsfw_mode and not nsfw_token:

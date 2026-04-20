@@ -79,6 +79,12 @@ def _raw_url(rel_path: str) -> str:
     return f"https://raw.githubusercontent.com/{REPO}/{BRANCH}/{rel_path}"
 
 
+_MAX_FETCH_BYTES = 10 * 1024 * 1024  # 10 MB — any legit install.py /
+                                      # installer_gui.py / manifest.json
+                                      # is well under this. The largest
+                                      # current file is ~300 KB.
+
+
 def _fetch_one(rel_path: str, dest: Path) -> None:
     """Download one file to dest. Raises on any failure."""
     url = _raw_url(rel_path)
@@ -89,10 +95,17 @@ def _fetch_one(rel_path: str, dest: Path) -> None:
     # the urlopen call raises ssl.SSLError — we let it propagate so the
     # caller falls back to the baked installer instead of silently running
     # untrusted content.
+    # Bounded read: a hostile mirror (or compromised CDN) could
+    # otherwise stream forever, filling /tmp. 10 MB is an order of
+    # magnitude above any legitimate file we fetch.
     with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT) as resp:
-        blob = resp.read()
+        blob = resp.read(_MAX_FETCH_BYTES + 1)
     if not blob:
         raise IOError(f"empty response from {url}")
+    if len(blob) > _MAX_FETCH_BYTES:
+        raise IOError(
+            f"fetched {rel_path} exceeds {_MAX_FETCH_BYTES} bytes; "
+            "refusing to write (possible hostile mirror)")
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(blob)
 
