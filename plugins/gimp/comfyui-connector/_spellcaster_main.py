@@ -13826,18 +13826,20 @@ class Spellcaster(Gimp.PlugIn):
         # ── 3D submenu — tools that actually surface a normal-map
         # selector in their dialog AND consume it at build time. This
         # list used to include style-transfer, colorize,
-        # detail-hallucinate, and seedv2r — but those dialogs never
-        # wired the picker, making the 3D menu a dead promise.
-        # Shrunk to 6 entries that genuinely benefit: the generator
-        # itself, IC-Light (relighting is the strongest 3D case), and
-        # the four core img-gen dialogs (img2img / txt2img / inpaint /
-        # outpaint — all share _collect_normal_map_from_dialog to
-        # override their ControlNet selection with Normal Map mode).
+        # detail-hallucinate, seedv2r, and txt2img — but those dialogs
+        # either never wired the picker or the canonical builder lacks
+        # ControlNet plumbing (build_txt2img goes from empty-latent to
+        # sampler with no CN injection point, unlike build_img2img /
+        # build_inpaint / build_outpaint). Shrunk to 5 entries that
+        # genuinely benefit: the generator itself, IC-Light
+        # (relighting is the strongest 3D case), and the three
+        # CN-enabled img-gen dialogs that share
+        # _collect_normal_map_from_dialog to override their ControlNet
+        # selection with Normal Map mode.
         _3d_tools = {
             "spellcaster-normal-map",
             "spellcaster-iclight",
             "spellcaster-img2img",
-            "spellcaster-txt2img",
             "spellcaster-inpaint",
             "spellcaster-outpaint",
         }
@@ -13884,6 +13886,11 @@ class Spellcaster(Gimp.PlugIn):
             dlg = PresetDialog("Spellcaster — Image to Image", mode="img2img")
             dlg.w_spin.set_value(image.get_width())
             dlg.h_spin.set_value(image.get_height())
+            # 3D Normal Map picker — injected onto the shared PresetDialog
+            # so the img2img / txt2img / inpaint / outpaint variants all
+            # get the same opt-in 3D-aware override without duplicating
+            # the PresetDialog class. See _collect_normal_map_from_dialog.
+            _add_normal_map_selector(dlg, dlg.get_content_area(), image)
             last = _SESSION.get("img2img")
             if last:
                 last_no_dims = {k: v for k, v in last.items() if k not in ("width", "height")}
@@ -13892,9 +13899,18 @@ class Spellcaster(Gimp.PlugIn):
                 dlg.destroy()
                 return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
             v = dlg.get_values()
+            # Resolve the normal map BEFORE destroying the dialog — the
+            # export reads GIMP layers in-process and we need the dialog
+            # widgets for the checkbox / combo state.
+            _nm_filename = _collect_normal_map_from_dialog(dlg, image, v["server"])
             _SESSION["img2img"] = dlg._collect_session()
             _save_session()
             dlg.destroy()
+            # Apply the normal-map override to the ControlNet dict so
+            # the CN slot uses a LoadImage(nm_filename) instead of the
+            # primary canvas (or any preprocessor the user had picked).
+            v["controlnet"] = _maybe_override_cn_with_normal_map(
+                v.get("controlnet"), _nm_filename)
         runs = v.get("runs", 1)
         try:
             srv = v["server"]
@@ -14003,6 +14019,8 @@ class Spellcaster(Gimp.PlugIn):
                 import traceback; traceback.print_exc()
                 return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
             dlg.w_spin.set_value(image.get_width()); dlg.h_spin.set_value(image.get_height())
+            # 3D Normal Map picker — see _run_img2img for rationale.
+            _add_normal_map_selector(dlg, dlg.get_content_area(), image)
             last = _SESSION.get("inpaint")
             if last:
                 last_no_dims = {k: v for k, v in last.items() if k not in ("width", "height")}
@@ -14011,9 +14029,12 @@ class Spellcaster(Gimp.PlugIn):
                 dlg.destroy()
                 return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
             v = dlg.get_values()
+            _nm_filename = _collect_normal_map_from_dialog(dlg, image, v["server"])
             _SESSION["inpaint"] = dlg._collect_session()
             _save_session()
             dlg.destroy()
+            v["controlnet"] = _maybe_override_cn_with_normal_map(
+                v.get("controlnet"), _nm_filename)
         runs = v.get("runs", 1)
         try:
             srv = v["server"]
@@ -21401,6 +21422,10 @@ class Spellcaster(Gimp.PlugIn):
         cn_frame.add(cn_box)
         cn_frame.show_all()
         dlg.get_content_area().pack_start(cn_frame, False, False, 0)
+        # 3D Normal Map picker — placed AFTER the ControlNet frame so
+        # users see it as a higher-priority override. See
+        # _collect_normal_map_from_dialog.
+        _add_normal_map_selector(dlg, dlg.get_content_area(), image)
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
@@ -21416,7 +21441,11 @@ class Spellcaster(Gimp.PlugIn):
         out_cn1_mode = out_cn_combo.get_active_id() if out_cn_combo else "Off"
         out_cn1 = {"mode": out_cn1_mode, "strength": out_cn_strength.get_value(),
                     "start_percent": 0.0, "end_percent": 1.0} if out_cn1_mode != "Off" else None
+        # Resolve normal-map state before destroying the dialog (reads
+        # widget state + exports GIMP layer). Overrides CN1 when set.
+        _nm_filename = _collect_normal_map_from_dialog(dlg, image, v["server"])
         dlg.destroy()
+        out_cn1 = _maybe_override_cn_with_normal_map(out_cn1, _nm_filename)
         runs = v.get("runs", 1)
         try:
             srv = v["server"]

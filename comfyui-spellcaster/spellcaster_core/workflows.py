@@ -2916,6 +2916,7 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
       - Masked area sometimes shows "corruption" at edges; lower cfg or increase blur
       - Denoise < 1.0 in masked area may not fully regenerate detail
     """
+    _assert_method_for_preset(preset, "inpaint")
     nf = NodeFactory()
 
     # Model loading
@@ -3126,6 +3127,7 @@ def build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
       - Large padding (> 512 pixels per side) may cause memory issues
       - Sky/background extensions often work better than complex foreground
     """
+    _assert_method_for_preset(preset, "outpaint")
     nf = NodeFactory()
     arch_key = preset.get("arch", "sdxl")
     is_klein = arch_key == "flux2klein"
@@ -3982,6 +3984,7 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
       - Loop requires matching start/end semantically
       - Motion masks must match frame dimensions exactly
     """
+    _assert_method_for_preset(preset, "video_gen")
     nf = NodeFactory()
     steps = steps or preset["steps"]
     cfg = cfg if cfg is not None else preset["cfg"]
@@ -4660,6 +4663,7 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
     When sam3_prompt is set, the transform is composited back onto the TARGET
     image using a SAM3 mask so only the described region changes.
     """
+    _assert_method_for_preset(preset, "style_transfer")
     nf = NodeFactory()
     arch_key = preset.get("arch", "sdxl")
 
@@ -4784,6 +4788,7 @@ def build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_t
     For scale > 1x: upscale with model to target factor, then img2img.
     For 1x: straight img2img on original.
     """
+    _assert_method_for_preset(preset, "seedv2r")
     nf = NodeFactory()
     arch_key = preset.get("arch", "sdxl")
 
@@ -7675,6 +7680,7 @@ def build_ltx_video(preset, prompt_text, seed,
     Returns:
         dict: ComfyUI workflow
     """
+    _assert_method_for_preset(preset, "video_gen")
     nf = NodeFactory()
 
     # Resolve parameters from preset
