@@ -4775,10 +4775,25 @@ def _spellcaster_lora_knowledge_get(name: str, use_network: bool = True) -> tupl
     return (200, {"knowledge": k.to_dict()})
 
 
+def _spellcaster_lora_scorer_probe() -> tuple[int, dict]:
+    """GET /api/spellcaster/lora/scorer/probe — check whether the
+    local Ollama has the multimodal scorer model installed. The
+    Calibration UI uses the result to gray out "auto-confirm" when
+    scoring can't run."""
+    try:
+        from spellcaster_core.lora_scorer import probe_available
+    except Exception as e:
+        return (500, {"error": f"scorer module unavailable: {e}"})
+    return (200, probe_available())
+
+
 def _spellcaster_lora_calibrate_auto_start(
     targets: list = None,
     subset: str = "",
     use_network: bool = True,
+    score_with_llm: bool = False,
+    ollama_url: str = "",
+    scorer_model: str = "",
 ) -> tuple[int, dict]:
     """POST /api/spellcaster/lora/calibrate/auto/start — render ONE
     auto-recipe sample per target LoRA.
@@ -4851,9 +4866,13 @@ def _spellcaster_lora_calibrate_auto_start(
         lora_path_resolver=_resolve_lora_abs_path,
         user_override_resolver=lambda n: _LORA_REGISTRY.get(n),
         use_network=bool(use_network),
+        score_with_llm=bool(score_with_llm),
+        ollama_url=(ollama_url or None),
+        scorer_model=(scorer_model or None),
     )
     return (200, {"ok": True, "job_id": state.job_id,
-                  "total": state.total, "status": state.status})
+                  "total": state.total, "status": state.status,
+                  "score_with_llm": bool(score_with_llm)})
 
 
 def _spellcaster_lora_calibrate_auto_status(job_id: str) -> tuple[int, dict]:
@@ -7406,57 +7425,14 @@ def _poll_animated_avatars(comfy_url):
                             _privacy_cleanup(comfy_url, wf, {"urls": []})
                         except Exception:
                             pass
-                    # Auto-retry LTX once with a fresh seed. Canonical path
-                    # is LTX-only now (see docs/VIDEO_PIPELINES_CANON.md
-                    # §16.3 + _queue_animated_avatar); we no longer fall
-                    # back to WAN because WAN produced pure-black output
-                    # on the user's box.
-                    if not entry.get("_retried"):
-                        entry["_retried"] = True
-                        ltx_preset = _get_ltx_preset(comfy_url)
-                        build_ltx = getattr(_workflows_v2, 'build_ltx_video', None) if _workflows_v2 else None
-                        if ltx_preset and build_ltx:
-                            try:
-                                img_fn = entry.get("_image_filename", "")
-                                try:
-                                    from spellcaster_core import video_presets as _vp
-                                    _ltx_mode = _vp.ltx_mode_kwargs("i2v")
-                                except ImportError:
-                                    _ltx_mode = {"distilled": True,
-                                                  "two_stage": False}
-                                ltx_wf = build_ltx(
-                                    preset=ltx_preset,
-                                    prompt_text=entry.get("_prompt_text",
-                                        "subtle magical animation, living portrait"),
-                                    seed=random.randint(1, 1000000000),
-                                    width=512, height=512,
-                                    num_frames=25, fps=25,
-                                    image_filename=img_fn,
-                                    i2v_strength=0.85,
-                                    pingpong=True,
-                                    **_ltx_mode,
-                                )
-                                url_q = f"{comfy_url}/prompt"
-                                body = json.dumps({"prompt": ltx_wf}).encode("utf-8")
-                                req2 = urllib.request.Request(
-                                    url_q, data=body,
-                                    headers={"Content-Type": "application/json"})
-                                with urllib.request.urlopen(req2, timeout=10) as resp2:
-                                    d2 = json.loads(resp2.read().decode("utf-8"))
-                                    new_pid = d2.get("prompt_id")
-                                    if new_pid:
-                                        entry["prompt_id"] = new_pid
-                                        entry["status"] = "queued"
-                                        entry["engine"] = "ltx"
-                                        entry["error"] = None
-                                        entry["output_nid"] = _find_output_node(ltx_wf)
-                                        entry["_workflow"] = ltx_wf
-                                        _save_anim_queue()
-                                        print(f"  [Guild] Re-queued {char_id} with LTX "
-                                              f"(prompt_id={new_pid})")
-                                        continue
-                            except Exception as e2:
-                                print(f"  [Guild] LTX re-queue also failed: {e2}")
+                    # Canonical retry path lives in _retry_anim_as_ltx.
+                    # If it succeeds the entry is back in "queued" state
+                    # with a fresh LTX prompt_id; the next poll picks up
+                    # the new completion. If it fails (no LTX preset, no
+                    # build_ltx, network error) we fall through to mark
+                    # the entry as error so it stops being polled.
+                    if _retry_anim_as_ltx(entry, char_id, comfy_url, "wan_error"):
+                        continue
                     entry["status"] = "error"
                     entry["error"] = err
                     _save_anim_queue()
@@ -7530,6 +7506,42 @@ def _poll_animated_avatars(comfy_url):
                             "engine": entry.get("engine", ""),
                         },
                     )
+                    # WAN's 4-step distillation occasionally completes
+                    # cleanly (no ComfyUI error) but emits a pure-black
+                    # video — see CLAUDE.md §16.2. The sidebar then
+                    # paints a black tile because the .avatar-animated
+                    # video overlays the still. Sample one frame; if
+                    # mean luminance is essentially zero, treat as a
+                    # silent failure and route through the same LTX
+                    # retry path the explicit error branch uses.
+                    engine = entry.get("engine", "")
+                    if (engine in ("wan", "wan22")
+                            and not entry.get("_retried")
+                            and _video_is_black(cached_url)):
+                        print(f"  [Guild] Animated avatar BLACK frame for "
+                              f"{char_id} (engine={engine}) — retrying with LTX")
+                        if PRIVACY_CLEANUP:
+                            try:
+                                wf = entry.get("_workflow", {})
+                                _privacy_cleanup(comfy_url, wf,
+                                                  {"urls": [result_url]})
+                            except Exception:
+                                pass
+                        if _retry_anim_as_ltx(entry, char_id, comfy_url,
+                                              "black_video"):
+                            continue
+                        # LTX retry unavailable — fall through and
+                        # accept the black video so the entry stops
+                        # being polled. Sidebar render will skip the
+                        # animated overlay if we also clear the URL.
+                        _GENERATED_ASSETS.setdefault(char_id, {}).pop(
+                            "animated_url", None)
+                        entry["status"] = "error"
+                        entry["error"] = "Black video; LTX retry unavailable"
+                        entry["result_url"] = None
+                        _save_generated_assets()
+                        _save_anim_queue()
+                        continue
                     entry["status"] = "done"
                     entry["result_url"] = cached_url
                     _GENERATED_ASSETS.setdefault(char_id, {})["animated_url"] = cached_url
@@ -7620,6 +7632,160 @@ def _avatar_resolution(arch_key):
     w = max(512, (w // 16) * 16)
     h = max(512, (h // 16) * 16)
     return w, h
+
+
+def _video_is_black(video_path_or_url, threshold=6.0):
+    """Return True if a generated video's mid-frame is essentially black.
+
+    The WAN 2.2 14B I2V workflow with the LightX2V/Lightning 4-step
+    accel LoRAs (turbo) produces pure-black output on certain GPU /
+    driver combinations — see CLAUDE.md §16.2. The animation poll
+    used to accept any video that ComfyUI returned as success, even
+    when every frame was 0/255. This helper samples a single mid-
+    point frame via ffmpeg and computes mean luminance the same way
+    ``_image_is_underexposed`` does for stills.
+
+    ``video_path_or_url`` may be a /api/assets/<hash> URL or a local
+    file path. PIL + ffmpeg are both already used elsewhere in the
+    Guild — defensive: returns False if either is unavailable so the
+    poll path degrades to the legacy "trust ComfyUI" behaviour.
+    """
+    try:
+        from PIL import Image
+        import io as _io
+        import subprocess as _sp
+        import tempfile as _tf
+    except ImportError:
+        return False
+    # Resolve /api/assets/<hash> → on-disk path via the gallery so we
+    # don't need to round-trip bytes through the HTTP server.
+    local_path = None
+    try:
+        if "/api/assets/" in video_path_or_url and _ASSET_GALLERY is not None:
+            h = video_path_or_url.split("/api/assets/")[-1]
+            for sep in ("?", "&"):
+                if sep in h:
+                    h = h.split(sep)[0]
+            rec = _ASSET_GALLERY.get(h)
+            if rec is not None:
+                blob = _ASSET_GALLERY.bytes_of(h)
+                if blob:
+                    tf = _tf.NamedTemporaryFile(
+                        delete=False, suffix=f".{rec.ext or 'mp4'}")
+                    tf.write(blob)
+                    tf.close()
+                    local_path = tf.name
+        elif os.path.exists(video_path_or_url):
+            local_path = video_path_or_url
+    except Exception:
+        local_path = None
+    if not local_path:
+        return False
+    frame_path = local_path + ".midframe.jpg"
+    cleanup = [frame_path]
+    if local_path != video_path_or_url:
+        cleanup.append(local_path)  # only delete temp copies
+    try:
+        # -ss 50% via -vf select isn't reliable across ffmpeg builds;
+        # the simpler path is "decode N frames, snap one near the
+        # middle" which works on every build that's already shipping
+        # video to the Guild.
+        _sp.run(
+            ["ffmpeg", "-y", "-i", local_path,
+             "-vf", "select=eq(n\\,5)",
+             "-vframes", "1", "-q:v", "5", frame_path],
+            capture_output=True, timeout=15,
+        )
+        if not os.path.exists(frame_path) or os.path.getsize(frame_path) < 200:
+            # Fall back: grab the very first frame.
+            _sp.run(
+                ["ffmpeg", "-y", "-i", local_path,
+                 "-vframes", "1", "-q:v", "5", frame_path],
+                capture_output=True, timeout=15,
+            )
+        if not os.path.exists(frame_path):
+            return False
+        img = Image.open(frame_path).convert("L")
+        img.thumbnail((128, 128))
+        pixels = list(img.getdata())
+        if not pixels:
+            return False
+        mean = sum(pixels) / len(pixels)
+        return mean < threshold
+    except Exception as e:
+        print(f"  [Quality] video black-frame check failed: {e}")
+        return False
+    finally:
+        for p in cleanup:
+            try: os.unlink(p)
+            except Exception: pass
+
+
+def _retry_anim_as_ltx(entry, char_id, comfy_url, reason):
+    """Mutate ``entry`` to re-queue this animation on the LTX engine.
+
+    Single source for the auto-retry path so both the ComfyUI-error
+    branch AND the new black-video QC branch fire the same request.
+    Returns True on successful re-queue (entry now has a fresh
+    prompt_id and status=queued); False otherwise. ``entry["_retried"]``
+    is set first so we never recurse on the LTX attempt itself.
+
+    ``reason`` is logged for diagnostics — "wan_error", "black_video",
+    "missing_output", etc.
+    """
+    if entry.get("_retried"):
+        return False
+    entry["_retried"] = True
+    entry["_retry_reason"] = reason
+
+    ltx_preset = _get_ltx_preset(comfy_url)
+    build_ltx = (getattr(_workflows_v2, "build_ltx_video", None)
+                 if _workflows_v2 else None)
+    if not (ltx_preset and build_ltx):
+        return False
+
+    img_fn = entry.get("_image_filename", "")
+    try:
+        from spellcaster_core import video_presets as _vp
+        ltx_mode = _vp.ltx_mode_kwargs("i2v")
+    except ImportError:
+        ltx_mode = {"distilled": True, "two_stage": False}
+
+    try:
+        ltx_wf = build_ltx(
+            preset=ltx_preset,
+            prompt_text=entry.get("_prompt_text",
+                "subtle magical animation, living portrait"),
+            seed=random.randint(1, 1000000000),
+            width=512, height=512,
+            num_frames=25, fps=25,
+            image_filename=img_fn,
+            i2v_strength=0.85,
+            pingpong=True,
+            **ltx_mode,
+        )
+        body = json.dumps({"prompt": ltx_wf}).encode("utf-8")
+        req = urllib.request.Request(
+            f"{comfy_url}/prompt", data=body,
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            d = json.loads(resp.read().decode("utf-8"))
+            new_pid = d.get("prompt_id")
+        if not new_pid:
+            return False
+        entry["prompt_id"] = new_pid
+        entry["status"] = "queued"
+        entry["engine"] = "ltx"
+        entry["error"] = None
+        entry["output_nid"] = _find_output_node(ltx_wf)
+        entry["_workflow"] = ltx_wf
+        _save_anim_queue()
+        print(f"  [Guild] Re-queued {char_id} with LTX "
+              f"(reason={reason}, prompt_id={new_pid})")
+        return True
+    except Exception as e:
+        print(f"  [Guild] LTX re-queue failed for {char_id}: {e}")
+        return False
 
 
 def _image_is_underexposed(image_url, threshold=48.0):
@@ -8942,6 +9108,8 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(*_spellcaster_lora_knowledge_get(
                 params.get('name', [''])[0],
                 use_network=(params.get('network', ['1'])[0] != '0')))
+        if self.path == '/api/spellcaster/lora/scorer/probe':
+            return self.end_json(*_spellcaster_lora_scorer_probe())
         if self.path.startswith('/api/spellcaster/lora/suggest'):
             qs = urllib.parse.urlparse(self.path).query
             params = urllib.parse.parse_qs(qs)
