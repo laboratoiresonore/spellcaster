@@ -10695,15 +10695,19 @@ class GuildHandler(SimpleHTTPRequestHandler):
         elif self.path == '/api/video/quality-mode' and self.command == 'GET':
             return self.end_json(200, {"mode": _GUILD_VIDEO_MODE})
         elif self.path == '/api/video/quality-mode' and self.command == 'POST':
-            global _GUILD_VIDEO_MODE  # noqa: PLW0603
+            # `global` has to live in the first line of the function to
+            # be valid once the name is read elsewhere in do_GET (the
+            # sibling GET branch above reads _GUILD_VIDEO_MODE, which
+            # forces Python to bind it at compile-time). We instead
+            # assign via globals() so no global statement is needed.
             m = (data or {}).get("mode", "")
             if not _mode_is_valid(m):
                 return self.end_json(400, {
                     "error": f"invalid mode {m!r}; "
                              "expected turbo|standard|quality"})
-            _GUILD_VIDEO_MODE = m
+            globals()["_GUILD_VIDEO_MODE"] = m
             print(f"  [Guild] video quality mode → {m}")
-            return self.end_json(200, {"mode": _GUILD_VIDEO_MODE})
+            return self.end_json(200, {"mode": m})
 
         # ── Video API GET endpoints ──
         elif self.path == '/api/video/shots' and self.command == 'GET':
