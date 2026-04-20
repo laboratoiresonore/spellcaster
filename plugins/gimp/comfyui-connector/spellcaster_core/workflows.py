@@ -4219,13 +4219,28 @@ def _wan22_samplers(nf, preset, pos_ref, neg_ref, latent_ref,
 def build_wan22_t2v(preset, prompt_text, negative_text, seed, *,
                      width=832, height=480, length=81, fps=16,
                      turbo=False, filename_prefix="spellcaster_wan22_t2v"):
-    """Wan 2.2 text-to-video. No start image — Wan22ImageToVideoLatent
-    synthesises a properly-shaped 48-channel noise latent from the
-    Wan 2.2 VAE.
+    """Wan 2.2 text-to-video — the T2V sibling of `build_wan_video`.
+
+    Canonical position (CLAUDE.md §16.2):
+      - The Spellcaster canon is I2V-only by default; T2V is included
+        because the scaffold dispatcher routes through here when the
+        user's picked preset is T2V (`wan22_t2v` in
+        `scaffold/video_workflow_dispatch.py`).
+      - T2V uses a DIFFERENT conditioning path (`Wan22ImageToVideoLatent`)
+        that synthesises a properly-shaped 48-channel noise latent
+        directly from the Wan 2.2 VAE — sidestepping the 36/64ch
+        patch_embedding mismatch that crashes the I2V path when a T2V
+        model is fed to `WanImageToVideo`.
+      - Callers MUST pair `turbo=…` with
+        `**video_presets.wan_turbo_kwargs(turbo)` (rule #2), same as
+        `build_wan_video`.
+
+    No start image — T2V synthesises motion from the text prompt alone.
 
     preset: dict with high_model, low_model, clip, vae, plus sampler
-    tuning (steps, cfg, shift, second_step). Matches the shape used by
-    the resolver in scaffold/video_workflow_dispatch.py.
+    tuning (steps, cfg, shift, second_step). Matches the shape returned
+    by `video_presets.detect_wan_preset` and the shape used by the
+    resolver in `scaffold/video_workflow_dispatch.py::resolve_wan_preset`.
     """
     nf = NodeFactory()
     high_ref, low_ref, clip_ref, vae_ref = _wan22_loaders(nf, preset)
