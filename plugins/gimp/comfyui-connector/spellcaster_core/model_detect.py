@@ -292,6 +292,10 @@ CN_FORBIDDEN_ARCHES = frozenset({"flux2klein", "flux_kontext", "chroma"})
 def cn_is_compatible(cn_models, target_arch):
     """Whether a ControlNet mode is selectable for ``target_arch``.
 
+    Canonical compatibility filter — see CLAUDE.md §23 for UI
+    integration points and test coverage (tests/test_cn_compat.py
+    validates 14 modes × 20 arches = 280 pairs).
+
     Pair to ``lora_is_compatible`` — the canonical filter every UI
     picker (GIMP / Darktable / Guild) consults before populating its
     ControlNet combobox so the user can't pick a CN that will silently

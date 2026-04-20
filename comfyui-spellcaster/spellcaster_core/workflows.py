@@ -1149,6 +1149,13 @@ def _apply_quality_boost(nf, model_ref, arch_key, *,
                           node_base_id=700):
     """Apply architecture-appropriate quality boosters to a MODEL ref.
 
+    Canonical quality cascade — see CLAUDE.md §22 for the full per-arch
+    matrix and ordering invariant (CFGZeroStar -> PAG/RescaleCFG ->
+    FreeU -> SLG). This is where ``quality`` in ("balanced", "max")
+    materialises into actual ComfyUI nodes. Pair with
+    ``_apply_speedup`` (fast_mode / compile_mode / TeaCache side) and
+    ``_emit_sampler`` (Detail Daemon sampler wrap on ZIT max).
+
     Called by builders RIGHT BEFORE the guider/sampler consumes the model,
     AFTER any architecture-specific patching (LoRA, enhancer, IPAdapter,
     ModelSamplingFlux). Returns the updated ref (or the original when
@@ -1229,7 +1236,12 @@ def _apply_speedup(nf, model_ref, arch_key, *, fast_mode=False,
                     compile_mode=False, node_id=None,
                     node_base_id=None):
     """Stack speedups on the model when fast_mode/compile_mode is set
-    AND the arch benefits. Three independent layers, applied in order:
+    AND the arch benefits. See CLAUDE.md §22 for the canonical
+    per-arch cascade. Pair with ``_apply_quality_boost`` — they run
+    in sequence (speedup AFTER quality model-patches so Sage/Compile
+    wrap the already-boosted model).
+
+    Three independent layers, applied in order:
 
       1. SageAttention swap (fast_mode + transformer-attention arches).
          Global int8/fp8 attention kernel via KJNodes'
