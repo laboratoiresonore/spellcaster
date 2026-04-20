@@ -72,10 +72,10 @@
      ───────────────────────────────────────────────────────── -->
 <table width="100%">
 <tr>
-<td width="52%" align="center" valign="middle">
+<td width="52%" align="center" valign="top">
   <a href="DEEP_DIVE.md#all-69-tools"><img src="assets/sam3demo.png" alt="AI Select with SAM3 — earring mask" width="100%"/></a>
 </td>
-<td width="48%" valign="middle">
+<td width="48%" valign="top">
   <h3>⚡ Type what to select</h3>
   <p>Open <strong>AI Select by Description</strong>. Type <code>earring</code>, <code>hair</code>, or <code>left shoe</code>.</p>
   <p><strong>SAM 3 gives you a perfect mask — in one second.</strong> No lasso. No quick-mask. No endless zooming. The thing graphics people said saves a day of work.</p>
@@ -89,13 +89,13 @@
      ───────────────────────────────────────────────────────── -->
 <table width="100%">
 <tr>
-<td width="48%" valign="middle">
+<td width="48%" valign="top">
   <h3>🔮 Resurrect a blurry photo</h3>
   <p><strong>SUPIR state-of-the-art restoration.</strong> One click.</p>
   <p>Damaged, compressed, low-res — it reconstructs faces, skin, texture. Works on grandma's scanned photos and on the JPEGs you downloaded in 2006.</p>
   <p><sub>🖌️ <strong>GIMP</strong> · SUPIR Upscale &nbsp;·&nbsp; 📷 <strong>Darktable</strong> · batch across shoots</sub></p>
 </td>
-<td width="52%" align="center" valign="middle">
+<td width="52%" align="center" valign="top">
   <a href="DEEP_DIVE.md#all-69-tools"><img src="assets/showcase_supir.png" alt="SUPIR Restoration — before / after" width="100%"/></a>
 </td>
 </tr>
@@ -106,10 +106,10 @@
      ───────────────────────────────────────────────────────── -->
 <table width="100%">
 <tr>
-<td width="52%" align="center" valign="middle">
+<td width="52%" align="center" valign="top">
   <a href="DEEP_DIVE.md#all-69-tools"><img src="assets/showcase_wan_breathing.gif" alt="Wan 2.2 Image-to-Video — breathing portrait" width="100%"/></a>
 </td>
-<td width="48%" valign="middle">
+<td width="48%" valign="top">
   <h3>🎬 Animate a still</h3>
   <p><strong>Wan 2.2 Image-to-Video.</strong> Pick a motion preset — zoom, turntable, parallax, 26 of them. Click.</p>
   <p>81 frames, 720p, 2–5 seconds. The image breathes. Render it overnight, post it tomorrow.</p>
