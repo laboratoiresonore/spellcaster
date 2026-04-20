@@ -83,6 +83,14 @@ class Bridge:
         self._hb_thread: threading.Thread | None = None
         self._bus_stop = threading.Event()
         self._bus_thread: threading.Thread | None = None
+        # Last bus ``seq`` the bridge has successfully processed.
+        # Passed as ``since_seq`` on SSE reconnect so any events that
+        # fired during the disconnect window get replayed (up to the
+        # Guild's 1000-event ring). A gap reported in the SSE
+        # preamble's `: gap=N` comment flags dropped events; the
+        # bridge logs it so operators know to pull a fresh snapshot
+        # of the shotboard rather than rely on replay.
+        self._bus_last_seq = 0
         # Resolved on first heartbeat via GET {guild}/api/config; Resolve
         # doesn't configure this directly (it's Guild-centric by design).
         self._comfyui_url: str | None = None
@@ -229,8 +237,19 @@ class Bridge:
         self._bus_thread.start()
 
     def _consume_bus_events(self):
-        """Open a single SSE connection + process events until it closes."""
-        params = urllib.parse.urlencode({"kinds": "resolve."})
+        """Open a single SSE connection + process events until it closes.
+
+        Sends ``since_seq`` on reconnect so any events published during
+        the disconnect window get replayed. The Guild's SSE preamble
+        carries a ``: gap=N`` comment when the ring rolled past our
+        cursor — if we see a non-zero gap we log it so the operator
+        knows to pull a fresh shotboard snapshot via GET
+        /api/video/shots instead of relying on replay.
+        """
+        qs = {"kinds": "resolve."}
+        if self._bus_last_seq:
+            qs["since_seq"] = str(self._bus_last_seq)
+        params = urllib.parse.urlencode(qs)
         url = f"{self.guild.base_url}/api/events/stream?{params}"
         req = urllib.request.Request(
             url, headers={"Accept": "text/event-stream"})
@@ -253,10 +272,35 @@ class Bridge:
                         except Exception:
                             parsed = {}
                         self._handle_bus_event(event_name, parsed)
+                        # Track the last seq so reconnect can resume.
+                        # parsed.get("seq") is always present on
+                        # Guild-side publishes since the Pass-2
+                        # event_bus refactor; defensive against
+                        # older Guild versions that might not emit it.
+                        try:
+                            s = int(parsed.get("seq") or 0)
+                            if s > self._bus_last_seq:
+                                self._bus_last_seq = s
+                        except (TypeError, ValueError):
+                            pass
                     event_name = "message"
                     data_buf = []
                     continue
                 if line.startswith(":"):
+                    # Preamble comment. ``gap=N`` flags replay-buffer
+                    # overflow — if N>0 we missed events and can't
+                    # trust SSE replay. Log and keep going; a concerned
+                    # operator will pull /api/video/shots for a fresh
+                    # snapshot.
+                    if "gap=" in line:
+                        try:
+                            n = int(line.split("gap=", 1)[1].split()[0])
+                            if n > 0:
+                                print(f"[bridge] SSE replay gap: {n} event(s) "
+                                      f"dropped between reconnects; pull a "
+                                      f"fresh shotboard snapshot to catch up")
+                        except Exception:
+                            pass
                     continue
                 if line.startswith("event:"):
                     event_name = line[6:].strip()
