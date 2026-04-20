@@ -6693,11 +6693,95 @@ def _get_ltx_preset(comfy_url):
 
 
 
-def _upload_bytes_to_comfyui(data: bytes, filename: str, comfy_url: str) -> str:
+def _validate_and_normalize_image(data: bytes, filename: str) -> tuple[bytes, str]:
+    """Validate that ``data`` decodes as an image and normalize it to PNG.
+
+    Why this exists
+    ---------------
+    Every ComfyUI workflow that starts with LoadImage — and every
+    WAN / LTX / Klein img2img / edit pipeline in the app does —
+    crashes mid-run when the input bytes aren't a valid image. The
+    upload endpoint (``/upload/image``) silently accepts anything and
+    just writes to disk; the failure only surfaces later when
+    LoadImage tries to decode with PIL and raises
+    ``UnidentifiedImageError``. On WAN that's costly: the workflow
+    has already loaded the HIGH + LOW 14B models (~40s) and
+    allocated VRAM.
+
+    This helper decodes with PIL up front and re-encodes as a clean
+    PNG. Any format PIL understands — JPEG, WebP, HEIC (when
+    pillow-heif is installed), TIFF, BMP, GIF — becomes a PNG that
+    every ComfyUI LoadImage can open. If PIL can't decode, raises
+    ValueError with a specific message the caller can surface in the
+    UI without cryptic PIL tracebacks.
+
+    For video-engine inputs (WAN, LTX) PIL also drops the alpha
+    channel — WAN's VAE encoder handles RGBA but Kijai's GGUF loader
+    sometimes trips on it. Normalising to RGB is safer.
+
+    Returns
+    -------
+    (normalized_bytes, normalized_filename)
+        The new PNG bytes + a .png-suffixed filename. Callers should
+        use the returned filename for subsequent ComfyUI LoadImage
+        references.
+
+    Bypass
+    ------
+    Videos (.mp4, .webm) and animated GIFs pass through unchanged —
+    LoadImage handles them via its own path. The extension check
+    below is the gate.
+    """
+    ext = os.path.splitext(filename)[1].lower()
+    # Videos go through LoadVideo-style paths, not LoadImage — don't
+    # try to PIL-decode them.
+    if ext in ('.mp4', '.webm', '.mov', '.avi'):
+        return data, filename
+    try:
+        from PIL import Image
+        import io as _io
+    except ImportError:
+        # PIL missing — skip validation, let ComfyUI error upstream.
+        # Every Spellcaster surface installs Pillow so this branch
+        # only hits in unusual environments.
+        return data, filename
+    try:
+        img = Image.open(_io.BytesIO(data))
+        img.load()  # forces PIL to read the whole file (lazy by default)
+    except Exception as e:  # noqa: BLE001
+        raise ValueError(
+            f"Upload rejected: {filename!r} is not a valid image "
+            f"({type(e).__name__}: {e}). Supported: PNG, JPEG, WebP, "
+            "GIF, TIFF, BMP."
+        ) from e
+    # Convert to RGB PNG. If the original is animated (GIF/WebP), we
+    # take the first frame — WAN/LTX don't need the animation; they
+    # generate their own.
+    if img.mode not in ("RGB", "RGBA"):
+        img = img.convert("RGB")
+    buf = _io.BytesIO()
+    img.save(buf, format="PNG", optimize=False)
+    new_bytes = buf.getvalue()
+    base = os.path.splitext(filename)[0]
+    new_name = f"{base}.png"
+    return new_bytes, new_name
+
+
+def _upload_bytes_to_comfyui(data: bytes, filename: str, comfy_url: str,
+                              *, validate: bool = True) -> str:
     """POST raw bytes to ComfyUI's /upload/image endpoint (input folder).
 
     Returns the server-assigned filename (ComfyUI may rename on collision).
+
+    ``validate=True`` (default) routes the bytes through
+    ``_validate_and_normalize_image`` so every WAN / LTX / Klein
+    LoadImage downstream gets a clean PNG. Set ``validate=False``
+    only when the caller already knows the bytes are a video or an
+    intentionally non-image blob (rare — the cached-asset path, which
+    may be a video).
     """
+    if validate:
+        data, filename = _validate_and_normalize_image(data, filename)
     ext = os.path.splitext(filename)[1].lower()
     _mime_map = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
                  '.webp': 'image/webp', '.gif': 'image/gif',
