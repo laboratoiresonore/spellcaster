@@ -5289,6 +5289,172 @@ def _filter_loras_for_arch(all_loras, arch):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  Shared single-slot LoRA picker — inline dialogs
+# ═══════════════════════════════════════════════════════════════════════════
+# Five secondary dialogs (detail_hallucinate, seedv2r, style_transfer,
+# colorize, iclight) each need ONE optional LoRA slot. Before this
+# helper they hand-rolled near-identical code with three shared bugs:
+# synchronous fetch at construction, bare ``except Exception: pass``
+# swallowing server errors so users saw only ``(none)`` with zero
+# feedback, and no re-filter when the checkpoint model changed.
+# PresetDialog's multi-slot path already handles this correctly;
+# this helper gives inline dialogs the same async-fetch + error
+# label + model-change re-filter in one call.
+
+
+class _InlineLoraPicker:
+    """State + widgets for a single-slot async LoRA picker.
+
+    Created via :func:`_build_inline_lora_picker`. Exposes ``combo``,
+    ``strength_spin``, ``status_label``, ``fetch_btn``, plus:
+      - ``get_values()`` → ``(lora_name_or_None, strength)``
+      - ``set_active_lora(name)`` — restore session state; silently
+        no-ops if ``name`` isn't in the filtered list.
+
+    Caches the full LoRA list so model-change refilter is a pure UI
+    operation (no re-fetch).
+    """
+
+    def __init__(self, combo, strength_spin, status_label, fetch_btn,
+                 server_entry, arch_getter):
+        self.combo = combo
+        self.strength_spin = strength_spin
+        self.status_label = status_label
+        self.fetch_btn = fetch_btn
+        self._server_entry = server_entry
+        self._arch_getter = arch_getter
+        self._all_loras = []
+        self._filtered = []
+
+    def get_values(self):
+        name = self.combo.get_active_id()
+        if not name or name == "none":
+            return None, float(self.strength_spin.get_value())
+        return name, float(self.strength_spin.get_value())
+
+    def set_active_lora(self, name):
+        if not name or name == "none":
+            self.combo.set_active_id("none")
+            return
+        if not self.combo.set_active_id(name):
+            self.combo.set_active_id("none")
+
+    def refilter(self):
+        """Re-apply the arch filter to the cached full list and
+        rebuild the combo. Called on model_combo ``changed`` and
+        after every successful fetch.
+        """
+        arch = self._arch_getter() or "sdxl"
+        self._filtered = _filter_loras_for_arch(self._all_loras, arch)
+        previous = self.combo.get_active_id()
+        self.combo.remove_all()
+        self.combo.append("none", "(none)")
+        for lname in self._filtered:
+            short = lname.replace("\\", "/").rsplit("/", 1)[-1]
+            self.combo.append(lname, short)
+        if previous and previous != "none" and previous in self._filtered:
+            self.combo.set_active_id(previous)
+        else:
+            self.combo.set_active_id("none")
+        total = len(self._all_loras)
+        shown = len(self._filtered)
+        self.fetch_btn.set_label(f"Fetch ({shown}/{total} for {arch})")
+
+    def fetch(self, _btn=None):
+        """Async fetch from the current server. Wires status + refilter."""
+        server = self._server_entry.get_text().strip()
+        _propagate_server_url(server)
+        self.fetch_btn.set_label("Fetching...")
+        self.status_label.set_markup("")
+
+        def on_done(res):
+            self._all_loras = list(res or [])
+            self.status_label.set_markup(
+                '<span color="green">● Connected</span>')
+            self.refilter()
+
+        def on_err(e):
+            self._all_loras = []
+            self.status_label.set_markup(
+                f'<span color="red">⚠ Cannot reach {server} — '
+                f'{type(e).__name__}</span>')
+            self.refilter()
+
+        _async_fetch(lambda: _fetch_loras(server), on_done, on_err)
+
+
+def _build_inline_lora_picker(
+        parent_box, server_entry, arch_getter, *,
+        model_combo=None, initial_strength=0.5,
+        min_strength=0.0, max_strength=2.0,
+        expander_label="▸ LoRA", collapsed=True):
+    """Build a single-slot LoRA picker inside a collapsible expander.
+
+    Auto-fetches on the next GTK idle tick so users see the list
+    without clicking Fetch. Failure surfaces as a red ⚠ label inside
+    the expander — never raises.
+
+    ``model_combo`` (optional Gtk.ComboBoxText): when given, subscribes
+    to its ``changed`` signal and re-filters the combo without
+    refetching. Arch-switch is a pure UI operation.
+    """
+    exp = Gtk.Expander(label=expander_label)
+    _shrink_on_collapse(exp, None)
+    exp.set_expanded(not collapsed)
+
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+    box.set_margin_start(4); box.set_margin_top(4)
+
+    row1 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+    row1.pack_start(Gtk.Label(label="LoRA:"), False, False, 0)
+    combo = Gtk.ComboBoxText()
+    combo.append("none", "(none)")
+    combo.set_active_id("none")
+    combo.set_tooltip_text(
+        "Optional LoRA to modify the model output. Filtered to the "
+        "selected checkpoint architecture; root-folder LoRAs are "
+        "always included (their arch can't be inferred). Click "
+        "Fetch to refresh from the server.")
+    row1.pack_start(combo, True, True, 0)
+    fetch_btn = Gtk.Button(label="Fetch")
+    fetch_btn.set_tooltip_text(
+        "Fetch the LoRA list from the ComfyUI server. Auto-fires on "
+        "dialog open; click again to retry if the server was offline "
+        "or to pick up newly-installed LoRAs.")
+    row1.pack_start(fetch_btn, False, False, 0)
+    box.pack_start(row1, False, False, 0)
+
+    row2 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+    row2.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
+    strength = Gtk.SpinButton.new_with_range(min_strength, max_strength, 0.05)
+    strength.set_digits(2)
+    strength.set_value(float(initial_strength))
+    strength.set_tooltip_text(
+        "LoRA effect strength. 1.0 = full effect, 0.5 = half.")
+    row2.pack_start(strength, False, False, 0)
+    box.pack_start(row2, False, False, 0)
+
+    status = Gtk.Label(label="")
+    status.set_xalign(0)
+    status.set_use_markup(True)
+    box.pack_start(status, False, False, 0)
+
+    exp.add(box)
+    parent_box.pack_start(exp, False, False, 0)
+    exp.show_all()
+
+    picker = _InlineLoraPicker(combo, strength, status, fetch_btn,
+                               server_entry, arch_getter)
+    fetch_btn.connect("clicked", picker.fetch)
+
+    if model_combo is not None:
+        model_combo.connect("changed", lambda _c: picker.refilter())
+
+    GLib.idle_add(picker.fetch, None)
+    return picker
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  HTTP helpers — pure urllib, no pip installs needed
 # ═══════════════════════════════════════════════════════════════════════════
 # All communication with the ComfyUI server uses Python's built-in urllib,
@@ -12102,22 +12268,48 @@ class LtxVideoDialog(Gtk.Dialog):
         self.show_all()
 
     def _on_fetch_ltx_loras(self, _btn):
-        """Populate LoRA combos with whatever the server has."""
+        """Populate LoRA combos with LTX-compatible entries only.
+
+        Previously populated every combo with EVERY LoRA on the
+        server; SDXL / Flux LoRAs would appear in LTX slots and then
+        crash at inference with a shape mismatch. Filtering through
+        the canonical ``_filter_loras_for_arch(..., "ltx")`` keeps
+        the canonical ``ARCH_LORA_PREFIXES["ltx"]`` list
+        (``ltxv\\``, ``LTX\\``) as the single source of truth for
+        what counts as an LTX LoRA.
+        """
         server = self.server_entry.get_text().strip()
         if not server:
             return
         try:
             all_loras = _fetch_loras(server)
         except Exception as e:
+            # Surface the fetch failure on the button so the user sees
+            # WHY the LoRA slots stay empty instead of silently
+            # assuming none are installed. Matches WanI2VDialog's UX.
+            try:
+                self._ltx_lora_fetch_btn.set_label(
+                    "⚠ Fetch failed — retry")
+                self._ltx_lora_fetch_btn.set_tooltip_text(
+                    f"LoRA fetch failed: {type(e).__name__}: {e}")
+            except Exception:
+                pass
             print(f"[Spellcaster] LTX: LoRA fetch failed: {e}")
             return
+        ltx_loras = _filter_loras_for_arch(all_loras, "ltx")
+        try:
+            self._ltx_lora_fetch_btn.set_label(
+                f"Fetch ({len(ltx_loras)}/{len(all_loras)} for ltx)")
+        except Exception:
+            pass
         for combo, _str in self._ltx_lora_rows:
             current = combo.get_active_id()
             combo.remove_all()
             combo.append("none", "(none)")
-            for ln in all_loras:
-                combo.append(ln, ln)
-            if current and current in all_loras:
+            for ln in ltx_loras:
+                short = ln.replace("\\", "/").rsplit("/", 1)[-1]
+                combo.append(ln, short)
+            if current and current in ltx_loras:
                 combo.set_active_id(current)
             else:
                 combo.set_active_id("none")
@@ -13177,10 +13369,17 @@ class KleinDialog(Gtk.Dialog):
 
     def _on_fetch_loras(self, _btn):
         server = self.server_entry.get_text().strip(); _propagate_server_url(server)
+        _fetch_error = None
         try:
             self._all_lora_names = _fetch_loras(server)
-        except Exception:
+        except Exception as e:
+            # Silent swallow used to hide the root cause — users saw
+            # an empty combo with no explanation. Now surfaces the
+            # error on the fetch button (tooltip carries the detail)
+            # so "server not reachable" vs "actually no LoRAs
+            # installed" is distinguishable at a glance.
             self._all_lora_names = []
+            _fetch_error = e
         # Klein only shows Flux-2-Klein compatible LoRAs
         self._lora_names = _filter_loras_for_arch(self._all_lora_names, "flux2klein")
         self.lora_combo.remove_all()
@@ -13189,9 +13388,18 @@ class KleinDialog(Gtk.Dialog):
             short = lname.rsplit("/", 1)[-1] if "/" in lname else lname
             self.lora_combo.append(lname, short)
         self.lora_combo.set_active(0)
-        total = len(self._all_lora_names)
-        shown = len(self._lora_names)
-        self._lora_fetch_btn.set_label(f"{shown}/{total} Klein LoRAs")
+        if _fetch_error is not None:
+            self._lora_fetch_btn.set_label("⚠ Fetch failed — retry")
+            self._lora_fetch_btn.set_tooltip_text(
+                f"LoRA fetch failed: {type(_fetch_error).__name__}: "
+                f"{_fetch_error}")
+        else:
+            total = len(self._all_lora_names)
+            shown = len(self._lora_names)
+            self._lora_fetch_btn.set_label(
+                f"{shown}/{total} Klein LoRAs")
+            self._lora_fetch_btn.set_tooltip_text(
+                "Re-fetch the server's LoRA list.")
 
     def _buf_text(self, tv):
         buf = tv.get_buffer()
@@ -13425,10 +13633,14 @@ class KontextDialog(Gtk.Dialog):
 
     def _on_fetch_loras(self, _btn):
         server = self.server_entry.get_text().strip(); _propagate_server_url(server)
+        _fetch_error = None
         try:
             self._all_lora_names = _fetch_loras(server)
-        except Exception:
+        except Exception as e:
+            # See KleinDialog._on_fetch_loras for the rationale on
+            # surfacing the error instead of silently zeroing.
             self._all_lora_names = []
+            _fetch_error = e
         self._lora_names = _filter_loras_for_arch(self._all_lora_names, "flux_kontext")
         self.lora_combo.remove_all()
         self.lora_combo.append("none", "(none)")
@@ -13436,9 +13648,17 @@ class KontextDialog(Gtk.Dialog):
             short = lname.rsplit("/", 1)[-1] if "/" in lname else lname
             self.lora_combo.append(lname, short)
         self.lora_combo.set_active(0)
-        total = len(self._all_lora_names)
-        shown = len(self._lora_names)
-        self._lora_fetch_btn.set_label(f"{shown}/{total} LoRAs")
+        if _fetch_error is not None:
+            self._lora_fetch_btn.set_label("⚠ Fetch failed — retry")
+            self._lora_fetch_btn.set_tooltip_text(
+                f"LoRA fetch failed: {type(_fetch_error).__name__}: "
+                f"{_fetch_error}")
+        else:
+            total = len(self._all_lora_names)
+            shown = len(self._lora_names)
+            self._lora_fetch_btn.set_label(f"{shown}/{total} LoRAs")
+            self._lora_fetch_btn.set_tooltip_text(
+                "Re-fetch the server's LoRA list.")
 
     def _buf_text(self, tv):
         buf = tv.get_buffer()
@@ -15072,6 +15292,12 @@ class Spellcaster(Gimp.PlugIn):
         if not v["face_file"]:
             Gimp.message("No source face image selected")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+        if not _require_comfyui_node(
+                v["server"], ("ReActorFaceSwap",), "Face Swap (ReActor)",
+                install_hint=("Install 'ComfyUI ReActor Node' via ComfyUI Manager, "
+                              "then restart ComfyUI. (Face-swap uses the ReActor "
+                              "pack — without it, nothing will happen.)")):
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
         try:
             _update_spinner_status("Face Swap: exporting images...")
             srv = v["server"]
@@ -15133,6 +15359,13 @@ class Spellcaster(Gimp.PlugIn):
         v = dlg.get_values(); dlg.destroy()
         if not v["face_model"] or v["face_model"] == "none":
             Gimp.message("No face model selected")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+        if not _require_comfyui_node(
+                v["server"], ("ReActorFaceSwap", "ReActorLoadFaceModel"),
+                "Face Swap (Saved Model)",
+                install_hint=("Install 'ComfyUI ReActor Node' via ComfyUI Manager, "
+                              "then restart ComfyUI. Saved face models depend on the "
+                              "ReActor pack being registered.")):
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
         try:
             _update_spinner_status("Face Swap (Model): exporting image...")
@@ -16851,6 +17084,13 @@ class Spellcaster(Gimp.PlugIn):
         if not v["source_path"]:
             Gimp.message("No source face image selected")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+        if not _require_comfyui_node(
+                v["server"], ("Face Swap (mtb)", "FaceSwap"),
+                "Face Swap (mtb)",
+                install_hint=("Install 'comfy-mtb' via ComfyUI Manager (the mtb "
+                              "facetools provide the 'Face Swap (mtb)' node), "
+                              "then restart ComfyUI.")):
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
         try:
             _update_spinner_status("Face Swap (mtb): exporting images...")
             srv = v["server"]
@@ -16896,6 +17136,15 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         if not v["source_path"]:
             Gimp.message("No face reference image selected")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+        if not _require_comfyui_node(
+                v["server"],
+                ("IPAdapterFaceID", "IPAdapterUnifiedLoaderFaceID",
+                 "IPAdapterFaceIDPlus"),
+                "IPAdapter FaceID",
+                install_hint=("Install 'ComfyUI_IPAdapter_plus' via ComfyUI Manager "
+                              "(cubiq/ComfyUI_IPAdapter_plus) and the matching FaceID "
+                              "preset + InsightFace models, then restart ComfyUI.")):
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
         runs = v.get("runs", 1)
         try:
@@ -16952,6 +17201,18 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         if not v["source_path"]:
             Gimp.message("No face reference image selected")
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+        # PuLID class is version-dependent: ApplyPuLIDFlux2 for the Flux 2 /
+        # Kontext variant, ApplyPuLID for the original Flux 1 path. Accept
+        # either — each one of these classes proves one of the two
+        # model-route branches exposed by PulidFluxDialog.
+        if not _require_comfyui_node(
+                v["server"],
+                ("ApplyPuLIDFlux2", "ApplyPuLID", "PulidInsightFaceLoader"),
+                "PuLID Flux",
+                install_hint=("Install 'ComfyUI-PuLID-Flux' or 'PuLID Flux 2' via "
+                              "ComfyUI Manager (plus the InsightFace model pack), "
+                              "then restart ComfyUI.")):
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
         runs = v.get("runs", 1)
         try:
@@ -18700,35 +18961,16 @@ class Spellcaster(Gimp.PlugIn):
         _shrink_on_collapse(exp, dlg)
         bx.pack_start(exp, False, False, 0)
 
-        # ── LoRA (collapsible) ──────────────────────────────────────
-        lora_exp = Gtk.Expander(label="\u25b8 LoRA (optional)")
-        _shrink_on_collapse(lora_exp, dlg)
-        lora_exp.set_expanded(False)
-        lora_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        lora_box.set_margin_start(4); lora_box.set_margin_top(4)
-        lora_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        lora_hb.pack_start(Gtk.Label(label="LoRA:"), False, False, 0)
-        lora_combo = Gtk.ComboBoxText()
-        lora_combo.append("none", "(none)")
-        lora_combo.set_active_id("none")
-        lora_combo.set_tooltip_text("Optional LoRA to modify the model output style.")
-        try:
-            _all_loras = _fetch_loras(srv_e.get_text().strip())
-            for _ln in _filter_loras_for_arch(_all_loras, "flux2klein"):
-                lora_combo.append(_ln, _ln.replace("\\", "/").rsplit("/", 1)[-1])
-        except Exception:
-            pass
-        lora_hb.pack_start(lora_combo, True, True, 0)
-        lora_box.pack_start(lora_hb, False, False, 0)
-        lora_str_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        lora_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
-        lora_str_spin = Gtk.SpinButton.new_with_range(0.0, 2.0, 0.05)
-        lora_str_spin.set_digits(2); lora_str_spin.set_value(0.75)
-        lora_str_spin.set_tooltip_text("LoRA strength. 0.6-0.9 recommended for most specialized LoRAs.")
-        lora_str_hb.pack_start(lora_str_spin, False, False, 0)
-        lora_box.pack_start(lora_str_hb, False, False, 0)
-        lora_exp.add(lora_box)
-        bx.pack_start(lora_exp, False, False, 0)
+        # ── LoRA (collapsible) — async fetch via shared helper ──
+        # Klein inpaint is arch-locked to flux2klein so there's no
+        # model_combo to rewire on; we just benefit from the async
+        # fetch + ⚠ error label.
+        _lora_picker = _build_inline_lora_picker(
+            bx, srv_e, lambda: "flux2klein",
+            initial_strength=0.75,
+            expander_label="\u25b8 LoRA (optional)")
+        lora_combo = _lora_picker.combo
+        lora_str_spin = _lora_picker.strength_spin
 
         # ── Preset auto-fill ──────────────────────────────────────────
         def _on_task_changed(*_a):
@@ -22544,36 +22786,19 @@ class Spellcaster(Gimp.PlugIn):
         st_cn_box.pack_start(st_cn_str_hb_2, False, False, 0)
         st_cn_exp.add(st_cn_box)
         bx.pack_start(st_cn_exp, False, False, 0)
-        # ── LoRA (collapsible) ──────────────────────────────────────────────────
-        lora_exp = Gtk.Expander(label="▸ LoRA")
-        _shrink_on_collapse(lora_exp, dlg)
-        lora_exp.set_expanded(False)
-        lora_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        lora_box.set_margin_start(4); lora_box.set_margin_top(4)
-        lora_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        lora_hb.pack_start(Gtk.Label(label="LoRA:"), False, False, 0)
-        lora_combo = Gtk.ComboBoxText()
-        lora_combo.append("none", "(none)")
-        lora_combo.set_active_id("none")
-        lora_combo.set_tooltip_text("Optional LoRA to modify the model output style.")
-        try:
-            _all_loras = _fetch_loras(se.get_text().strip())
-            _arch = MODEL_PRESETS[model_combo.get_active()]["arch"] if model_combo.get_active() >= 0 else "sdxl"
-            for _ln in _filter_loras_for_arch(_all_loras, _arch):
-                lora_combo.append(_ln, _ln.replace("\\", "/").rsplit("/", 1)[-1])
-        except Exception:
-            pass
-        lora_hb.pack_start(lora_combo, True, True, 0)
-        lora_box.pack_start(lora_hb, False, False, 0)
-        lora_str_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        lora_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
-        lora_str_spin = Gtk.SpinButton.new_with_range(0.0, 2.0, 0.05)
-        lora_str_spin.set_digits(2); lora_str_spin.set_value(0.5)
-        lora_str_spin.set_tooltip_text("LoRA effect strength. 1.0 = full effect.")
-        lora_str_hb.pack_start(lora_str_spin, False, False, 0)
-        lora_box.pack_start(lora_str_hb, False, False, 0)
-        lora_exp.add(lora_box)
-        bx.pack_start(lora_exp, False, False, 0)
+        # ── LoRA (collapsible) — async fetch + arch re-filter via shared helper ──
+        # See _build_inline_lora_picker above. Picker owns the combo +
+        # strength spin + status label; we retain the legacy
+        # ``lora_combo`` / ``lora_str_spin`` aliases so the existing
+        # submit-side code below continues to work unchanged.
+        _lora_picker = _build_inline_lora_picker(
+            bx, se,
+            lambda: (MODEL_PRESETS[model_combo.get_active()]["arch"]
+                     if model_combo.get_active() >= 0 else "sdxl"),
+            model_combo=model_combo,
+            initial_strength=0.5)
+        lora_combo = _lora_picker.combo
+        lora_str_spin = _lora_picker.strength_spin
         # ── Advanced (collapsible) ───────────────────────────────────────
         st_adv_exp = Gtk.Expander(label="\u25b8 Advanced")
         _shrink_on_collapse(st_adv_exp, dlg)
@@ -23208,36 +23433,19 @@ class Spellcaster(Gimp.PlugIn):
         hall_cn_exp.add(hall_cn_box)
         bx.pack_start(hall_cn_exp, False, False, 0)
         # ── Advanced (collapsible) ───────────────────────────────────────
-        # ── LoRA (collapsible) ──────────────────────────────────────────────────
-        lora_exp = Gtk.Expander(label="▸ LoRA")
-        _shrink_on_collapse(lora_exp, dlg)
-        lora_exp.set_expanded(False)
-        lora_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        lora_box.set_margin_start(4); lora_box.set_margin_top(4)
-        lora_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        lora_hb.pack_start(Gtk.Label(label="LoRA:"), False, False, 0)
-        lora_combo = Gtk.ComboBoxText()
-        lora_combo.append("none", "(none)")
-        lora_combo.set_active_id("none")
-        lora_combo.set_tooltip_text("Optional LoRA to modify the model output style.")
-        try:
-            _all_loras = _fetch_loras(se.get_text().strip())
-            _arch = MODEL_PRESETS[model_combo.get_active()]["arch"] if model_combo.get_active() >= 0 else "sdxl"
-            for _ln in _filter_loras_for_arch(_all_loras, _arch):
-                lora_combo.append(_ln, _ln.replace("\\", "/").rsplit("/", 1)[-1])
-        except Exception:
-            pass
-        lora_hb.pack_start(lora_combo, True, True, 0)
-        lora_box.pack_start(lora_hb, False, False, 0)
-        lora_str_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        lora_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
-        lora_str_spin = Gtk.SpinButton.new_with_range(0.0, 2.0, 0.05)
-        lora_str_spin.set_digits(2); lora_str_spin.set_value(0.5)
-        lora_str_spin.set_tooltip_text("LoRA effect strength. 1.0 = full effect.")
-        lora_str_hb.pack_start(lora_str_spin, False, False, 0)
-        lora_box.pack_start(lora_str_hb, False, False, 0)
-        lora_exp.add(lora_box)
-        bx.pack_start(lora_exp, False, False, 0)
+        # ── LoRA (collapsible) — async fetch + arch re-filter via shared helper ──
+        # See _build_inline_lora_picker above. Picker owns the combo +
+        # strength spin + status label; we retain the legacy
+        # ``lora_combo`` / ``lora_str_spin`` aliases so the existing
+        # submit-side code below continues to work unchanged.
+        _lora_picker = _build_inline_lora_picker(
+            bx, se,
+            lambda: (MODEL_PRESETS[model_combo.get_active()]["arch"]
+                     if model_combo.get_active() >= 0 else "sdxl"),
+            model_combo=model_combo,
+            initial_strength=0.5)
+        lora_combo = _lora_picker.combo
+        lora_str_spin = _lora_picker.strength_spin
         hall_adv_exp = Gtk.Expander(label="\u25b8 Advanced")
         _shrink_on_collapse(hall_adv_exp, dlg)
         hall_adv_exp.set_expanded(False)
@@ -23533,36 +23741,19 @@ class Spellcaster(Gimp.PlugIn):
         sv2r_cn_box.pack_start(sv2r_cn_str_hb_2, False, False, 0)
         sv2r_cn_exp.add(sv2r_cn_box)
         bx.pack_start(sv2r_cn_exp, False, False, 0)
-        # ── LoRA (collapsible) ──────────────────────────────────────────────────
-        lora_exp = Gtk.Expander(label="▸ LoRA")
-        _shrink_on_collapse(lora_exp, dlg)
-        lora_exp.set_expanded(False)
-        lora_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        lora_box.set_margin_start(4); lora_box.set_margin_top(4)
-        lora_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        lora_hb.pack_start(Gtk.Label(label="LoRA:"), False, False, 0)
-        lora_combo = Gtk.ComboBoxText()
-        lora_combo.append("none", "(none)")
-        lora_combo.set_active_id("none")
-        lora_combo.set_tooltip_text("Optional LoRA to modify the model output style.")
-        try:
-            _all_loras = _fetch_loras(se.get_text().strip())
-            _arch = MODEL_PRESETS[model_combo.get_active()]["arch"] if model_combo.get_active() >= 0 else "sdxl"
-            for _ln in _filter_loras_for_arch(_all_loras, _arch):
-                lora_combo.append(_ln, _ln.replace("\\", "/").rsplit("/", 1)[-1])
-        except Exception:
-            pass
-        lora_hb.pack_start(lora_combo, True, True, 0)
-        lora_box.pack_start(lora_hb, False, False, 0)
-        lora_str_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        lora_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
-        lora_str_spin = Gtk.SpinButton.new_with_range(0.0, 2.0, 0.05)
-        lora_str_spin.set_digits(2); lora_str_spin.set_value(0.5)
-        lora_str_spin.set_tooltip_text("LoRA effect strength. 1.0 = full effect.")
-        lora_str_hb.pack_start(lora_str_spin, False, False, 0)
-        lora_box.pack_start(lora_str_hb, False, False, 0)
-        lora_exp.add(lora_box)
-        bx.pack_start(lora_exp, False, False, 0)
+        # ── LoRA (collapsible) — async fetch + arch re-filter via shared helper ──
+        # See _build_inline_lora_picker above. Picker owns the combo +
+        # strength spin + status label; we retain the legacy
+        # ``lora_combo`` / ``lora_str_spin`` aliases so the existing
+        # submit-side code below continues to work unchanged.
+        _lora_picker = _build_inline_lora_picker(
+            bx, se,
+            lambda: (MODEL_PRESETS[model_combo.get_active()]["arch"]
+                     if model_combo.get_active() >= 0 else "sdxl"),
+            model_combo=model_combo,
+            initial_strength=0.5)
+        lora_combo = _lora_picker.combo
+        lora_str_spin = _lora_picker.strength_spin
         # ── Advanced (collapsible) ───────────────────────────────────────
         sv2r_adv_exp = Gtk.Expander(label="\u25b8 Advanced")
         _shrink_on_collapse(sv2r_adv_exp, dlg)
@@ -23854,36 +24045,19 @@ class Spellcaster(Gimp.PlugIn):
         col_cn_box.pack_start(col_cn2_str_hb, False, False, 0)
         col_cn_exp.add(col_cn_box)
         bx.pack_start(col_cn_exp, False, False, 0)
-        # ── LoRA (collapsible) ──────────────────────────────────────────────────
-        lora_exp = Gtk.Expander(label="▸ LoRA")
-        _shrink_on_collapse(lora_exp, dlg)
-        lora_exp.set_expanded(False)
-        lora_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        lora_box.set_margin_start(4); lora_box.set_margin_top(4)
-        lora_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        lora_hb.pack_start(Gtk.Label(label="LoRA:"), False, False, 0)
-        lora_combo = Gtk.ComboBoxText()
-        lora_combo.append("none", "(none)")
-        lora_combo.set_active_id("none")
-        lora_combo.set_tooltip_text("Optional LoRA to modify the model output style.")
-        try:
-            _all_loras = _fetch_loras(se.get_text().strip())
-            _arch = MODEL_PRESETS[model_combo.get_active()]["arch"] if model_combo.get_active() >= 0 else "sdxl"
-            for _ln in _filter_loras_for_arch(_all_loras, _arch):
-                lora_combo.append(_ln, _ln.replace("\\", "/").rsplit("/", 1)[-1])
-        except Exception:
-            pass
-        lora_hb.pack_start(lora_combo, True, True, 0)
-        lora_box.pack_start(lora_hb, False, False, 0)
-        lora_str_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        lora_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
-        lora_str_spin = Gtk.SpinButton.new_with_range(0.0, 2.0, 0.05)
-        lora_str_spin.set_digits(2); lora_str_spin.set_value(0.5)
-        lora_str_spin.set_tooltip_text("LoRA effect strength. 1.0 = full effect.")
-        lora_str_hb.pack_start(lora_str_spin, False, False, 0)
-        lora_box.pack_start(lora_str_hb, False, False, 0)
-        lora_exp.add(lora_box)
-        bx.pack_start(lora_exp, False, False, 0)
+        # ── LoRA (collapsible) — async fetch + arch re-filter via shared helper ──
+        # See _build_inline_lora_picker above. Picker owns the combo +
+        # strength spin + status label; we retain the legacy
+        # ``lora_combo`` / ``lora_str_spin`` aliases so the existing
+        # submit-side code below continues to work unchanged.
+        _lora_picker = _build_inline_lora_picker(
+            bx, se,
+            lambda: (MODEL_PRESETS[model_combo.get_active()]["arch"]
+                     if model_combo.get_active() >= 0 else "sdxl"),
+            model_combo=model_combo,
+            initial_strength=0.5)
+        lora_combo = _lora_picker.combo
+        lora_str_spin = _lora_picker.strength_spin
         # ── Advanced (collapsible) ───────────────────────────────────────
         col_adv_exp = Gtk.Expander(label="\u25b8 Advanced")
         _shrink_on_collapse(col_adv_exp, dlg)
@@ -24223,36 +24397,19 @@ class Spellcaster(Gimp.PlugIn):
         _icl_top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         _icl_top.pack_end(_icl_auto_btn, False, False, 0)
         bx.pack_start(_icl_top, False, False, 0)
-        # ── LoRA (collapsible) ──────────────────────────────────────────────────
-        lora_exp = Gtk.Expander(label="▸ LoRA")
-        _shrink_on_collapse(lora_exp, dlg)
-        lora_exp.set_expanded(False)
-        lora_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        lora_box.set_margin_start(4); lora_box.set_margin_top(4)
-        lora_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        lora_hb.pack_start(Gtk.Label(label="LoRA:"), False, False, 0)
-        lora_combo = Gtk.ComboBoxText()
-        lora_combo.append("none", "(none)")
-        lora_combo.set_active_id("none")
-        lora_combo.set_tooltip_text("Optional LoRA to modify the model output style.")
-        try:
-            _all_loras = _fetch_loras(se.get_text().strip())
-            _arch = MODEL_PRESETS[model_combo.get_active()]["arch"] if model_combo.get_active() >= 0 else "sdxl"
-            for _ln in _filter_loras_for_arch(_all_loras, _arch):
-                lora_combo.append(_ln, _ln.replace("\\", "/").rsplit("/", 1)[-1])
-        except Exception:
-            pass
-        lora_hb.pack_start(lora_combo, True, True, 0)
-        lora_box.pack_start(lora_hb, False, False, 0)
-        lora_str_hb = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        lora_str_hb.pack_start(Gtk.Label(label="Strength:"), False, False, 0)
-        lora_str_spin = Gtk.SpinButton.new_with_range(0.0, 2.0, 0.05)
-        lora_str_spin.set_digits(2); lora_str_spin.set_value(0.5)
-        lora_str_spin.set_tooltip_text("LoRA effect strength. 1.0 = full effect.")
-        lora_str_hb.pack_start(lora_str_spin, False, False, 0)
-        lora_box.pack_start(lora_str_hb, False, False, 0)
-        lora_exp.add(lora_box)
-        bx.pack_start(lora_exp, False, False, 0)
+        # ── LoRA (collapsible) — async fetch + arch re-filter via shared helper ──
+        # See _build_inline_lora_picker above. Picker owns the combo +
+        # strength spin + status label; we retain the legacy
+        # ``lora_combo`` / ``lora_str_spin`` aliases so the existing
+        # submit-side code below continues to work unchanged.
+        _lora_picker = _build_inline_lora_picker(
+            bx, se,
+            lambda: (MODEL_PRESETS[model_combo.get_active()]["arch"]
+                     if model_combo.get_active() >= 0 else "sdxl"),
+            model_combo=model_combo,
+            initial_strength=0.5)
+        lora_combo = _lora_picker.combo
+        lora_str_spin = _lora_picker.strength_spin
         # ── Normal Map (3D surface guidance) ──────────────────────────
         normal_cb = Gtk.CheckButton(label="Use 3D Normal Map for surface-aware relighting")
         # Auto-detect: check if there's a layer named "Normal Map" or "NormalCrafter"
@@ -26567,7 +26724,7 @@ class Spellcaster(Gimp.PlugIn):
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         # Preflight: check if SAM3 node pack is installed on the server
-        srv = COMFYUI_DEFAULT_URL
+        srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
         try:
             _api_get(srv, "/object_info/SAM3Segment")
         except Exception:
@@ -26651,7 +26808,7 @@ class Spellcaster(Gimp.PlugIn):
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         # Preflight: check if SAM3 node pack is installed on the server
-        srv = COMFYUI_DEFAULT_URL
+        srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
         try:
             _api_get(srv, "/object_info/SAM3Segment")
         except Exception:
@@ -26720,7 +26877,7 @@ class Spellcaster(Gimp.PlugIn):
         """
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
-        srv = COMFYUI_DEFAULT_URL
+        srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
         try:
             _api_get(srv, "/object_info/SAM3Segment")
         except Exception:
@@ -26800,7 +26957,7 @@ class Spellcaster(Gimp.PlugIn):
         """
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
-        srv = COMFYUI_DEFAULT_URL
+        srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
         try:
             _api_get(srv, "/object_info/SAM3Segment")
         except Exception:
@@ -27423,7 +27580,7 @@ class Spellcaster(Gimp.PlugIn):
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         try:
-            srv = COMFYUI_DEFAULT_URL
+            srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_qu_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
@@ -27446,7 +27603,7 @@ class Spellcaster(Gimp.PlugIn):
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         try:
-            srv = COMFYUI_DEFAULT_URL
+            srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_qfr_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
@@ -27470,7 +27627,7 @@ class Spellcaster(Gimp.PlugIn):
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         try:
-            srv = COMFYUI_DEFAULT_URL
+            srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_qrm_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
@@ -27564,7 +27721,7 @@ class Spellcaster(Gimp.PlugIn):
                          "Then run AI Eraser again.")
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
-            srv = COMFYUI_DEFAULT_URL
+            srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
             # Export image (same as Quick Inpaint line 21380)
             tmp = _export_image_to_tmp(image)
             uname = f"gimp_erase_{uuid.uuid4().hex[:8]}.png"
