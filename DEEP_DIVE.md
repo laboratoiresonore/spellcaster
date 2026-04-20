@@ -19,7 +19,7 @@ Everything the [README](README.md) intentionally left out. Architecture, subsyst
 - [🛠 Scaffold system](#-scaffold-system--state-machine-wizards-for-7b-models)
 - [⚡ Global preset cycle](#-global-preset-cycle--turbo--standard--quality)
 - [📡 Antenna](#-antenna--15-endpoints-tray-menu-self-update)
-- [🎙️ Voice](#-voice--walkie-talkie-stt--tts-playback)
+- [🎙 Voice](#-voice--walkie-talkie-stt--tts-playback)
 - [🧩 Connect-an-app](#-connect-an-app--register-launchers-windows-shortcuts-auto-start)
 - [🔐 Privacy, boot safety, auto-update risk](#-privacy-boot-safety-auto-update-risk)
 - [🎬 Resolve Bridge](#-resolve-bridge--timeline-aware-shot-generation)
@@ -323,7 +323,7 @@ Spellcaster is the connective tissue. Every generated asset lives in one canonic
 <tr>
 <td align="center"><img src="https://img.shields.io/badge/KoboldCpp-FF6B00?style=flat-square&logoColor=white" height="28" alt="Kobold"/><br/><strong>KoboldCpp</strong></td>
 <td align="center"><img src="https://img.shields.io/badge/Wizard%20Guild-6A1B9A?style=flat-square&logoColor=FFD700" height="28" alt="Guild"/><br/><strong>Wizard Guild</strong></td>
-<td>Pair one Kobold in RP mode (<code>kobold_rp</code> on :5001) and another in Whisper/TTS mode (<code>kobold_tts</code> on :5002). The Guild's 🎙️ walkie-talkie uses the TTS/STT one; SillyTavern keeps chatting through the RP one. No conflict.</td>
+<td>Pair one Kobold in RP mode (<code>kobold_rp</code> on :5001) and another in Whisper/TTS mode (<code>kobold_tts</code> on :5002). The Guild's 🎙 walkie-talkie uses the TTS/STT one; SillyTavern keeps chatting through the RP one. No conflict.</td>
 </tr>
 
 <tr>
@@ -420,7 +420,7 @@ The **system-tray icon** (pystray + PIL, Windows only) exposes the same operatio
 
 The tray installer lives at [`antenna/install_shortcuts.py`](antenna/install_shortcuts.py) — stdlib-only, shells out to PowerShell's `WScript.Shell` COM object to create `.lnk` files. The generated antenna.bat runs it once on first launch gated by a sentinel at `%USERPROFILE%\.spellcaster\antenna_shortcuts_done`.
 
-## 🎙️ Voice — walkie-talkie STT + TTS playback
+## 🎙 Voice — walkie-talkie STT + TTS playback
 
 A mic-button between the chat textarea and the summon-wand. Press-and-hold starts MediaRecorder capture (webm/opus); release uploads the base64 blob to `/api/stt`, which forwards to a registered **Kobold · TTS** backend running KoboldCpp in Whisper mode (`/api/extra/transcribe`). The transcript lands in the chat textarea so the user can edit before sending. Pointer-events cover both mouse and touch; the button pulses red while recording.
 
