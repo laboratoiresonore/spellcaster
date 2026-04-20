@@ -677,6 +677,18 @@ def build_native_workflow(preset_key: str, *, prompt: str,
         if vae_working_dtype:                    extra["vae_working_dtype"]        = vae_working_dtype
         if extra_loras:                          extra["loras"]                    = list(extra_loras)
 
+        # Caller-supplied interpolate / rtx_scale override the preset's
+        # hint default. `interpolate=True` from the caller wins even if
+        # the hint is False; `rtx_scale>1.0` from the caller wins over
+        # hint's default. This matches the Wan family's behaviour and
+        # lets SillyTavern / Resolve / Darktable turn RIFE + RTX upscale
+        # on per-shot without picking a different preset_key.
+        _ltx_interp = bool(interpolate) or bool(hint.get("interpolate", False))
+        if rtx_scale and rtx_scale > 1.0:
+            _ltx_rtx = int(rtx_scale)
+        else:
+            _ltx_rtx = int(hint.get("rtx_scale", 0))
+
         try:
             # Pass the caller's negative verbatim so shot.negative
             # reaches the sampler. Defaulting to None lets
@@ -688,8 +700,8 @@ def build_native_workflow(preset_key: str, *, prompt: str,
                 width=width, height=height,
                 num_frames=length,
                 **mode_kwargs,
-                interpolate=bool(hint.get("interpolate", False)),
-                rtx_scale=int(hint.get("rtx_scale", 0)),
+                interpolate=_ltx_interp,
+                rtx_scale=_ltx_rtx,
                 fps=fps,
                 pingpong=bool(pingpong),
                 image_filename=image_filename,

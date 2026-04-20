@@ -163,11 +163,53 @@ class Pipeline:
         }))
         return self
 
-    def ltx_video(self, prompt, width=384, height=256, num_frames=25, fps=25):
-        """Generate or animate video with LTX."""
+    def ltx_video(self, prompt, width=384, height=256, num_frames=25, fps=25,
+                   # Mode flags — pair with video_presets.ltx_mode_kwargs()
+                   # server-side. `distilled=True` is the 8-step fast path
+                   # (cfg=1.0), `two_stage=True` runs half-res → upscale →
+                   # re-denoise for higher quality.
+                   distilled=False, two_stage=False,
+                   # Sampling overrides (None = canon default from preset).
+                   steps=None, cfg=None, stg=None, rescale=None,
+                   # I2V when the previous step emitted an image.
+                   i2v_strength=0.9, pingpong=False,
+                   # Post-processing.
+                   interpolate=False, rtx_scale=0,
+                   # Quality / speed patches (CLAUDE.md §16.3). None = let
+                   # the canonical builder's default decide; True = force-
+                   # enable (fails loud if the server lacks the node).
+                   enable_sage=None, enable_cfg_zero=None,
+                   # Per-call tuning knobs.
+                   sampler_name=None, stg_layers=None, chunk_size=None,
+                   # VAE decode tiling.
+                   vae_spatial_tiles=None, vae_temporal_tile_length=None,
+                   vae_last_frame_fix=False, vae_working_dtype=None,
+                   # Extra style / character LoRAs — list of
+                   # (lora_name, strength) tuples applied AFTER the
+                   # distilled LoRA.
+                   loras=None,
+                   # Negative prompt. None = canon default (subtitle
+                   # blocker — LTX 2.3's training set includes subtitled
+                   # footage; empty negative reproduces subtitles).
+                   negative=None):
+        """Generate or animate video with LTX. Accepts every knob the
+        canonical builder supports so the fluent DSL can request
+        anything GIMP / Darktable / Guild can — see CLAUDE.md §16.3."""
         self._steps.append(("ltx_video", {
             "prompt": prompt, "width": width, "height": height,
             "num_frames": num_frames, "fps": fps,
+            "distilled": distilled, "two_stage": two_stage,
+            "steps": steps, "cfg": cfg, "stg": stg, "rescale": rescale,
+            "i2v_strength": i2v_strength, "pingpong": pingpong,
+            "interpolate": interpolate, "rtx_scale": rtx_scale,
+            "enable_sage": enable_sage, "enable_cfg_zero": enable_cfg_zero,
+            "sampler_name": sampler_name, "stg_layers": stg_layers,
+            "chunk_size": chunk_size,
+            "vae_spatial_tiles": vae_spatial_tiles,
+            "vae_temporal_tile_length": vae_temporal_tile_length,
+            "vae_last_frame_fix": vae_last_frame_fix,
+            "vae_working_dtype": vae_working_dtype,
+            "loras": loras, "negative": negative,
         }))
         return self
 
@@ -541,14 +583,48 @@ class Pipeline:
             raise RuntimeError("LTX video not available")
         ltx_preset = self._detect_ltx_preset()
         seed = random.randint(1, 2**32 - 1)
+        # Forward every knob the fluent ltx_video() method captured.
+        # Params the user didn't set are None/False and either get
+        # canon defaults at build_ltx_video time or silently no-op,
+        # so it's safe to pass them unconditionally. See CLAUDE.md
+        # §16.3 for the canonical parameter list.
         kwargs = {
             "prompt_text": params["prompt"], "seed": seed,
-            "width": params.get("width", 384), "height": params.get("height", 256),
-            "num_frames": params.get("num_frames", 25), "fps": params.get("fps", 25),
+            "width":  params.get("width", 384),
+            "height": params.get("height", 256),
+            "num_frames": params.get("num_frames", 25),
+            "fps": params.get("fps", 25),
+            "distilled": params.get("distilled", False),
+            "two_stage": params.get("two_stage", False),
+            "pingpong":  params.get("pingpong", False),
+            "interpolate": params.get("interpolate", False),
+            "rtx_scale":   params.get("rtx_scale", 0),
         }
+        # Optional scalar overrides — skip when None so the preset's
+        # defaults ride through.
+        for key in ("steps", "cfg", "stg", "rescale",
+                    "sampler_name", "stg_layers", "chunk_size",
+                    "vae_spatial_tiles", "vae_temporal_tile_length",
+                    "vae_working_dtype"):
+            v = params.get(key)
+            if v is not None:
+                kwargs[key] = v
+        # Flags — only forward when the caller explicitly set them.
+        for key in ("enable_sage", "enable_cfg_zero"):
+            v = params.get(key)
+            if v is not None:
+                kwargs[key] = bool(v)
+        if params.get("vae_last_frame_fix"):
+            kwargs["vae_last_frame_fix"] = True
+        if params.get("loras"):
+            kwargs["loras"] = list(params["loras"])
+        if params.get("negative") is not None:
+            kwargs["negative_text"] = params["negative"]
         if image:
             kwargs["image_filename"] = image
-            kwargs["i2v_strength"] = 0.85
+            # Honour caller's i2v_strength if set, else the sensible
+            # 0.85 default for chained I2V runs (matches GIMP baker).
+            kwargs["i2v_strength"] = params.get("i2v_strength") or 0.85
         wf = build_ltx_video(ltx_preset, **kwargs)
         return self._run_simple(wf)
 
