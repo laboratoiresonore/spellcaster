@@ -185,6 +185,25 @@ def chat(message, system_prompt="", server=None, kobold_url=None,
     if purpose not in ("chat", "enhance"):
         purpose = "chat"
 
+    # Scheme + host clamp on caller-supplied backend URLs. guild_llm is
+    # imported by plugins (GIMP, Darktable, Resolve) that take these
+    # URLs from config files or /settings endpoints — an attacker who
+    # can tamper with those surfaces could otherwise smuggle
+    # `file://` or `gopher://` URLs that urllib follows blindly.
+    def _valid_backend_url(u):
+        if not isinstance(u, str) or not u:
+            return False
+        try:
+            import urllib.parse as _up
+            p = _up.urlparse(u)
+            return p.scheme in ("http", "https") and bool(p.netloc)
+        except Exception:
+            return False
+    if server is not None and not _valid_backend_url(server):
+        server = None
+    if kobold_url is not None and not _valid_backend_url(kobold_url):
+        kobold_url = None
+
     # Build the backend sequence based on purpose.
     def try_ollama():
         return _chat_ollama(message, system_prompt, max_tokens,
