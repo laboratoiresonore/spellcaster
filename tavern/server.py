@@ -13463,6 +13463,39 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "errors": errors,
             })
 
+        # -- /api/run_builder -- generic dispatch into spellcaster_core.workflows
+        # Body: {"builder": "build_klein_inpaint", "params": {...},
+        #        "comfy_url": "..."} (comfy_url optional, defaults to COMFYUI_URL)
+        # Lets thin client plugins (Darktable Lua, future Lua/JS surfaces)
+        # call any canonical build_* without re-implementing the workflow JSON.
+        # CLAUDE.md §3 — single source of truth for shared library code lives
+        # in spellcaster_core; this endpoint is the HTTP doorway. Returns the
+        # cached_url(s) (canonical /api/assets/<hash>) so privacy cleanup
+        # can scrub ComfyUI's copies without breaking the client's links.
+        if self.path == '/api/run_builder':
+            builder = (data.get('builder') or '').strip()
+            params = data.get('params') or {}
+            if not builder:
+                return self.end_json(400, {"error": "builder name required"})
+            if not isinstance(params, dict):
+                return self.end_json(400, {"error": "params must be a dict"})
+            comfy = data.get('comfy_url', COMFYUI_URL)
+            try:
+                result = _build_and_dispatch(builder, params, comfy)
+                return self.end_json(200, {
+                    "ok": True,
+                    "builder": builder,
+                    "type": result.get("type"),
+                    "urls": result.get("urls", []),
+                })
+            except Exception as e:
+                print(f"  [run_builder] {builder} failed: {e}")
+                return self.end_json(500, {
+                    "ok": False,
+                    "builder": builder,
+                    "error": str(e),
+                })
+
         # -- /api/avatar_generate --
         if self.path == '/api/avatar_generate':
             char_id = data.get('id', '')

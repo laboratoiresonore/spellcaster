@@ -19,18 +19,20 @@ function _esc(s) {
         .replace(/'/g, '&#39;');
 }
 
-// ── CANONICAL-COPY of _safeSrc from index.js ────────────────────────
-// Uses a local URL shim because tests run in Node; browser URL is
-// equivalent for our parsing needs.
-function _safeSrc(u, base = 'http://localhost/') {
-    if (typeof u !== 'string' || !u) return '';
-    if (u.startsWith('/') && !u.startsWith('//')) return u;
+// ── CANONICAL-COPY of _urlOk from index.js ──────────────────────────
+// Inline helper used by both the /sc-inbox slash command and the
+// renderInboxMessages SSE renderer. Uses `new URL(u)` WITHOUT a base,
+// so protocol-relative URLs (`//evil.com/x.png`) throw and are
+// rejected — a deliberate design.
+function _urlOk(u) {
+    if (typeof u !== 'string' || !u) return false;
+    if (u.startsWith('/api/')) return true;
     try {
-        const p = new URL(u, base);
-        if (p.protocol === 'http:' || p.protocol === 'https:') return u;
-        if (p.protocol === 'data:' && /^data:image\//i.test(u)) return u;
-    } catch { /* fall through */ }
-    return '';
+        const p = new URL(u);
+        if (p.protocol === 'http:' || p.protocol === 'https:') return true;
+        if (p.protocol === 'data:' && /^data:image\//i.test(u)) return true;
+    } catch { return false; }
+    return false;
 }
 
 // ── CANONICAL-COPY of _ftString, _ftLabel from index.js ─────────────
@@ -77,27 +79,41 @@ test('_esc neutralises an attribute-breakout payload', () => {
 });
 
 // ══════════════════════════════════════════════════════════════════
-// _safeSrc — URL allowlist for <img src>
+// _urlOk — URL allowlist used in /sc-inbox + SSE inbox renderer
 // ══════════════════════════════════════════════════════════════════
-test('_safeSrc accepts http(s) / data:image / relative /api', () => {
-    assert.equal(_safeSrc('http://example.com/a.png'), 'http://example.com/a.png');
-    assert.equal(_safeSrc('https://example.com/a.png'), 'https://example.com/a.png');
-    assert.equal(_safeSrc('/api/assets/deadbeef'), '/api/assets/deadbeef');
-    assert.equal(_safeSrc('data:image/png;base64,abc'), 'data:image/png;base64,abc');
+test('_urlOk accepts http(s) / data:image / relative /api', () => {
+    assert.equal(_urlOk('http://example.com/a.png'), true);
+    assert.equal(_urlOk('https://example.com/a.png'), true);
+    assert.equal(_urlOk('/api/assets/deadbeef'), true);
+    assert.equal(_urlOk('data:image/png;base64,abc'), true);
+    assert.equal(_urlOk('data:image/webp;base64,xyz'), true);
 });
-test('_safeSrc rejects javascript: / data:text/html / gopher / ftp', () => {
-    assert.equal(_safeSrc('javascript:alert(1)'), '');
-    assert.equal(_safeSrc('data:text/html;base64,PHNjcmlwdD4='), '');
-    assert.equal(_safeSrc('gopher://example.com'), '');
-    assert.equal(_safeSrc('ftp://example.com/x'), '');
+test('_urlOk rejects javascript: / data:text/html / gopher / ftp', () => {
+    assert.equal(_urlOk('javascript:alert(1)'), false);
+    assert.equal(_urlOk('data:text/html;base64,PHNjcmlwdD4='), false);
+    assert.equal(_urlOk('gopher://example.com'), false);
+    assert.equal(_urlOk('ftp://example.com/x'), false);
 });
-test('_safeSrc rejects protocol-relative // URLs (could be http or file)', () => {
-    assert.equal(_safeSrc('//evil.com/x.png'), '');
+test('_urlOk rejects protocol-relative // URLs', () => {
+    // `new URL("//evil.com/x.png")` without a base throws TypeError,
+    // which `_urlOk`'s try/catch turns into `false`. This is the
+    // design: the browser would otherwise resolve it to the page's
+    // scheme, bypassing the allowlist.
+    assert.equal(_urlOk('//evil.com/x.png'), false);
 });
-test('_safeSrc handles non-strings safely', () => {
-    assert.equal(_safeSrc(null), '');
-    assert.equal(_safeSrc(undefined), '');
-    assert.equal(_safeSrc(42), '');
+test('_urlOk rejects other non-/api relative paths', () => {
+    // Not under /api/ → must be an absolute URL. Plain relative
+    // paths would be resolved against the document, bypassing intent.
+    assert.equal(_urlOk('foo/bar.png'), false);
+    assert.equal(_urlOk('./x.png'), false);
+    assert.equal(_urlOk('/characters/alice.png'), false);  // outside /api/
+});
+test('_urlOk handles non-strings safely', () => {
+    assert.equal(_urlOk(null), false);
+    assert.equal(_urlOk(undefined), false);
+    assert.equal(_urlOk(42), false);
+    assert.equal(_urlOk({}), false);
+    assert.equal(_urlOk(''), false);
 });
 
 // ══════════════════════════════════════════════════════════════════
