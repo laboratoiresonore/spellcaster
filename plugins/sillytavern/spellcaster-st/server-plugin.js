@@ -677,6 +677,63 @@ function init(router) {
         });
     });
 
+    // GET /cross/events — server-sent-events proxy to the Guild's
+    // /api/events/stream. The browser EventSource can't hit
+    // 127.0.0.1:7777 directly on every ST deploy (mixed-content rules,
+    // CSP, cross-origin quirks), so ST's server plugin proxies it here
+    // on the same origin. Only sillytavern.asset.* kinds are forwarded
+    // to keep the client-side filter cheap.
+    //
+    // Client usage:
+    //   const es = new EventSource('/api/plugins/spellcaster/cross/events');
+    //   es.addEventListener('sillytavern.asset.send', (ev) => {...});
+    //
+    // Falls back to a one-shot 503 if the Guild is unreachable — the
+    // browser's `es.onerror` fires and the client can fall back to the
+    // legacy /cross/inbox poll.
+    router.get('/cross/events', (req, res) => {
+        const mod = GUILD_URL.startsWith('https') ? https : http;
+        let parsed;
+        try { parsed = new URL(`${GUILD_URL}/api/events/stream?kinds=sillytavern.asset.`); }
+        catch { return res.status(400).end(); }
+        const upstream = mod.request({
+            hostname: parsed.hostname,
+            port: parsed.port,
+            path: parsed.pathname + parsed.search,
+            method: 'GET',
+            headers: { 'Accept': 'text/event-stream' },
+        }, (upRes) => {
+            if (upRes.statusCode !== 200) {
+                res.status(502).end();
+                upRes.resume();
+                return;
+            }
+            res.writeHead(200, {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache, no-transform',
+                'Connection': 'keep-alive',
+                'X-Accel-Buffering': 'no',   // defeat nginx buffering if ST is behind one
+            });
+            // Initial comment so the browser knows the connection is live.
+            res.write(': spellcaster-sse-ready\n\n');
+            upRes.on('data', chunk => {
+                if (!res.writableEnded) res.write(chunk);
+            });
+            upRes.on('end', () => { if (!res.writableEnded) res.end(); });
+            upRes.on('error', () => { if (!res.writableEnded) res.end(); });
+        });
+        upstream.on('error', () => {
+            if (!res.headersSent) res.status(502).end();
+            else if (!res.writableEnded) res.end();
+        });
+        // Client went away — tear down the upstream to avoid a zombie
+        // long-poll against the Guild.
+        req.on('close', () => {
+            try { upstream.destroy(); } catch { /* already closed */ }
+        });
+        upstream.end();
+    });
+
     // GET /cross/inbox — pull pending sillytavern.asset.* messages.
     // Returns: { messages: [{kind, data:{image_url,hash,source,...}}] }
     router.get('/cross/inbox', async (req, res) => {
@@ -2051,6 +2108,25 @@ function buildSceneCompositeWorkflow(scenePrompt, characters, modelName) {
 // without the Guild, but clearly labeled as "engine=legacy" in the
 // response.
 
+// In-flight animation shots (shot_id -> { startedAt, cancelled }).
+// Populated by _animateViaGuild, drained by the cancel endpoint. Lets
+// the /animate slash command surface a cancel action without the
+// browser having to manage the shot id itself. Size-capped at 20
+// entries so a broken caller can't leak.
+const _activeAnimateShots = new Map();
+function _trackAnimate(shotId) {
+    _activeAnimateShots.set(shotId, { startedAt: Date.now(), cancelled: false });
+    // Evict oldest if the map grows (shouldn't happen — each animate
+    // cleans itself up in a finally — but defense in depth).
+    if (_activeAnimateShots.size > 20) {
+        const oldest = [..._activeAnimateShots.keys()][0];
+        _activeAnimateShots.delete(oldest);
+    }
+}
+function _untrackAnimate(shotId) {
+    _activeAnimateShots.delete(shotId);
+}
+
 async function _animateViaGuild({ image_base64, prompt, preset }) {
     if (!GUILD_URL) throw new Error('GUILD_URL not configured');
     // Step 1: create a draft shot.
@@ -2070,59 +2146,70 @@ async function _animateViaGuild({ image_base64, prompt, preset }) {
     const shot = createResp.data || {};
     const shotId = shot.id || shot.shot_id;
     if (!shotId) throw new Error('Guild returned no shot id');
+    _trackAnimate(shotId);
 
-    // Step 2: attach the reference frame. The Guild expects either a
-    // data URL or raw base64 in `image_data`; pass the plain b64 so
-    // ST clients that forwarded a data-url already stripped work too.
-    const refResp = await fetchJSON(
-        `${GUILD_URL}/api/video/shots/${shotId}/reference`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image_data: image_base64 }),
-        });
-    if (refResp.status !== 200) {
-        throw new Error(`Guild refused reference upload: HTTP ${refResp.status}`);
-    }
-
-    // Step 3: render.
-    const renderResp = await fetchJSON(
-        `${GUILD_URL}/api/video/shots/${shotId}/render`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: '{}',
-        });
-    if (renderResp.status !== 200) {
-        throw new Error(`Guild refused render: HTTP ${renderResp.status}`);
-    }
-
-    // Step 4: poll until ready or failed. WAN 2.2 I2V on a single GPU
-    // takes 30-180s; 10-minute ceiling covers slow servers + queue.
-    const deadline = Date.now() + 10 * 60 * 1000;
-    let status = 'queued';
-    while (Date.now() < deadline) {
-        await new Promise(r => setTimeout(r, 2000));
-        const listResp = await fetchJSON(`${GUILD_URL}/api/video/shots`);
-        const shots = (listResp.data && listResp.data.shots) || [];
-        const current = shots.find(s => s.id === shotId);
-        status = current ? (current.status || 'unknown') : 'missing';
-        if (status === 'ready') break;
-        if (status === 'failed' || status === 'missing') {
-            throw new Error(`Guild shot ${shotId} status=${status}`);
+    try {
+        // Step 2: attach the reference frame. The Guild expects either a
+        // data URL or raw base64 in `image_data`; pass the plain b64 so
+        // ST clients that forwarded a data-url already stripped work too.
+        const refResp = await fetchJSON(
+            `${GUILD_URL}/api/video/shots/${shotId}/reference`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image_data: image_base64 }),
+            });
+        if (refResp.status !== 200) {
+            throw new Error(`Guild refused reference upload: HTTP ${refResp.status}`);
         }
-    }
-    if (status !== 'ready') {
-        throw new Error(`Guild shot ${shotId} timed out in status=${status}`);
-    }
 
-    // Step 5: fetch the rendered video.
-    const videoBuf = await fetchBytes(
-        `${GUILD_URL}/api/video/shots/${shotId}/video`,
-        { maxBytes: 200 * 1024 * 1024, timeoutMs: 60000 });
-    return {
-        engine: `guild:${preset}`,
-        shot_id: shotId,
-        videos: [{ base64: videoBuf.toString('base64'), filename: `${shotId}.mp4` }],
-    };
+        // Step 3: render.
+        const renderResp = await fetchJSON(
+            `${GUILD_URL}/api/video/shots/${shotId}/render`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: '{}',
+            });
+        if (renderResp.status !== 200) {
+            throw new Error(`Guild refused render: HTTP ${renderResp.status}`);
+        }
+
+        // Step 4: poll until ready or failed. WAN 2.2 I2V on a single GPU
+        // takes 30-180s; 10-minute ceiling covers slow servers + queue.
+        // On each tick, check the cancel flag so POST /animate/cancel
+        // can break us out without waiting for the next status poll.
+        const deadline = Date.now() + 10 * 60 * 1000;
+        let status = 'queued';
+        while (Date.now() < deadline) {
+            await new Promise(r => setTimeout(r, 2000));
+            const tracked = _activeAnimateShots.get(shotId);
+            if (tracked && tracked.cancelled) {
+                throw new Error(`cancelled by user (shot ${shotId})`);
+            }
+            const listResp = await fetchJSON(`${GUILD_URL}/api/video/shots`);
+            const shots = (listResp.data && listResp.data.shots) || [];
+            const current = shots.find(s => s.id === shotId);
+            status = current ? (current.status || 'unknown') : 'missing';
+            if (status === 'ready') break;
+            if (status === 'failed' || status === 'missing') {
+                throw new Error(`Guild shot ${shotId} status=${status}`);
+            }
+        }
+        if (status !== 'ready') {
+            throw new Error(`Guild shot ${shotId} timed out in status=${status}`);
+        }
+
+        // Step 5: fetch the rendered video.
+        const videoBuf = await fetchBytes(
+            `${GUILD_URL}/api/video/shots/${shotId}/video`,
+            { maxBytes: 200 * 1024 * 1024, timeoutMs: 60000 });
+        return {
+            engine: `guild:${preset}`,
+            shot_id: shotId,
+            videos: [{ base64: videoBuf.toString('base64'), filename: `${shotId}.mp4` }],
+        };
+    } finally {
+        _untrackAnimate(shotId);
+    }
 }
 
 

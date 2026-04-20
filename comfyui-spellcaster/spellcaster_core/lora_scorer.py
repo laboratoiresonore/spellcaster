@@ -101,12 +101,12 @@ def _clamp_score(raw) -> Optional[float]:
         v = float(raw)
     except (TypeError, ValueError):
         return None
-    # Some models return "8/10" split or "80%" — we mostly don't see
-    # those since we asked for a plain number, but clamp anyway so
-    # out-of-range answers don't poison the auto-confirm threshold.
+    # Some models return "80" (percent-like) or "11/10" (overshoot).
+    # Rescale ONLY for clearly percent-scale answers (>20 on a 0-10
+    # rubric is unambiguously wrong-scale), and clamp small overshoots.
     if v > 100:
         return None
-    if 10 < v <= 100:
+    if 20 < v <= 100:
         v = v / 10.0
     if v < MIN_SCORE:
         v = MIN_SCORE

@@ -37,6 +37,7 @@ from spellcaster_core.lora_knowledge import (  # noqa: E402,F401
     set_cache_path, clear_cache, _normalise_sampler,
 )
 from spellcaster_core import lora_calibration_store as store  # noqa: E402
+from spellcaster_core import lora_scorer as scorer  # noqa: E402
 
 
 # ── Fakes / helpers ────────────────────────────────────────────────────
@@ -370,6 +371,128 @@ def case_recipe_nsfw_flag_propagates():
     assert recipe["nsfw"] is True
 
 
+# ── Vision scorer (mocked Ollama) ──────────────────────────────────────
+
+def case_scorer_extract_pure_json():
+    got = scorer._extract_score_json('{"score": 8.5, "reason": "good"}')
+    assert got == {"score": 8.5, "reason": "good"}
+
+
+def case_scorer_extract_json_wrapped_in_markdown():
+    raw = 'Here you go:\n```json\n{"score": 6, "reason": "ok"}\n```\n'
+    got = scorer._extract_score_json(raw)
+    assert got and got["score"] == 6
+
+
+def case_scorer_extract_number_scrape_last_resort():
+    raw = "I give it a score: 9 because it looks sharp"
+    got = scorer._extract_score_json(raw)
+    assert got and got["score"] == 9.0
+
+
+def case_scorer_clamp_out_of_range():
+    assert scorer._clamp_score(15) == 10.0       # clamped to max
+    assert scorer._clamp_score(-3) == 0.0        # clamped to min
+    assert scorer._clamp_score("7.8") == 7.8
+    assert scorer._clamp_score(85) == 8.5        # 0-100 rescale
+    assert scorer._clamp_score("bad") is None
+
+
+def case_scorer_network_offline_returns_error():
+    # Dead port — nothing should be listening here.
+    r = scorer.score_image(
+        image_b64="aGVsbG8=",   # base64 of "hello"
+        prompt="a cat",
+        ollama_url="http://127.0.0.1:59997",
+        timeout=1.0,
+    )
+    assert r.ok is False
+    assert r.score is None
+    assert "network" in r.error or "HTTP" in r.error
+
+
+def case_scorer_probe_offline_reports_reason():
+    r = scorer.probe_available(
+        ollama_url="http://127.0.0.1:59997",
+        timeout=1.0,
+    )
+    assert r["ok"] is False
+    assert "unreachable" in r["reason"] or "HTTP" in r["reason"]
+
+
+def case_scorer_parses_mocked_good_response():
+    """Hit a fake Ollama via stdlib HTTPServer. Verifies the whole
+    request+response pipe — POST body shape, JSON extraction,
+    ScoreResult population."""
+    import json as _json, threading as _th
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a, **kw): pass
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length", "0"))
+            self.rfile.read(length)
+            resp = {"message": {"content": '{"score": 8.3, "reason": "on prompt"}'}}
+            body = _json.dumps(resp).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    srv = HTTPServer(("127.0.0.1", 0), H)
+    port = srv.server_address[1]
+    t = _th.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    try:
+        r = scorer.score_image(
+            image_b64="aGVsbG8=",
+            prompt="a cat in a field",
+            ollama_url=f"http://127.0.0.1:{port}",
+            timeout=3.0,
+        )
+        assert r.ok is True, f"got error: {r.error}"
+        assert r.score == 8.3
+        assert "on prompt" in r.reason
+    finally:
+        srv.shutdown()
+
+
+def case_scorer_rejects_non_json_model_response():
+    """The model went off-script. Scorer must NOT crash or return
+    junk — it flags .ok=False with a diagnostic."""
+    import json as _json, threading as _th
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a, **kw): pass
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length", "0"))
+            self.rfile.read(length)
+            resp = {"message": {"content": "Sure! The image looks pretty nice overall."}}
+            body = _json.dumps(resp).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    srv = HTTPServer(("127.0.0.1", 0), H)
+    port = srv.server_address[1]
+    t = _th.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    try:
+        r = scorer.score_image(
+            image_b64="aGVsbG8=", prompt="cat",
+            ollama_url=f"http://127.0.0.1:{port}", timeout=3.0,
+        )
+        assert r.ok is False
+        assert r.score is None
+        assert "bad content" in r.error or "unparseable" in r.error
+    finally:
+        srv.shutdown()
+
+
 def case_recipe_graceful_fallback_on_knowledge_error():
     """Forcing a knowledge error should degrade cleanly, not crash."""
     from scaffold.lora_grouping import resolve_shootout_recipe_for_lora
@@ -422,6 +545,15 @@ CASES = [
     ("recipe: clamps wild strength to 1.5",             case_recipe_clamps_wild_strength),
     ("recipe: NSFW flag propagates to recipe",          case_recipe_nsfw_flag_propagates),
     ("recipe: knowledge error degrades gracefully",     case_recipe_graceful_fallback_on_knowledge_error),
+
+    ("scorer: extract pure JSON",                       case_scorer_extract_pure_json),
+    ("scorer: extract JSON wrapped in markdown",        case_scorer_extract_json_wrapped_in_markdown),
+    ("scorer: number scrape last resort",               case_scorer_extract_number_scrape_last_resort),
+    ("scorer: clamp out-of-range scores",               case_scorer_clamp_out_of_range),
+    ("scorer: offline Ollama returns error",            case_scorer_network_offline_returns_error),
+    ("scorer: probe offline reports reason",            case_scorer_probe_offline_reports_reason),
+    ("scorer: parses mocked good response",             case_scorer_parses_mocked_good_response),
+    ("scorer: rejects non-JSON model response",         case_scorer_rejects_non_json_model_response),
 ]
 
 

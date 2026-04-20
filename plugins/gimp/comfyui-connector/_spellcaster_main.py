@@ -3219,6 +3219,107 @@ WAN_VIDEO_PRESETS = [
         "shift_override": 8.0,
         "loras": [],
     },
+
+    # ── NSFW_WAN_INJECTION_POINT ──
+
+    # ── NSFW Wan Video Presets (auto-injected) ────────────────────
+    {
+        "label": "NSFW: Kissing",
+        "prompt": 'passionate kissing, lips touching, romantic embrace, intimate close-up',
+        "negative": 'ugly, deformed, bad anatomy',
+        "high_lora": 'Wan-2.2-I2V\\KISSHIGH.safetensors',
+        "low_lora": 'Wan-2.2-I2V\\KISSLOW.safetensors',
+        "strength": 1.0,
+    },
+    {
+        "label": "NSFW: Wriggling",
+        "prompt": 'wriggling motion, squirming, body movement, sensual movement',
+        "negative": 'static, frozen, stiff',
+        "high_lora": 'Wan-2.2-I2V\\wriggling_i2v_high_e010.safetensors',
+        "low_lora": 'Wan-2.2-I2V\\wriggling_i2v_low_e020.safetensors',
+        "strength": 1.0,
+    },
+    {
+        "label": "NSFW: Oral (insertion)",
+        "prompt": 'oral, mouth, insertion, close-up',
+        "negative": 'ugly, deformed',
+        "high_lora": 'Wan-2.2-I2V\\NSFW\\wan2.2-i2v-high-oral-insertion-v1.0.safetensors',
+        "low_lora": 'Wan-2.2-I2V\\NSFW\\wan2.2-i2v-low-oral-insertion-v1.0.safetensors',
+        "strength": 1.0,
+    },
+    {
+        "label": "NSFW: Double Blowjob",
+        "prompt": 'double blowjob, two women, oral, POV',
+        "negative": 'ugly, deformed, bad anatomy',
+        "high_lora": 'Wan-2.2-I2V\\WAN-2.2-I2V-Double-Blowjob-HIGH-v1.safetensors',
+        "low_lora": 'Wan-2.2-I2V\\WAN-2.2-I2V-Double-Blowjob-LOW-v1.safetensors',
+        "strength": 1.0,
+    },
+    {
+        "label": "NSFW: Anal",
+        "prompt": 'anal, penetration, from behind',
+        "negative": 'ugly, deformed, bad anatomy',
+        "high_lora": 'Wan-2.2-I2V\\NSFW\\wan22_i2v_anal_v1_high_noise.safetensors',
+        "low_lora": 'Wan-2.2-I2V\\NSFW\\wan22_i2v_anal_v1_low_noise.safetensors',
+        "strength": 1.0,
+    },
+    {
+        "label": "NSFW: Footjob v1",
+        "prompt": 'footjob, feet, toes, foot fetish',
+        "negative": 'ugly, deformed',
+        "high_lora": 'Wan-2.2-I2V\\NSFW\\wan2.2_i2v_highnoise_footjob_v1.0.safetensors',
+        "low_lora": 'Wan-2.2-I2V\\NSFW\\wan2.2_i2v_lownoise_footjob_v1.0.safetensors',
+        "strength": 1.0,
+    },
+    {
+        "label": "NSFW: Footjob v2",
+        "prompt": 'footjob, feet wrapping, toe grip',
+        "negative": 'ugly, deformed',
+        "high_lora": 'Wan-2.2-I2V\\NSFW\\wan22_i2v_footjob_v2_ab_high.safetensors',
+        "low_lora": 'Wan-2.2-I2V\\NSFW\\wan22_i2v_footjob_v2_ab_low.safetensors',
+        "strength": 1.0,
+    },
+    {
+        "label": "NSFW: Foot Worship / Toe Sucking",
+        "prompt": 'foot worship, toe sucking, licking toes, foot fetish',
+        "negative": 'ugly, deformed',
+        "high_lora": 'Wan-2.2-I2V\\NSFW\\wan2.2_i2v_highnoise_FOOT_WORSHIP_TOE_SUCKING_v1.0.safetensors',
+        "low_lora": 'Wan-2.2-I2V\\NSFW\\wan2.2_i2v_lownoise_FOOT_WORSHIP_TOE_SUCKING_v1.0.safetensors',
+        "strength": 1.0,
+    },
+    {
+        "label": "NSFW: Feet Up v3",
+        "prompt": 'feet up, legs raised, soles visible',
+        "negative": 'ugly, deformed',
+        "high_lora": 'Wan-2.2-I2V\\NSFW\\wan22_i2v_feetup_V3_high_noise.safetensors',
+        "low_lora": 'Wan-2.2-I2V\\NSFW\\wan22_i2v_feetup_V3_low_noise.safetensors',
+        "strength": 1.0,
+    },
+    {
+        "label": "NSFW: Cumshot Aesthetics",
+        "prompt": 'cumshot, facial, cum on body, aesthetic',
+        "negative": 'ugly, deformed',
+        "high_lora": 'Wan-2.2-I2V\\NSFW\\23High noise-Cumshot Aesthetics.safetensors',
+        "low_lora": 'Wan-2.2-I2V\\NSFW\\56Low noise-Cumshot Aesthetics.safetensors',
+        "strength": 1.0,
+    },
+    {
+        "label": "NSFW: Cum v2",
+        "prompt": 'cum, ejaculation, thick cum',
+        "negative": 'ugly, deformed',
+        "high_lora": 'WAN\\Wan22_CumV2_High.safetensors',
+        "low_lora": 'Wan-2.2-I2V\\Concept\\Wan22_CumV2_Low.safetensors',
+        "strength": 1.0,
+    },
+    {
+        "label": "NSFW: General NSFW",
+        "prompt": 'nsfw, explicit, sexual',
+        "negative": 'ugly, deformed, bad anatomy',
+        "high_lora": 'Wan-2.2-I2V\\NSFW\\NSFW-22-H-e8.safetensors',
+        "low_lora": 'Wan-2.2-I2V\\NSFW\\NSFW-22-L-e8.safetensors',
+        "strength": 1.0,
+    },
+
 ]
 
 PULID_FLUX_MODELS = [
@@ -5306,95 +5407,509 @@ LTX_PRESETS = {
 }
 
 # ── LTX 2.3 Video Prompt Presets ──────────────────────────────────────────
+# LTX 2.3 explicitly rewards 100-200 word cinematic descriptions — prompt
+# length is a first-class quality lever. Each preset below is tuned to
+# LTX's strengths: cinematic camera moves, VFX (fire / smoke / sparks /
+# lightning), environmental atmosphere (rain / snow / fog), liquid
+# physics, portrait micro-motion, and fantasy / sci-fi effects.
+#
+# Canon defaults (from CLAUDE.md §16.3):
+#   distilled  → cfg=1.0, steps=8  (fast path — 4× quicker, very
+#                usable quality for iteration)
+#   full       → cfg=4.0, steps=30 (quality)
+#   two_stage  → cfg=4.0, steps=30 + half-res → 2× upscale → re-denoise
+# `num_frames_override` follows the preset's intent (25=1s@25fps, 49=~2s,
+# 73=~3s, 97=~4s). LTX 2.3 handles up to 121 frames well.
 LTX_VIDEO_PRESETS = [
     {
         "label": "(none — manual prompt)",
         "prompt": "",
-        "cfg_override": None,
-        "steps_override": None,
-        "two_stage": False,
-        "distilled": False,
-        "num_frames_override": None,
-        "loras": [],
+        "cfg_override": None, "steps_override": None,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": None, "loras": [],
     },
     # ── Speed modes ───────────────────────────────────────────────────
     {
         "label": "Distilled Fast (8 steps, ~60s)",
         "prompt": "",
-        "cfg_override": 1.0,
-        "steps_override": 8,
-        "two_stage": False,
-        "distilled": True,
-        "num_frames_override": None,
-        "loras": [],
+        "cfg_override": 1.0, "steps_override": 8,
+        "two_stage": False, "distilled": True,
+        "num_frames_override": None, "loras": [],
     },
     {
         "label": "Two-Stage HQ (half-res → 2x upscale → re-denoise)",
         "prompt": "",
-        "cfg_override": 4.0,
-        "steps_override": 30,
-        "two_stage": True,
-        "distilled": False,
-        "num_frames_override": None,
-        "loras": [],
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": True, "distilled": False,
+        "num_frames_override": None, "loras": [],
     },
-    # ── Scene templates ───────────────────────────────────────────────
+
+    # ── Cinematic camera moves ────────────────────────────────────────
     {
-        "label": "Cinematic Pan — Landscape",
-        "prompt": "Slow cinematic camera pan across a vast landscape. Golden hour lighting, volumetric fog, "
-                  "depth of field. Photorealistic, 4K film grain, steady dolly movement.",
-        "cfg_override": 4.0,
-        "steps_override": 30,
-        "two_stage": False,
-        "distilled": False,
-        "num_frames_override": 49,
-        "loras": [],
+        "label": "Cinematic Pan — Golden Hour Landscape",
+        "prompt": "A slow cinematic camera pan from left to right across a vast rolling "
+                  "landscape at golden hour. Warm amber sunlight rakes across distant "
+                  "hills, volumetric fog drifts through the valley below, wildflowers "
+                  "sway gently in the foreground breeze. Shallow depth of field keeps "
+                  "the far horizon softly diffused. Photorealistic, anamorphic lens "
+                  "flare, 35mm film grain, rich colour grading with lifted shadows and "
+                  "warm highlights. Steady dolly movement, no cuts.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 73, "loras": [],
     },
+    {
+        "label": "Dolly-In — Establishing Shot",
+        "prompt": "Slow cinematic dolly push-in toward a lone figure standing at the "
+                  "edge of a cliff. The camera glides forward at a steady pace, "
+                  "gradually revealing the vastness of the mountain range behind them. "
+                  "Dramatic cloud cover, soft backlighting, atmospheric haze. The "
+                  "figure remains perfectly still as the world moves around them. "
+                  "Photorealistic, cinematic 2.39:1 framing, rich natural colours.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+    {
+        "label": "Orbital Tracking — Subject Rotate",
+        "prompt": "Smooth orbital camera movement around a central subject, the lens "
+                  "maintaining focus on the subject while the background blurs into a "
+                  "painterly swirl. Cinematic 360-degree tracking shot, stable gimbal "
+                  "movement, shallow depth of field. The subject remains in sharp "
+                  "detail throughout the rotation, lit by soft key light from above.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 97, "loras": [],
+    },
+    {
+        "label": "Crane Shot — Upward Reveal",
+        "prompt": "Dramatic crane shot rising from ground level into the sky, tilting "
+                  "down to reveal a sprawling cityscape at dusk. City lights begin to "
+                  "twinkle on as the camera ascends, traffic streams glow below, the "
+                  "horizon is lit with deep oranges and purples. Cinematic, wide lens "
+                  "with slight barrel distortion, smooth continuous motion.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+    {
+        "label": "Handheld Documentary — Natural",
+        "prompt": "Subtle handheld camera with natural micro-shake, documentary style. "
+                  "Following a subject through an environment with organic operator "
+                  "movement. Natural lighting, grounded colour grading, slight lens "
+                  "vignetting. The frame breathes slightly as the operator moves, "
+                  "giving an immediate, present feel without becoming shaky.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 49, "loras": [],
+    },
+
+    # ── VFX / fire / explosions / lightning ──────────────────────────
+    {
+        "label": "Explosion — Slow-motion Fireball",
+        "prompt": "A massive fireball explosion erupts in slow motion. Orange and "
+                  "yellow flames billow outward in a mushroom shape, dense black "
+                  "smoke curls at the edges, debris and embers scatter through the "
+                  "air, shockwave visible in the surrounding dust. Photorealistic "
+                  "particle physics, high-dynamic-range lighting, 240fps-feel slow "
+                  "motion, cinematic 2.39:1 framing, heat-haze distortion around "
+                  "the blast core.",
+        "cfg_override": 5.0, "steps_override": 30,
+        "two_stage": True, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+    {
+        "label": "Fire Close-up — Dancing Flames",
+        "prompt": "Extreme macro close-up of dancing flames. Every individual flame "
+                  "tongue writhes and curls against black background, glowing orange "
+                  "and yellow at the core with blue-white highlights at the base. "
+                  "Embers rise and flicker, smoke wisps drift upward. Hyperreal fire "
+                  "physics, deep HDR contrast, cinematic crawl speed, the flames "
+                  "move organically like a living creature.",
+        "cfg_override": 4.5, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+    {
+        "label": "Lightning Strike — Stormy Sky",
+        "prompt": "Dramatic lightning bolt cracks across a turbulent stormy sky. "
+                  "Multiple branching forks illuminate dark clouds from within, "
+                  "casting brief harsh shadows. Rain streaks diagonally across the "
+                  "frame, distant thunder rumbles visible as cloud tremors. The "
+                  "lightning flashes last a fraction of a second each, leaving "
+                  "vivid after-images. Cinematic wide shot, ominous blue-grey "
+                  "colour palette with electric white bursts.",
+        "cfg_override": 5.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+    {
+        "label": "Sparks Shower — Metal on Metal",
+        "prompt": "Extreme close-up of sparks flying from a grinding wheel striking "
+                  "metal. Thousands of glowing orange and yellow particles arc "
+                  "through dark space, each leaving a brief bright trail before "
+                  "cooling to ember red. The camera holds perfectly still as the "
+                  "shower builds and fades. Hyperreal particle physics, deep black "
+                  "background, rich warm tones. Cinematic slow-motion feel.",
+        "cfg_override": 4.5, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+    {
+        "label": "Magic Spell — Energy Burst",
+        "prompt": "A wizard's hands glow with swirling magical energy, arcane "
+                  "symbols rotating around the palms. Crackling blue-white electric "
+                  "tendrils reach outward, casting shifting highlights across the "
+                  "sorcerer's face. A sudden burst of energy releases forward, "
+                  "lighting up the surrounding darkness. Fantasy VFX, high-contrast "
+                  "rim lighting, cinematic wide shot, smoke and ember particles "
+                  "drifting through the magical aura.",
+        "cfg_override": 5.0, "steps_override": 30,
+        "two_stage": True, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+    {
+        "label": "Smoke Drift — Volumetric",
+        "prompt": "Slow cinematic shot of thick volumetric smoke curling through a "
+                  "beam of golden light. The smoke swirls in organic vortices, "
+                  "revealing and concealing shapes within it. Dust motes catch the "
+                  "light and shimmer briefly before drifting into shadow. Deep "
+                  "atmospheric depth, high contrast between illuminated smoke and "
+                  "black background, hypnotic slow drift. Cinematographic poetry.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 73, "pingpong": True, "loras": [],
+    },
+
+    # ── Environmental / weather ──────────────────────────────────────
+    {
+        "label": "Heavy Rain — Window View",
+        "prompt": "Rain pours against a window pane in cinematic close-up. Each "
+                  "droplet traces a glistening path downward, refracting the warm "
+                  "interior light behind the glass. Beyond the window, a blurred "
+                  "city at night glows in soft amber and electric blue. The rhythm "
+                  "of the rain is hypnotic, the rivulets merging and splitting as "
+                  "they fall. Moody, contemplative atmosphere, film-noir lighting.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+    {
+        "label": "Snow Fall — Quiet Forest",
+        "prompt": "Gentle snowfall in a silent pine forest. Thousands of fat "
+                  "snowflakes drift lazily downward, catching pale blue winter "
+                  "light. The boughs of the evergreens are already laden with "
+                  "powder, deadening all sound. A slight breeze ripples the "
+                  "surface of the snow, nothing else moves. Serene, meditative "
+                  "atmosphere, cold colour palette with subtle warm highlights.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 97, "pingpong": True, "loras": [],
+    },
+    {
+        "label": "Fog Rolling — Mysterious Valley",
+        "prompt": "Thick fog rolls slowly through a mountain valley at dawn. The "
+                  "mist curls around jagged rock formations, revealing and "
+                  "swallowing trees in turn. First light of day cuts golden shafts "
+                  "through gaps in the fog. Atmospheric, cinematic, vast scale. "
+                  "The camera holds steady as the landscape transforms beneath a "
+                  "living blanket of cloud.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 97, "loras": [],
+    },
+    {
+        "label": "Dust Storm — Desert",
+        "prompt": "A wall of desert dust sweeps across the frame, obscuring the "
+                  "horizon in a wash of ochre and sepia. Sand grains stream "
+                  "diagonally, visible in the low sun, the light fracturing into "
+                  "golden beams through the particulate. Distant cactus silhouettes "
+                  "flicker in and out of view. Apocalyptic, cinematic scale, high "
+                  "contrast between illuminated dust and deep shadow.",
+        "cfg_override": 4.5, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+
+    # ── Liquid / water physics ───────────────────────────────────────
+    {
+        "label": "Water Splash — Macro Slow-mo",
+        "prompt": "Extreme macro slow-motion shot of a single water droplet "
+                  "striking a still surface. The impact sends a perfect crown of "
+                  "splash droplets upward, each catching the light like liquid "
+                  "diamonds. Concentric ripples expand outward across the surface. "
+                  "Hyperreal fluid physics, frozen instant expanding in real time, "
+                  "cinematic high-speed photography look, dramatic side lighting.",
+        "cfg_override": 4.5, "steps_override": 30,
+        "two_stage": True, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+    {
+        "label": "Wave Crash — Coastal",
+        "prompt": "A massive ocean wave rises, curls, and crashes against jagged "
+                  "coastal rocks in cinematic slow motion. The crest turns "
+                  "translucent turquoise where the sun shines through, spray "
+                  "explodes upward in a white sheet, foam cascades over the rocks. "
+                  "Moody overcast sky, cinematic widescreen framing, raw natural "
+                  "power captured with unflinching realism.",
+        "cfg_override": 4.5, "steps_override": 30,
+        "two_stage": True, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+    {
+        "label": "Pour Shot — Coffee/Liquid",
+        "prompt": "Hyperreal close-up of hot coffee being poured into a white "
+                  "ceramic cup. The dark liquid streams in a steady ribbon, "
+                  "catching warm overhead light, steam curling upward in delicate "
+                  "ribbons. Bubbles form and pop on the surface, crema swirls into "
+                  "a fractal pattern. Rich warm palette, shallow depth of field, "
+                  "sensory commercial-food-photography aesthetic.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 49, "loras": [],
+    },
+
+    # ── Lighting / atmosphere ────────────────────────────────────────
+    {
+        "label": "Golden Hour Portrait",
+        "prompt": "A close-up portrait during golden hour. Soft amber sunlight "
+                  "rakes across the subject's face from the side, creating warm "
+                  "highlights and deep amber-tinted shadows. The subject's hair "
+                  "catches the light like spun copper. Micro-expressions flicker "
+                  "naturally, subtle blink, slight breath. Cinematic shallow depth "
+                  "of field, creamy bokeh of sun-lit foliage behind.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 49, "loras": [],
+    },
+    {
+        "label": "Neon Cyberpunk — Rainy Street",
+        "prompt": "A rain-slicked city street at night, reflecting neon signs in "
+                  "hot pink, electric blue, and acid green. Steam rises from grates "
+                  "in the road, a lone figure in a long coat walks slowly through "
+                  "the puddles. Cyberpunk aesthetic, Blade Runner colour palette, "
+                  "moody volumetric lighting, anamorphic lens flares from every "
+                  "neon source, deep blacks and saturated highlights.",
+        "cfg_override": 4.5, "steps_override": 30,
+        "two_stage": True, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+    {
+        "label": "Moonlit Forest — Atmospheric",
+        "prompt": "A deep forest at night under a full moon. Silver-blue moonlight "
+                  "filters through the canopy in ethereal shafts, pooling on the "
+                  "forest floor. A light mist drifts between the trunks at knee "
+                  "height. Fireflies blink occasionally in the middle distance. "
+                  "Fantasy atmosphere, muted cool palette with tiny warm highlights, "
+                  "cinematic long take with barely perceptible camera drift.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 97, "loras": [],
+    },
+    {
+        "label": "Candlelit Interior — Warm",
+        "prompt": "An intimate interior scene lit only by dozens of flickering "
+                  "candles. Warm orange light dances across stone walls and "
+                  "wooden furniture, casting long shifting shadows. The flames "
+                  "each burn with their own rhythm, rising and falling gently. "
+                  "Period-drama cinematography, rich warm colour grading, high "
+                  "contrast, painterly composition reminiscent of Barry Lyndon.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+
+    # ── Character / portrait motion ──────────────────────────────────
     {
         "label": "Portrait — Subtle Motion",
-        "prompt": "Close-up portrait, subtle natural movement. Soft breathing, gentle hair sway in breeze, "
-                  "micro-expressions. Shallow depth of field, studio lighting, photorealistic skin detail.",
-        "cfg_override": 4.0,
-        "steps_override": 30,
-        "two_stage": False,
-        "distilled": False,
-        "num_frames_override": 25,
-        "loras": [],
+        "prompt": "Close-up portrait with subtle natural movement. Soft "
+                  "breathing, gentle hair sway in a barely-there breeze, "
+                  "micro-expressions flickering naturally across the face. "
+                  "Shallow depth of field, studio lighting from above and slightly "
+                  "to the side, photorealistic skin detail with natural pores and "
+                  "light subsurface scattering.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 25, "loras": [],
+    },
+    {
+        "label": "Running Athlete — Slow-mo",
+        "prompt": "An athlete sprints in cinematic slow motion. Every muscle "
+                  "contraction visible, sweat droplets arc through the air, "
+                  "footstrikes send up small plumes of dust. The athlete's hair "
+                  "flows backward in the relative wind. Tracking shot from the "
+                  "side, shallow depth of field, strong directional lighting "
+                  "picking out anatomy. Commercial-sports-cinematography aesthetic.",
+        "cfg_override": 4.5, "steps_override": 30,
+        "two_stage": True, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+
+    # ── Nature macro / micro-world ───────────────────────────────────
+    {
+        "label": "Dew Drops — Leaf Macro",
+        "prompt": "Extreme macro close-up of morning dew drops on a green leaf. "
+                  "Each crystal-clear droplet acts as a miniature lens, refracting "
+                  "the world behind it upside down. The leaf's cellular structure "
+                  "is visible through the water. A tiny ant crosses the leaf, "
+                  "pausing to drink from one of the droplets. Hyperreal detail, "
+                  "soft diffused morning light, fresh green colour palette.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": True, "distilled": False,
+        "num_frames_override": 49, "loras": [],
+    },
+    {
+        "label": "Bee Macro — Pollen Flight",
+        "prompt": "A bumblebee lands on a brilliantly coloured flower in ultra-"
+                  "slow-motion macro. The wings blur in figure-eight patterns, "
+                  "golden pollen grains scatter outward as the bee touches the "
+                  "stamens, fine body hairs catch light from every angle. "
+                  "Razor-sharp depth of field holds on the bee while the "
+                  "background dissolves into painterly bokeh. Nature "
+                  "documentary cinematography.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": True, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+
+    # ── Sci-fi / fantasy ─────────────────────────────────────────────
+    {
+        "label": "Hologram Interface — Sci-fi",
+        "prompt": "A translucent blue holographic interface materialises in mid "
+                  "air, rotating 3D data visualisations spinning slowly in "
+                  "volumetric light. Grid lines and glowing text scroll across "
+                  "the projected surface, occasional glitch artifacts flicker. "
+                  "A hand enters from the side and interacts with the projection, "
+                  "triggering rippling light cascades. Clean sci-fi aesthetic, "
+                  "deep dark environment, electric-blue dominant palette.",
+        "cfg_override": 4.5, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+    {
+        "label": "Laser Beam — Sci-fi Combat",
+        "prompt": "A brilliant red laser beam streaks through a dark environment, "
+                  "cutting a line of incandescent light across the frame. Dust "
+                  "and smoke swirl in its wake, the beam leaves a brief "
+                  "afterglow, heat distortion shimmers along its path. The shot "
+                  "holds long enough to see the beam fade and the air settle. "
+                  "Deep black background, saturated red palette, cinematic "
+                  "sci-fi atmosphere.",
+        "cfg_override": 4.5, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 49, "loras": [],
+    },
+    {
+        "label": "Energy Aura — Character Power-up",
+        "prompt": "A character stands with arms outstretched as a swirling aura "
+                  "of golden and violet energy builds around them. Particles "
+                  "rise from the ground, electric arcs crackle between palms, "
+                  "cloth and hair billow in an aura-induced wind. The power "
+                  "peaks in a brilliant flash. Anime-style VFX, cinematic "
+                  "low-angle shot, rim lighting from the aura itself, high "
+                  "dynamic range.",
+        "cfg_override": 5.0, "steps_override": 30,
+        "two_stage": True, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+
+    # ── Commercial / product ─────────────────────────────────────────
+    {
+        "label": "Product Turntable — 360° Spin",
+        "prompt": "A premium product rotates 360 degrees on a pristine turntable. "
+                  "Clean gradient background from warm to cool, three-point "
+                  "studio lighting with a strong key, soft fill, and back light "
+                  "accentuating the product's silhouette. Smooth constant "
+                  "rotation speed, razor-sharp detail throughout. Premium "
+                  "commercial photography aesthetic.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 97, "loras": [],
+    },
+    {
+        "label": "Hero Product Reveal",
+        "prompt": "A product emerges from swirling fog with a dramatic slow "
+                  "camera push-in. The fog parts to reveal the product lit from "
+                  "below with cool electric-blue light, contrasting warm rim "
+                  "light catching the edges. As the camera arrives on the hero "
+                  "angle, the fog dissipates and lens flares bloom. Luxury "
+                  "advertisement aesthetic, cinematic, anamorphic.",
+        "cfg_override": 4.5, "steps_override": 30,
+        "two_stage": True, "distilled": False,
+        "num_frames_override": 73, "loras": [],
+    },
+
+    # ── Abstract / motion graphics ───────────────────────────────────
+    {
+        "label": "Particle Swarm — Abstract",
+        "prompt": "Thousands of luminous particles swirl through dark space in "
+                  "fluid organic patterns, forming and dissolving into shapes — "
+                  "spirals, waves, constellations — driven by invisible forces. "
+                  "Each particle trails a short tail of light, the whole swarm "
+                  "behaves like a living fluid. Motion-graphics aesthetic, "
+                  "saturated cyan and magenta, deep black background.",
+        "cfg_override": 4.5, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 97, "pingpong": True, "loras": [],
+    },
+
+    # ── Cinemagraph loops (pingpong) ─────────────────────────────────
+    {
+        "label": "Cinemagraph — Coffee Steam",
+        "prompt": "Seamless cinemagraph loop: a steaming cup of coffee sits "
+                  "perfectly still on a wooden table. Only the steam moves, "
+                  "curling upward in endless hypnotic patterns. Warm morning "
+                  "light from the side, shallow depth of field, everything else "
+                  "frozen in time. Cinematic still-life meets subtle motion.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 49, "pingpong": True, "loras": [],
     },
     {
         "label": "Nature Loop — Water/Clouds",
-        "prompt": "Seamless loop of natural elements. Flowing water, drifting clouds, swaying trees. "
-                  "Gentle ambient motion, dreamy atmosphere, no camera movement.",
-        "cfg_override": 4.0,
-        "steps_override": 30,
-        "two_stage": False,
-        "distilled": False,
-        "num_frames_override": 49,
-        "pingpong": True,
-        "loras": [],
+        "prompt": "Seamless loop of natural elements in gentle ambient motion. "
+                  "Flowing water meanders across smooth river stones, drifting "
+                  "clouds sail across a cerulean sky, trees sway subtly in a soft "
+                  "breeze. No camera movement, meditative atmosphere, organic "
+                  "imperfect repetition.",
+        "cfg_override": 4.0, "steps_override": 30,
+        "two_stage": False, "distilled": False,
+        "num_frames_override": 49, "pingpong": True, "loras": [],
     },
+
+    # ── Action / dynamic ─────────────────────────────────────────────
     {
-        "label": "Action Sequence — Dynamic",
-        "prompt": "Dynamic action sequence with fast motion. Tracking camera, motion blur on fast elements, "
-                  "sharp focus on subject. Cinematic color grading, high contrast.",
-        "cfg_override": 5.0,
-        "steps_override": 30,
-        "two_stage": True,
-        "distilled": False,
-        "num_frames_override": 49,
-        "loras": [],
+        "label": "Action Sequence — Dynamic Tracking",
+        "prompt": "A high-octane action sequence captured with an aggressive "
+                  "tracking camera. Fast motion punctuated by brief slow-motion "
+                  "moments, sharp focus on the hero subject while the background "
+                  "streaks by in motion blur. Gritty cinematic colour grading, "
+                  "high contrast, deep blacks and hot highlights, sparks and "
+                  "debris filling the foreground.",
+        "cfg_override": 5.0, "steps_override": 30,
+        "two_stage": True, "distilled": False,
+        "num_frames_override": 73, "loras": [],
     },
-    {
-        "label": "Product Turntable — 360° Spin",
-        "prompt": "Product rotating 360 degrees on turntable. Clean white background, "
-                  "studio lighting, smooth constant rotation speed. Sharp detail throughout.",
-        "cfg_override": 4.0,
-        "steps_override": 30,
-        "two_stage": False,
-        "distilled": False,
-        "num_frames_override": 49,
-        "loras": [],
-    },
+
+    # ── NSFW_LTX_INJECTION_POINT ──
+
+    # ── NSFW LTX Video Presets (auto-injected) ──────────────────────
+    {"label": "NSFW: Sensual Slow Pan", "prompt": 'A slow sensual camera pan across a woman lying on silk sheets in soft morning light. Her bare skin catches the light in warm golden tones, delicate shadows trace the curves of her body. Shallow depth of field, photorealistic skin detail with subtle subsurface scattering, luxurious boudoir cinematography. Gentle breathing motion, absolute stillness otherwise, 35mm film grain.', "cfg_override": 4.5, "steps_override": 30, "two_stage": True, "distilled": False, "num_frames_override": 73, "loras": []},
+    {"label": "NSFW: Silk Sheet Reveal", "prompt": 'A slow deliberate pull of silk sheets reveals a nude figure beneath. The fabric slides off the curve of a bare shoulder, down along the line of the back, catching warm candlelight. Hyperreal fabric physics, cinematic slow-motion feel, deep shadows and rich warm highlights. Tasteful implication, nothing explicit on frame, Helmut Newton aesthetic.', "cfg_override": 4.5, "steps_override": 30, "two_stage": True, "distilled": False, "num_frames_override": 73, "loras": []},
+    {"label": "NSFW: Bath — Steam & Skin", "prompt": 'A woman reclines in a vintage claw-foot bathtub filled with steaming water and scattered rose petals. Warm candlelight flickers around the bathroom, steam curls upward in hypnotic ribbons, water beads on bare shoulders. Close cinematic framing on the collarbone and neckline, nothing below the waterline visible. Rich sensory atmosphere, deep warm palette.', "cfg_override": 4.5, "steps_override": 30, "two_stage": False, "distilled": False, "num_frames_override": 73, "loras": []},
+    {"label": "NSFW: Lingerie Close-up", "prompt": 'Cinematic macro close-up on delicate lace lingerie draped across a toned body. Light catches the intricate embroidery, silk ribbon ties trail against skin, fingers slowly trace the edge of the fabric. Intimate, sensual, tastefully composed with shallow depth of field. Warm bedroom lighting, commercial-lingerie-cinematography aesthetic.', "cfg_override": 4.5, "steps_override": 30, "two_stage": False, "distilled": False, "num_frames_override": 49, "loras": []},
+    {"label": "NSFW: Passionate Kiss", "prompt": "Intense cinematic close-up of two lovers' lips meeting in a passionate kiss. Time slows as the space between them disappears, hands rise to cup a face, hair falls across cheeks. Warm golden-hour backlight creates a halo around the pair, everything else dissolves into soft bokeh. Deep emotional intimacy, shallow depth of field, film-romance aesthetic.", "cfg_override": 4.5, "steps_override": 30, "two_stage": False, "distilled": False, "num_frames_override": 73, "loras": []},
+    {"label": "NSFW: Shower — Silhouette", "prompt": 'A silhouette of a nude figure stands in a steam-filled shower behind frosted glass. Water cascades around the curves of the body, visible only as soft organic shapes through the glass. Atmospheric, impressionistic, tasteful implication. Warm natural bathroom lighting, rich contrast between the lit figure and cool tiled walls. Cinematic steam motion.', "cfg_override": 4.5, "steps_override": 30, "two_stage": False, "distilled": False, "num_frames_override": 73, "pingpong": True, "loras": []},
+    {"label": "NSFW: Boudoir Pose — Slow Motion", "prompt": 'A woman reclines across a velvet chaise in a dimly lit boudoir, slowly arching her back and turning her head toward the camera. Candles flicker around the scene, casting warm amber light across bare skin and draped silk. Absolute sensual confidence in the pose, cinematic slow-motion feel, Helmut Newton / Peter Lindbergh aesthetic, rich black shadows.', "cfg_override": 4.5, "steps_override": 30, "two_stage": True, "distilled": False, "num_frames_override": 73, "loras": []},
+    {"label": "NSFW: Intimate Embrace", "prompt": 'Two bodies intertwined in a tender intimate embrace, captured in cinematic close-up. Bare skin against bare skin, hands tracing slow paths across shoulders and backs, lips brushing a collarbone. Warm lamp-lit bedroom, deep shadows, the slightest visible breath between the pair. Nothing explicit in frame, pure sensual atmosphere, A24-film-romance aesthetic.', "cfg_override": 4.5, "steps_override": 30, "two_stage": False, "distilled": False, "num_frames_override": 73, "loras": []},
+    {"label": "NSFW: Undressing — Back View", "prompt": 'A slow cinematic shot from behind as a woman lets her dress slip down off her shoulders and pool at her feet. Her hair cascades down her bare back, the fabric falls in graceful folds, her silhouette is perfectly framed by warm window light. Tasteful, sensual, nothing explicit beyond the back and shoulders. Classic cinematic reveal, anamorphic widescreen.', "cfg_override": 4.5, "steps_override": 30, "two_stage": True, "distilled": False, "num_frames_override": 73, "loras": []},
+    {"label": "NSFW: Straddle — Closeness", "prompt": 'A woman straddles her partner in an intimate domestic moment, both fully clothed in soft loungewear. She runs her hands through his hair, leans in close, their foreheads touch, noses brush. Warm Sunday-morning bedroom light streams through gauze curtains, quiet intimacy fills the frame. Shallow depth of field, cinematic romance aesthetic, deeply sensual without being explicit.', "cfg_override": 4.5, "steps_override": 30, "two_stage": False, "distilled": False, "num_frames_override": 73, "loras": []},
+    {"label": "NSFW: Dance — Sensual Motion", "prompt": 'A solo dancer moves slowly through a pool of amber light in a darkened room, wearing only a loose silk robe. The fabric flows with every turn, revealing glimpses of bare shoulder, collarbone, thigh. Her hands trail sensually over her own body, hips sway to an unheard rhythm. Cinematic slow-motion feel, volumetric haze, deep dramatic shadows.', "cfg_override": 4.5, "steps_override": 30, "two_stage": True, "distilled": False, "num_frames_override": 97, "loras": []},
+    {"label": "NSFW: Wet Skin — Rain", "prompt": 'Cinematic close-up of warm summer rain cascading down bare skin. Water droplets trace slow paths along the line of a neck, collarbone, down a shoulder, catching golden light from a low sun. Hair clings wet to the face and shoulders, each droplet rendered in hyperreal detail. Sensual, atmospheric, nothing explicit. A24-poetic cinematography.', "cfg_override": 4.5, "steps_override": 30, "two_stage": True, "distilled": False, "num_frames_override": 73, "loras": []},
+    {"label": "NSFW: Topless Silhouette — Window", "prompt": 'A topless silhouette of a woman stands before a tall window at dusk. Her profile is perfectly outlined by the dying light, body curves traced in deep shadow against the warm orange-pink sky. She slowly lifts her hair and lets it fall down her back. Tasteful, atmospheric, the pose carries the entire composition. Cinematic silhouette portraiture.', "cfg_override": 4.5, "steps_override": 30, "two_stage": True, "distilled": False, "num_frames_override": 73, "loras": []},
+    {"label": "NSFW: Lace — Slow Untie", "prompt": 'Extreme close-up on fingers slowly pulling the ribbon tie of a lace bodice. The fabric loosens and falls open a fraction at a time, revealing a sliver of bare skin beneath. Hyperreal fabric and skin texture, warm candlelight, shallow depth of field, deliberate sensual pacing. Nothing beyond implication, all tension and anticipation.', "cfg_override": 4.5, "steps_override": 30, "two_stage": False, "distilled": False, "num_frames_override": 49, "loras": []},
+    {"label": "NSFW: Bedroom — Morning Light", "prompt": 'A woman wakes slowly in warm morning light, stretching languidly across rumpled white sheets. Her loose nightgown slides off one shoulder, her hair is tousled from sleep. A sleepy smile, eyes barely open, the whole scene bathed in soft golden window light. Sensory intimate cinematography, shallow depth of field, bedside lamp adding warm contrast.', "cfg_override": 4.5, "steps_override": 30, "two_stage": False, "distilled": False, "num_frames_override": 73, "loras": []},
+
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -13601,7 +14116,46 @@ class Spellcaster(Gimp.PlugIn):
                      "negative": "both standing, merged, distorted, blurry", "shift": 12.0, "cfg": 1.0, "length": 81},
                 ],
             },
-        }
+        
+            # ── NSFW Director Duo Scripts (auto-injected) ──
+            'NSFW Duo: Missionary (3 steps)': {
+                "description": 'Two-person missionary: positioning → rhythm → climax',
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "steps": [
+                    {"mode": 'i2v', "prompt": 'two people lying together, missionary position, intimate embrace, legs wrapping, photorealistic, cinematic, warm lighting', "negative": 'merged blob, deformed, extra limbs, distorted, blurry', "shift": 10.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'loop', "prompt": 'missionary sex, rhythmic thrusting motion, bodies moving together, intimate close-up, photorealistic, smooth motion', "negative": 'static, merged blob, extra limbs, deformed, distorted, blurry', "shift": 12.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'i2v', "prompt": 'climax building, increasing intensity, pleasure expressions on both faces, bodies tensing, photorealistic, dramatic lighting', "negative": 'calm, static, merged, deformed, distorted, blurry', "shift": 12.0, "cfg": 1.0, "length": 81},
+                ],
+            },
+            'NSFW Duo: Oral with Eye Contact (3 steps)': {
+                "description": 'Two-person oral: approach → act with eye contact → reaction',
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "steps": [
+                    {"mode": 'i2v', "prompt": 'one person kneeling before the other, looking up with seductive expression, two people, intimate, photorealistic, cinematic', "negative": 'merged faces, single person, deformed, distorted, blurry', "shift": 3.0, "cfg": 1.5, "length": 81},
+                    {"mode": 'loop', "prompt": 'oral sex, head bobbing, maintaining eye contact, two people, intimate POV, photorealistic, smooth rhythmic motion', "negative": 'merged blob, single person, static, deformed, distorted, blurry', "shift": 10.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'i2v', "prompt": 'pulling back, both faces visible, satisfaction, intimate aftermath, two people, photorealistic, warm lighting', "negative": 'merged, single person, deformed, distorted, blurry', "shift": 3.0, "cfg": 1.5, "length": 81},
+                ],
+            },
+            'NSFW Duo: Double Blowjob — 4 Steps (uses LoRA)': {
+                "description": 'Two women, POV oral: tease → taking turns → both together → finish. Uses Double-Blowjob LoRA.',
+                "num_steps": 4, "variations": 2, "loop_count": 1,
+                "steps": [
+                    {"mode": 'i2v', "prompt": 'two beautiful women kneeling together, looking up seductively, side by side, POV from above, anticipation, photorealistic, cinematic lighting', "negative": 'merged faces, single person, ugly, deformed, distorted, blurry', "shift": 3.0, "cfg": 1.5, "length": 81},
+                    {"mode": 'i2v', "prompt": 'double blowjob, two women taking turns, one licking while other sucks, POV, teamwork, photorealistic, smooth motion', "negative": 'single person, merged blob, ugly, deformed, static, distorted, blurry', "shift": 10.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'loop', "prompt": 'double blowjob, both women working together simultaneously, tongues and lips, POV close-up, photorealistic, rhythmic motion', "negative": 'single person, merged faces, ugly, deformed, static, distorted, blurry, teeth', "shift": 12.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'i2v', "prompt": 'both women pulling back, looking up with satisfied expressions, faces close together, POV, aftermath, photorealistic, warm lighting', "negative": 'single person, merged, ugly, deformed, distorted, blurry', "shift": 3.0, "cfg": 1.5, "length": 81},
+                ],
+            },
+            'NSFW Duo: Spooning (3 steps)': {
+                "description": 'Intimate spooning: embrace → rhythm → afterglow',
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "steps": [
+                    {"mode": 'i2v', "prompt": 'two people lying on side in spooning position, intimate embrace from behind, bodies nested together, photorealistic, warm lighting', "negative": 'merged blob, deformed, extra limbs, distorted, blurry', "shift": 10.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'loop', "prompt": 'spooning sex, gentle rocking motion, bodies moving together rhythmically, intimate closeness, photorealistic, smooth motion', "negative": 'static, merged blob, deformed, extra limbs, distorted, blurry', "shift": 12.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'i2v', "prompt": 'afterglow, holding each other tenderly, gentle breathing, relaxed intimate embrace, both faces visible, photorealistic, soft lighting', "negative": 'separated, cold, deformed, distorted, blurry', "shift": 3.0, "cfg": 1.5, "length": 81},
+                ],
+            },
+}
 
         # ═══════════════════════════════════════════════════════════════
         # DIALOG 1: ACTOR SETUP — face references + script selection
@@ -18704,7 +19258,71 @@ class Spellcaster(Gimp.PlugIn):
                      "negative": "standing, walking, jerky, distorted, blurry", "shift": 8.0, "cfg": 1.0, "length": 81},
                 ],
             },
-        }
+        
+            # ── NSFW Director Scripts (auto-injected) ──
+            'NSFW: BJ 4-Step Sequence': {
+                "description": 'Classic 4-step oral sequence: approach → tease → act → finish',
+                "num_steps": 4, "variations": 2, "loop_count": 1,
+                "face_reinject": True,
+                "steps": [
+                    {"mode": 'i2v', "prompt": 'woman kneeling, looking up with seductive expression, hands on thighs, anticipation, intimate close-up, photorealistic, cinematic lighting', "negative": 'ugly, deformed, bad anatomy, distorted face, blurry', "shift": 3.0, "cfg": 1.5, "length": 81},
+                    {"mode": 'i2v', "prompt": 'woman leaning forward, mouth approaching, teasing, tongue out slightly, seductive eye contact, POV close-up, photorealistic', "negative": 'ugly, deformed, bad anatomy, crunchy skin, distorted, blurry', "shift": 8.0, "cfg": 1.5, "length": 81},
+                    {"mode": 'loop', "prompt": 'blowjob, oral, head bobbing rhythmically, POV, intimate close-up, photorealistic, smooth motion', "negative": 'ugly, deformed, static, frozen, distorted face, blurry, teeth', "shift": 10.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'i2v', "prompt": 'pulling back, satisfaction, wiping mouth, looking up with smile, post-act expression, intimate, photorealistic', "negative": 'ugly, deformed, distorted face, blurry, static', "shift": 3.0, "cfg": 1.5, "length": 81},
+                ],
+            },
+            'NSFW: Footjob Sequence (3 steps)': {
+                "description": 'Foot interaction: tease with feet → footjob action → reaction',
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "face_reinject": False,
+                "steps": [
+                    {"mode": 'i2v', "prompt": "woman's feet slowly approaching, painted toenails, teasing foot movement, soft skin, close-up of feet, photorealistic, cinematic", "negative": 'ugly feet, deformed toes, extra toes, blurry, distorted', "shift": 8.0, "cfg": 1.5, "length": 81},
+                    {"mode": 'loop', "prompt": 'footjob, feet wrapping around, rhythmic stroking motion, toes gripping, smooth foot movement, close-up, photorealistic', "negative": 'floating feet, disconnected, deformed, extra toes, blurry, static', "shift": 12.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'i2v', "prompt": 'feet pulling away, toes curling in pleasure, soles visible, aftermath, photorealistic close-up', "negative": 'deformed feet, extra toes, ugly, distorted, blurry', "shift": 8.0, "cfg": 1.5, "length": 81},
+                ],
+            },
+            'NSFW: Cowgirl Sequence (3 steps)': {
+                "description": 'Riding position: mount → rhythm → climax',
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "face_reinject": True,
+                "steps": [
+                    {"mode": 'i2v', "prompt": 'woman lowering onto position, straddling, hands on chest, mounting motion, intimate POV from below, photorealistic', "negative": 'merged bodies, blob, deformed, distorted, blurry, floating', "shift": 10.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'loop', "prompt": 'woman riding on top, rhythmic up and down motion, cowgirl position, bouncing, hair swaying, intimate POV, photorealistic', "negative": 'static, frozen, merged blob, deformed limbs, distorted, blurry', "shift": 12.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'i2v', "prompt": 'increasing intensity, faster rhythm, expression of pleasure, arching back, climax building, photorealistic, dramatic lighting', "negative": 'static, calm, deformed, merged, distorted, blurry', "shift": 12.0, "cfg": 1.0, "length": 81},
+                ],
+            },
+            'NSFW: Doggy-Style (3 steps)': {
+                "description": 'From behind: positioning → action → finish',
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "face_reinject": False,
+                "steps": [
+                    {"mode": 'i2v', "prompt": 'woman on all fours, looking back over shoulder, arched back, positioning, rear view, photorealistic, cinematic', "negative": 'deformed, extra limbs, merged bodies, distorted, blurry', "shift": 10.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'loop', "prompt": 'doggy style, thrusting from behind, rhythmic motion, body rocking forward, hair swaying, photorealistic, cinematic angle', "negative": 'static, frozen, merged blob, deformed, distorted, floating, blurry', "shift": 12.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'i2v', "prompt": 'collapsing forward in pleasure, heavy breathing, afterglow, relaxing, intimate aftermath, photorealistic', "negative": 'static, stiff, deformed, distorted, blurry', "shift": 5.0, "cfg": 1.5, "length": 81},
+                ],
+            },
+            'NSFW: Striptease (4 steps)': {
+                "description": 'Slow strip: clothed → top off → full strip → reveal pose',
+                "num_steps": 4, "variations": 2, "loop_count": 1,
+                "face_reinject": True,
+                "steps": [
+                    {"mode": 'i2v', "prompt": 'woman standing in lingerie, seductive swaying, hands running over body, teasing, photorealistic, cinematic, moody lighting', "negative": 'static, frozen, distorted, blurry', "shift": 5.0, "cfg": 2.0, "length": 81},
+                    {"mode": 'i2v', "prompt": 'slowly removing top, pulling over head, revealing body, striptease motion, seductive, photorealistic, cinematic', "negative": 'static, fully clothed, distorted, blurry, deformed', "shift": 8.0, "cfg": 1.5, "length": 81},
+                    {"mode": 'i2v', "prompt": 'sliding off remaining clothing, stepping out of garment, full body reveal, confident, seductive pose, photorealistic', "negative": 'static, clothed, distorted, blurry, deformed', "shift": 8.0, "cfg": 1.5, "length": 81},
+                    {"mode": 'i2v', "prompt": 'striking a confident nude pose, hands on hips, seductive smile, full body, photorealistic, cinematic, dramatic lighting', "negative": 'static, shy, distorted, blurry, deformed', "shift": 3.0, "cfg": 2.0, "length": 81},
+                ],
+            },
+            'NSFW: Sensual Massage (3 steps)': {
+                "description": 'Intimate massage: oil application → massage → escalation',
+                "num_steps": 3, "variations": 2, "loop_count": 1,
+                "face_reinject": True,
+                "steps": [
+                    {"mode": 'i2v', "prompt": 'hands applying massage oil on body, glistening skin, slow sensual motion, oil dripping, photorealistic, warm lighting', "negative": 'dry, rough, deformed hands, extra fingers, distorted, blurry', "shift": 8.0, "cfg": 1.5, "length": 81},
+                    {"mode": 'loop', "prompt": 'hands massaging body, kneading muscles, oiled skin glistening, sensual touch, rhythmic massage motion, photorealistic', "negative": 'static, dry, deformed, extra fingers, distorted, blurry', "shift": 10.0, "cfg": 1.0, "length": 81},
+                    {"mode": 'i2v', "prompt": 'massage becoming more intimate, hands moving sensually, body responding with pleasure, soft moaning expression, photorealistic', "negative": 'static, clinical, deformed, distorted, blurry', "shift": 8.0, "cfg": 1.5, "length": 81},
+                ],
+            },
+}
 
         # ═══════════════════════════════════════════════════════════════
         # DIALOG 1: PLAN — steps, loops, modes, variations
