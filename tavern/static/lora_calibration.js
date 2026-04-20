@@ -53,6 +53,38 @@
       }
       #sc-calib-btn .sc-calib-badge.sc-calib-ok { background:#20c997; color:white; }
 
+      /* Preflight status dot sits immediately left of the Calibration
+         button so the user sees the whole-system health at a glance:
+         green=ready, yellow=degraded (auto-recovering / no preflight
+         run yet), red=broken (ComfyUI down / arch canary failed /
+         faceswap escalated), gray=unknown. */
+      #sc-preflight-dot {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 12px; height: 12px; border-radius: 50%;
+        background: #6c757d;             /* default: unknown/gray */
+        margin-right: 6px;
+        cursor: pointer;
+        box-shadow: 0 0 0 2px rgba(255,255,255,0.08);
+        vertical-align: middle;
+        position: relative;
+        flex-shrink: 0;
+        transition: background .2s ease, box-shadow .2s ease;
+      }
+      #sc-preflight-dot[data-state="green"]   { background: #20c997;
+        box-shadow: 0 0 0 2px rgba(32,201,151,0.25); }
+      #sc-preflight-dot[data-state="yellow"]  { background: #ffc107;
+        box-shadow: 0 0 0 2px rgba(255,193,7,0.25); }
+      #sc-preflight-dot[data-state="red"]     { background: #e03131;
+        box-shadow: 0 0 0 2px rgba(224,49,49,0.3); }
+      #sc-preflight-dot[data-running="1"]::after {
+        content: ''; position: absolute; inset: -4px;
+        border: 2px solid rgba(77,171,247,0.7);
+        border-top-color: transparent; border-radius: 50%;
+        animation: sc-preflight-spin 1s linear infinite;
+      }
+      @keyframes sc-preflight-spin { to { transform: rotate(360deg); } }
+      #sc-preflight-dot:hover { filter: brightness(1.15); }
+
       .sc-calib-overlay {
         position: fixed; inset: 0; z-index: 1000;
         background: rgba(5, 3, 15, 0.85); backdrop-filter: blur(6px);
@@ -354,6 +386,59 @@
   }
   const safeApi = (p, o) => api(p, o).catch(() => null);
 
+  // ── Preflight status dot ──────────────────────────────────────────────
+  // Sits immediately left of the Calibration button. Reflects the
+  // aggregated traffic light from /api/spellcaster/preflight/status.
+  function ensurePreflightDot(slot) {
+    let dot = document.getElementById('sc-preflight-dot');
+    if (!dot) {
+      dot = document.createElement('span');
+      dot.id = 'sc-preflight-dot';
+      dot.setAttribute('data-state', 'unknown');
+      dot.setAttribute('role', 'button');
+      dot.setAttribute('tabindex', '0');
+      dot.title = 'System preflight: checking…';
+      dot.addEventListener('click', () => {
+        // Click the dot to open Calibration → Stats where the full
+        // health breakdown + "Re-run preflight" button lives.
+        if (state.currentTab !== 'stats') state.currentTab = 'stats';
+        openModal();
+      });
+    }
+    const calib = document.getElementById('sc-calib-btn');
+    if (slot && calib && calib.previousSibling !== dot) {
+      slot.insertBefore(dot, calib);
+    } else if (!slot && dot.parentNode !== document.body) {
+      dot.style.position = 'fixed';
+      dot.style.top = '17px';
+      dot.style.right = '200px';
+      dot.style.zIndex = '999';
+      document.body.appendChild(dot);
+    }
+    return dot;
+  }
+
+  async function refreshPreflightDot() {
+    const dot = ensurePreflightDot(document.getElementById('chat-shootout-slot'));
+    if (!dot) return;
+    try {
+      const r = await fetch('/api/spellcaster/preflight/status');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const j = await r.json();
+      state.preflight = j;
+      const s = j.overall || 'unknown';
+      dot.setAttribute('data-state', s);
+      const running = !!(j.run_job && j.run_job.running);
+      dot.setAttribute('data-running', running ? '1' : '0');
+      const bits = [j.headline || s];
+      if (running) bits.push('(running: ' + (j.run_job.progress || '…') + ')');
+      dot.title = bits.join(' ');
+    } catch (e) {
+      dot.setAttribute('data-state', 'unknown');
+      dot.title = 'Preflight probe failed: ' + e;
+    }
+  }
+
   // ── Button ────────────────────────────────────────────────────────────
   function ensureButton() {
     let btn = document.getElementById('sc-calib-btn');
@@ -377,6 +462,7 @@
       btn.classList.remove('sc-calib-btn--inline');
       document.body.appendChild(btn);
     }
+    ensurePreflightDot(slot);
     return btn;
   }
 
@@ -396,6 +482,7 @@
       badge.textContent = String(total);
       badge.classList.toggle('sc-calib-ok', total === 0);
     }
+    refreshPreflightDot();
   }
 
   // ── Modal ─────────────────────────────────────────────────────────────
@@ -939,6 +1026,17 @@
     const sum = state.summary || {};
     const scorer = state.scorer || {};
     body.innerHTML = `
+      <div class="sc-calib-preflight-panel" style="background:#141c2b;border:1px solid #1f2a3d;border-radius:8px;padding:14px;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <div class="sc-preflight-stats-dot" style="width:14px;height:14px;border-radius:50%;background:#6c757d"></div>
+          <div style="font-weight:600;color:#e8e6f5;flex:1">
+            System preflight <span class="sc-preflight-state-label" style="color:#8ea0bf;font-weight:400"></span>
+          </div>
+          <button class="sc-calib-btn-secondary sc-preflight-rerun">Re-run preflight</button>
+        </div>
+        <div class="sc-preflight-headline" style="font-size:12px;color:#8ea0bf;margin-bottom:10px"></div>
+        <div class="sc-preflight-details" style="font-size:12px"></div>
+      </div>
       <div class="sc-calib-stats-grid">
         <div class="sc-calib-stat">
           <div class="sc-calib-stat-num">${sum.registry_total ?? '–'}</div>
@@ -978,6 +1076,89 @@
         NSFW store: <code>${sum.nsfw_path || '—'}</code>
       </div>
     `;
+
+    const panel = body.querySelector('.sc-calib-preflight-panel');
+    const dotEl = panel.querySelector('.sc-preflight-stats-dot');
+    const label = panel.querySelector('.sc-preflight-state-label');
+    const headline = panel.querySelector('.sc-preflight-headline');
+    const details = panel.querySelector('.sc-preflight-details');
+    const rerunBtn = panel.querySelector('.sc-preflight-rerun');
+
+    function paint(p) {
+      if (!p) return;
+      const colour = {
+        green: '#20c997', yellow: '#ffc107',
+        red: '#e03131', unknown: '#6c757d',
+      }[p.overall] || '#6c757d';
+      dotEl.style.background = colour;
+      label.textContent = p.overall ? '— ' + p.overall : '';
+      headline.textContent = p.headline || '';
+      const fs = p.faceswap || {};
+      const sc = p.scorer || {};
+      const canaries = (p.canaries || []).map(c =>
+        `<li style="list-style:none;padding:2px 0;font-family:Consolas,monospace">
+          <span style="color:${c.ok ? '#20c997' : '#e03131'}">${c.ok ? '✓' : '✗'}</span>
+          ${c.arch}${c.ok ? '' : ' — ' + (c.error || 'failed')}
+        </li>`
+      ).join('');
+      const canaryAge = p.canary_ran_at
+        ? Math.round((Date.now()/1000 - p.canary_ran_at) / 60) + ' min ago'
+        : 'never run';
+      details.innerHTML = `
+        <div style="color:#d9e1ed;margin-bottom:4px">
+          ComfyUI: <span style="color:${p.comfy_reachable ? '#20c997' : '#e03131'}">
+            ${p.comfy_reachable ? 'reachable' : (p.comfy_error || 'unreachable')}</span>
+        </div>
+        <div style="color:#d9e1ed;margin-bottom:4px">
+          Face-swap state: <code>${fs.state || '?'}</code>
+          ${fs.state_reason ? ' — <span style="color:#8ea0bf">' + fs.state_reason + '</span>' : ''}
+        </div>
+        <div style="color:#d9e1ed;margin-bottom:4px">
+          Vision scorer: ${sc.ok ? '<span style="color:#20c997">online</span>' : '<span style="color:#e03131">offline</span>'}
+          ${sc.reason ? ' — <span style="color:#8ea0bf">' + sc.reason + '</span>' : ''}
+        </div>
+        <div style="color:#d9e1ed;margin-top:8px">
+          Per-arch canaries (${canaryAge}):
+        </div>
+        <ul style="padding:2px 0 0 10px;margin:0">${canaries || '<li style="list-style:none;color:#8ea0bf;font-style:italic">no preflight run yet — click "Re-run preflight" to start</li>'}</ul>
+      `;
+      if (p.run_job && p.run_job.running) {
+        rerunBtn.disabled = true;
+        rerunBtn.textContent = 'Running ' + (p.run_job.progress || '…');
+      } else {
+        rerunBtn.disabled = false;
+        rerunBtn.textContent = 'Re-run preflight';
+      }
+    }
+
+    async function refresh() {
+      try {
+        const r = await fetch('/api/spellcaster/preflight/status');
+        if (!r.ok) return;
+        const p = await r.json();
+        state.preflight = p;
+        paint(p);
+      } catch {}
+    }
+
+    rerunBtn.addEventListener('click', async () => {
+      rerunBtn.disabled = true; rerunBtn.textContent = 'Starting…';
+      try {
+        await fetch('/api/spellcaster/preflight/run', { method: 'POST', body: '{}' });
+      } catch {}
+      // Poll every 2s until job completes, then do one more refresh
+      const poll = setInterval(async () => {
+        await refresh();
+        const job = (state.preflight && state.preflight.run_job) || {};
+        if (!job.running) {
+          clearInterval(poll);
+          refreshPreflightDot();
+        }
+      }, 2000);
+    });
+
+    paint(state.preflight);
+    refresh();
   }
 
   // ── Boot ──────────────────────────────────────────────────────────────
