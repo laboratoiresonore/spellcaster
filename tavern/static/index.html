@@ -201,7 +201,9 @@
             <!-- Input Area -->
             <div id="chat-input-area">
                 <div class="input-wrapper">
-                    <button id="upload-btn" title="Attach Image (Coming Soon)">📎</button>
+                    <button id="upload-btn" title="Attach image">📎</button>
+                    <input id="upload-file-input" type="file" accept="image/*" style="display:none;" />
+
                     <textarea id="chat-input" placeholder="Just talk to it..."></textarea>
                     <!-- Walkie-talkie STT: press-and-hold starts mic
                          capture, release uploads the clip to /api/stt
@@ -509,6 +511,7 @@
     <script src="video_chat.js?v=20260420a"></script>
     <script src="feedback.js?v=20260420a"></script>
     <script src="lora_shootout.js?v=20260420a"></script>
+    <script src="lora_calibrate.js?v=20260420a"></script>
     <script src="spellcaster_actions.js?v=20260420a"></script>
     <script src="setup_wizard.js?v=20260420a"></script>
 </body>
