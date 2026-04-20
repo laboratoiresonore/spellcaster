@@ -2872,6 +2872,15 @@ def _apply_user_settings(settings):
         _gllm.set_preferred_backend(pref)
     except Exception:
         pass
+    # Seed the video quality mode from persisted user_settings so a
+    # Guild restart keeps whatever the user had picked — instead of
+    # snapping every WAN/LTX workflow back to "turbo" until the
+    # frontend next loads and re-POSTs. Runtime state still wins over
+    # persistence within the same process (e.g. a subsequent POST
+    # /api/video/quality-mode overrides this).
+    gp = (settings.get("guild_preset") or "").strip().lower()
+    if gp and _mode_is_valid(gp):
+        globals()["_GUILD_VIDEO_MODE"] = gp
 
 
 def _resolve_stt_backend_url():
@@ -11108,6 +11117,21 @@ class GuildHandler(SimpleHTTPRequestHandler):
                     "error": f"invalid mode {m!r}; "
                              "expected turbo|standard|quality"})
             globals()["_GUILD_VIDEO_MODE"] = m
+            # Persist to user_settings so the choice survives Guild
+            # restart. Client-side previously did this via a second
+            # POST /api/user_settings on every click; we fold it in
+            # here so the client only needs one write and there's one
+            # server-side authority for the persistent value.
+            try:
+                cfg = _guided_install_load_config()
+                settings = dict(cfg.get("user_settings") or {})
+                if settings.get("guild_preset") != m:
+                    settings["guild_preset"] = m
+                    cfg["user_settings"] = settings
+                    _guided_install_save_config(cfg)
+                    _apply_user_settings(settings)
+            except Exception:
+                pass  # persistence is nice-to-have; runtime state won
             print(f"  [Guild] video quality mode → {m}")
             return self.end_json(200, {"mode": m})
 
