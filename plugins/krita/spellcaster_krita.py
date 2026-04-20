@@ -21,9 +21,26 @@ from spellcaster_core.plugin_base import SpellcasterPlugin
 class KritaSpellcaster(SpellcasterPlugin):
     """Krita-specific implementation of the Spellcaster plugin."""
 
-    def __init__(self, server_url="http://127.0.0.1:8188"):
-        super().__init__(server_url)
+    def __init__(self, server_url="http://127.0.0.1:8188",
+                 guild_url=None, origin="krita"):
+        # Passing guild_url + origin activates the cross-interface
+        # heartbeat + AssetGallery stash in plugin_base.
+        super().__init__(server_url, guild_url=guild_url, origin=origin)
         self._app = Krita.instance()
+
+    def _heartbeat_meta(self):
+        # Report Krita's own version + the plugin host version so the
+        # Guild's presence chip can show useful diagnostics. Krita's
+        # Application.version() is "5.2.0"-style.
+        try:
+            krita_ver = str(self._app.version())
+        except Exception:
+            krita_ver = "unknown"
+        return {
+            "plugin": "krita",
+            "krita_version": krita_ver,
+            "transport": "plugin_base",
+        }
 
     def get_canvas_png(self):
         """Export active document as PNG bytes."""
@@ -88,7 +105,15 @@ class SpellcasterExtension(Extension):
             # Read server URL from config
             server = Application.readSetting("spellcaster", "server_url",
                                              "http://127.0.0.1:8188")
-            self._plugin = KritaSpellcaster(server)
+            # Optional Wizard Guild URL (blank = stand-alone mode).
+            # Krita settings don't surface blank-by-default strings the
+            # way Blender AddonPreferences do, so default to localhost
+            # for discoverability; users can override via Settings
+            # → Manage Resources → Python Plugins.
+            guild = Application.readSetting("spellcaster", "guild_url",
+                                            "http://127.0.0.1:7777")
+            self._plugin = KritaSpellcaster(server, guild_url=guild,
+                                             origin="krita")
         return self._plugin
 
     def createActions(self, window):

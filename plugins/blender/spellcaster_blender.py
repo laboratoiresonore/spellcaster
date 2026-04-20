@@ -35,6 +35,18 @@ from spellcaster_core.plugin_base import SpellcasterPlugin
 class BlenderSpellcaster(SpellcasterPlugin):
     """Blender-specific Spellcaster implementation."""
 
+    def _heartbeat_meta(self):
+        # Populate ``meta`` on every /api/interfaces/heartbeat ping so
+        # the Guild UI can show the live Blender version alongside the
+        # chip. bl_info is mandatory for every Blender addon.
+        v = bl_info.get("version", (0, 0, 0))
+        return {
+            "plugin": "blender",
+            "plugin_version": ".".join(str(x) for x in v),
+            "blender_min": ".".join(str(x) for x in bl_info.get("blender", (0, 0, 0))),
+            "transport": "plugin_base",
+        }
+
     def get_canvas_png(self):
         """Render current viewport or active image as PNG."""
         # Try active image editor first
@@ -98,7 +110,15 @@ def _get_plugin():
     if not _plugin[0]:
         prefs = bpy.context.preferences.addons.get(__name__)
         url = prefs.preferences.server_url if prefs else "http://127.0.0.1:8188"
-        _plugin[0] = BlenderSpellcaster(url)
+        guild = (prefs.preferences.guild_url
+                 if prefs and hasattr(prefs.preferences, "guild_url")
+                 else "http://127.0.0.1:7777")
+        # Constructing with a guild_url + origin starts the heartbeat
+        # loop AND enables per-generation AssetGallery stash (see
+        # plugin_base.SpellcasterPlugin — cross-interface backbone
+        # §15). Leaving guild blank falls back to pure ComfyUI-direct
+        # mode for users who haven't set up the Guild.
+        _plugin[0] = BlenderSpellcaster(url, guild_url=guild, origin="blender")
     return _plugin[0]
 
 
@@ -212,9 +232,17 @@ class SpellcasterPreferences(bpy.types.AddonPreferences):
         default="http://127.0.0.1:8188",
         description="URL of your ComfyUI server",
     )
+    guild_url: bpy.props.StringProperty(
+        name="Wizard Guild URL",
+        default="http://127.0.0.1:7777",
+        description=(
+            "Optional: Wizard Guild for cross-app asset sharing with GIMP, "
+            "Darktable, Resolve, SillyTavern. Leave blank to run stand-alone."),
+    )
 
     def draw(self, context):
         self.layout.prop(self, "server_url")
+        self.layout.prop(self, "guild_url")
 
 
 # ═══════════════════════════════════════════════════════════════════════

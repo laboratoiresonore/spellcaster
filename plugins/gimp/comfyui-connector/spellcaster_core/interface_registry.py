@@ -148,6 +148,55 @@ KNOWN_INTERFACES: dict[str, InterfaceSpec] = {
         capabilities=["remote_comfyui", "remote_llm", "remote_resolve",
                       "install_node", "install_model", "self_update"],
     ),
+    "blender": InterfaceSpec(
+        key="blender",
+        ui_label="Blender",
+        icon="🧊",
+        # Blender's addon path varies by version — list the common 3.x/4.x
+        # layouts per OS. Missed matches fall back to heartbeat-driven
+        # presence (the plugin's `_guild_heartbeat` loop proves live
+        # installation even when the version-specific path isn't listed).
+        detector_paths=[
+            "$APPDATA/Blender Foundation/Blender/4.2/scripts/addons/spellcaster_blender.py",
+            "$APPDATA/Blender Foundation/Blender/4.1/scripts/addons/spellcaster_blender.py",
+            "$APPDATA/Blender Foundation/Blender/4.0/scripts/addons/spellcaster_blender.py",
+            "$APPDATA/Blender Foundation/Blender/3.6/scripts/addons/spellcaster_blender.py",
+            "$HOME/.config/blender/4.2/scripts/addons/spellcaster_blender.py",
+            "$HOME/.config/blender/4.1/scripts/addons/spellcaster_blender.py",
+            "$HOME/.config/blender/4.0/scripts/addons/spellcaster_blender.py",
+            "$HOME/.config/blender/3.6/scripts/addons/spellcaster_blender.py",
+            "$HOME/Library/Application Support/Blender/4.2/scripts/addons/spellcaster_blender.py",
+            "$HOME/Library/Application Support/Blender/4.1/scripts/addons/spellcaster_blender.py",
+            "$HOME/Library/Application Support/Blender/4.0/scripts/addons/spellcaster_blender.py",
+            "$HOME/Library/Application Support/Blender/3.6/scripts/addons/spellcaster_blender.py",
+        ],
+        capabilities=["send_image", "receive_image", "3d_texture", "concept_art"],
+    ),
+    "krita": InterfaceSpec(
+        key="krita",
+        ui_label="Krita",
+        icon="🎨",
+        detector_paths=[
+            "$APPDATA/krita/pykrita/spellcaster_krita.py",
+            "$HOME/.local/share/krita/pykrita/spellcaster_krita.py",
+            "$HOME/Library/Application Support/krita/pykrita/spellcaster_krita.py",
+        ],
+        capabilities=["send_image", "receive_image", "pixel_edit"],
+    ),
+    "photoshop": InterfaceSpec(
+        key="photoshop",
+        ui_label="Photoshop",
+        icon="🅿️",
+        # UXP manifest lives under Adobe/UXP or under the shared CEP
+        # extensions dir depending on how the user installed it. The
+        # `$COMMONPROGRAMFILES` branch catches machine-wide installs.
+        detector_paths=[
+            "$APPDATA/Adobe/UXP/Plugins/External/com.laboratoiresonore.spellcaster/manifest.json",
+            "$COMMONPROGRAMFILES/Adobe/CEP/extensions/com.laboratoiresonore.spellcaster/manifest.json",
+            "$HOME/Library/Application Support/Adobe/UXP/Plugins/External/com.laboratoiresonore.spellcaster/manifest.json",
+        ],
+        capabilities=["send_image", "receive_image", "pixel_edit"],
+    ),
 }
 
 
