@@ -406,12 +406,20 @@
 
     <!-- Summon Wizard Modal -->
     <div id="summon-modal" class="modal hidden">
-        <div class="modal-content" style="max-width:560px;max-height:80vh;overflow-y:auto;">
+        <div class="modal-content" style="max-width:680px;max-height:85vh;overflow-y:auto;">
             <h3>🪄 Summon New Wizard</h3>
-            <p style="margin-bottom:14px;color:#aaa;font-size:13px;">Detect models from ComfyUI and create a new wizard with auto-generated personality, name, and optimized settings.</p>
+            <p style="margin-bottom:14px;color:#aaa;font-size:13px;">Pick the kind of wizard you want. Per-model binds one ComfyUI model to one persona (the classic); archetypes are specialised wizards with unique mechanics.</p>
 
-            <!-- Step 1: Model selection -->
-            <div id="summon-step-1">
+            <!-- Step 0: Archetype picker (NEW) -->
+            <div id="summon-step-0">
+                <div id="summon-archetype-grid" class="summon-archetype-grid"></div>
+                <div class="modal-actions" style="margin-top:12px;">
+                    <button id="summon-step0-cancel">Cancel</button>
+                </div>
+            </div>
+
+            <!-- Step 1: Model selection (classic per-model flow) -->
+            <div id="summon-step-1" style="display:none;">
                 <label style="color:#ccc;font-size:13px;font-weight:600;">Select a Model</label>
                 <div id="summon-model-list" style="margin:8px 0 14px;max-height:240px;overflow-y:auto;border:1px solid #333;border-radius:8px;background:#151520;">
                     <p style="color:#666;padding:12px;text-align:center;">Loading models from ComfyUI...</p>
@@ -433,6 +441,55 @@
                 <div class="modal-actions" style="margin-top:12px;">
                     <button id="summon-cancel">Cancel</button>
                     <button id="summon-next" style="background:var(--accent);color:white;" disabled>Next: Generate Identity</button>
+                </div>
+            </div>
+
+            <!-- Step 1-arc: Archetype-specific configuration -->
+            <div id="summon-step-arc" style="display:none;">
+                <div id="summon-arc-header" style="margin-bottom:10px;">
+                    <h4 id="summon-arc-title" style="margin:0;color:#eee;"></h4>
+                    <p id="summon-arc-desc" style="color:#aaa;font-size:12px;margin:4px 0 0;"></p>
+                </div>
+
+                <!-- Chimera: multi-model picker with per-model domain -->
+                <div id="summon-arc-chimera" class="summon-arc-panel" style="display:none;">
+                    <label style="color:#ccc;font-size:13px;font-weight:600;">
+                        Pick 2–5 models. Chimera routes each prompt to the best fit
+                        (or renders the top candidates in parallel and lets the
+                        scorer pick a winner).
+                    </label>
+                    <div id="summon-chimera-models" style="margin:8px 0 12px;max-height:280px;overflow-y:auto;border:1px solid #333;border-radius:8px;background:#151520;">
+                        <p style="color:#666;padding:12px;text-align:center;">Loading models…</p>
+                    </div>
+                </div>
+
+                <!-- Oracle: multimodal LLM picker -->
+                <div id="summon-arc-oracle" class="summon-arc-panel" style="display:none;">
+                    <label style="color:#ccc;font-size:13px;font-weight:600;">Multimodal LLM (vision-capable)</label>
+                    <select id="summon-oracle-llm" style="width:100%;padding:8px;margin:6px 0 10px;border-radius:8px;border:1px solid #444;background:#1e1e2e;color:#eee;font-size:14px;">
+                        <option value="gemma3:4b">gemma3:4b (default, local Ollama)</option>
+                    </select>
+                    <p id="summon-oracle-status" style="color:#8ea0bf;font-size:12px;margin:0 0 12px;"></p>
+                </div>
+
+                <!-- Scalpel: base image model for inpaint fills -->
+                <div id="summon-arc-scalpel" class="summon-arc-panel" style="display:none;">
+                    <label style="color:#ccc;font-size:13px;font-weight:600;">Base image model for inpaint fills</label>
+                    <div id="summon-scalpel-models" style="margin:8px 0 12px;max-height:240px;overflow-y:auto;border:1px solid #333;border-radius:8px;background:#151520;">
+                        <p style="color:#666;padding:12px;text-align:center;">Loading models…</p>
+                    </div>
+                </div>
+
+                <!-- Forensic / Lore-keeper: nothing to configure -->
+                <div id="summon-arc-none" class="summon-arc-panel" style="display:none;">
+                    <p style="color:#8ea0bf;font-size:13px;padding:14px;background:#141c2b;border:1px solid #1f2a3d;border-radius:8px;">
+                        No configuration needed — proceed to name the wizard.
+                    </p>
+                </div>
+
+                <div class="modal-actions" style="margin-top:12px;">
+                    <button id="summon-arc-back">← Back</button>
+                    <button id="summon-arc-next" style="background:var(--accent);color:white;" disabled>Next: Generate Identity</button>
                 </div>
             </div>
 

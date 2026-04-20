@@ -209,6 +209,7 @@ import random
 import struct          # for pure-Python PNG writer (IHDR/IDAT chunk packing)
 import platform
 import zlib            # for PNG IDAT compression and CRC32 checksums
+import re              # for video-LoRA filename blocklist (_looks_like_video_lora)
 
 import urllib.request
 
@@ -4182,21 +4183,81 @@ IMG2IMG_STYLE_PRESETS = [
 ] + [p for p in INPAINT_REFINEMENTS if p["label"].startswith("\u2726")]
 
 
-def _filter_loras_for_arch(all_loras, arch):
-    """Return only LoRAs whose full path starts with a compatible prefix.
+_IMAGE_ARCHS = frozenset({
+    "sd15", "sdxl", "zit", "illustrious", "pony",
+    "flux2klein", "flux1dev", "flux_kontext", "chroma",
+})
 
-    Checks both backslash and forward-slash variants of each prefix
-    since ComfyUI may return either depending on the OS.
+# Strong video-LoRA markers. Matching is case-insensitive on the
+# lowered full path (folder + filename) so a generic filename inside a
+# WAN/LTX folder still gets flagged (e.g. `Wan-2.2-I2V/KISSHIGH.safetensors`
+# carries no tags in the file portion but the folder clearly marks it
+# as video-only). Each pattern is a strong video indicator — no
+# legitimate image LoRA uses these tokens.
+#
+#   wan2.1 / wan2.2 / wan22 / wan-2.1 / wan_2_2 — Wan 2.x family
+#   i2v with non-alphanum boundaries             — image-to-video tag
+#   high_noise / low_noise / highnoise / lownoise — Wan dual-UNET split
+#   lightx2v                                     — Wan accel LoRA family
+#   wan-lightning                                — Wan lightning family
+#   ltxv / ltx-2 / ltx_2 / ltx2 / ltx-distill    — LTX 2.x family
+#   seed-vr / seedvr                             — SeedVR family
+_VIDEO_LORA_RE = re.compile(
+    r'(?:'
+    r'wan[-_]?2[.\-_]?[12]'
+    r'|(?<![a-z0-9])i2v(?![a-z0-9])'
+    r'|(?:high|low)[_-]?noise'
+    r'|lightx2v'
+    r'|wan[-_]?lightning'
+    r'|ltx[-_]?(?:2|v|distill)'
+    r'|ltx2(?![a-z0-9])'
+    r'|seed[-_]?vr'
+    r')',
+    re.IGNORECASE,
+)
+
+
+def _looks_like_video_lora(lora_name):
+    """Return True if the LoRA path has strong video-only markers.
+
+    Image architectures (SD15 / SDXL / Illustrious / Pony / Flux /
+    Klein / Kontext / Chroma / ZIT) NEVER load WAN, LTX, or SeedVR
+    LoRAs — different UNET family → immediate crash or silently
+    mangled output. This path-level check is the last line of
+    defence if a user drops a WAN LoRA into SDXL\\ by mistake or
+    the server stores everything in a flat folder. The regex
+    inspects the full path (lowered) so a bare filename like
+    `KISSHIGH.safetensors` under `Wan-2.2-I2V/` is still caught.
+    """
+    path = lora_name.replace("\\", "/").lower()
+    return bool(_VIDEO_LORA_RE.search(path))
+
+
+def _filter_loras_for_arch(all_loras, arch):
+    """Return only LoRAs compatible with `arch`.
+
+    Two gates:
+      1. Folder prefix must match `ARCH_LORA_PREFIXES[arch]` (checks
+         both backslash and forward-slash variants — ComfyUI returns
+         either depending on the OS).
+      2. For image architectures, filename must NOT trigger
+         `_looks_like_video_lora` — this catches WAN/LTX/SeedVR
+         LoRAs that slipped through the folder prefix (e.g. user
+         dropped `wan2.2-i2v-lightning.safetensors` directly into
+         SDXL\\ by mistake; the prefix passes but the filename tags
+         it as video-only).
     """
     prefixes = ARCH_LORA_PREFIXES.get(arch, [])
     if not prefixes:
         return []
+    is_image_arch = arch in _IMAGE_ARCHS
     result = []
     for lora in all_loras:
         for p in prefixes:
-            # Check the prefix as-is AND with swapped slashes
             alt = p.replace("\\", "/") if "\\" in p else p.replace("/", "\\")
             if lora.startswith(p) or lora.startswith(alt):
+                if is_image_arch and _looks_like_video_lora(lora):
+                    break  # filename-level blocklist rejects video LoRAs
                 result.append(lora)
                 break
     return result
