@@ -2474,62 +2474,151 @@ OUTPAINT_PURPOSE_PRESETS = {
 # canonical dispatch, the Python surfaces get canonical UI behaviour.
 
 ARCH_OPTIMIZATIONS = {
+    # Schema per entry:
+    #   negative            bool       Does the arch accept a negative prompt?
+    #                                  False => disable dlg.neg_tv + grey _neg_label.
+    #   prompt_style        str        One of "tags", "booru", "natural",
+    #                                  "edit_instruction". Drives the prompt
+    #                                  TextView's tooltip via _PROMPT_STYLE_HINTS.
+    #   wants_quality_tags  bool       False when "masterpiece / 8k / best quality"
+    #                                  style phrases hurt (Flux family / Klein /
+    #                                  Chroma / distilled turbos).
+    #   cfg_range           (min, max) Recommended guidance range — rewritten
+    #                                  into the cfg spin's tooltip.
+    #   steps_range         (min, max) Recommended step count range — rewritten
+    #                                  into the steps spin's tooltip.
+    #   supports_cn         bool       Mirror of (arch NOT IN CN_FORBIDDEN_ARCHES).
+    #                                  Callers can use it for fast UI gates; the
+    #                                  canonical check is cn_is_compatible (§23).
+    #   hint                str        One-line human summary written into the
+    #                                  arch hint label under the model picker.
+    #
+    # CLAUDE.md §9 is the source of truth for the (negative, supports_cn)
+    # columns; this table is how those facts become live UI state.
+
     # Arches that DO support negative prompts.
-    "sd15":         {"negative": True,
-                      "hint": "SD 1.5 — classic tag prompts, cfg 7-9, 20-30 steps."},
-    "sdxl":         {"negative": True,
-                      "hint": "SDXL — tag-based prompts OK, cfg 5-7, 25-30 steps."},
-    "sdxl_turbo":   {"negative": True,
-                      "hint": "SDXL Turbo — low cfg (1-2), 4-8 steps."},
-    "illustrious":  {"negative": True,
-                      "hint": "Illustrious — booru tags, low cfg 5-6, euler_ancestral."},
-    "pony":         {"negative": True,
-                      "hint": "Pony — score tags (score_9, score_8_up...), cfg 6-8."},
-    "playground":   {"negative": True,
-                      "hint": "Playground v2.5 — aesthetic natural language, cfg 3."},
-    "zit":          {"negative": True,
-                      "hint": "Z-Image-Turbo — short prompts, cfg 2.0, 6 steps."},
-    "sd3":          {"negative": True,
-                      "hint": "SD3 / SD3.5 — MMDiT, natural language, cfg 4-6."},
-    "sd3_turbo":    {"negative": True,
-                      "hint": "SD3.5 Turbo — low cfg (1-2), 4-8 steps."},
-    "kolors":       {"negative": True,
+    "sd15":         {"negative": True,  "prompt_style": "tags",
+                      "wants_quality_tags": True,  "supports_cn": True,
+                      "cfg_range": (7.0, 9.0),  "steps_range": (20, 30),
+                      "hint": "SD 1.5 — classic comma-tag prompts, cfg 7-9, 20-30 steps. Quality tags OK."},
+    "sdxl":         {"negative": True,  "prompt_style": "tags",
+                      "wants_quality_tags": True,  "supports_cn": True,
+                      "cfg_range": (5.0, 7.5),  "steps_range": (25, 35),
+                      "hint": "SDXL — tag-based prompts, cfg 5-7, 25-30 steps. Quality tags OK."},
+    "sdxl_turbo":   {"negative": True,  "prompt_style": "tags",
+                      "wants_quality_tags": False, "supports_cn": True,
+                      "cfg_range": (1.0, 2.0),  "steps_range": (4, 8),
+                      "hint": "SDXL Turbo — cfg 1-2, 4-8 steps. Skip quality tags."},
+    "illustrious":  {"negative": True,  "prompt_style": "booru",
+                      "wants_quality_tags": True,  "supports_cn": True,
+                      "cfg_range": (5.0, 6.5),  "steps_range": (25, 35),
+                      "hint": "Illustrious — booru tags, low cfg 5-6, euler_ancestral recommended."},
+    "pony":         {"negative": True,  "prompt_style": "booru",
+                      "wants_quality_tags": True,  "supports_cn": True,
+                      "cfg_range": (6.0, 8.0),  "steps_range": (25, 35),
+                      "hint": "Pony — score tags (score_9, score_8_up, …), cfg 6-8."},
+    "playground":   {"negative": True,  "prompt_style": "natural",
+                      "wants_quality_tags": False, "supports_cn": True,
+                      "cfg_range": (2.5, 3.5),  "steps_range": (25, 35),
+                      "hint": "Playground v2.5 — aesthetic natural language, low cfg 3."},
+    "zit":          {"negative": True,  "prompt_style": "tags",
+                      "wants_quality_tags": False, "supports_cn": True,
+                      "cfg_range": (1.5, 2.5),  "steps_range": (4, 8),
+                      "hint": "Z-Image-Turbo — short tags, cfg 2.0, 6 steps. Z-Image-Turbo Union CN only."},
+    "sd3":          {"negative": True,  "prompt_style": "natural",
+                      "wants_quality_tags": False, "supports_cn": True,
+                      "cfg_range": (4.0, 6.0),  "steps_range": (25, 35),
+                      "hint": "SD3 / SD3.5 — MMDiT natural language, cfg 4-6."},
+    "sd3_turbo":    {"negative": True,  "prompt_style": "natural",
+                      "wants_quality_tags": False, "supports_cn": True,
+                      "cfg_range": (1.0, 2.0),  "steps_range": (4, 8),
+                      "hint": "SD3.5 Turbo — cfg 1-2, 4-8 steps."},
+    "kolors":       {"negative": True,  "prompt_style": "natural",
+                      "wants_quality_tags": False, "supports_cn": True,
+                      "cfg_range": (5.0, 7.0),  "steps_range": (25, 35),
                       "hint": "Kolors — Chinese+English prompts, cfg 5-7."},
-    "hunyuan_dit":  {"negative": True,
+    "hunyuan_dit":  {"negative": True,  "prompt_style": "natural",
+                      "wants_quality_tags": False, "supports_cn": True,
+                      "cfg_range": (5.0, 7.0),  "steps_range": (25, 35),
                       "hint": "HunyuanDiT — bilingual prompts, cfg 6."},
-    "pixart":       {"negative": True,
+    "pixart":       {"negative": True,  "prompt_style": "natural",
+                      "wants_quality_tags": False, "supports_cn": True,
+                      "cfg_range": (4.0, 5.0),  "steps_range": (20, 25),
                       "hint": "PixArt — natural language, cfg 4-5, 20 steps."},
-    "auraflow":     {"negative": True,
+    "auraflow":     {"negative": True,  "prompt_style": "natural",
+                      "wants_quality_tags": False, "supports_cn": True,
+                      "cfg_range": (3.0, 5.0),  "steps_range": (25, 35),
                       "hint": "AuraFlow — natural language, cfg 3-5, 25 steps."},
+
+    # Video arches — kept in the table so WanI2VDialog / LtxVideoDialog
+    # surface an arch hint even though they never swap archs at runtime.
+    # WAN supports negative; LTX supports negative.
+    "wan":          {"negative": True,  "prompt_style": "natural",
+                      "wants_quality_tags": False, "supports_cn": False,
+                      "cfg_range": (3.5, 5.0),  "steps_range": (25, 40),
+                      "hint": "WAN 2.2 — natural language for I2V, cfg 3.5-5, 25-40 steps. Use turbo LoRAs for 6-step dispatch."},
+    "ltx":          {"negative": True,  "prompt_style": "natural",
+                      "wants_quality_tags": False, "supports_cn": False,
+                      "cfg_range": (1.0, 4.0),  "steps_range": (8, 30),
+                      "hint": "LTX 2.3 — natural language, distilled 8-step or full 30-step; no quality tags."},
+
     # Arches that DO NOT support negative prompts (CLAUDE.md §9).
-    "flux1dev":     {"negative": False,
-                      "hint": "Flux 1 Dev — natural language, NO negative prompt, cfg 3.5, 25 steps."},
-    "flux_kontext": {"negative": False,
-                      "hint": "Flux Kontext — edit instructions, NO negative prompt, cfg 3.5."},
-    "flux2klein":   {"negative": False,
-                      "hint": "Flux 2 Klein — natural language, NO negative prompt, cfg 1.0, 4-6 steps. Enhancer is ON by default."},
-    "chroma":       {"negative": False,
-                      "hint": "Chroma — natural language, NO negative prompt, no ControlNet."},
+    "flux1dev":     {"negative": False, "prompt_style": "natural",
+                      "wants_quality_tags": False, "supports_cn": True,
+                      "cfg_range": (3.5, 3.5),  "steps_range": (20, 30),
+                      "hint": "Flux 1 Dev — natural language, NO negative, cfg 3.5, 20-30 steps. Skip quality tags."},
+    "flux_kontext": {"negative": False, "prompt_style": "edit_instruction",
+                      "wants_quality_tags": False, "supports_cn": False,
+                      "cfg_range": (3.5, 4.5),  "steps_range": (20, 30),
+                      "hint": "Flux Kontext — edit instructions ('change the hair to red'), NO negative, NO ControlNet."},
+    "flux2klein":   {"negative": False, "prompt_style": "natural",
+                      "wants_quality_tags": False, "supports_cn": False,
+                      "cfg_range": (1.0, 1.0),  "steps_range": (4, 8),
+                      "hint": "Flux 2 Klein — natural language, NO negative, cfg 1.0, 4-6 steps. Enhancer ON, no CN (ReferenceLatent only)."},
+    "chroma":       {"negative": False, "prompt_style": "natural",
+                      "wants_quality_tags": False, "supports_cn": False,
+                      "cfg_range": (2.5, 3.5),  "steps_range": (25, 35),
+                      "hint": "Chroma — natural language, NO negative, NO ControlNet. Single-CLIP 'chroma' type."},
+}
+
+
+# Per-prompt-style tooltip wording. Replaces the generic "Describe what
+# you want" tooltip on ``dlg.prompt_tv`` once the active arch is known,
+# so the user sees the expected format before typing.
+_PROMPT_STYLE_HINTS = {
+    "tags":             "Prompt style: comma-separated tags (e.g. 'a red sports car, golden hour, low angle, sharp focus, 8K').",
+    "booru":            "Prompt style: booru tags (e.g. '1girl, solo, long hair, cat ears, looking at viewer, masterpiece').",
+    "natural":          "Prompt style: natural language (e.g. 'A photorealistic portrait of an elderly fisherman mending his nets at dusk').",
+    "edit_instruction": "Prompt style: edit instructions (e.g. 'Change the car's color to deep red' or 'Make the sky a stormy sunset').",
 }
 
 
 def _apply_arch_optimizations(dlg, arch_key, *, arch_hint_label=None):
     """Per-model UI optimization applied on every preset change.
 
-    Reads ARCH_OPTIMIZATIONS[arch_key] and:
-      * disables / re-enables ``dlg.neg_tv`` (and greys any negative
-        prompt label found at ``dlg._neg_label``) based on whether the
-        arch accepts negative conditioning. CLAUDE.md §9 is the source
-        of truth — calling this is equivalent to baking the matrix
-        into every dialog's init.
-      * sets an arch-specific tooltip on ``neg_tv`` explaining WHY it
-        was disabled, so the user doesn't assume the dialog is broken.
-      * writes a one-line hint into ``arch_hint_label`` (if provided)
-        summarising the arch's prompting style and default knobs.
+    The canonical "pick a model and the dialog adapts" helper — §22/§23
+    in spirit. Reads ``ARCH_OPTIMIZATIONS[arch_key]`` and rewrites:
 
-    Silent no-op when the dialog has no ``neg_tv`` attribute — caller
-    dialogs without a negative prompt widget (Klein outpaint etc.)
-    still benefit from the hint label.
+      * ``dlg.neg_tv`` sensitive/editable state + tooltip (disabled with
+        explanation on no-negative arches: Flux 1 Dev / Flux Kontext /
+        Flux 2 Klein / Chroma per CLAUDE.md §9).
+      * ``dlg._neg_label`` sensitive state (matching grey-out).
+      * ``dlg.prompt_tv`` tooltip — rewritten to _PROMPT_STYLE_HINTS[style]
+        so the user sees the expected format (tag list / booru / natural
+        language / edit instruction) before typing.
+      * ``dlg.cfg_spin`` tooltip — includes the arch's recommended cfg
+        range (e.g. "3.5" for Flux, "1.0" for Klein, "7-9" for SD1.5).
+      * ``dlg.steps_spin`` tooltip — same for step count.
+      * ``arch_hint_label`` (or ``dlg._arch_hint_label`` when the caller
+        didn't pass one) — one-line human summary of the arch's style,
+        ranges, and any arch-specific quirks ("Enhancer ON", "no CN",
+        "Union CN only", etc.).
+
+    Every widget update is gated on ``hasattr(dlg, <name>)`` so dialogs
+    that only own a subset of the widget roster still get partial
+    optimization. Exceptions around individual set_tooltip_text calls
+    are swallowed so a Gtk version that lacks a given API can't break
+    the model-pick handler.
 
     Pair to the existing ``_refresh_cn_combos`` / ``_refresh_lora_combos``
     / ``_refresh_scene_combo`` calls — all four fire from one
@@ -2570,6 +2659,34 @@ def _apply_arch_optimizations(dlg, arch_key, *, arch_hint_label=None):
             target_hint.show()
         except Exception:
             pass
+
+    # Richer per-arch tuning — optional widgets; skipped when absent.
+    prompt_tv = getattr(dlg, "prompt_tv", None)
+    if prompt_tv is not None:
+        style_hint = _PROMPT_STYLE_HINTS.get(opt.get("prompt_style", "tags"))
+        if style_hint:
+            try: prompt_tv.set_tooltip_text(style_hint)
+            except Exception: pass
+    cfg_range = opt.get("cfg_range")
+    cfg_spin = getattr(dlg, "cfg_spin", None)
+    if cfg_spin is not None and cfg_range:
+        lo, hi = cfg_range
+        try:
+            cfg_spin.set_tooltip_text(
+                f"Classifier-free guidance. Recommended for {arch_key}: "
+                f"{lo:g}-{hi:g}. Higher = more literal, lower = more "
+                f"creative / distilled-friendly.")
+        except Exception: pass
+    steps_range = opt.get("steps_range")
+    steps_spin = getattr(dlg, "steps_spin", None)
+    if steps_spin is not None and steps_range:
+        lo, hi = steps_range
+        try:
+            steps_spin.set_tooltip_text(
+                f"Sampling steps. Recommended for {arch_key}: {lo}-{hi}. "
+                f"Distilled models (turbo / Klein / ZIT) use far fewer "
+                f"steps than full-schedule models.")
+        except Exception: pass
 
 
 FACEID_PRESETS = {
@@ -8402,6 +8519,38 @@ def _shrink_on_collapse(expander, dlg):
     expander.connect("notify::expanded", _on_toggle)
 
 
+def _make_section_expander(label, dialog, *, expanded=False, indent=False):
+    """Build a `Gtk.Expander` pre-wired for small-display UX.
+
+    Every caller that adds a collapsible settings / advanced / LoRA /
+    ControlNet section in a Spellcaster dialog should use this helper
+    so the whole plugin behaves consistently:
+
+      * Shrink-on-collapse is wired (dialog resizes when user folds
+        the section — otherwise GTK leaves the empty whitespace behind
+        and the dialog stays tall).
+      * Default state is COLLAPSED. The user's complaint driving this
+        helper was "the settings panel is very tall"; start folded and
+        let the user expand only what they need.
+      * `indent=True` adds a left margin on the inner box so nested
+        content visually reads as "inside" the section.
+
+    Returns (expander, content_box). Caller packs widgets into
+    content_box, then packs expander into the dialog's content area.
+    """
+    expander = Gtk.Expander(label=label)
+    expander.set_expanded(bool(expanded))
+    content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+    if indent:
+        content.set_margin_start(12)
+    content.set_margin_top(4)
+    content.set_margin_bottom(4)
+    expander.add(content)
+    if dialog is not None:
+        _shrink_on_collapse(expander, dialog)
+    return expander, content
+
+
 def _make_autoset_button(dialog, mode="img2img"):
     """Create a small 'A.' button that calls _auto_configure on click.
 
@@ -10272,8 +10421,12 @@ class WanI2VDialog(Gtk.Dialog):
         sw.add(self.prompt_tv)
         box.pack_start(sw, False, False, 0)
 
-        # Negative prompt
-        box.pack_start(Gtk.Label(label="Negative Prompt:", xalign=0), False, False, 0)
+        # Negative prompt. Label captured as self._neg_label so the
+        # _apply_arch_optimizations greys it in sync with the TextView
+        # when the user picks a no-negative arch (WAN is always-negative,
+        # but the helper is no-op unless WAN's row ever flips).
+        self._neg_label = Gtk.Label(label="Negative Prompt:", xalign=0)
+        box.pack_start(self._neg_label, False, False, 0)
         sw2 = Gtk.ScrolledWindow()
         sw2.set_min_content_height(40)
         self.neg_tv = Gtk.TextView()
@@ -10284,8 +10437,11 @@ class WanI2VDialog(Gtk.Dialog):
         box.pack_start(sw2, False, False, 0)
 
         # ── Advanced Settings (collapsible) ──
+        # Wire shrink-on-collapse so the dialog contracts on small
+        # displays when the user folds this section closed.
         adv_expander = Gtk.Expander(label="Advanced Settings")
         adv_expander.set_expanded(False)
+        _shrink_on_collapse(adv_expander, self)
         adv_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         adv_box.set_margin_start(4); adv_box.set_margin_top(4)
 
@@ -10807,6 +10963,11 @@ class WanI2VDialog(Gtk.Dialog):
     def _on_preset_changed(self, combo):
         if self._all_wan_loras:
             self._refresh_lora_combos()
+        # WAN is always arch=wan (video). Route through the central
+        # per-arch UI optimizer so the hint label + cfg/steps tooltips
+        # match every other dialog's behaviour, and so ARCH_OPTIMIZATIONS
+        # is the sole authority for per-arch UI state everywhere.
+        _apply_arch_optimizations(self, "wan")
 
     def _on_video_preset_changed(self, combo):
         """Apply a video prompt template: fill prompt, negative, and override settings."""
@@ -11987,8 +12148,10 @@ class FaceIDDialog(Gtk.Dialog):
         sw.set_min_content_height(60)
         box.pack_start(sw, False, False, 0)
 
-        # Negative
-        box.pack_start(Gtk.Label(label="Negative:", xalign=0), False, False, 0)
+        # Negative — label captured so _apply_arch_optimizations can
+        # grey it together with the TextView on no-negative arches.
+        self._neg_label = Gtk.Label(label="Negative:", xalign=0)
+        box.pack_start(self._neg_label, False, False, 0)
         self.neg_tv = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR)
         self.neg_tv.set_size_request(-1, 40)
         self.neg_tv.set_tooltip_text("Describe what you do NOT want (e.g. 'blurry, distorted').")
@@ -27561,8 +27724,16 @@ class Spellcaster(Gimp.PlugIn):
         test_row.pack_start(test_status, True, True, 0)
         bx.pack_start(test_row, False, False, 0)
 
-        # ── Workflow Timeout ──
+        # ── Timeouts & Updates (collapsible) ──────────────────────
+        # Small-display fix: these set-once toggles don't belong in the
+        # always-visible top of the dialog. Group them into a single
+        # expander that starts collapsed.
         bx.pack_start(Gtk.Separator(), False, False, 5)
+        timeouts_exp, timeouts_box = _make_section_expander(
+            "Timeouts & Updates", dlg, expanded=False, indent=True,
+        )
+        bx.pack_start(timeouts_exp, False, False, 0)
+
         timeout_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         timeout_check = Gtk.CheckButton(label="Enable workflow timeout")
         cur_timeout = cfg.get("workflow_timeout", 0)
@@ -27589,9 +27760,9 @@ class Spellcaster(Gimp.PlugIn):
         def _on_timeout_toggle(cb):
             timeout_spin.set_sensitive(cb.get_active())
         timeout_check.connect("toggled", _on_timeout_toggle)
-        bx.pack_start(timeout_row, False, False, 0)
+        timeouts_box.pack_start(timeout_row, False, False, 0)
 
-        # ── Favourite Model ──
+        # ── Favourite Model (stays always visible — everyday choice) ──
         bx.pack_start(Gtk.Separator(), False, False, 5)
         bx.pack_start(Gtk.Label(label="Favourite Model (opens first in all dialogs):", xalign=0), False, False, 0)
         fav_combo = Gtk.ComboBoxText()
@@ -27606,9 +27777,13 @@ class Spellcaster(Gimp.PlugIn):
             "Set to '(none)' to use the last-used model instead.")
         bx.pack_start(fav_combo, False, False, 0)
 
-        # ── My Presets (quick access to saved presets) ──
+        # ── My Presets (collapsible — a frame of rows is the tallest
+        # single chunk of this dialog, so hide it by default) ──
         bx.pack_start(Gtk.Separator(), False, False, 5)
-        bx.pack_start(Gtk.Label(label="My Saved Presets:", xalign=0), False, False, 0)
+        presets_exp, presets_section = _make_section_expander(
+            "My Saved Presets", dlg, expanded=False, indent=True,
+        )
+        bx.pack_start(presets_exp, False, False, 0)
 
         # Load all user presets from all dialog types
         presets_frame = Gtk.Frame()
@@ -27651,11 +27826,15 @@ class Spellcaster(Gimp.PlugIn):
                 Gtk.Label(label="No saved presets yet. Save presets from any tool dialog."),
                 False, False, 8)
 
-        bx.pack_start(presets_frame, True, True, 0)
+        presets_section.pack_start(presets_frame, True, True, 0)
 
-        # ── Output Directory ──
+        # ── Output & Cleanup (collapsible — set-once folder choice) ──
         bx.pack_start(Gtk.Separator(), False, False, 5)
-        bx.pack_start(Gtk.Label(label="Spellcaster Output Directory:", xalign=0), False, False, 0)
+        output_exp, output_box = _make_section_expander(
+            "Output & Cleanup", dlg, expanded=False, indent=True,
+        )
+        bx.pack_start(output_exp, False, False, 0)
+        output_box.pack_start(Gtk.Label(label="Spellcaster Output Directory:", xalign=0), False, False, 0)
         output_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         output_entry = Gtk.Entry()
         output_entry.set_text(cfg.get("output_dir", ""))
@@ -27679,7 +27858,7 @@ class Spellcaster(Gimp.PlugIn):
         browse_btn = Gtk.Button(label="Browse...")
         browse_btn.connect("clicked", _browse_output)
         output_row.pack_start(browse_btn, False, False, 0)
-        bx.pack_start(output_row, False, False, 0)
+        output_box.pack_start(output_row, False, False, 0)
 
         cleanup_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         cleanup_row.pack_start(Gtk.Label(label="After generation:"), False, False, 0)
@@ -27692,7 +27871,7 @@ class Spellcaster(Gimp.PlugIn):
             "• Copy: save outputs to your directory (files also stay in ComfyUI)\n"
             "• Delete: clean up temp files uploaded to ComfyUI's input folder")
         cleanup_row.pack_start(cleanup_combo, True, True, 0)
-        bx.pack_start(cleanup_row, False, False, 0)
+        output_box.pack_start(cleanup_row, False, False, 0)
 
         def _clean_inputs_now(*_a):
             """Manually purge all gimp_* temp uploads from ComfyUI's input folder."""
@@ -27726,11 +27905,14 @@ class Spellcaster(Gimp.PlugIn):
             "Overwrite all gimp_* temp uploads on the ComfyUI server\n"
             "with 1x1 pixel PNGs to reclaim disk space.")
         clean_btn.connect("clicked", _clean_inputs_now)
-        bx.pack_start(clean_btn, False, False, 0)
+        output_box.pack_start(clean_btn, False, False, 0)
 
-        # ── AI Prompt Enhancement ──
+        # ── AI Prompt Enhancement (collapsible) ──
         bx.pack_start(Gtk.Separator(), False, False, 5)
-        bx.pack_start(Gtk.Label(label="AI Prompt Enhancement:", xalign=0), False, False, 0)
+        enhance_exp, enhance_sec = _make_section_expander(
+            "AI Prompt Enhancement", dlg, expanded=False, indent=True,
+        )
+        bx.pack_start(enhance_exp, False, False, 0)
         enhance_cb = Gtk.CheckButton(label="Automatically enhance prompts via local LLM")
         enhance_cb.set_active(cfg.get("prompt_enhance", False))
         enhance_cb.set_tooltip_text(
@@ -27744,7 +27926,7 @@ class Spellcaster(Gimp.PlugIn):
             "Primary: uses LLM nodes on your ComfyUI server (auto-detected).\n"
             "Fallback: external KoboldCpp/Ollama server (optional URL below).\n"
             "If no LLM is available, your original prompt is used as-is.")
-        bx.pack_start(enhance_cb, False, False, 0)
+        enhance_sec.pack_start(enhance_cb, False, False, 0)
 
         # Auto-detect LLM from ComfyUI server
         llm_detect_label = Gtk.Label(xalign=0)
@@ -27763,7 +27945,7 @@ class Spellcaster(Gimp.PlugIn):
         except Exception:
             llm_detect_label.set_markup(
                 '<span foreground="#888888">ComfyUI LLM: detection skipped</span>')
-        bx.pack_start(llm_detect_label, False, False, 0)
+        enhance_sec.pack_start(llm_detect_label, False, False, 0)
 
         llm_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         llm_row.pack_start(Gtk.Label(label="External LLM (fallback):"), False, False, 0)
@@ -27811,19 +27993,19 @@ class Spellcaster(Gimp.PlugIn):
         test_llm_btn.connect("clicked", _on_test_llm)
         llm_row.pack_start(test_llm_btn, False, False, 0)
         llm_row.pack_start(test_llm_status, False, False, 0)
-        bx.pack_start(llm_row, False, False, 0)
+        enhance_sec.pack_start(llm_row, False, False, 0)
 
-        # ── Auto-update toggle ──
-        bx.pack_start(Gtk.Separator(), False, False, 5)
+        # Auto-update + Debug toggles — keep in the Timeouts & Updates
+        # expander so they sit with their natural group.
         auto_update_cb = Gtk.CheckButton(label="Auto-update plugin from GitHub on startup")
         auto_update_cb.set_active(cfg.get("auto_update", True))
         auto_update_cb.set_tooltip_text(
             "When enabled, Spellcaster checks GitHub for updates every time\n"
             "GIMP starts. Disable if you have custom modifications you want\n"
             "to preserve, or if you have no internet connection.")
-        bx.pack_start(auto_update_cb, False, False, 0)
+        timeouts_box.pack_start(auto_update_cb, False, False, 0)
 
-        # ── Debug images toggle ──
+        # ── Debug images toggle (grouped with the update + timeout knobs) ──
         debug_cb = Gtk.CheckButton(label="Save ControlNet debug layers (invisible)")
         debug_cb.set_active(cfg.get("debug_images", False))
         debug_cb.set_tooltip_text(
@@ -27831,10 +28013,14 @@ class Spellcaster(Gimp.PlugIn):
             "pose skeleton) is saved as an invisible layer in your image.\n"
             "Toggle the layer visibility to inspect what the AI 'sees'.\n\n"
             "Disable to keep your layer stack clean.")
-        bx.pack_start(debug_cb, False, False, 0)
+        timeouts_box.pack_start(debug_cb, False, False, 0)
 
-        # ── Repair / Update Now ──
+        # ── Repair / Update Now (collapsible — emergency button, rarely used) ──
         bx.pack_start(Gtk.Separator(), False, False, 5)
+        repair_exp, repair_box = _make_section_expander(
+            "Repair / Force Update Now", dlg, expanded=False, indent=True,
+        )
+        bx.pack_start(repair_exp, False, False, 0)
         update_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         update_btn = Gtk.Button(label="Repair / Update Now")
         update_status = Gtk.Label(label="")
@@ -27922,15 +28108,14 @@ class Spellcaster(Gimp.PlugIn):
         update_btn.connect("clicked", _on_update)
         update_row.pack_start(update_btn, False, False, 0)
         update_row.pack_start(update_status, True, True, 0)
-        bx.pack_start(update_row, False, False, 0)
+        repair_box.pack_start(update_row, False, False, 0)
 
-        # ── Expert Settings (collapsible) ──
+        # ── Expert Settings (collapsible — uses the shared helper
+        # so its shrink-on-collapse matches every other section) ──
         bx.pack_start(Gtk.Separator(), False, False, 5)
-        expert_expander = Gtk.Expander(label="Expert Settings")
-        expert_expander.set_expanded(False)
-        expert_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        expert_box.set_margin_start(12)
-        expert_box.set_margin_top(8)
+        expert_expander, expert_box = _make_section_expander(
+            "Expert Settings", dlg, expanded=False, indent=True,
+        )
 
         # Hot-swap server URL (live, without restarting GIMP)
         expert_box.pack_start(Gtk.Label(
@@ -28009,7 +28194,7 @@ class Spellcaster(Gimp.PlugIn):
         reload_row.pack_start(reload_status, True, True, 0)
         expert_box.pack_start(reload_row, False, False, 0)
 
-        expert_expander.add(expert_box)
+        # Helper already called expert_expander.add(expert_box); just pack.
         bx.pack_start(expert_expander, False, False, 0)
 
         # ── Info ──
