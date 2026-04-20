@@ -944,6 +944,32 @@ def _load_config():
             return {}
 
 
+def _preset_pick(d, key):
+    """Safe dict lookup with consistent fallback.
+
+    Handler dispatch code reads preset values from dialog combos via
+    ``DICT[combo.get_active_id()]``. In the happy path the combo always
+    has a default-active entry so ``get_active_id()`` returns a valid
+    key. But if the combo is empty (uncommon — user's ComfyUI has no
+    checkpoints / CNs / LoRAs yet) OR session restore pointed the
+    combo at a key that's been removed since, ``get_active_id()``
+    returns None / a deleted id and the dict lookup raises KeyError
+    or TypeError — which the caller's top-level try/except surfaces
+    as an unhelpful "Error: 'some_key'" Gimp.message.
+
+    This helper collapses both cases: return d[key] on hit, else the
+    FIRST value in d (matches the combo's default-active-0 shape),
+    else {} when d is itself empty. Callers that need strict keying
+    should keep the direct indexing.
+    """
+    if isinstance(d, dict):
+        if key in d:
+            return d[key]
+        for v in d.values():
+            return v
+    return {}
+
+
 # Feature → sentinel node class names. When ANY sentinel is present in
 # ComfyUI's /object_info the feature is considered installed. Kept compact:
 # we don't list every node, just the distinctive ones per feature.
@@ -6579,7 +6605,7 @@ def _build_faceid_img2img(target_filename, face_ref_filename, preset_key,
                            denoise=None, steps=None, cfg=None,
                            turbo_loras=None, turbo=False):
     """→ Delegated to v2 builder (resolves preset_key → preset dict)."""
-    preset = FACEID_PRESETS[preset_key]
+    preset = _preset_pick(FACEID_PRESETS, preset_key)
     # turbo_loras are just LoRAs injected before the FaceID loader
     loras = turbo_loras if turbo and turbo_loras else None
     return build_faceid_img2img(target_filename, face_ref_filename, preset,
@@ -7440,7 +7466,7 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
     so every WAN caller in the app agrees. Caller-explicit
     steps/cfg/second_step still win — the canon only fills defaults.
     """
-    preset = WAN_I2V_PRESETS[preset_key]
+    preset = _preset_pick(WAN_I2V_PRESETS, preset_key)
     if ip_adapter_image and server_url:
         required_model = preset.get("ip_adapter_model", "ip-adapter.bin")
         available = _fetch_wan_ipadapter_models(server_url)
@@ -7576,7 +7602,7 @@ def _build_ltx_video(preset_key, prompt_text, seed,
     are installed. Caller can force-on / force-off via tri-state
     args.
     """
-    preset = LTX_PRESETS[preset_key]
+    preset = _preset_pick(LTX_PRESETS, preset_key)
 
     # Server probe = default; explicit True/False overrides.
     probe = {"sage": False, "cfg_zero": False}
@@ -17605,7 +17631,7 @@ class Spellcaster(Gimp.PlugIn):
             uname = f"gimp_klein_out_{uuid.uuid4().hex[:8]}.png"
             _upload_image(srv, tmp, uname); os.unlink(tmp)
 
-            km = KLEIN_MODELS[klein_key]
+            km = _preset_pick(KLEIN_MODELS, klein_key)
             preset = {
                 "arch": "flux2klein", "ckpt": km["unet"],
                 "steps": steps, "cfg": 1.0, "denoise": 1.0,
@@ -17923,7 +17949,7 @@ class Spellcaster(Gimp.PlugIn):
             # the input layers; LLM fills in atmosphere / lighting).
             prompt, _ = _auto_enhance(prompt, "flux2klein", method="scene")
 
-            km = KLEIN_MODELS[klein_key]
+            km = _preset_pick(KLEIN_MODELS, klein_key)
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 label = f"Klein Blend run {run_i+1}/{runs}" if runs > 1 else "Klein Blend"
@@ -18747,7 +18773,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
 
         try:
-            km = KLEIN_MODELS[klein_key]
+            km = _preset_pick(KLEIN_MODELS, klein_key)
 
             # ── GIMP operations on main thread (before spinner) ───────
             # GIMP's PDB is not thread-safe. Mask creation and image
@@ -22064,7 +22090,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         srv = se.get_text().strip(); _propagate_server_url(srv)
         preset_key = lut_combo.get_active_id()
-        lut_name = LUT_PRESETS[preset_key]
+        lut_name = _preset_pick(LUT_PRESETS, preset_key)
         strength = strength_spin.get_value()
         _SESSION["lut"] = {"lut_id": preset_key, "strength": strength}
         _save_session()
@@ -22682,7 +22708,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         srv = se.get_text().strip(); _propagate_server_url(srv)
         preset_key = model_combo.get_active_id()
-        fr_preset = FACE_RESTORE_PRESETS[preset_key]
+        fr_preset = _preset_pick(FACE_RESTORE_PRESETS, preset_key)
         facedetection = det_combo.get_active_id()
         visibility = vis_spin.get_value()
         codeformer_weight = cf_spin.get_value()
@@ -22840,9 +22866,9 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         srv = se.get_text().strip(); _propagate_server_url(srv)
         up_key = up_combo.get_active_id()
-        upscale_model = RESTORE_UPSCALE_PRESETS[up_key]
+        upscale_model = _preset_pick(RESTORE_UPSCALE_PRESETS, up_key)
         face_key = face_combo.get_active_id()
-        fr_preset = FACE_RESTORE_PRESETS[face_key]
+        fr_preset = _preset_pick(FACE_RESTORE_PRESETS, face_key)
         sharpen_amount = sharpen_spin.get_value()
         codeformer_weight = cf_spin.get_value()
         facedetection = det_combo.get_active_id()
@@ -22905,7 +22931,7 @@ class Spellcaster(Gimp.PlugIn):
         def _on_detail_changed(combo):
             key = combo.get_active_id()
             if key and key in HALLUCINATE_PRESETS:
-                hp = HALLUCINATE_PRESETS[key]
+                hp = _preset_pick(HALLUCINATE_PRESETS, key)
                 if hp.get("prompt"):
                     prompt_tv.get_buffer().set_text(hp["prompt"])
                 if hp.get("negative"):
@@ -23120,7 +23146,7 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CANCEL, GLib.Error())
         srv = se.get_text().strip(); _propagate_server_url(srv)
         detail_key = detail_combo.get_active_id()
-        h_preset = HALLUCINATE_PRESETS[detail_key]
+        h_preset = _preset_pick(HALLUCINATE_PRESETS, detail_key)
         up_key = up_combo.get_active_id()
         # Defense in depth: the dropdown now filters WaveSpeed entries
         # (they aren't real model filenames), but if session restore
@@ -25861,7 +25887,7 @@ class Spellcaster(Gimp.PlugIn):
 
         try:
             srv = srv.strip()
-            km = KLEIN_MODELS[klein_key]
+            km = _preset_pick(KLEIN_MODELS, klein_key)
 
             # Export image + mask
             if has_sel:
@@ -26141,7 +26167,7 @@ class Spellcaster(Gimp.PlugIn):
                 _import_result_as_layer(image, _download_image(srv, bg_name, "", "input"), "Studio Set BG")
             else:
                 # Generate background — pick best (with quality boost)
-                bg_prompt = SCENE_BG_PRESETS[bg_key]
+                bg_prompt = _preset_pick(SCENE_BG_PRESETS, bg_key)
                 preset = dict(MODEL_PRESETS[bg_model_idx] if 0 <= bg_model_idx < len(MODEL_PRESETS) else MODEL_PRESETS[0])
                 arch = preset.get("arch", "sdxl")
                 bg_boosted = _boost_prompt(bg_prompt, arch)
@@ -26190,7 +26216,7 @@ class Spellcaster(Gimp.PlugIn):
             # STEP 2: Place each actor via Klein blend
             # ══════════════════════════════════════════════════════════
             current_scene = bg_name
-            km = KLEIN_MODELS[klein_key]
+            km = _preset_pick(KLEIN_MODELS, klein_key)
 
             for a_idx, actor in enumerate(actors):
                 # Upload actor PNG
