@@ -4366,6 +4366,43 @@ def _looks_like_video_lora(lora_name):
     return bool(_VIDEO_LORA_RE.search(path))
 
 
+def cn_modes_for_arch(modes_dict, target_arch):
+    """List of CONTROLNET_GUIDE_MODES keys compatible with ``target_arch``.
+
+    Thin local wrapper that delegates to the canonical
+    spellcaster_core.model_detect.cn_modes_for_arch (CLAUDE.md §3
+    single source of truth for compatibility logic), with an inline
+    fallback so the dialog still builds when spellcaster_core fails
+    to import (e.g. partial install). Mirrors the pattern used by
+    ``_filter_loras_for_arch`` above.
+
+    Filters via cn_is_compatible:
+      * "Off" entry (cn_models is None) is always available.
+      * Klein / Kontext / Chroma never get a real CN entry.
+      * Other arches see only modes whose cn_models dict has their key.
+    """
+    if not isinstance(modes_dict, dict):
+        return []
+    try:
+        from spellcaster_core.model_detect import cn_modes_for_arch as _cn_for_arch
+        return _cn_for_arch(modes_dict, target_arch)
+    except Exception:
+        # Fallback — keep the same gating semantics as the canonical
+        # impl so behaviour stays predictable on partial installs.
+        _forbidden = ("flux2klein", "flux_kontext", "chroma")
+        out = []
+        for key, cfg in modes_dict.items():
+            cn_models = cfg.get("cn_models") if isinstance(cfg, dict) else None
+            if cn_models is None:
+                out.append(key)
+                continue
+            if not target_arch or target_arch in _forbidden:
+                continue
+            if isinstance(cn_models, dict) and target_arch in cn_models:
+                out.append(key)
+        return out
+
+
 def _filter_loras_for_arch(all_loras, arch):
     """Return only LoRAs compatible with `arch`.
 
@@ -8252,8 +8289,13 @@ class PresetDialog(Gtk.Dialog):
                 "  OpenPose + Canny \u2014 body pose + edge detail (portraits)\n"
                 "  Depth + Lineart \u2014 spatial + line structure (scenes)\n\n"
                 "\u26a0 SD1.5 and SDXL use DIFFERENT ControlNet models.\n"
-                "The correct model is auto-selected based on your checkpoint.")
-            for key in CONTROLNET_GUIDE_MODES:
+                "The correct model is auto-selected based on your checkpoint.\n"
+                "Only ControlNets compatible with the active model are listed.")
+            # Initial population is arch-filtered against the currently
+            # selected preset. _refresh_cn_combos() rebuilds the list
+            # whenever the user picks a different model below.
+            _initial_arch = self._current_preset_arch()
+            for key in cn_modes_for_arch(CONTROLNET_GUIDE_MODES, _initial_arch):
                 self._cn_mode_combo.append(key, key)
             self._cn_mode_combo.set_active(0)  # "Off" by default
             cn_exp_box.pack_start(self._cn_mode_combo, False, False, 0)
@@ -8297,8 +8339,9 @@ class PresetDialog(Gtk.Dialog):
                 "TIP: Generate a 3D normal map first (Enhance > 3D Normal Map),\n"
                 "then use 'Normal Map (use existing layer)' as CN1.\n\n"
                 "Keep CN2 strength lower than CN1 (e.g., 0.4 vs 0.7)\n"
-                "to let the primary guide dominate.")
-            for key in CONTROLNET_GUIDE_MODES:
+                "to let the primary guide dominate.\n"
+                "Only ControlNets compatible with the active model are listed.")
+            for key in cn_modes_for_arch(CONTROLNET_GUIDE_MODES, _initial_arch):
                 self._cn_mode_combo_2.append(key, key)
             self._cn_mode_combo_2.set_active(0)  # "Off" by default
             cn_exp_box.pack_start(self._cn_mode_combo_2, False, False, 0)
@@ -8408,6 +8451,48 @@ class PresetDialog(Gtk.Dialog):
         shown = len(self._lora_names)
         self._lora_fetch_btn.set_label(f"{shown}/{total} LoRAs ({arch})")
 
+    def _current_preset_arch(self):
+        """Arch key of the currently selected preset, or 'sdxl' as a safe fallback.
+
+        Used by every UI populator that needs to filter against the
+        loaded model (LoRAs, ControlNets, scene presets). Centralising
+        the lookup means the fallback rule lives in exactly one place.
+        """
+        idx = self.preset_combo.get_active() if hasattr(self, 'preset_combo') else -1
+        if 0 <= idx < len(MODEL_PRESETS):
+            return MODEL_PRESETS[idx].get("arch", "sdxl")
+        return "sdxl"
+
+    def _refresh_cn_combos(self):
+        """Re-populate the ControlNet comboboxes for the active model's arch.
+
+        Filters CONTROLNET_GUIDE_MODES through the canonical
+        cn_is_compatible helper so the user can never pick a CN that
+        will silently fail at sampling (Klein/Kontext/Chroma get only
+        the "Off" entry; SDXL/SD1.5/Flux/ZIT see only the modes that
+        actually map to a model file for that arch).
+
+        Dialog modes other than img2img/inpaint don't build CN combos
+        — guard with hasattr so this is a no-op there.
+        """
+        if not hasattr(self, '_cn_mode_combo'):
+            return
+        arch = self._current_preset_arch()
+        compat_keys = cn_modes_for_arch(CONTROLNET_GUIDE_MODES, arch)
+        for combo in (self._cn_mode_combo, getattr(self, '_cn_mode_combo_2', None)):
+            if combo is None:
+                continue
+            # Preserve the user's current pick when it survives the
+            # arch switch; otherwise fall back to "Off" (always at 0).
+            previous = combo.get_active_id()
+            combo.remove_all()
+            for key in compat_keys:
+                combo.append(key, key)
+            if previous and previous in compat_keys:
+                combo.set_active_id(previous)
+            else:
+                combo.set_active(0)
+
     def _on_preset_changed(self, combo):
         idx = combo.get_active()
         if idx >= 0:
@@ -8422,6 +8507,9 @@ class PresetDialog(Gtk.Dialog):
             # Re-filter scene presets for the new architecture
             if self._scene_combo:
                 self._refresh_scene_combo()
+            # Re-filter ControlNets — Klein/Kontext/Chroma get "Off"
+            # only, others see only the modes that map to their arch.
+            self._refresh_cn_combos()
 
     def _on_lora_combo_changed(self, combo, model_spin, clip_spin):
         """When a LoRA is selected, look up metadata for trigger words and optimal strength."""

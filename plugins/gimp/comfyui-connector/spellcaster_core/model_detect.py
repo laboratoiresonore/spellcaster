@@ -279,6 +279,72 @@ def classify_lora_arch(lora_name):
     return None
 
 
+# ── ControlNet × architecture compatibility ────────────────────────────
+# CLAUDE.md §9 architecture matrix: Klein / Kontext / Chroma have NO
+# ControlNet support. Even when a community ControlNet file claims to
+# work with one of them, it doesn't slot into the canonical workflows
+# (Klein uses ReferenceLatent + CFGGuider, Kontext is edit-instructions,
+# Chroma rejects CN conditioning) and the user gets a silent failure
+# at sampling. The UI MUST never offer a CN option for these arches.
+CN_FORBIDDEN_ARCHES = frozenset({"flux2klein", "flux_kontext", "chroma"})
+
+
+def cn_is_compatible(cn_models, target_arch):
+    """Whether a ControlNet mode is selectable for ``target_arch``.
+
+    Pair to ``lora_is_compatible`` — the canonical filter every UI
+    picker (GIMP / Darktable / Guild) consults before populating its
+    ControlNet combobox so the user can't pick a CN that will silently
+    fail at generation time.
+
+    Args:
+        cn_models: The ``cn_models`` field from a CONTROLNET_GUIDE_MODES
+                   entry. Either a dict {arch_key: filename, ...} for
+                   real CN modes or ``None`` for the synthetic "Off"
+                   entry. Pass exactly what the entry stores; we
+                   special-case None as "always available" so the user
+                   can disable CN on every arch.
+        target_arch: Architecture key of the currently-loaded model
+                     (e.g. "sdxl", "flux2klein"). Empty / None returns
+                     False — caller hasn't loaded a model yet, so we
+                     can't decide compatibility.
+
+    Returns True iff:
+        * cn_models is None (the "Off" entry — always available), OR
+        * target_arch is set, NOT in CN_FORBIDDEN_ARCHES, and is a key
+          of the cn_models dict.
+    """
+    if cn_models is None:
+        return True
+    if not target_arch:
+        return False
+    if target_arch in CN_FORBIDDEN_ARCHES:
+        return False
+    if not isinstance(cn_models, dict):
+        return False
+    return target_arch in cn_models
+
+
+def cn_modes_for_arch(modes_dict, target_arch):
+    """Return a list of ControlNet mode keys compatible with ``target_arch``.
+
+    Convenience wrapper around ``cn_is_compatible`` that lets a UI
+    populate a combobox in one line:
+
+        for k in cn_modes_for_arch(CONTROLNET_GUIDE_MODES, arch):
+            combo.append(k, k)
+
+    Preserves the dict's iteration order so the "Off" entry stays at
+    position 0 (every Spellcaster CN dict starts with it).
+    """
+    if not isinstance(modes_dict, dict):
+        return []
+    return [k for k, cfg in modes_dict.items()
+            if cn_is_compatible(cfg.get("cn_models")
+                                  if isinstance(cfg, dict) else None,
+                                target_arch)]
+
+
 def lora_is_compatible(lora_name, target_arch):
     """Return True if the LoRA is safe to inject into target_arch.
 

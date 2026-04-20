@@ -363,17 +363,35 @@ class Bridge:
                 os.unlink(png_path)
             except Exception:
                 pass
-        # Upload via the Guild so it lands in the canonical asset
-        # gallery — the receiving plugin fetches by hash. This also
-        # keeps the event/mailbox path identical to GIMP/DT sends so
-        # subscriber code on the other side doesn't branch on origin.
-        try:
-            asset_url, asset_hash = self._upload_via_guild(
-                png_bytes, title=data.get("title") or "From Resolve")
-        except Exception as e:
-            self._publish_send_done({
-                "target": target, "error": f"upload failed: {e}"})
-            return
+        # Transport choice: prefer the ComfyUI blob bus (audit tier-3)
+        # when we can reach it — peer plugins download directly from
+        # ComfyUI instead of having the bytes hop through the Guild's
+        # machine. Saves ~1× LAN round-trip for big frames. The event
+        # still goes through the Guild for coordination, because
+        # without Guild the receiver isn't subscribed to anything
+        # anyway.
+        #
+        # Fallback: Guild AssetGallery upload — the pre-blob-bus path.
+        # Used when the ComfyUI URL is unknown OR the blob put fails.
+        # Receivers' ingest code is URL-shape-agnostic so the switch
+        # is transparent to them.
+        asset_url: str
+        asset_hash: str
+        transport: str
+        blob_url = self._try_blob_put(
+            png_bytes, title=data.get("title") or "From Resolve")
+        if blob_url is not None:
+            asset_url, asset_hash = blob_url
+            transport = "blob"
+        else:
+            try:
+                asset_url, asset_hash = self._upload_via_guild(
+                    png_bytes, title=data.get("title") or "From Resolve")
+                transport = "guild"
+            except Exception as e:
+                self._publish_send_done({
+                    "target": target, "error": f"upload failed: {e}"})
+                return
         try:
             self.guild._post_json("/api/events/emit", {
                 "kind": f"{target}.asset.send",
@@ -383,16 +401,69 @@ class Bridge:
                     "hash": asset_hash,
                     "source": "resolve",
                     "kind": "generation",
+                    "transport": transport,
                 },
             }, timeout=5.0)
         except Exception as e:
             self._publish_send_done({
                 "target": target, "error": f"publish failed: {e}"})
             return
-        self.sync._log(f"Resolve → {target}: {asset_hash[:8]}")
+        self.sync._log(
+            f"Resolve → {target} via {transport}: {asset_hash[:8]}")
         self._publish_send_done({
-            "ok": True, "target": target,
+            "ok": True, "target": target, "transport": transport,
             "hash": asset_hash, "size_bytes": len(png_bytes)})
+
+    def _try_blob_put(self, png_bytes: bytes, title: str
+                       ) -> "tuple[str, str] | None":
+        """Push bytes to ComfyUI's blob bus. Returns (url, hash) on
+        success, None if the blob bus is unreachable or returned an
+        error. Never raises — callers fall back to Guild upload."""
+        url = self._resolve_comfyui_url()
+        if not url:
+            return None
+        # Hand-built multipart body — matches the shape
+        # CrossInterfaceClient.blob_put uses; we don't depend on
+        # spellcaster_core here to keep the Resolve plugin standalone.
+        import os as _os
+        boundary = "----spellcasterBlob" + _os.urandom(8).hex()
+        parts: list[bytes] = []
+
+        def _field(name: str, value: str):
+            parts.append(f"--{boundary}\r\n".encode())
+            parts.append(
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+                .encode())
+            parts.append(value.encode("utf-8"))
+            parts.append(b"\r\n")
+
+        _field("origin", "resolve")
+        _field("kind", "generation")
+        parts.append(f"--{boundary}\r\n".encode())
+        parts.append(
+            b'Content-Disposition: form-data; name="file"; '
+            b'filename="frame.png"\r\n'
+            b'Content-Type: image/png\r\n\r\n')
+        parts.append(png_bytes)
+        parts.append(b"\r\n")
+        parts.append(f"--{boundary}--\r\n".encode())
+        body = b"".join(parts)
+        req = urllib.request.Request(
+            f"{url}/spellcaster/blob/put", data=body, method="POST",
+            headers={
+                "Content-Type": f"multipart/form-data; boundary={boundary}",
+                "Content-Length": str(len(body)),
+            })
+        try:
+            with urllib.request.urlopen(req, timeout=15.0) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+        except Exception:
+            return None
+        blob_url = payload.get("url")
+        blob_hash = payload.get("hash")
+        if not blob_url or not blob_hash:
+            return None
+        return blob_url, blob_hash
 
     def _upload_via_guild(self, png_bytes, title=""):
         """POST bytes to the Guild's /api/assets endpoint. Returns
