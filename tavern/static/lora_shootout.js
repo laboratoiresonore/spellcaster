@@ -1277,18 +1277,14 @@
   // slot isn't in the DOM yet (setup wizard pages, etc.) we fall back
   // to a floating top-right button so the UX stays usable.
   function ensureEntryButton() {
-    if (document.getElementById('sc-shootout-btn')) return;
-    const btn = document.createElement('button');
-    btn.id = 'sc-shootout-btn';
-    btn.title = 'Spellcaster LoRA Shootout — pick a winner when you have duplicates';
-    btn.innerHTML = `⚔ Shootouts <span class="sc-shootout-badge">–</span>`;
-    btn.addEventListener('click', renderGroups);
-    const slot = document.getElementById('chat-shootout-slot');
-    if (slot) {
-      btn.classList.add('sc-shootout-btn--inline');
-      slot.appendChild(btn);
-    } else {
-      document.body.appendChild(btn);
+    // The standalone Shootouts entry button is retired — its UI now
+    // lives as a tab inside the unified Calibration modal in
+    // lora_calibration.js. This function stays as a no-op for the
+    // auto-boot, but we still refresh the badge count so callers
+    // that pull it from the SpellcasterShootout export stay accurate.
+    const legacy = document.getElementById('sc-shootout-btn');
+    if (legacy && legacy.parentNode) {
+      legacy.parentNode.removeChild(legacy);
     }
     refreshBadge();
   }

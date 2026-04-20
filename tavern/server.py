@@ -13319,7 +13319,10 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self.end_json(*_spellcaster_lora_calibrate_auto_start(
                 targets=data.get('targets') or [],
                 subset=data.get('subset') or '',
-                use_network=bool(data.get('use_network', True))))
+                use_network=bool(data.get('use_network', True)),
+                score_with_llm=bool(data.get('score_with_llm', False)),
+                ollama_url=data.get('ollama_url') or '',
+                scorer_model=data.get('scorer_model') or ''))
         if self.path.startswith('/api/spellcaster/lora/shootout/cancel'):
             qs = urllib.parse.urlparse(self.path).query
             params = urllib.parse.parse_qs(qs)
