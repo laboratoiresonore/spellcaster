@@ -59,3 +59,25 @@ Open the Spellcaster panel in SillyTavern's extension settings:
 | ComfyUI URL | http://127.0.0.1:8188 | Your ComfyUI server |
 | Restyle prompt | photorealistic portrait... | Default style for /restyle |
 | Restyle denoise | 0.55 | How much to change (0.3=subtle, 0.7=heavy) |
+| Image model | _auto_ | Picked by wizard; empty = auto-select best installed |
+| Video backend | auto | `auto`, `wan22`, or `none` (for /animate) |
+| Quality profile | balanced | `fast`, `balanced`, or `max` (PAG/RescaleCFG/FreeU/SLG/AYS stack) |
+
+### First-Run Wizard
+
+On first load the extension opens a 7-step wizard:
+
+1. Welcome
+2. ComfyUI server URL + connection test
+3. Default image model (populated from `/object_info`, grouped by arch)
+4. Video backend (auto-detects Wan 2.2; shows disabled if not installed)
+5. Quality profile (Fast / Balanced / Max — controls the server-side
+   quality-booster stack wired by `workflows.build_txt2img` /
+   `build_img2img` / `build_inpaint`)
+6. Automation toggles (auto-background interval, auto-expressions,
+   auto-cast on startup)
+7. Review & Save
+
+The wizard writes the same settings keys the plain panel does —
+nothing hidden. Re-run any time with `/spellcaster-wizard` or the
+**Run Wizard** button in the Extensions settings panel.
