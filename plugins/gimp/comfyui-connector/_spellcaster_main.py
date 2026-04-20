@@ -32790,28 +32790,51 @@ class Spellcaster(Gimp.PlugIn):
             "aborted (your work stays safe).\n\n"
             "Equivalent to: close GIMP → relaunch manually.")
         def _on_restart(_btn):
-            # Find the currently-running GIMP executable so we can
-            # spawn a fresh instance. sys.executable points to the
-            # PyGObject interpreter inside GIMP's install dir; the
-            # GIMP binary is a sibling or in the same install tree.
+            # Previous implementation bug (2026-04-20 report "restart
+            # button doesn't work"):
+            #   * Gimp.quit(False) was called while still inside the
+            #     Settings dlg.run() loop. GIMP can't quit while a
+            #     plug-in dialog is on-screen — the request queued
+            #     but never fired. User saw "Relaunching GIMP…"
+            #     forever with no visible effect.
+            #   * New GIMP was spawned immediately, racing the old
+            #     one for pluginrc + config file locks.
+            # Fix: launch the new GIMP via a shell wrapper that
+            # sleeps 3 s before exec'ing (cmd `timeout /t 3` on
+            # Windows, `sleep 3` on Unix), close the Settings dialog
+            # programmatically so dlg.run() returns, then schedule
+            # Gimp.quit via GLib.idle_add so it fires AFTER the
+            # dialog-close event is processed.
             import sys as _sys, subprocess as _subp
             candidates = []
             try:
-                gimp_exe_env = os.environ.get("GIMP3_EXECUTABLE") or os.environ.get("GIMP_EXECUTABLE")
-                if gimp_exe_env:
+                gimp_exe_env = (os.environ.get("GIMP3_EXECUTABLE")
+                                or os.environ.get("GIMP_EXECUTABLE"))
+                if gimp_exe_env and Path(gimp_exe_env).exists():
                     candidates.append(gimp_exe_env)
             except Exception:
                 pass
-            # Walk from sys.executable up a few dirs looking for gimp-3.0
-            # / gimp-console-3.0 / gimp.exe / gimp-3.0.exe.
+            # Walk from sys.executable up a few dirs looking for
+            # gimp-3.0. On Windows the plug-in runs under
+            # gimp-script-fu-interpreter-3.0.exe (or a Python
+            # interpreter GIMP bundles) whose parent dir usually
+            # contains gimp-3.0.exe. Also check <base>/bin/ — GIMP
+            # sometimes splits plug-in hosts and gimp.exe across
+            # sibling dirs (<install>/lib/... + <install>/bin/).
             try:
                 base = Path(_sys.executable).parent
-                for depth in range(4):
-                    for cand in ("gimp-3.0.exe", "gimp.exe", "gimp-3.0",
-                                  "gimp", "GIMP.exe"):
+                for _depth in range(5):
+                    for cand in ("gimp-3.0.exe", "gimp.exe",
+                                  "gimp-3.0", "gimp", "GIMP.exe"):
                         p = base / cand
-                        if p.exists():
+                        if p.exists() and str(p) not in candidates:
                             candidates.append(str(p))
+                    bin_dir = base / "bin"
+                    if bin_dir.is_dir():
+                        for cand in ("gimp-3.0.exe", "gimp.exe"):
+                            p = bin_dir / cand
+                            if p.exists() and str(p) not in candidates:
+                                candidates.append(str(p))
                     base = base.parent
             except Exception:
                 pass
@@ -32822,51 +32845,79 @@ class Spellcaster(Gimp.PlugIn):
                     '</span>')
                 return
             chosen = candidates[0]
-            update_status.set_markup(
-                '<span foreground="#FFC107">Relaunching GIMP...</span>')
             restart_btn.set_sensitive(False)
-            # Delete pluginrc so the new instance re-scans procedures —
-            # same thing the repair flow does.
+            update_status.set_markup(
+                '<span foreground="#FFC107">Relaunching GIMP in 3 s…'
+                '</span>')
             try:
                 _delete_all_gimp_pluginrc()
             except Exception:
                 pass
-            # Apply any staged updates by moving .update → live name
-            # BEFORE launching the new instance so it loads fresh code.
             try:
                 _apply_staged_updates()
             except Exception:
                 pass
-            # Detach the new process so it survives our own exit.
+            # Spawn a detached wrapper that sleeps then execs GIMP.
+            # The 3 s wait gives our plug-in + GIMP proper time to
+            # exit and release file locks on pluginrc / config.json
+            # before the new instance opens them. Skipping the wait
+            # produced silent "file in use" errors on Windows that
+            # left the new GIMP in a half-broken state.
             try:
                 if os.name == "nt":
-                    DETACHED = 0x00000008  # DETACHED_PROCESS
-                    NEW_GROUP = 0x00000200  # CREATE_NEW_PROCESS_GROUP
-                    _subp.Popen([chosen], creationflags=DETACHED | NEW_GROUP,
-                                 close_fds=True)
+                    cmd = (f'timeout /t 3 /nobreak >nul & '
+                           f'start "" "{chosen}"')
+                    CREATE_NO_WINDOW = 0x08000000
+                    DETACHED = 0x00000008
+                    NEW_GROUP = 0x00000200
+                    _subp.Popen(
+                        ["cmd.exe", "/c", cmd],
+                        creationflags=DETACHED | NEW_GROUP | CREATE_NO_WINDOW,
+                        close_fds=True,
+                    )
                 else:
-                    _subp.Popen([chosen], start_new_session=True,
-                                 close_fds=True)
+                    _subp.Popen(
+                        ["sh", "-c",
+                         f"sleep 3 && exec {_subp.list2cmdline([chosen])}"],
+                        start_new_session=True,
+                        close_fds=True,
+                        stdin=_subp.DEVNULL,
+                        stdout=_subp.DEVNULL,
+                        stderr=_subp.DEVNULL,
+                    )
             except Exception as e:
                 update_status.set_markup(
                     f'<span foreground="#FF5252">Relaunch failed: {e}. '
                     f'Close + reopen GIMP manually.</span>')
                 restart_btn.set_sensitive(True)
                 return
-            # Tell GIMP to quit. Gimp.quit(force=False) respects unsaved
-            # work (prompts to save). If the user cancels any prompt,
-            # the quit aborts and the NEW instance we just spawned
-            # coexists with the current one — still fine.
+            update_status.set_markup(
+                '<span foreground="#00E676">New GIMP will start in 3 s. '
+                'Closing this one now…</span>')
+
+            # Defer Gimp.quit until AFTER the dialog-close event has
+            # fired. Calling it from the click handler races dlg.run().
+            def _deferred_quit():
+                try:
+                    Gimp.quit(False)
+                except Exception as e:
+                    print(f"[Spellcaster] Gimp.quit failed ({e}); "
+                          f"close GIMP manually.",
+                          file=__import__('sys').stderr)
+                return False
             try:
-                Gimp.quit(False)
-            except Exception as e:
-                # Gimp.quit is unavailable from every plug-in context;
-                # fall back to a hard sys.exit which GIMP interprets
-                # as a plugin finishing.
-                update_status.set_markup(
-                    f'<span foreground="#FFC107">New GIMP launched. '
-                    f'Close this one manually (Gimp.quit error: {e}).'
-                    f'</span>')
+                GLib.idle_add(_deferred_quit)
+            except Exception:
+                pass
+            # Close the Settings dialog so dlg.run() returns + the
+            # idle callback above can fire.
+            try:
+                dlg.response(Gtk.ResponseType.CLOSE)
+            except Exception:
+                try:
+                    dlg.close()
+                except Exception:
+                    pass
         restart_btn.connect("clicked", _on_restart)
         update_row.pack_start(restart_btn, False, False, 0)
 
