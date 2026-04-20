@@ -6976,16 +6976,34 @@ def _export_selection_to_tmp(image):
 
 def _import_result_as_layer(image, image_data, layer_name="ComfyUI Result",
                             keep_size=False):
-    """Import raw PNG bytes as a new layer on top of *image*.
+    """Import raw PNG bytes on top of *image*.
 
-    Handles mode mismatches (e.g. ComfyUI returns a grayscale PNG but the
-    canvas is RGB) by converting the loaded result to match the destination
-    image's colour mode before inserting the layer.
+    This is the single chokepoint every ComfyUI result flows through
+    (`_apply_mask_mode` → here). Three branches:
 
-    If keep_size=True, the layer is inserted at its natural size and
-    centered on the canvas instead of being scaled to fill it. Used for
-    SAM3 extraction where the result is a cropped subject that should
-    overlay at its original position, not be stretched to fit.
+    1. **Upscaler auto-route** (default) — if the result PNG is larger
+       than the canvas on either axis, it opens as its own GIMP image
+       via `Gimp.Display.new` instead of being scaled-to-fit into a
+       layer. Scale-to-fit here would discard the whole upscaler pass.
+       Any handler that calls this with an enlarged result (upscale,
+       quick upscale, upscale-blend, detail hallucinate, seedv2r with
+       scale > 1, outpaint, etc.) gets this behavior for free — no
+       handler-side check needed.
+    2. **Layer path** (default, when result fits) — import as a new
+       top layer on *image*, scale to canvas if dims don't match.
+       Covers img2img, inpaint, txt2img, face restore, and the z1 /
+       "enhance only" case where output dims == input dims.
+    3. **keep_size=True** — always layer, inserted at natural size and
+       centered (SAM3 subject extraction, normal-map auto-gen). This
+       path bypasses the upscaler auto-route even when the result is
+       larger than the canvas.
+
+    Also handles color-mode mismatches (grayscale PNG into an RGB
+    canvas, etc.) by converting the loaded result before insertion.
+
+    Returns the inserted `Gimp.Layer` for the layer branches, or
+    `None` when auto-routed to a new image. No live caller uses the
+    return value — it's there for future callers that need it.
     """
     tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
     tmp.write(image_data)
@@ -7018,6 +7036,25 @@ def _import_result_as_layer(image, image_data, layer_name="ComfyUI Result",
             pass  # best-effort; insert_layer will fail with a clear error
 
     layers = result_image.get_layers()  # re-fetch after conversion
+
+    # Upscaler auto-route: if the result is larger than the canvas on either
+    # axis, open it as its own GIMP image instead of squashing it down to
+    # fit a layer. Scale-to-fit here would throw away the whole point of
+    # the upscale pass. Same-size / smaller results fall through to the
+    # in-place layer path (so z1 "enhance only" detail passes, img2img,
+    # inpaint etc. still overlay on the original canvas).
+    rw = layers[0].get_width()
+    rh = layers[0].get_height()
+    if not keep_size and (rw > image.get_width() or rh > image.get_height()):
+        try:
+            layers[0].set_name(layer_name)
+        except Exception:
+            pass
+        Gimp.Display.new(result_image)
+        Gimp.displays_flush()
+        os.unlink(tmp.name)
+        return None
+
     new_layer = Gimp.Layer.new_from_drawable(layers[0], image)
     new_layer.set_name(layer_name)
     image.insert_layer(new_layer, None, 0)
@@ -8286,7 +8323,7 @@ class PresetDialog(Gtk.Dialog):
             cn_row_2.pack_start(Gtk.Label(label="CN2 Strength:"), False, False, 0)
             self._cn_strength_spin_2 = Gtk.SpinButton.new_with_range(0.0, 1.5, 0.05)
             self._cn_strength_spin_2.set_digits(2)
-            _cn_strength_spin_2.set_tooltip_text("ControlNet influence strength (0.0-1.0).")
+            self._cn_strength_spin_2.set_tooltip_text("ControlNet influence strength (0.0-1.0).")
             self._cn_strength_spin_2.set_value(0.6)
             cn_row_2.pack_start(self._cn_strength_spin_2, False, False, 0)
             cn_exp_box.pack_start(cn_row_2, False, False, 0)
@@ -20513,7 +20550,12 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     def _run_upscale(self, procedure, run_mode, image, drawables, config, data):
-        """Upscale 4x: super-resolution using an upscale model."""
+        """Upscale 4x: super-resolution using an upscale model.
+
+        Scale > 1.0 opens the result as a new GIMP image (auto-routed
+        by `_import_result_as_layer`); scale 1.0 (enhance only) stays
+        as a layer on the current canvas.
+        """
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         GimpUi.init("spellcaster")
@@ -20549,7 +20591,7 @@ class Spellcaster(Gimp.PlugIn):
                                    "2.0x = double size\n"
                                    "4.0x = full 4x upscale (slow, large output)")
         hb3.pack_start(scale_sp, False, False, 0); bx.pack_start(hb3, False, False, 0)
-        bx.pack_start(Gtk.Label(label="Upscales image using a super-resolution model.\nResult is imported as a new layer."), False, False, 4)
+        bx.pack_start(Gtk.Label(label="Upscales image using a super-resolution model.\nResult opens as a new GIMP image when larger than the canvas;\n1.0x (enhance only) stays as a layer on the current image."), False, False, 4)
         bx.show_all()
         last = _SESSION.get("upscale")
         if last and "model_id" in last:
@@ -26012,7 +26054,12 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     def _run_quick_upscale(self, procedure, run_mode, image, drawables, config, data):
-        """Quick Upscale 4x: upscale with default model, zero dialogs."""
+        """Quick Upscale 4x: upscale with default model, zero dialogs.
+
+        Always produces a larger-than-canvas result, so the 4x output
+        always opens as a new GIMP image (auto-routed by
+        `_import_result_as_layer`).
+        """
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         try:
