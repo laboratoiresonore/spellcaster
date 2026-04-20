@@ -148,20 +148,40 @@ def dispatch_workflow(server, workflow, *, timeout=300, free_vram=False,
         # "Value not in list for CheckpointLoaderSimple.ckpt_name" that
         # ComfyUI raises mid-submit into an actionable list of missing
         # files. See preflight.validate_workflow_files.
+        #
+        # CRITICAL SAFETY (2026-04-20 hotfix): any NON-ImportError raised
+        # by the validator (stale cache, server timeout during the extra
+        # /object_info fetch, weird workflow shape, etc.) was previously
+        # uncaught → propagated to the handler's outer except → silently
+        # surfaced as "Spellcaster <tool> Error: …" dialog with no
+        # workflow submission. Triple-layer catch now: ImportError →
+        # preflight module missing (ok, skip); RuntimeError from the
+        # missing-files branch → propagate with the install hint;
+        # ANYTHING ELSE → log the traceback and proceed with submit.
+        # This mirrors the first preflight_workflow's fail-open shape.
         try:
             from .preflight import (
                 validate_workflow_files, format_missing_files_hint)
-            files_ok, files_report = validate_workflow_files(
-                workflow, server)
-            if not files_ok:
-                hint = format_missing_files_hint(
-                    files_report["missing_files"])
-                raise RuntimeError(
-                    "Some model files referenced by this workflow are "
-                    "not installed on your ComfyUI server.\n\n"
-                    f"{hint}\n\n"
-                    "Install the missing files (or point the preset at "
-                    "files you already have) and try again.")
+            try:
+                files_ok, files_report = validate_workflow_files(
+                    workflow, server)
+                if not files_ok:
+                    hint = format_missing_files_hint(
+                        files_report["missing_files"])
+                    raise RuntimeError(
+                        "Some model files referenced by this workflow "
+                        "are not installed on your ComfyUI server.\n\n"
+                        f"{hint}\n\n"
+                        "Install the missing files (or point the "
+                        "preset at files you already have) and try "
+                        "again.")
+            except RuntimeError:
+                raise  # deliberate — propagate the actionable message
+            except Exception as _validator_err:
+                import traceback as _tb
+                print(f"[Preflight] file validator crashed; submitting "
+                      f"anyway: {_validator_err}")
+                _tb.print_exc()
         except ImportError:
             pass
 
