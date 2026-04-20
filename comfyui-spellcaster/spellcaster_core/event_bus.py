@@ -70,6 +70,16 @@ class EventBus:
         self._ring = collections.deque(maxlen=ring_size)
         self._subscribers: set[_SubscriberQueue] = set()
         self._lock = threading.Lock()
+        # Monotonic total-publish counter. Every publish increments
+        # this regardless of ring-buffer churn, so late SSE joiners
+        # can compare their resume cursor (``seq`` on the most
+        # recent event they saw) against ``self._published_count``
+        # and detect overflow — "I last saw seq=142, the bus says
+        # published=512, my cursor is behind the ring window so I
+        # missed at least 370 events". The ring itself only holds
+        # the last ``ring_size`` events; this counter tells
+        # subscribers when that's not enough.
+        self._published_count = 0
 
     @classmethod
     def default(cls) -> "EventBus":
@@ -87,9 +97,20 @@ class EventBus:
 
         Returns the full event dict (useful for callers that want the
         generated event id or ts).
+
+        The ``seq`` field is a monotonic publish counter — subscribers
+        that disconnect and reconnect compare their last-seen seq
+        against ``EventBus.published_count()`` to detect ring
+        overflow (the ring only holds the most recent ~1000 events;
+        beyond that, late joiners need to fetch a fresh snapshot
+        instead of assuming replay is authoritative).
         """
+        with self._lock:
+            self._published_count += 1
+            seq = self._published_count
         evt = {
             "id": f"evt_{uuid.uuid4().hex[:12]}",
+            "seq": seq,
             "kind": str(kind or "unknown"),
             "origin": str(origin or "unknown"),
             "ts": time.time(),
@@ -164,6 +185,39 @@ class EventBus:
     def ring_size(self) -> int:
         with self._lock:
             return len(self._ring)
+
+    def published_count(self) -> int:
+        """Total number of events published since startup.
+
+        Subscribers compare this against their last-seen ``seq`` to
+        detect overflow: ``published_count() - last_seq > ring_size``
+        means the replay buffer has rolled past the subscriber's
+        resume point and they need a fresh snapshot instead of
+        trusting replay.
+        """
+        with self._lock:
+            return self._published_count
+
+    def overflow_gap(self, last_seq: int) -> int:
+        """Return how many events a subscriber missed relative to the
+        current ring window.
+
+        Returns 0 when the ring still contains events with ``seq >=
+        last_seq`` (clean replay possible). Returns a positive number
+        equal to the count of dropped events when the subscriber's
+        cursor is behind the ring tail. Subscribers typically read
+        this on reconnect: a non-zero value means they should pull a
+        fresh state snapshot from the authoritative source
+        (AssetGallery, shotboard, registry) rather than rely on
+        replay.
+        """
+        with self._lock:
+            if not self._ring:
+                return max(0, self._published_count - int(last_seq or 0))
+            oldest = self._ring[0].get("seq", 0)
+            if int(last_seq or 0) >= oldest - 1:
+                return 0
+            return oldest - 1 - int(last_seq or 0)
 
 
 # ── Internal subscriber ────────────────────────────────────────────────
