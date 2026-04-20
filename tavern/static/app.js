@@ -5276,14 +5276,138 @@ async function dispatchToComfy(payload) {
     }
 }
 
+// ── File attachment (📎 upload button) ──────────────────────────────
+// Users click 📎, pick a local image, we POST it to /api/assets and
+// stash the canonical /api/assets/<hash> URL as a pending attachment.
+// The next send includes "[attached image: <url>]" so the LLM sees
+// it (same pattern _renderPendingAttachment uses for cross-wizard
+// hand-offs). One attachment in flight at a time — simpler UX and
+// matches how the existing image-action chips work.
+let _pendingAttachment = null;
+let _pendingAttachmentBubble = null;
+
+function _clearPendingAttachment() {
+    _pendingAttachment = null;
+    if (_pendingAttachmentBubble) {
+        _pendingAttachmentBubble.remove();
+        _pendingAttachmentBubble = null;
+    }
+}
+
+function _renderPendingAttachmentPreview(imageUrl, fileName) {
+    // Compact "staged" bubble above the input — not persisted, cleared
+    // on send or manual × click. Using an inline preview next to the
+    // input keeps the user oriented: the image IS attached, and the
+    // next message will carry it.
+    const wrap = document.createElement('div');
+    wrap.className = 'pending-attachment';
+    wrap.style.cssText =
+        'display:flex;align-items:center;gap:10px;padding:6px 10px;' +
+        'margin:0 0 6px;background:rgba(180,100,255,0.08);' +
+        'border:1px solid rgba(180,100,255,0.25);border-radius:6px;' +
+        'font-size:12px;color:#d0c0e8;';
+    wrap.innerHTML =
+        '<img src="' + imageUrl + '" style="width:32px;height:32px;' +
+        'object-fit:cover;border-radius:4px;">' +
+        '<span style="flex:1;opacity:0.9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📎 ' +
+        _esc(fileName || 'image') + '</span>' +
+        '<button type="button" title="Remove attachment" ' +
+        'style="background:transparent;border:0;color:#d0c0e8;cursor:pointer;font-size:14px;">×</button>';
+    wrap.querySelector('button').addEventListener('click', _clearPendingAttachment);
+    const inputArea = document.getElementById('chat-input-area');
+    if (inputArea) inputArea.insertBefore(wrap, inputArea.firstChild);
+    _pendingAttachmentBubble = wrap;
+}
+
+const uploadBtn = document.getElementById('upload-btn');
+const uploadFileInput = document.getElementById('upload-file-input');
+if (uploadBtn && uploadFileInput) {
+    uploadBtn.addEventListener('click', () => {
+        if (_pendingAttachment) {
+            // Second click with an attachment already staged — treat as
+            // "clear and pick a new one" so the user isn't stuck.
+            _clearPendingAttachment();
+        }
+        uploadFileInput.value = '';
+        uploadFileInput.click();
+    });
+    uploadFileInput.addEventListener('change', async () => {
+        const file = uploadFileInput.files && uploadFileInput.files[0];
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            addSystemMessage('<strong>Upload rejected:</strong> only images are supported here.');
+            return;
+        }
+        if (file.size > 32 * 1024 * 1024) {
+            addSystemMessage('<strong>Upload rejected:</strong> image is larger than 32 MB.');
+            return;
+        }
+        try {
+            const body_b64 = await _blobToBase64(file);
+            const res = await fetch('/api/assets', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    body_b64,
+                    origin: 'guild',
+                    kind: 'upload',
+                    title: file.name,
+                    meta: { source: 'chat_upload' },
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.hash) {
+                addSystemMessage('<strong>Upload failed:</strong> ' +
+                    _esc(data.error || ('HTTP ' + res.status)));
+                return;
+            }
+            const imageUrl = '/api/assets/' + data.hash;
+            _pendingAttachment = { url: imageUrl, name: file.name };
+            _renderPendingAttachmentPreview(imageUrl, file.name);
+        } catch (e) {
+            addSystemMessage('<strong>Upload failed:</strong> ' + _esc(e.message || String(e)));
+        }
+    });
+}
+
 sendBtn.addEventListener('click', () => {
     _spellCastFlash();
     const text = chatInput.value.trim();
-    if (!text) return;
-    addUserMessage(text);
+    if (!text && !_pendingAttachment) return;
+
+    // If an image is staged, render it as its own user bubble BEFORE
+    // the text bubble so the chat log reads "image → question". Persist
+    // the attachment reference alongside the message so a page reload
+    // rehydrates the same visual history.
+    const attach = _pendingAttachment;
+    if (attach) {
+        const attachMsg = document.createElement('div');
+        attachMsg.className = 'message user-message';
+        attachMsg.innerHTML =
+            '<div class="avatar-small">' + USER_SPARKLE_SVG + '</div>' +
+            '<div class="bubble">' +
+            '<p style="font-size:12px;opacity:.8;margin:0 0 6px;">📎 ' +
+            _esc(attach.name || 'attached image') + '</p>' +
+            '<img src="' + attach.url + '" class="attachment-image" ' +
+            'style="max-width:200px;border-radius:6px;display:block;">' +
+            '</div>';
+        chatStream.appendChild(attachMsg);
+        _persistChatRecord({ role: 'user',
+            content: '[attached image: ' + attach.url + ']',
+            ts: Date.now() / 1000 });
+    }
+
+    const sendText = text || 'What can you tell me about this image?';
+    addUserMessage(sendText);
     chatInput.value = '';
-    chatInput.style.height = 'auto'; 
-    askKobold(text);
+    chatInput.style.height = 'auto';
+
+    if (attach) {
+        askKobold(sendText + '\n\n[The user has attached this image: ' + attach.url + ']');
+        _clearPendingAttachment();
+    } else {
+        askKobold(sendText);
+    }
 });
 
 chatInput.addEventListener('keydown', (e) => {
