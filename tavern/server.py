@@ -9428,13 +9428,29 @@ class GuildHandler(SimpleHTTPRequestHandler):
 
     def _handle_events_stream(self):
         """SSE stream of cross-interface events. Filters via query string:
-        ?kinds=gimp.,resolve. &origins=gimp,resolve"""
+        ?kinds=gimp.,resolve. &origins=gimp,resolve
+
+        Reconnect-resume: the ``since_seq=N`` parameter replays any
+        ring-buffered events with seq > N. Clients that record the
+        last seq they processed can reconnect seamlessly without a
+        duplicate-delivery window. ``since=<ts>`` (legacy) still works
+        for timestamp-cursor clients; ``since_seq`` takes precedence
+        when both are given.
+
+        The response includes a one-line ``retry`` + ``: seq=<current>``
+        frame so clients can sync their resume cursor to the bus's
+        current published_count on first connect.
+        """
         import urllib.parse as _up
         parsed = _up.urlparse(self.path)
         qs = _up.parse_qs(parsed.query)
         kinds = [k.strip() for k in (qs.get("kinds", [""])[0]).split(",") if k.strip()]
         origins = [o.strip() for o in (qs.get("origins", [""])[0]).split(",") if o.strip()]
         since = float(qs.get("since", ["0"])[0] or 0)
+        try:
+            since_seq = int(qs.get("since_seq", ["0"])[0] or 0)
+        except (TypeError, ValueError):
+            since_seq = 0
         try:
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -9444,16 +9460,25 @@ class GuildHandler(SimpleHTTPRequestHandler):
             self.end_headers()
         except Exception:
             return
-        # Push an immediate keep-alive so EventSource.onopen fires
+        # Push an immediate keep-alive + overflow diagnostic. Clients
+        # reading the comment line can sync their resume cursor:
+        # ``: seq=<current>`` tells them the current bus head, and
+        # ``: gap=<N>`` tells them how many events slipped past while
+        # they were disconnected (0 means clean replay is authoritative).
         try:
-            self.wfile.write(b": spellcaster event stream\n\n")
+            cur_seq = _EVENT_BUS.published_count()
+            gap = _EVENT_BUS.overflow_gap(since_seq) if since_seq else 0
+            self.wfile.write(
+                f": spellcaster event stream seq={cur_seq} gap={gap}\n\n"
+                .encode("utf-8"))
             self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError, OSError):
             return
         # Drive the bus; timeout=5s makes the generator yield keep-alives
         try:
             for evt in _EVENT_BUS.subscribe(
-                    since_ts=since, kinds=kinds or None,
+                    since_ts=since, since_seq=since_seq,
+                    kinds=kinds or None,
                     origins=origins or None, timeout=5.0):
                 try:
                     chunk = sse_format(evt) if sse_format else (

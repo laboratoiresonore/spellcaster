@@ -57,6 +57,24 @@ except ImportError:
     from spellcaster_core.recommend import recommend
 
 
+# Module-level single-start guards for the background loops.
+# Blender's F8 script-reload + Krita's script_manager reload create
+# fresh plugin INSTANCES from a fresh module import, so an
+# instance-level guard (``self._heartbeat_started``) wouldn't survive
+# across reloads and two loops would stack. Keying by ``origin``
+# deduplicates across all reloads in the same process: the OLD
+# thread stays alive (daemon, harmless), the new instance sees the
+# guard is set and skips spawning a second pinger.
+#
+# Blender F8 reload DOES rebuild sys.modules so this set is wiped
+# and a new thread starts; the OLD thread still ticks against the
+# OLD server/guild URL. Users who hit F8 10× per day get 10
+# accumulated daemon threads — acceptable (each ~5 KB stack, ticks
+# every 20 s, swallowed exceptions) but worth knowing.
+_HEARTBEAT_ORIGINS_STARTED = set()
+_INBOX_ORIGINS_STARTED = set()
+
+
 class SpellcasterPlugin:
     """Base class for all Spellcaster editor plugins.
 
@@ -245,6 +263,16 @@ class SpellcasterPlugin:
         """
         if self._heartbeat_started or not self._guild_url or not self._origin:
             return
+        # Module-level dedup — survives editor script_manager reloads
+        # that re-instantiate the plugin but keep the Python process
+        # alive. Blender F8 / Krita reload tears down sys.modules and
+        # a fresh thread starts (the old one stays daemon-alive), so
+        # this guard only helps within a single module lifetime.
+        key = (self._origin, self._guild_url)
+        if key in _HEARTBEAT_ORIGINS_STARTED:
+            self._heartbeat_started = True
+            return
+        _HEARTBEAT_ORIGINS_STARTED.add(key)
         self._heartbeat_started = True
         import threading as _th
         t = _th.Thread(target=self._heartbeat_loop_body,
@@ -303,6 +331,15 @@ class SpellcasterPlugin:
         if (getattr(self, "_inbox_poll_started", False)
                 or not self._guild_url or not self._origin):
             return
+        # Module-level dedup — same rationale as _start_heartbeat_loop
+        # above. Prevents multiple polls against the same mailbox
+        # across script_manager reloads that recreate the plugin
+        # instance without re-importing the module.
+        key = (self._origin, self._guild_url)
+        if key in _INBOX_ORIGINS_STARTED:
+            self._inbox_poll_started = True
+            return
+        _INBOX_ORIGINS_STARTED.add(key)
         self._inbox_poll_started = True
         import threading as _th
         t = _th.Thread(target=self._inbox_poll_loop_body,

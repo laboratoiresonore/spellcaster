@@ -127,6 +127,7 @@ class EventBus:
     # ── Subscribe ────────────────────────────────────────────────────
 
     def subscribe(self, *, since_ts: float = 0.0,
+                  since_seq: int = 0,
                   kinds: Optional[list[str]] = None,
                   origins: Optional[list[str]] = None,
                   timeout: Optional[float] = None) -> Iterator[dict]:
@@ -135,6 +136,14 @@ class EventBus:
         Args:
             since_ts: Replay buffered events with ts > this first.
                       0.0 = replay everything in the ring.
+            since_seq: Replay buffered events with seq > this first.
+                       Takes precedence over ``since_ts`` when non-zero
+                       — use for reconnect-resume where the subscriber
+                       recorded the last seq it processed. If the
+                       ring has rolled past ``since_seq``, the
+                       subscriber MUST call ``overflow_gap(since_seq)``
+                       to discover how many events it missed (replay
+                       alone is not authoritative in that case).
             kinds: Optional list of kind prefixes to include (e.g.,
                    ["gimp.", "resolve.clip."]). Prefix match.
             origins: Optional list of origins to include.
@@ -145,11 +154,17 @@ class EventBus:
         subscriber's queue fills past the drop threshold.
         """
         sub = _SubscriberQueue(kinds=kinds, origins=origins)
-        # Replay buffered events first
+        # Replay buffered events first. seq cursor wins when given;
+        # ts cursor is the legacy path for reconnect-unaware clients.
+        use_seq = int(since_seq or 0) > 0
         with self._lock:
             for evt in list(self._ring):
-                if evt["ts"] > since_ts and sub.matches(evt):
-                    sub.offer(evt)
+                if use_seq:
+                    if evt.get("seq", 0) > since_seq and sub.matches(evt):
+                        sub.offer(evt)
+                else:
+                    if evt["ts"] > since_ts and sub.matches(evt):
+                        sub.offer(evt)
             self._subscribers.add(sub)
         try:
             while True:
