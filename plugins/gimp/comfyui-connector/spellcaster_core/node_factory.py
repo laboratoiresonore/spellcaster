@@ -658,6 +658,55 @@ class NodeFactory:
                          {"model": model_ref, "shift": shift}, node_id)
 
     # ═══════════════════════════════════════════════════════════════════
+    #  CORE QUALITY BOOSTERS
+    # ═══════════════════════════════════════════════════════════════════
+    # These nodes ship with ComfyUI core (no custom-pack dependency)
+    # and improve output quality at modest compute cost. They're wired
+    # selectively per architecture by composites._apply_quality_boost.
+
+    def perturbed_attention_guidance(self, model_ref, scale=3.0, node_id=None):
+        """PerturbedAttentionGuidance (PAG) — improves coherence/detail
+        by perturbing self-attention during the guidance branch.
+        Safe on SDXL, SD1.5 (less effective), Flux 1 Dev, Chroma.
+        Interferes with Klein custom-sampler; do not wire on Klein.
+        Outputs: [0]=MODEL
+        """
+        return self._add("PerturbedAttentionGuidance",
+                         {"model": model_ref, "scale": scale}, node_id)
+
+    def rescale_cfg(self, model_ref, multiplier=0.7, node_id=None):
+        """RescaleCFG — counteracts saturation/burn at high CFG by
+        rescaling the guidance-predicted latent toward the
+        unconditional prediction. Use when cfg >= 7.5.
+        Outputs: [0]=MODEL
+        """
+        return self._add("RescaleCFG",
+                         {"model": model_ref, "multiplier": multiplier}, node_id)
+
+    def freeu_v2(self, model_ref, b1=1.3, b2=1.4, s1=0.9, s2=0.2,
+                  node_id=None):
+        """FreeU_V2 — reweights skip connections in the U-Net for
+        sharper details at no extra cost. SDXL-tuned defaults
+        (b1=1.3, b2=1.4, s1=0.9, s2=0.2). NOT for Flux (no U-Net).
+        Outputs: [0]=MODEL
+        """
+        return self._add("FreeU_V2", {
+            "model": model_ref, "b1": b1, "b2": b2, "s1": s1, "s2": s2,
+        }, node_id)
+
+    def model_sampling_flux(self, model_ref, max_shift=1.15, base_shift=0.5,
+                             width=1024, height=1024, node_id=None):
+        """ModelSamplingFlux — Flux-specific per-resolution shift for
+        the noise schedule. Produces better detail than the generic
+        ModelSamplingSD3 wrap on Flux 1 Dev / Kontext.
+        Outputs: [0]=MODEL
+        """
+        return self._add("ModelSamplingFlux", {
+            "model": model_ref, "max_shift": max_shift,
+            "base_shift": base_shift, "width": width, "height": height,
+        }, node_id)
+
+    # ═══════════════════════════════════════════════════════════════════
     #  FLUX2KLEIN-ENHANCER (OPTIONAL — from Sarcastic TOFU node pack)
     # ═══════════════════════════════════════════════════════════════════
     # These nodes are from the ComfyUI-Flux2Klein-Enhancer custom node

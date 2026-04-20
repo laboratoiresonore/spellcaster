@@ -311,7 +311,8 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
                   # so only the described region visibly changes. Requires
                   # SAM3Segment on the server (preflight at the caller side).
                   sam3_prompt=None, sam3_invert=False, sam3_confidence=0.6,
-                  sam3_expand=4, sam3_blur=4, enhance=True):
+                  sam3_expand=4, sam3_blur=4, enhance=True,
+                  quality="balanced"):
     """Image-to-image generation (standard diffusion variant).
 
     Loads an input image, encodes it to latent space, diffuses it with a prompt,
@@ -415,9 +416,18 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
             [sched_id, 0], [enc_id, 0], node_id="6",
         )
     else:
+        # Flux 1 Dev / Kontext: apply the foundational boosters
+        # (ModelSamplingFlux + FluxGuidance). No-op on other arches.
+        model_ref, pos_ref_boosted = _apply_flux1_boosters(
+            nf, model_ref, [pos_id, 0], preset, node_base_id=740)
+        # Generic quality wrapping (PAG, RescaleCFG, FreeU_V2 — gated per arch).
+        sampler_cfg = preset.get("cfg")
+        model_ref = _apply_quality_boost(
+            nf, model_ref, arch_key,
+            quality=quality, cfg=sampler_cfg, node_base_id=700)
         samp_id = nf.ksampler(
             model_ref,
-            [pos_id, 0], [neg_id, 0], [enc_id, 0],
+            pos_ref_boosted, [neg_id, 0], [enc_id, 0],
             seed, preset["steps"], preset["cfg"],
             preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
             preset.get("denoise", 0.65),
@@ -475,7 +485,8 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
 #  txt2img — Text-to-image generation
 # ═══════════════════════════════════════════════════════════════════════════
 
-def build_txt2img(preset, prompt_text, negative_text, seed, loras=None, enhance=True):
+def build_txt2img(preset, prompt_text, negative_text, seed, loras=None,
+                   enhance=True, quality="balanced"):
     """Text-to-image generation (from scratch).
 
     Generates an image entirely from a text prompt by starting with an empty
@@ -522,7 +533,8 @@ def build_txt2img(preset, prompt_text, negative_text, seed, loras=None, enhance=
     empty_id = nf.empty_latent_image(preset["width"], preset["height"],
                                       batch_size=1, node_id="4")
 
-    is_klein = preset.get("arch") == "flux2klein"
+    arch_key = preset.get("arch", "sdxl")
+    is_klein = arch_key == "flux2klein"
     if is_klein:
         # Optional Flux2Klein-Enhancer chain (same contract as build_img2img).
         guider_model = (_klein_enhance_model(nf, model_ref, [pos_id, 0],
@@ -539,9 +551,14 @@ def build_txt2img(preset, prompt_text, negative_text, seed, loras=None, enhance=
             [sched_id, 0], [empty_id, 0], node_id="5",
         )
     else:
+        model_ref, pos_ref_boosted = _apply_flux1_boosters(
+            nf, model_ref, [pos_id, 0], preset, node_base_id=745)
+        model_ref = _apply_quality_boost(
+            nf, model_ref, arch_key,
+            quality=quality, cfg=preset.get("cfg"), node_base_id=705)
         samp_id = nf.ksampler(
             model_ref,
-            [pos_id, 0], [neg_id, 0], [empty_id, 0],
+            pos_ref_boosted, [neg_id, 0], [empty_id, 0],
             seed, preset["steps"], preset["cfg"],
             preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
             1.0,  # denoise always 1.0 for txt2img
@@ -1074,6 +1091,112 @@ def _klein_enhance_model(nf, model_ref, conditioning_ref,
         [balance, 0], conditioning_ref, strength=color_anchor_strength,
         node_id=str(node_base_id + 2))
     return [anchor, 0]
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  GENERIC QUALITY BOOSTERS — per-architecture, sampler-agnostic
+# ═══════════════════════════════════════════════════════════════════════════
+# These helpers attach ComfyUI-core quality nodes (PAG, RescaleCFG,
+# FreeU_V2) + Flux-specific samplings (ModelSamplingFlux, FluxGuidance)
+# to a builder's model/conditioning chain.
+#
+# Design:
+#   * quality="fast"     -> no extras, return model unchanged
+#   * quality="balanced" -> PAG on SDXL/Illustrious/Flux1/Chroma/Kontext,
+#                           RescaleCFG when cfg >= 7.5 on SD variants.
+#                           Default for all builders that accept `quality`.
+#   * quality="max"      -> balanced + FreeU_V2 on SDXL realistic.
+#
+#   Klein (flux2klein) is intentionally excluded from all PAG/FreeU wrapping
+#   because its custom sampler pipeline already carries the Flux2Klein-Enhancer
+#   chain, and PAG interacts badly with the ReferenceLatent+CFGGuider stack.
+#
+#   SD1.5 is excluded from PAG (low benefit, sometimes destabilises) — gets
+#   only RescaleCFG.
+#
+# Node-ID tranche for quality boosts: 700-739 (disjoint from the 770-999
+# enhancer tranche). Each builder passes its own node_base_id in that range.
+
+_QUALITY_ARCHES_PAG = {"sdxl", "illustrious", "flux1dev", "chroma", "flux_kontext"}
+_QUALITY_ARCHES_RESCALE = {"sd15", "sdxl", "illustrious"}
+_QUALITY_ARCHES_FREEU = {"sdxl"}  # not illustrious — FreeU hurts anime
+
+
+def _apply_quality_boost(nf, model_ref, arch_key, *,
+                          quality="balanced", cfg=None,
+                          node_base_id=700):
+    """Apply architecture-appropriate quality boosters to a MODEL ref.
+
+    Called by builders RIGHT BEFORE the guider/sampler consumes the model,
+    AFTER any architecture-specific patching (LoRA, enhancer, IPAdapter,
+    ModelSamplingFlux). Returns the updated ref (or the original when
+    no boosters fire).
+
+    Args:
+      nf: NodeFactory
+      model_ref: [node_id, slot] MODEL ref to wrap.
+      arch_key: architecture key from preset (e.g. "sdxl", "flux1dev").
+      quality: "fast" | "balanced" | "max"
+      cfg: float guidance value; used to decide whether to wire RescaleCFG.
+      node_base_id: starting node id in the 700-739 tranche.
+    """
+    if quality == "fast" or arch_key == "flux2klein":
+        return model_ref
+    nid = node_base_id
+
+    if arch_key in _QUALITY_ARCHES_PAG:
+        pag = nf.perturbed_attention_guidance(model_ref, scale=3.0,
+                                               node_id=str(nid))
+        model_ref = [pag, 0]
+        nid += 1
+
+    if cfg is not None and cfg >= 7.5 and arch_key in _QUALITY_ARCHES_RESCALE:
+        rc = nf.rescale_cfg(model_ref, multiplier=0.7, node_id=str(nid))
+        model_ref = [rc, 0]
+        nid += 1
+
+    if quality == "max" and arch_key in _QUALITY_ARCHES_FREEU:
+        fu = nf.freeu_v2(model_ref, node_id=str(nid))
+        model_ref = [fu, 0]
+        nid += 1
+
+    return model_ref
+
+
+def _apply_flux1_boosters(nf, model_ref, pos_cond_ref, preset, *,
+                           node_base_id=740):
+    """Apply Flux 1 Dev foundational boosters:
+
+      * ModelSamplingFlux — per-resolution sigma shift. Wraps MODEL.
+      * FluxGuidance      — guidance scale injection. Wraps CONDITIONING.
+
+    Flux 1 Dev / Kontext quality is noticeably worse without these. Call on
+    the non-Klein Flux branch of every builder that generates with
+    arch_key in ("flux1dev", "flux_kontext").
+
+    Returns (new_model_ref, new_pos_cond_ref).
+    """
+    arch_key = preset.get("arch")
+    if arch_key not in ("flux1dev", "flux_kontext"):
+        return model_ref, pos_cond_ref
+
+    width = preset.get("width", 1024)
+    height = preset.get("height", 1024)
+    # Flux-paper defaults: max_shift=1.15, base_shift=0.5
+    max_shift = preset.get("flux_max_shift", 1.15)
+    base_shift = preset.get("flux_base_shift", 0.5)
+    ms = nf.model_sampling_flux(model_ref, max_shift=max_shift,
+                                 base_shift=base_shift,
+                                 width=width, height=height,
+                                 node_id=str(node_base_id))
+    model_ref = [ms, 0]
+
+    # FluxGuidance wraps the POSITIVE conditioning; negative stays untouched.
+    # Canonical value is 3.5 for Flux 1 Dev, user can override via preset.
+    guidance = preset.get("flux_guidance", 3.5)
+    fg = nf.flux_guidance(pos_cond_ref, guidance, node_id=str(node_base_id + 1))
+    pos_cond_ref = [fg, 0]
+    return model_ref, pos_cond_ref
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2392,7 +2515,7 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
                    controlnet=None, controlnet_2=None, guide_modes=None,
                    sam3_prompt=None, sam3_invert=False,
                    sam3_confidence=0.6, sam3_expand=4, sam3_blur=4,
-                   enhance=True):
+                   enhance=True, quality="balanced"):
     """Inpainting: regenerate masked region using diffusion.
 
     Selectively regenerates only the masked area of an image while preserving
@@ -2520,9 +2643,20 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
             [sched_id, 0], [masked_id, 0], node_id="8",
         )
     else:
+        # Differential diffusion smooths the boundary between masked and
+        # preserved pixels. Wires on every non-Klein inpaint path — the
+        # node is ComfyUI core and strictly improves edge quality.
+        dd_id = nf.differential_diffusion(model_ref, node_id="80")
+        model_ref = [dd_id, 0]
+        # Flux1 boosters + generic quality wrap.
+        model_ref, pos_ref_boosted = _apply_flux1_boosters(
+            nf, model_ref, [pos_id, 0], preset, node_base_id=750)
+        model_ref = _apply_quality_boost(
+            nf, model_ref, arch_key,
+            quality=quality, cfg=preset.get("cfg"), node_base_id=710)
         samp_id = nf.ksampler(
             model_ref,
-            [pos_id, 0], [neg_id, 0], [masked_id, 0],
+            pos_ref_boosted, [neg_id, 0], [masked_id, 0],
             seed, preset["steps"], preset["cfg"],
             preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
             preset.get("denoise", 0.65), node_id="8",
@@ -2564,7 +2698,7 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
 
 def build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
                     left, top, right, bottom, feathering, loras=None,
-                    controlnet=None, guide_modes=None):
+                    controlnet=None, guide_modes=None, quality="balanced"):
     """Canvas extension via outpainting.
 
     Extends an image beyond its original boundaries by generating new content
@@ -2688,9 +2822,18 @@ def build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
                                          pos_id="2", neg_id="3")
         enc_id = nf.vae_encode(padded_ref, vae_ref, node_id="6")
         masked_id = nf.set_latent_noise_mask([enc_id, 0], [pad_id, 1], node_id="7")
+        # Differential diffusion for smoother pad/original boundary.
+        dd_id = nf.differential_diffusion(model_ref, node_id="81")
+        model_ref = [dd_id, 0]
+        # Flux1 boosters + quality wrap (no-op on non-Flux1 / non-SDXL).
+        model_ref, pos_ref_boosted = _apply_flux1_boosters(
+            nf, model_ref, [pos_id, 0], preset, node_base_id=755)
+        model_ref = _apply_quality_boost(
+            nf, model_ref, arch_key,
+            quality=quality, cfg=preset.get("cfg"), node_base_id=715)
         samp_id = nf.ksampler(
             model_ref,
-            [pos_id, 0], [neg_id, 0], [masked_id, 0],
+            pos_ref_boosted, [neg_id, 0], [masked_id, 0],
             seed, preset["steps"], preset["cfg"],
             preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
             0.85, node_id="8",
