@@ -6106,6 +6106,250 @@ const summonRegenerate = document.getElementById('summon-regenerate');
 const summonCreate = document.getElementById('summon-create');
 
 let selectedSummonModel = null;
+let summonFlow = {
+    archetype: 'per_model',       // 'per_model' | 'forensic' | 'chimera' | 'oracle' | 'lore_keeper' | 'scalpel'
+    chimeraPicks: [],              // [{name,arch,type,domain}, ...]
+    oracleConfig: {llm_model: 'gemma3:4b'},
+    scalpelBase: null,
+};
+
+// ── Archetype catalogue ────────────────────────────────────────────────
+// Drives the archetype picker cards AND the per-archetype config step.
+// Each entry has an id, display metadata, and the required-model flag
+// (some archetypes don't tie to a model — Forensic / Lore-keeper).
+const SUMMON_ARCHETYPES = [
+    {
+        id: 'per_model',
+        icon: '✦',
+        title: 'Per-model Wizard',
+        pitch: 'Classic. Bind one ComfyUI model to one persona with a matching studio (txt2img / video / faceswap / etc).',
+        badge: 'CLASSIC',
+    },
+    {
+        id: 'forensic',
+        icon: '🔎',
+        title: 'Forensic',
+        pitch: 'Paste any PNG — Forensic extracts the embedded workflow (prompt, model, seed, LoRAs) and lets you remix it.',
+        badge: 'ARCHETYPE',
+    },
+    {
+        id: 'chimera',
+        icon: '🌀',
+        title: 'Chimera',
+        pitch: 'Multimodal router. Pick 2–5 models; Chimera dispatches each prompt to the best fit or parallel-renders + scorer-picks a winner.',
+        badge: 'ARCHETYPE',
+    },
+    {
+        id: 'oracle',
+        icon: '👁',
+        title: 'Oracle',
+        pitch: 'Vision reader. Drop an image — Oracle describes, critiques, and suggests improvements via a local multimodal LLM.',
+        badge: 'ARCHETYPE',
+    },
+    {
+        id: 'lore_keeper',
+        icon: '📜',
+        title: 'Lore-keeper',
+        pitch: 'Conversational LoRA knowledge base. "What\'s in this LoRA?" "What pairs well with Sinozick?" Uses Civitai + safetensors data.',
+        badge: 'ARCHETYPE',
+    },
+    {
+        id: 'scalpel',
+        icon: '🗡',
+        title: 'Scalpel',
+        pitch: 'Natural-language semantic editing. "Erase the car." "Change her dress to red." Chains SAM3 + magic-eraser + Klein inpaint.',
+        badge: 'ARCHETYPE',
+    },
+];
+
+function renderArchetypeGrid() {
+    const grid = document.getElementById('summon-archetype-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    SUMMON_ARCHETYPES.forEach(a => {
+        const card = document.createElement('div');
+        card.className = 'summon-archetype-card';
+        card.dataset.arc = a.id;
+        card.innerHTML = `
+            <div class="arc-icon">${a.icon}</div>
+            <div class="arc-title">${a.title}</div>
+            <div class="arc-pitch">${a.pitch}</div>
+            <span class="arc-badge">${a.badge}</span>
+        `;
+        card.addEventListener('click', () => selectArchetype(a.id));
+        grid.appendChild(card);
+    });
+}
+
+function showStep(which) {
+    const ids = ['summon-step-0', 'summon-step-1', 'summon-step-arc', 'summon-step-2'];
+    ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = (id === which ? '' : 'none');
+    });
+}
+
+function selectArchetype(archId) {
+    summonFlow.archetype = archId;
+    if (archId === 'per_model') {
+        selectedSummonModel = null;
+        summonNext.disabled = true;
+        showStep('summon-step-1');
+        summonScaffoldSelect.value = 'auto';
+        loadSummonModels();
+        return;
+    }
+    // Archetype branch — go to the per-archetype config screen
+    const meta = SUMMON_ARCHETYPES.find(a => a.id === archId);
+    document.getElementById('summon-arc-title').textContent = `${meta.icon} ${meta.title}`;
+    document.getElementById('summon-arc-desc').textContent = meta.pitch;
+    // Hide all panels; show the right one
+    ['summon-arc-chimera', 'summon-arc-oracle', 'summon-arc-scalpel', 'summon-arc-none']
+        .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+    const nextBtn = document.getElementById('summon-arc-next');
+    nextBtn.disabled = true;
+
+    if (archId === 'chimera') {
+        document.getElementById('summon-arc-chimera').style.display = '';
+        loadChimeraModels();
+    } else if (archId === 'oracle') {
+        document.getElementById('summon-arc-oracle').style.display = '';
+        loadOracleOptions();
+        nextBtn.disabled = false;     // default gemma3:4b is always selectable
+    } else if (archId === 'scalpel') {
+        document.getElementById('summon-arc-scalpel').style.display = '';
+        loadScalpelModels();
+    } else {
+        // forensic | lore_keeper — nothing to configure
+        document.getElementById('summon-arc-none').style.display = '';
+        nextBtn.disabled = false;
+    }
+    showStep('summon-step-arc');
+}
+
+async function loadChimeraModels() {
+    const host = document.getElementById('summon-chimera-models');
+    host.innerHTML = '<p style="color:#666;padding:12px;text-align:center;">Loading…</p>';
+    summonFlow.chimeraPicks = [];
+    try {
+        const res = await fetch('/api/available_models');
+        const models = await res.json();
+        if (!models.length) {
+            host.innerHTML = '<p style="color:#ff4757;padding:12px;text-align:center;">No models found.</p>';
+            return;
+        }
+        host.innerHTML = '';
+        // Filter out video archs — chimera routes text→image; video is its
+        // own domain handled by Videomancer.
+        const imageModels = models.filter(m => !/wan|ltx|svd/i.test(m.arch || m.name || ''));
+        imageModels.forEach(m => {
+            const row = document.createElement('div');
+            row.className = 'summon-chimera-row';
+            row.innerHTML = `
+                <input type="checkbox" data-name="${m.name}" />
+                <div style="flex:1;min-width:0">
+                    <div style="font-size:13px;color:#eee;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${m.name}">${m.name}</div>
+                    <div style="font-size:11px;color:#888;margin-top:2px">${archBadge(m.arch)}</div>
+                </div>
+                <select class="domain-select">
+                    <option value="auto">auto</option>
+                    <option value="portraits">portraits</option>
+                    <option value="landscapes">landscapes</option>
+                    <option value="anime">anime</option>
+                    <option value="photoreal">photoreal</option>
+                    <option value="painted">painted</option>
+                    <option value="nsfw">nsfw</option>
+                </select>
+            `;
+            const cb = row.querySelector('input[type=checkbox]');
+            const sel = row.querySelector('.domain-select');
+            const updatePicks = () => {
+                summonFlow.chimeraPicks = [];
+                host.querySelectorAll('.summon-chimera-row').forEach(r => {
+                    const chk = r.querySelector('input[type=checkbox]');
+                    if (!chk.checked) return;
+                    const modelName = chk.dataset.name;
+                    const mm = imageModels.find(x => x.name === modelName);
+                    summonFlow.chimeraPicks.push({
+                        name: mm.name, arch: mm.arch, type: mm.type,
+                        domain: r.querySelector('.domain-select').value,
+                    });
+                });
+                const n = summonFlow.chimeraPicks.length;
+                document.getElementById('summon-arc-next').disabled = (n < 2 || n > 5);
+            };
+            cb.addEventListener('change', updatePicks);
+            sel.addEventListener('change', updatePicks);
+            host.appendChild(row);
+        });
+    } catch (e) {
+        host.innerHTML = `<p style="color:#ff4757;padding:12px;text-align:center">Failed: ${e.message}</p>`;
+    }
+}
+
+async function loadOracleOptions() {
+    const statusEl = document.getElementById('summon-oracle-status');
+    const sel = document.getElementById('summon-oracle-llm');
+    statusEl.textContent = 'Probing local Ollama for vision models…';
+    try {
+        const r = await fetch('/api/spellcaster/lora/scorer/probe');
+        const data = await r.json();
+        if (data.ok) {
+            statusEl.innerHTML = `<span style="color:#20c997">● online</span> — <code>${data.model}</code> installed.`;
+            summonFlow.oracleConfig.llm_model = data.model;
+        } else {
+            statusEl.innerHTML = `<span style="color:#e03131">● offline</span> — ${data.reason || 'scorer probe failed'}. Summon will still work; install gemma3:4b to activate vision.`;
+        }
+        // Populate selector with any models the probe surfaced
+        if (data.installed && data.installed.length) {
+            sel.innerHTML = '';
+            data.installed.forEach(n => {
+                const opt = document.createElement('option');
+                opt.value = n; opt.textContent = n;
+                if (n === data.model) opt.selected = true;
+                sel.appendChild(opt);
+            });
+        }
+        sel.addEventListener('change', () => {
+            summonFlow.oracleConfig.llm_model = sel.value;
+        });
+    } catch (e) {
+        statusEl.textContent = 'Probe failed: ' + e.message;
+    }
+}
+
+async function loadScalpelModels() {
+    const host = document.getElementById('summon-scalpel-models');
+    host.innerHTML = '<p style="color:#666;padding:12px;text-align:center;">Loading…</p>';
+    summonFlow.scalpelBase = null;
+    try {
+        const res = await fetch('/api/available_models');
+        const models = await res.json();
+        const inpaintable = models.filter(m =>
+            !/wan|ltx|svd|upscale|esrgan|reactor|faceswap/i.test(m.arch + ' ' + m.name)
+        );
+        host.innerHTML = '';
+        inpaintable.forEach(m => {
+            const row = document.createElement('div');
+            row.className = 'summon-scalpel-row';
+            row.innerHTML = `
+                <div style="flex:1;min-width:0">
+                    <div style="font-size:13px;color:#eee;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${m.name}">${m.name}</div>
+                    <div style="font-size:11px;color:#888;margin-top:2px">${archBadge(m.arch)}</div>
+                </div>
+            `;
+            row.addEventListener('click', () => {
+                host.querySelectorAll('.summon-scalpel-row.selected').forEach(r => r.classList.remove('selected'));
+                row.classList.add('selected');
+                summonFlow.scalpelBase = { name: m.name, arch: m.arch, type: m.type };
+                document.getElementById('summon-arc-next').disabled = false;
+            });
+            host.appendChild(row);
+        });
+    } catch (e) {
+        host.innerHTML = `<p style="color:#ff4757;padding:12px;text-align:center">Failed: ${e.message}</p>`;
+    }
+}
 
 // Scaffold auto-detect mapping
 function guessScaffold(modelName, arch) {
@@ -6233,15 +6477,24 @@ async function generateWizardIdentity() {
     }
 }
 
-// Open modal
+// Open modal — always lands on step 0 (archetype picker) first
 summonBtn.addEventListener('click', () => {
     selectedSummonModel = null;
+    summonFlow = {
+        archetype: 'per_model',
+        chimeraPicks: [],
+        oracleConfig: {llm_model: 'gemma3:4b'},
+        scalpelBase: null,
+    };
     summonNext.disabled = true;
-    summonStep1.style.display = 'block';
-    summonStep2.style.display = 'none';
+    renderArchetypeGrid();
+    showStep('summon-step-0');
     summonScaffoldSelect.value = 'auto';
     summonModal.classList.remove('hidden');
-    loadSummonModels();
+});
+
+document.getElementById('summon-step0-cancel').addEventListener('click', () => {
+    summonModal.classList.add('hidden');
 });
 
 summonCancel.addEventListener('click', () => {
@@ -6249,25 +6502,125 @@ summonCancel.addEventListener('click', () => {
 });
 
 summonNext.addEventListener('click', () => {
+    // Classic per-model flow: step 1 → step 2 identity gen
     generateWizardIdentity();
 });
 
-summonBack.addEventListener('click', () => {
-    summonStep1.style.display = 'block';
-    summonStep2.style.display = 'none';
+// Archetype config → identity step
+document.getElementById('summon-arc-next').addEventListener('click', () => {
+    generateArchetypeIdentity();
 });
+document.getElementById('summon-arc-back').addEventListener('click', () => {
+    showStep('summon-step-0');
+});
+
+summonBack.addEventListener('click', () => {
+    // From step 2 back to either step-1 (per_model) or step-arc (archetype)
+    if (summonFlow.archetype === 'per_model') showStep('summon-step-1');
+    else showStep('summon-step-arc');
+});
+
+// ── Archetype-aware identity generation ────────────────────────────────
+async function generateArchetypeIdentity() {
+    const archId = summonFlow.archetype;
+    const meta = SUMMON_ARCHETYPES.find(a => a.id === archId);
+    showStep('summon-step-2');
+    document.getElementById('summon-preview-model').textContent = meta.title + ' archetype';
+    document.getElementById('summon-scaffold-label').textContent = meta.pitch;
+    document.getElementById('summon-name-input').value = 'Generating…';
+    document.getElementById('summon-personality-input').value = 'Generating…';
+    document.getElementById('summon-subtext-input').value = _archetypeDefaultSubtext(archId);
+    const hue = (meta.title.charCodeAt(0) * 17 + meta.title.length * 53) % 360;
+    document.getElementById('summon-preview-avatar').style.background =
+        `linear-gradient(135deg, hsl(${hue},85%,42%), hsl(${(hue+55)%360},100%,58%))`;
+
+    const prompts = _archetypeIdentityPrompts(archId, meta);
+    try {
+        const nameData = await llmGenerate({ prompt: prompts.namePrompt, max_length: 15, temperature: 0.9, stop_sequence: ["\n", "."] });
+        const llmName = (nameData.results[0].text || '').trim().replace(/["']/g, '');
+        document.getElementById('summon-name-input').value = llmName || meta.title;
+    } catch { document.getElementById('summon-name-input').value = meta.title; }
+    try {
+        const name = document.getElementById('summon-name-input').value;
+        const persData = await llmGenerate({ prompt: prompts.personalityPrompt(name), max_length: 90, temperature: 0.9, stop_sequence: ["\n"] });
+        document.getElementById('summon-personality-input').value =
+            (persData.results[0].text || '').trim() || prompts.personalityFallback;
+    } catch { document.getElementById('summon-personality-input').value = _archetypeDefaultSubtext(archId); }
+}
+
+function _archetypeDefaultSubtext(archId) {
+    const map = {
+        forensic:    'Forensic — PNG workflow extraction + remix',
+        chimera:     'Chimera — multi-model router',
+        oracle:      'Oracle — vision reader + critique',
+        lore_keeper: 'Lore-keeper — conversational LoRA knowledge base',
+        scalpel:     'Scalpel — natural-language semantic editing',
+    };
+    return map[archId] || archId;
+}
+
+function _archetypeIdentityPrompts(archId, meta) {
+    const flavour = {
+        forensic:    'a detective who reverse-engineers AI image workflows from their metadata',
+        chimera:     'a multi-headed router who picks the best image model per prompt',
+        oracle:      'a vision-reading seer who describes and critiques generated images',
+        lore_keeper: 'a scholar of every LoRA in the user\'s library who knows what each does and what pairs well',
+        scalpel:     'a precision editor who erases, replaces, and reshapes parts of images via plain English',
+    }[archId] || meta.pitch;
+    return {
+        namePrompt:
+            `Context: Naming a magical wizard avatar in The Wizard Guild, a ComfyUI interface.\n` +
+            `This wizard is "${meta.title}" — ${flavour}.\n` +
+            `Command: Invent a single short creative fantasy name (1-2 words). Do NOT reuse the word "${meta.title}".\n` +
+            `Name:`,
+        personalityPrompt: (name) =>
+            `Context: A wizard named "${name}" serves as The Wizard Guild's ${meta.title} — ${flavour}.\n` +
+            `Command: Write exactly ONE vivid sentence describing their speaking style and personality quirk. Make them memorable.\n` +
+            `Personality:`,
+        personalityFallback:
+            `A focused specialist in ${meta.title.toLowerCase()} work.`,
+    };
+}
 
 summonRegenerate.addEventListener('click', () => {
     generateWizardIdentity();
 });
 
 summonCreate.addEventListener('click', async () => {
-    if (!selectedSummonModel) return;
-    const m = selectedSummonModel;
-    const scaffold = summonScaffoldSelect.value === 'auto' ? guessScaffold(m.name, m.arch) : summonScaffoldSelect.value;
     const name = document.getElementById('summon-name-input').value.trim() || 'Unnamed Wizard';
     const personality = document.getElementById('summon-personality-input').value.trim();
     const subtext = document.getElementById('summon-subtext-input').value.trim();
+
+    // Build the payload by archetype. per_model requires a selected
+    // model; archetypes either use no model, one, or many depending on
+    // their kind.
+    let payload;
+    if (summonFlow.archetype === 'per_model') {
+        if (!selectedSummonModel) return;
+        const m = selectedSummonModel;
+        const scaffold = summonScaffoldSelect.value === 'auto'
+            ? guessScaffold(m.name, m.arch) : summonScaffoldSelect.value;
+        payload = {
+            model_name: m.name, model_arch: m.arch, model_type: m.type,
+            name, personality, subtext, scaffold,
+        };
+    } else {
+        payload = {
+            archetype_kind: summonFlow.archetype,
+            name, personality, subtext,
+        };
+        if (summonFlow.archetype === 'chimera') {
+            if (summonFlow.chimeraPicks.length < 2) return;
+            payload.archetype_config = { models: summonFlow.chimeraPicks };
+        } else if (summonFlow.archetype === 'oracle') {
+            payload.archetype_config = { ...summonFlow.oracleConfig };
+        } else if (summonFlow.archetype === 'scalpel') {
+            if (!summonFlow.scalpelBase) return;
+            payload.archetype_config = { base_model: summonFlow.scalpelBase };
+        } else {
+            payload.archetype_config = {};
+        }
+    }
 
     summonCreate.disabled = true;
     summonCreate.textContent = 'Summoning...';
@@ -6276,15 +6629,7 @@ summonCreate.addEventListener('click', async () => {
         const res = await fetch('/api/summon_wizard', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model_name: m.name,
-                model_arch: m.arch,
-                model_type: m.type,
-                name: name,
-                personality: personality,
-                subtext: subtext,
-                scaffold: scaffold,
-            })
+            body: JSON.stringify(payload),
         });
         const data = await res.json();
 
@@ -6298,7 +6643,10 @@ summonCreate.addEventListener('click', async () => {
             selectCharacter(newChar.id);
 
             summonModal.classList.add('hidden');
-            addSystemMessage(`<strong>Wizard Summoned!</strong><br>${name} has joined the Guild, wielding the power of <em>${m.name}</em> (${getScaffoldLabel(scaffold)}).`);
+            const blurb = summonFlow.archetype === 'per_model'
+                ? `${name} has joined the Guild, wielding the power of <em>${selectedSummonModel.name}</em>.`
+                : `${name} has joined the Guild as a <em>${SUMMON_ARCHETYPES.find(a => a.id === summonFlow.archetype).title}</em> archetype.`;
+            addSystemMessage(`<strong>Wizard Summoned!</strong><br>${blurb}`);
 
             // Auto-generate avatar in background
             try {
