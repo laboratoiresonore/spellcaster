@@ -11028,7 +11028,10 @@ class GuildHandler(SimpleHTTPRequestHandler):
         elif (self.path.startswith('/api/gimp/inbox')
               or self.path.startswith('/api/sillytavern/inbox')
               or self.path.startswith('/api/resolve/inbox')
-              or self.path.startswith('/api/darktable/inbox')):
+              or self.path.startswith('/api/darktable/inbox')
+              or self.path.startswith('/api/blender/inbox')
+              or self.path.startswith('/api/krita/inbox')
+              or self.path.startswith('/api/photoshop/inbox')):
             # Pull-queue inbox for short-lived clients (GIMP plugin,
             # antenna-mediated Resolve, etc.). Query params:
             #   consume=1        pop returned messages from the queue
@@ -13889,9 +13892,13 @@ class GuildHandler(SimpleHTTPRequestHandler):
             # to hold an SSE subscription open
             _mailbox_fanout(evt)
             # Auto-heartbeat on event emit so "chatty" interfaces don't
-            # need a separate ping loop
+            # need a separate ping loop. The allow-list mirrors
+            # KNOWN_INTERFACES keys (minus "guild" which is the host
+            # itself and "antenna" whose heartbeats carry meta fields
+            # that must not round-trip via a blank auto-ping).
             if _iface_registry is not None and origin in (
-                    "gimp", "darktable", "resolve", "sillytavern", "signal"):
+                    "gimp", "darktable", "resolve", "sillytavern",
+                    "signal", "blender", "krita", "photoshop"):
                 try:
                     _iface_registry.heartbeat(origin)
                 except Exception:
@@ -13966,6 +13973,23 @@ class GuildHandler(SimpleHTTPRequestHandler):
             return self._handle_iface_event("darktable", "darktable.style.apply", data)
         if self.path == '/api/darktable/inbox/ack':
             return self._handle_inbox_ack("darktable", data)
+
+        # Blender / Krita / Photoshop — the three "editor" plugins that
+        # share ``spellcaster_core.plugin_base.SpellcasterPlugin`` (the
+        # Python base) or a UXP panel (Photoshop). Each one needs
+        # inbox-ack symmetry with the original four so peer-send
+        # flows (GIMP → Blender, Resolve → Krita, …) can pop queue
+        # entries. Event-ingress endpoints for these plugins aren't
+        # wired yet — none of them expose a workflow-control surface
+        # today — so we stop at the mailbox layer; add
+        # ``_handle_iface_event`` / ``_handle_iface_ingress`` calls
+        # here when the plugins gain feature-specific POST endpoints.
+        if self.path == '/api/blender/inbox/ack':
+            return self._handle_inbox_ack("blender", data)
+        if self.path == '/api/krita/inbox/ack':
+            return self._handle_inbox_ack("krita", data)
+        if self.path == '/api/photoshop/inbox/ack':
+            return self._handle_inbox_ack("photoshop", data)
 
         # -- Setup-mode admin endpoints (Guild-driven install) --
         if self.path == '/api/setup/feature/install':
