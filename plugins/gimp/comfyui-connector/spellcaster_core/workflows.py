@@ -7344,7 +7344,15 @@ def build_ltx_video(preset, prompt_text, seed,
                      loras=None, interpolate=False, rtx_scale=0,
                      fps=25, pingpong=False,
                      image_filename=None, i2v_strength=0.9,
-                     negative_text=None):
+                     negative_text=None,
+                     # Optional quality / speed patches (CLAUDE.md §16.3).
+                     # Each defaults to None — caller decides via an
+                     # /object_info probe whether the node exists on the
+                     # target server, passes True/False, and gets fail-loud
+                     # behavior if the chosen node isn't installed.
+                     enable_sage=False, enable_cfg_zero=False,
+                     # Per-call tuning (None = use canon default).
+                     sampler_name=None, stg_layers=None, chunk_size=None):
     # ═══════════════════════════════════════════════════════════════════
     #  CANONICAL LTX 2.3 BUILDER — DO NOT DIVERGE
     # ═══════════════════════════════════════════════════════════════════

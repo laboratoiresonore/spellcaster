@@ -392,6 +392,156 @@ def resolve_shootout_recipe(
     return chosen_subject, pos, neg, float(strength)
 
 
+def _stitch_triggers_into_prompt(base_prompt: str, trigger_words: list[str]) -> str:
+    """Prepend distinct trigger words to `base_prompt`, skipping any
+    already present (case-insensitive). Keeps the template readable
+    instead of just concatenating duplicates.
+    """
+    if not trigger_words:
+        return base_prompt
+    lowered = base_prompt.lower()
+    to_add: list[str] = []
+    for t in trigger_words:
+        t = (t or "").strip()
+        if not t:
+            continue
+        if t.lower() in lowered or t.lower() in (x.lower() for x in to_add):
+            continue
+        to_add.append(t)
+    if not to_add:
+        return base_prompt
+    return ", ".join(to_add) + ", " + base_prompt
+
+
+def _pick_example_snippet(examples: list[str], max_words: int = 14) -> str:
+    """Return a short, template-friendly snippet from a Civitai example
+    prompt. We trim to `max_words` tokens, strip lora/embedding tags,
+    and reject anything that looks like a full recipe. The goal is
+    flavour, not a verbatim copy — this keeps the comparison shootout
+    honest (same base subject + each LoRA's contextual cue).
+    """
+    import re as _re
+    for ex in examples:
+        if not isinstance(ex, str):
+            continue
+        ex = _re.sub(r"<[^>]+>", "", ex).strip()          # drop <lora:...> tags
+        ex = _re.sub(r"\s+", " ", ex)
+        if not ex:
+            continue
+        tokens = ex.split()
+        if len(tokens) > max_words:
+            tokens = tokens[:max_words]
+        candidate = " ".join(tokens).strip(" ,;:-")
+        if len(candidate) >= 8:
+            return candidate
+    return ""
+
+
+def resolve_shootout_recipe_for_lora(
+    lora_name: str,
+    purpose_group: str,
+    arch: str,
+    *,
+    subject: Optional[str] = None,
+    strength: Optional[float] = None,
+    lora_abs_path: Optional[str] = None,
+    user_override: Optional[dict] = None,
+    use_network: bool = True,
+) -> dict:
+    """Per-LoRA recipe blending group defaults with `lora_knowledge`.
+
+    Returns a dict with the full rendering recipe PLUS a `provenance`
+    map so the UI can show "weight from Civitai / sampler from
+    community / trigger from safetensors". On any failure we fall
+    back to `resolve_shootout_recipe` — the caller always gets a
+    rendering-ready result.
+
+    Never raises: every step is wrapped so a bad import or a flaky
+    Civitai response doesn't crash the shootout engine.
+    """
+    try:
+        try:
+            from spellcaster_core.lora_knowledge import (
+                get_knowledge, classify_nsfw,
+            )
+        except ImportError:
+            from lora_knowledge import get_knowledge, classify_nsfw  # type: ignore
+
+        k = get_knowledge(
+            lora_name,
+            path=lora_abs_path,
+            user_override=user_override,
+            use_network=use_network,
+        )
+    except Exception as e:
+        # Full fallback to group defaults on any knowledge error.
+        subj, pos, neg, s = resolve_shootout_recipe(
+            purpose_group, arch, subject=subject, strength=strength,
+        )
+        return {
+            "subject_key":   subj,
+            "prompt":        pos,
+            "negative":      neg,
+            "strength":      s,
+            "sampler":       None,
+            "cfg":           None,
+            "trigger_words": [],
+            "nsfw":          False,
+            "provenance":    {"error": f"knowledge_error: {e!s}"[:160]},
+            "knowledge":     None,
+        }
+
+    # Base template comes from subject picker (user override > arch
+    # override > group default). Same resolver as the plain recipe.
+    subj, base_pos, base_neg, group_strength = resolve_shootout_recipe(
+        purpose_group, arch, subject=subject, strength=strength,
+    )
+
+    # Weave in trigger words (every LoRA's style head key) + one short
+    # example phrase from Civitai. The example phrase gives the LoRA a
+    # context it was trained on so the comparison shootout actually
+    # exercises the LoRA rather than just the base model.
+    prompt = _stitch_triggers_into_prompt(base_pos, k.trigger_words)
+    snippet = _pick_example_snippet(k.example_prompts)
+    if snippet and snippet.lower() not in prompt.lower():
+        prompt = prompt + ", " + snippet
+
+    # Strength: explicit caller > knowledge > group default. The
+    # knowledge layer already applied user registry + shipped +
+    # civitai + heuristic in that order, so we trust it when
+    # populated.
+    if strength is not None:
+        final_strength = float(strength)
+    elif k.recommended_weight is not None:
+        final_strength = float(k.recommended_weight)
+    else:
+        final_strength = float(group_strength)
+    # Clamp to a sane band — burn-in weights from bad training
+    # crashes the LoRA's output into noise.
+    if final_strength > 1.5:
+        final_strength = 1.5
+    if final_strength < 0.1:
+        final_strength = 0.1
+
+    try:
+        nsfw = classify_nsfw(k, filename=lora_name)
+    except Exception:
+        nsfw = bool(getattr(k, "nsfw", False))
+
+    return {
+        "subject_key":   subj,
+        "prompt":        prompt,
+        "negative":      base_neg,
+        "strength":      final_strength,
+        "sampler":       k.recommended_sampler,
+        "cfg":           k.recommended_cfg,
+        "trigger_words": list(k.trigger_words),
+        "nsfw":          nsfw,
+        "provenance":    dict(k.provenance),
+        "knowledge":     k.to_dict(),
+    }
+
+
 def list_subject_templates() -> list[dict]:
     """Public list for the UI's subject dropdown."""
     labels = {
@@ -624,6 +774,8 @@ def _render_single_sample(
     models_pool: list[dict],
     preferred_model: Optional[str] = None,
     timeout: int = 90,
+    sampler_override: Optional[str] = None,
+    cfg_override: Optional[float] = None,
 ) -> ShootoutSample:
     """Render one LoRA sample with automatic model fallback.
 
