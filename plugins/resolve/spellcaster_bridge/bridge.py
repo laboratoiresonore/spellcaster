@@ -387,6 +387,19 @@ class Bridge:
         """
         if image_url.startswith("/"):
             image_url = self.guild.base_url.rstrip("/") + image_url
+        # Scheme clamp — the Guild's event bus is unauthenticated on
+        # localhost. Without this, any interface with publish access
+        # could smuggle file:/// or gopher:// URLs that urllib dutifully
+        # follows, reading arbitrary local files into the Resolve cache.
+        import urllib.parse
+        try:
+            scheme = urllib.parse.urlparse(image_url).scheme.lower()
+        except Exception:
+            scheme = ""
+        if scheme not in ("http", "https"):
+            print(f"[Spellcaster Bridge] rejected non-http ingest url: "
+                  f"{image_url[:80]}", file=sys.stderr)
+            return
         # Fake a "shot ready" event that the sync module already knows
         # how to handle — it'll download + import + add metadata marker
         shot_stub = {
@@ -400,14 +413,22 @@ class Bridge:
         }
         # Download the URL to the sync module's cache dir and import
         import os
-        import urllib.parse
         import urllib.request as _ur
         from resolve_helpers import import_video  # type: ignore
         dest = os.path.join(self.sync._cache_dir,
                             f"{shot_stub['id']}.png")
+        # 200 MB ceiling on asset downloads — matches the Guild's own
+        # outgoing video cap and keeps a hostile/truncated response from
+        # pinning Resolve's RAM.
+        MAX_INGEST_BYTES = 200 * 1024 * 1024
         try:
             with _ur.urlopen(image_url, timeout=30.0) as r:
-                data = r.read()
+                data = r.read(MAX_INGEST_BYTES + 1)
+            if len(data) > MAX_INGEST_BYTES:
+                print(f"[Spellcaster Bridge] ingest exceeded "
+                      f"{MAX_INGEST_BYTES} bytes; rejected.",
+                      file=sys.stderr)
+                return
             with open(dest, "wb") as f:
                 f.write(data)
         except Exception as e:

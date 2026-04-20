@@ -928,6 +928,23 @@ local function shell_esc(s)
   return tostring(s):gsub('"', '')
 end
 
+-- Unique temp-file path. os.time() alone is second-granular; when two
+-- curl helpers fire inside the same second (easy with a loop) the
+-- response files collide and whichever command writes last wins. Mix
+-- in math.random() so the probability of collision in a Darktable
+-- session is effectively zero.
+-- @param tag : short identifier embedded in the filename for log traces
+-- @param ext : file extension including the dot (".json", ".txt", ".png")
+local _tmp_seq = 0
+local function _unique_tmp(tag, ext)
+  _tmp_seq = _tmp_seq + 1
+  return string.format(
+    "%s%s%s_%d_%d_%d%s",
+    tmp_dir(), sep, tag,
+    os.time(), math.random(100000, 999999), _tmp_seq,
+    ext or "")
+end
+
 -- CURL HTTP OPERATIONS
 -- ═════════════════════════════════════════════════════════════════════════
 -- All HTTP uses curl (not a Lua library) invoked via os.execute().
@@ -943,7 +960,7 @@ end
 --   4. Delete tmpfile
 -- Used by: fetch_all_loras(), fetch_face_models(), fetch_swap_models(), etc.
 local function curl_get(url)
-  local tmp = tmp_dir() .. sep .. "comfyui_resp_" .. os.time() .. ".json"
+  local tmp = _unique_tmp("comfyui_resp", ".json")
   os.execute(string.format('curl -s -o "%s" "%s"', shell_esc(tmp), shell_esc(url)))
   local f = io.open(tmp, "r")
   if not f then return nil end
@@ -966,8 +983,8 @@ end
 -- Response format: {"prompt_id":"<uuid>","number":"<int>","..."}
 -- Used by: process_image, process_wan_i2v, all AI workflows
 local function curl_post_json(url, json_str)
-  local tb = tmp_dir() .. sep .. "comfyui_body_" .. os.time() .. ".json"
-  local tr = tmp_dir() .. sep .. "comfyui_presp_" .. os.time() .. ".json"
+  local tb = _unique_tmp("comfyui_body",  ".json")
+  local tr = _unique_tmp("comfyui_presp", ".json")
   local f = io.open(tb, "w"); f:write(json_str); f:close()
   os.execute(string.format('curl -s -X POST -H "Content-Type: application/json" -d @"%s" -o "%s" "%s"', shell_esc(tb), shell_esc(tr), shell_esc(url)))
   os.remove(tb)
@@ -991,7 +1008,7 @@ end
 -- Response format: {"name":"filename","subfolder":"input","type":"input"}
 -- Used by: export_to_temp + process_image (upload step)
 local function curl_upload(url, filepath, filename)
-  local tr = tmp_dir() .. sep .. "comfyui_up_" .. os.time() .. ".json"
+  local tr = _unique_tmp("comfyui_up", ".json")
   os.execute(string.format(
     'curl -s -X POST -F "image=@%s;filename=%s" -F "type=input" -F "overwrite=true" -o "%s" "%s"',
     shell_esc(filepath), shell_esc(filename), shell_esc(tr), shell_esc(url)))
@@ -1051,7 +1068,7 @@ local function guild_heartbeat(meta_pairs)
   end
   local body = string.format(
     '{"interface":"darktable","meta":{%s}}', meta)
-  local tmp = tmp_dir() .. sep .. "spellcaster_hb_" .. os.time() .. ".json"
+  local tmp = _unique_tmp("spellcaster_hb", ".json")
   local f = io.open(tmp, "w")
   if not f then return end
   f:write(body); f:close()
@@ -1084,7 +1101,7 @@ local function guild_emit_event(kind, data_json)
   local body = string.format(
     '{"kind":"%s","origin":"darktable","data":%s}',
     tostring(kind):gsub('"', "'"), data_json)
-  local tmp = tmp_dir() .. sep .. "spellcaster_evt_" .. os.time() .. ".json"
+  local tmp = _unique_tmp("spellcaster_evt", ".json")
   local f = io.open(tmp, "w")
   if not f then return end
   f:write(body); f:close()
@@ -1188,9 +1205,25 @@ end
 
 -- File → base64 string using the same python helper pattern as
 -- _asset_upload_and_emit. Returns nil on failure.
+--
+-- Bounds the source read at MAX_REF_BYTES so a 4 GB Darktable export
+-- can't OOM the Python interpreter we spawn. The Guild's own reference
+-- upload cap is 200 MB; we match that on the client side.
+local MAX_REF_BYTES = 200 * 1024 * 1024
 local function _file_to_base64(path)
-  local b64_out = tmp_dir() .. sep .. "dt_b64_"
-                  .. os.time() .. "_" .. math.random(10000,99999) .. ".txt"
+  -- Cheap pre-check: ask the OS for the file size via Lua io.open +
+  -- seek, without reading the body. If we can't size it, play safe
+  -- and refuse rather than pushing unbounded data through Python.
+  local probe = io.open(path, "rb")
+  if not probe then return nil end
+  local ok_size, size = pcall(function()
+    probe:seek("end"); return probe:seek()
+  end)
+  probe:close()
+  if not ok_size or not size or size > MAX_REF_BYTES then
+    return nil
+  end
+  local b64_out = _unique_tmp("dt_b64", ".txt")
   local cmd
   if package.config:sub(1,1) == "\\" then
     cmd = string.format(
@@ -1243,10 +1276,10 @@ local function guild_create_shot(title, prompt, negative, preset, overrides)
     esc(title or ""), esc(prompt or ""), esc(negative or ""),
     esc(preset or "wan22_i2v_lightning"), overrides_json)
 
-  local tmp = tmp_dir() .. sep .. "dt_shot_create_" .. os.time() .. ".json"
+  local tmp = _unique_tmp("dt_shot_create", ".json")
   local f = io.open(tmp, "w"); if not f then return nil, "tmp write failed" end
   f:write(body); f:close()
-  local resp_path = tmp_dir() .. sep .. "dt_shot_resp_" .. os.time() .. ".json"
+  local resp_path = _unique_tmp("dt_shot_resp", ".json")
   local cmd
   if package.config:sub(1,1) == "\\" then
     cmd = string.format(
@@ -1272,28 +1305,57 @@ local function guild_create_shot(title, prompt, negative, preset, overrides)
 end
 
 -- Attach a reference image to an existing shot (base64 upload).
+--
+-- Previously returned `true` blindly after `os.execute(curl)` — that
+-- masked a Guild-side dispatcher bug where POST /reference was
+-- shadowed by a GET handler and silently 404'd every upload. Now we
+-- ask curl to capture the HTTP status into a separate file via
+-- `-w "%{http_code}"` and only report success on 2xx. The Guild's
+-- response body goes into its own tmp file so we can surface the
+-- error text to the caller on failure.
 local function guild_attach_reference(shot_id, image_path)
   local guild = get_guild_url()
   if not guild or guild == "" then return false, "no guild url" end
   local b64 = _file_to_base64(image_path)
-  if not b64 then return false, "base64 encode failed" end
+  if not b64 then return false, "base64 encode failed (file too large or unreadable)" end
   local body = string.format('{"image_data":"data:image/png;base64,%s"}', b64)
-  local tmp = tmp_dir() .. sep .. "dt_shot_ref_" .. os.time() .. ".json"
+  local tmp       = _unique_tmp("dt_shot_ref",      ".json")
+  local resp_body = _unique_tmp("dt_shot_ref_resp", ".txt")
+  local status_f  = _unique_tmp("dt_shot_ref_code", ".txt")
   local f = io.open(tmp, "w"); if not f then return false, "tmp write failed" end
   f:write(body); f:close()
   local url = string.format("%s/api/video/shots/%s/reference", guild, shot_id)
   local cmd
   if package.config:sub(1,1) == "\\" then
     cmd = string.format(
-      'curl -s --max-time 60 -X POST -H "Content-Type: application/json" --data-binary "@%s" "%s" -o NUL 2>NUL',
-      shell_esc(tmp), shell_esc(url))
+      'curl -s --max-time 60 -X POST -H "Content-Type: application/json" --data-binary "@%s" -o "%s" -w "%%{http_code}" "%s" > "%s" 2>NUL',
+      shell_esc(tmp), shell_esc(resp_body), shell_esc(url), shell_esc(status_f))
   else
     cmd = string.format(
-      'curl -s --max-time 60 -X POST -H "Content-Type: application/json" --data-binary "@%s" "%s" -o /dev/null 2>/dev/null',
-      shell_esc(tmp), shell_esc(url))
+      'curl -s --max-time 60 -X POST -H "Content-Type: application/json" --data-binary "@%s" -o "%s" -w "%%{http_code}" "%s" > "%s" 2>/dev/null',
+      shell_esc(tmp), shell_esc(resp_body), shell_esc(url), shell_esc(status_f))
   end
   os.execute(cmd)
   os.remove(tmp)
+  -- Read back the curl-written HTTP status code (`-w "%{http_code}"`).
+  local sf = io.open(status_f, "r")
+  local code_str = sf and sf:read("*all") or ""
+  if sf then sf:close() end
+  os.remove(status_f)
+  local code = tonumber((code_str or ""):match("%d+")) or 0
+  if code < 200 or code >= 300 then
+    -- Surface the first 200 chars of the error body for diagnosis.
+    local body_snippet = ""
+    local bf = io.open(resp_body, "r")
+    if bf then
+      body_snippet = (bf:read("*all") or ""):sub(1, 200)
+      bf:close()
+    end
+    os.remove(resp_body)
+    return false, string.format("guild attach_reference HTTP %d: %s",
+                                code, body_snippet)
+  end
+  os.remove(resp_body)
   return true
 end
 
@@ -1302,7 +1364,7 @@ local function guild_render_shot(shot_id)
   local guild = get_guild_url()
   if not guild or guild == "" then return false, "no guild url" end
   local url = string.format("%s/api/video/shots/%s/render", guild, shot_id)
-  local resp_path = tmp_dir() .. sep .. "dt_shot_render_" .. os.time() .. ".json"
+  local resp_path = _unique_tmp("dt_shot_render", ".json")
   local cmd
   if package.config:sub(1,1) == "\\" then
     cmd = string.format(
@@ -7993,7 +8055,7 @@ local function _check_spellcaster_inbox()
     return
   end
   -- 1) pull the inbox queue with consume=1 (pop on read)
-  local resp_file = tmp_dir() .. sep .. "spellcaster_inbox_" .. os.time() .. ".json"
+  local resp_file = _unique_tmp("spellcaster_inbox", ".json")
   local cmd
   if package.config:sub(1,1) == "\\" then
     cmd = string.format(
@@ -8383,7 +8445,7 @@ local module_widget = dt.new_widget("box") {
       local img = images[1]
       local path, fname = export_to_temp(img)
       if not path then dt.print(_("Export failed")); return end
-      local tmp_out = tmp_dir() .. sep .. "steg_read_" .. os.time() .. ".txt"
+      local tmp_out = _unique_tmp("steg_read", ".txt")
       local cmd = string.format(
         'python "%s" read "%s" > "%s" 2>&1',
         shell_esc(steg_script), shell_esc(path), shell_esc(tmp_out))

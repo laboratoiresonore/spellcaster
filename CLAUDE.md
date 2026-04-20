@@ -51,26 +51,58 @@ Spellcaster is **middleware** between ComfyUI and user-facing apps (GIMP, Darkta
 
 ### 3. ONE SOURCE OF TRUTH: `comfyui-spellcaster/spellcaster_core/`
 
-The canonical source for all shared library code is `comfyui-spellcaster/spellcaster_core/` in THIS repo. Three copies exist:
+The canonical source for all shared library code is `comfyui-spellcaster/spellcaster_core/` in THIS repo. **Five copies exist** for the files used by BOTH the ComfyUI node pack AND the GIMP/Guild app:
 
-1. `comfyui-spellcaster/spellcaster_core/` — CANONICAL (auto-updater downloads from here)
-2. `plugins/gimp/comfyui-connector/spellcaster_core/` — bundled with GIMP plugin
-3. `../ComfyUI-Spellcaster/spellcaster_core/` — separate ComfyUI node repo
+1. `comfyui-spellcaster/spellcaster_core/` — CANONICAL in main repo (auto-updater downloads from here)
+2. `plugins/gimp/comfyui-connector/spellcaster_core/` — dev copy bundled with GIMP plugin source
+3. `../ComfyUI-Spellcaster/spellcaster_core/` — public ComfyUI node repo
+4. `../ComfyUI-Spellcaster-NSFW/spellcaster_core/` — private NSFW ComfyUI node repo
+5. `%APPDATA%/GIMP/3.2/plug-ins/comfyui-connector/spellcaster_core/` — installed plugin on the dev box (overwritten by auto-updater on next GIMP launch)
 
-**After ANY change to workflows.py, node_factory.py, composites.py, architectures.py, or prompt_enhance.py:**
+**Files that MUST be in sync across all 5 copies:**
+
+| File | Why it's shared |
+|---|---|
+| `workflows.py` | Every workflow builder (build_img2img, build_wan_video, build_klein_*, …) |
+| `node_factory.py` | ComfyUI node constructors — signature drift = runtime KeyError |
+| `composites.py` | Multi-node building blocks (load_model_stack, inject_lora_chain) |
+| `architectures.py` | Arch registry + ArchConfig dataclass |
+| `prompt_enhance.py` | LLM-based prompt enhancement dispatcher |
+| `video_presets.py` | **WAN + LTX canon** — detect_wan_preset, pick_wan_vae, wan_turbo_kwargs (see §16) |
+| `pipeline.py` | Chainable fluent pipeline (Pipeline().txt2img().upscale().run()) |
+| `diagnostic.py` | Live server capability probe — runs the canonical builders to validate |
+| `preflight.py` | Workflow validation + node substitution |
+| `model_detect.py` | Architecture detection from filename |
+| `comfyui_llm.py`, `guild_llm.py` | LLM chat abstractions |
+| `privacy.py` | Server file cleanup |
+| `asset_gallery.py`, `event_bus.py`, `interface_registry.py`, `mailbox.py`, `cross_interface.py` | Cross-interface backbone (see §15) |
+
+**After ANY change to the above files:**
 
 ```bash
-# 1. Edit in plugins/gimp/comfyui-connector/spellcaster_core/ (dev copy)
-# 2. Sync to canonical:
-cp plugins/gimp/comfyui-connector/spellcaster_core/CHANGED_FILE.py comfyui-spellcaster/spellcaster_core/
-# 3. Sync to ComfyUI repos:
-cp comfyui-spellcaster/spellcaster_core/CHANGED_FILE.py ../ComfyUI-Spellcaster/spellcaster_core/
-cp comfyui-spellcaster/spellcaster_core/CHANGED_FILE.py ../ComfyUI-Spellcaster-NSFW/spellcaster_core/
-# 4. Commit and push ALL repos
-# 5. Update NSFW: python nsfw/build_nsfw.py --patch --push
+# 1. Edit the CANONICAL copy:
+#    comfyui-spellcaster/spellcaster_core/CHANGED_FILE.py
+# 2. Mirror to the other 4 surfaces:
+cp comfyui-spellcaster/spellcaster_core/CHANGED_FILE.py \
+   plugins/gimp/comfyui-connector/spellcaster_core/
+cp comfyui-spellcaster/spellcaster_core/CHANGED_FILE.py \
+   ../ComfyUI-Spellcaster/spellcaster_core/
+cp comfyui-spellcaster/spellcaster_core/CHANGED_FILE.py \
+   ../ComfyUI-Spellcaster-NSFW/spellcaster_core/
+cp comfyui-spellcaster/spellcaster_core/CHANGED_FILE.py \
+   "%APPDATA%/GIMP/3.2/plug-ins/comfyui-connector/spellcaster_core/"  # deploys for local GIMP test
+# 3. Commit + push in all THREE git repos (spellcaster, ComfyUI-Spellcaster, ComfyUI-Spellcaster-NSFW)
+# 4. Rebuild NSFW: python nsfw/build_nsfw.py --patch-only --push
+# 5. Verify mirrors are identical:
+md5sum comfyui-spellcaster/spellcaster_core/CHANGED_FILE.py \
+       plugins/gimp/comfyui-connector/spellcaster_core/CHANGED_FILE.py \
+       ../ComfyUI-Spellcaster/spellcaster_core/CHANGED_FILE.py \
+       ../ComfyUI-Spellcaster-NSFW/spellcaster_core/CHANGED_FILE.py
 ```
 
-**If you skip step 2, the auto-updater will OVERWRITE your changes on next GIMP launch** because it downloads from the canonical source.
+**If you skip the canonical sync, the auto-updater will OVERWRITE your changes on next GIMP launch** — it downloads from `comfyui-spellcaster/spellcaster_core/`, so that copy MUST be the one you edited.
+
+**The `.claude/agents/sync-checker` agent does this audit for you** — run it before any commit touching shared files.
 
 ### 4. Crash-Safe Boot Shim Architecture
 
@@ -415,6 +447,47 @@ LTX 2.3's distilled corpus includes subtitled video, so without this the model r
    - Lua / JS / remote plugins (Darktable, SillyTavern) POST to the Guild's `/api/video/shots` endpoints instead — that surface wraps the canon server-side. The GIMP plugin uses `_build_wan_video` (its local wrapper) that applies `wan_turbo_kwargs` itself.
    - No plugin hand-rolls WAN/LTX workflow JSON. The Darktable plugin's `build_wan_i2v_json` is an emergency escape hatch ONLY — live code goes through `guild_create_shot` → Guild → canon.
 5. **Arch filter does not touch WAN/LTX LoRAs.** The cross-family LoRA filter in `composites.inject_lora_chain` doesn't run on video — video builders call `lora_loader_model_only` directly so WAN-specific LoRAs aren't dropped.
+
+#### 16.5 Canon verification — `tests/e2e_audit.py`
+
+The audit script at `tests/e2e_audit.py` is the **live test harness** for the canon. Run it against a ComfyUI server that has WAN and LTX models installed to confirm the canon works end-to-end:
+
+```bash
+# Windows PowerShell / Git Bash — utf-8 env var avoids cp1252 Unicode crash
+PYTHONIOENCODING=utf-8 python tests/e2e_audit.py --only video --verbose
+PYTHONIOENCODING=utf-8 python tests/e2e_audit.py --only build_fns --verbose
+```
+
+Video canon section asserts:
+- `wan_turbo_kwargs(True)` returns `{}`; `wan_turbo_kwargs(False)` returns `{steps:30, cfg:3.5, second_step:15}`.
+- `ltx_mode_kwargs(mode)` returns the right `{distilled, two_stage}` for every mode.
+- `pick_wan_vae` pairs 14B I2V → `wan_2.1_vae.safetensors` and 5B TI2V → `wan2.2_vae.safetensors`.
+- `detect_wan_preset(live_server)` returns an I2V-safe preset (< ~200ms).
+- `detect_ltx_preset(live_server)` returns a 22B/13B preset with Gemma text encoder.
+
+Build-fns section compiles every `build_*` function (including `build_wan_video`, `build_wan_flf`, `build_wan22_t2v`) and POSTs the result to ComfyUI's `/prompt` endpoint. ComfyUI validates the shape and either queues or rejects — the rejection error is what the audit report shows.
+
+**Expected green bar:** `54 PASS / 0 FAIL / N SKIP` (skips are for builders that need extra positional args not supplied by auto-test, e.g. `build_wan_video_blockswap`).
+
+If any WAN/LTX test fails after changes, the diagnostic output tells you exactly which canon rule regressed.
+
+#### 16.6 Where every WAN/LTX call lands
+
+Every runtime call path for video goes through exactly one of:
+
+| Caller | Entry point | Mechanism |
+|---|---|---|
+| Python plugin code (GIMP, Resolve scripts) | `workflows.build_wan_video()` + `wan_turbo_kwargs()` | Direct import |
+| GIMP plugin UI buttons | `_build_wan_video` wrapper in `_spellcaster_main.py` → canonical `build_wan_video` | Thin wrapper applies `wan_turbo_kwargs` + probes IP-Adapter/SLG/NAG availability |
+| Wizard Guild API consumers | `POST /api/video/shots` → `_VIDEO_BRIDGE.add_shot` → scaffold dispatcher | Dispatcher applies `wan_turbo_kwargs` |
+| SillyTavern plugin | `POST /api/video/shots` with `preset="wan22_i2v_lightning"` or `"wan22_i2v_hq"` | Goes through the Guild |
+| DaVinci Resolve plugin | `spellcaster_api.create_shot()` → `POST /api/video/shots` | Goes through the Guild |
+| Darktable Lua plugin | `guild_create_shot()` helper → `POST /api/video/shots` | Goes through the Guild (pre-R200 hand-rolled JSON removed) |
+| `spellcaster_core.pipeline.Pipeline().wan_video()` | `_run_wan` → `detect_wan_preset()` + `wan_turbo_kwargs()` + `build_wan_video()` | Fluent-chain client |
+| Live diagnostic (`diagnostic._build_wan_test`) | `detect_wan_preset()` + `wan_turbo_kwargs(True)` + `build_wan_video()` | Probes server with canon |
+| `tools/generate_showcase.py`, `tools/generate_walkthrough.py`, `tools/generate_readme_gifs.py` | Detect preset live + `build_wan_video()` + `wan_turbo_kwargs()` | Ad-hoc dev tools |
+
+If you see a new caller that doesn't fit one of these, it's a canon violation in the making — route it through one of the above.
 
 ## File Structure Quick Reference
 
