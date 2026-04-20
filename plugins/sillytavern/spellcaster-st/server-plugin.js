@@ -126,7 +126,18 @@ function autoDetectBgDir() {
 
 /**
  * Fetch JSON from a URL (Node.js native, no dependencies).
+ *
+ * Bounded by default:
+ *   - timeoutMs: 30 s on the whole request. A stalled ComfyUI or Guild
+ *     used to hang this call forever; the poll loops in dispatchWorkflow
+ *     and _animateViaGuild then accumulated one zombie socket per
+ *     pending generation.
+ *   - maxBytes: 50 MB hard ceiling. ComfyUI's /object_info can run 1–5 MB;
+ *     a runaway or malicious server could otherwise stream unbounded data
+ *     into the ST process.
  */
+const FETCH_JSON_MAX_BYTES = 50 * 1024 * 1024;
+const FETCH_JSON_TIMEOUT_MS = 30000;
 function fetchJSON(url, options = {}) {
     return new Promise((resolve, reject) => {
         const mod = url.startsWith('https') ? https : http;
@@ -138,15 +149,33 @@ function fetchJSON(url, options = {}) {
             method: options.method || 'GET',
             headers: options.headers || {},
         };
+        const maxBytes = options.maxBytes || FETCH_JSON_MAX_BYTES;
+        const timeoutMs = options.timeoutMs || FETCH_JSON_TIMEOUT_MS;
         const req = mod.request(reqOpts, (res) => {
-            let data = '';
-            res.on('data', chunk => data += chunk);
+            const chunks = [];
+            let total = 0;
+            let aborted = false;
+            res.on('data', chunk => {
+                total += chunk.length;
+                if (total > maxBytes) {
+                    if (!aborted) {
+                        aborted = true;
+                        req.destroy(new Error(`response exceeded ${maxBytes} bytes`));
+                    }
+                    return;
+                }
+                chunks.push(chunk);
+            });
             res.on('end', () => {
+                if (aborted) return;
+                const data = Buffer.concat(chunks).toString('utf8');
                 try { resolve({ status: res.statusCode, data: JSON.parse(data) }); }
                 catch { resolve({ status: res.statusCode, data: data }); }
             });
+            res.on('error', reject);
         });
         req.on('error', reject);
+        req.setTimeout(timeoutMs, () => req.destroy(new Error(`fetchJSON timeout after ${timeoutMs}ms`)));
         if (options.body) req.write(options.body);
         req.end();
     });
@@ -501,6 +530,16 @@ function init(router) {
         let body_b64 = '';
         if (req.body.image_data_url) {
             const dataUrl = String(req.body.image_data_url);
+            // Scheme clamp: only accept `data:image/...` URLs. Without this
+            // a caller could hand in `data:text/html;base64,...` which the
+            // Guild would dutifully store + publish — a downstream plugin
+            // that rendered the bytes without sniffing could then execute
+            // HTML/JS. Also rejects `javascript:` pseudo-URLs.
+            if (!/^data:image\/[a-zA-Z0-9.+-]+(;[a-zA-Z0-9=-]+)*,/i.test(dataUrl)) {
+                return res.status(400).json({
+                    error: 'image_data_url must be data:image/<type>[;...],<payload>',
+                });
+            }
             const comma = dataUrl.indexOf(',');
             body_b64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
             const bad = _rejectOversizedB64(body_b64);
