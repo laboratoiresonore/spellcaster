@@ -295,15 +295,26 @@ def lora_is_compatible(lora_name, target_arch):
     return detected in bucket
 
 
-def classify_ckpt_model(name):
-    """Return arch key for a checkpoint model name, or 'sd15' (default).
+def classify_ckpt_model(name, file_size=None):
+    """Return arch key for a checkpoint model name, or a heuristic default.
 
-    Walks through CKPT_ARCH_RULES in priority order and returns the arch key
-    of the first matching rule. Falls back to 'sd15' (the most common and
-    safest default) if no match.
+    Walks through CKPT_ARCH_RULES in priority order and returns the arch
+    key of the first matching rule. When nothing matches AND `file_size`
+    (in bytes) is provided, picks a better fallback than the legacy
+    hardcoded `sd15`:
+
+      * ≥   9 GB — flux1dev    (Flux full fp16 is ~23 GB, fp8 ~12 GB)
+      * ≥ 4.5 GB — sdxl        (SDXL base is ~6.5 GB, fp16 merges ~5 GB)
+      * <  4.5 GB — sd15       (classic 2-4 GB territory)
+
+    When `file_size` is None the fallback is still `sd15` (the legacy
+    behaviour) — callers that can read the file size on disk should
+    pass it in so oddly-named SDXL merges don't get mis-scaffolded.
 
     Args:
         name: Model filename (str), e.g. "sd_xl_base.safetensors"
+        file_size: File size in bytes (int or None). When provided,
+                    drives the fallback heuristic for unknown names.
 
     Returns:
         Architecture key (str), e.g. "sdxl", "sd15", etc.
@@ -312,4 +323,30 @@ def classify_ckpt_model(name):
     for substring, arch_key in CKPT_ARCH_RULES:
         if substring in ml:
             return arch_key
+    # Nothing matched — use file size to guess the family. SDXL is the
+    # dominant "weirdly-named custom merge" case today; defaulting to
+    # sd15 for a 6-GB file produces bad renders at 512×512 with the
+    # wrong samplers.
+    if isinstance(file_size, (int, float)) and file_size > 0:
+        gb = file_size / (1024.0 ** 3)
+        if gb >= 9.0:
+            return "flux1dev"
+        if gb >= 4.5:
+            return "sdxl"
+    return "sd15"
+
+
+def fallback_arch_for_size(file_size):
+    """Public helper: given a checkpoint size in bytes, return the best
+    guess arch when no filename keyword hints are available. Same
+    heuristic as `classify_ckpt_model` but usable in isolation (e.g.
+    when an arch arrives via another path but the caller wants to
+    sanity-check it)."""
+    if not isinstance(file_size, (int, float)) or file_size <= 0:
+        return None
+    gb = file_size / (1024.0 ** 3)
+    if gb >= 9.0:
+        return "flux1dev"
+    if gb >= 4.5:
+        return "sdxl"
     return "sd15"
