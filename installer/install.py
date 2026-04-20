@@ -2643,6 +2643,94 @@ def step_install_models(manifest: dict, selected: dict[str, bool], paths: dict,
     warnings: list[str] = []
     downloaded = skipped = already_present = failed = 0
 
+    # ── Detect models already present on a REMOTE ComfyUI server ───
+    # When the user's ComfyUI sits on a different machine (common
+    # Spellcaster setup), the local ``dest.exists()`` check alone
+    # would propose re-downloading everything. Probing
+    # ``/object_info`` gives us the real installed set.
+    server_models: dict[str, set[str]] = {}
+    comfyui_url = getattr(args, 'server_url', '') or ''
+    if comfyui_url and not getattr(args, 'no_server_probe', False):
+        try:
+            from .model_detector import enumerate_server_models
+        except ImportError:
+            try:
+                from model_detector import enumerate_server_models
+            except ImportError:
+                enumerate_server_models = None  # older installer bundles
+        if enumerate_server_models is not None:
+            print(f"  {C_DIM}Probing {comfyui_url} for already-installed "
+                  f"models...{C_RESET}")
+            try:
+                server_models = enumerate_server_models(comfyui_url)
+                counts = {k: len(v) for k, v in server_models.items() if v}
+                if counts:
+                    bits = ", ".join(f"{v} {k}" for k, v in counts.items())
+                    print(f"  {C_GREEN}\u2713 Server has:{C_RESET} {bits}")
+                else:
+                    print(f"  {C_DIM}Server reachable but no loader "
+                          f"responded (ComfyUI still booting?).{C_RESET}")
+            except Exception as e:
+                print(f"  {C_YELLOW}Server probe failed: {e}{C_RESET}")
+
+    # Collect every model the loop will consider so we can run the
+    # Civitai "update available" probe up-front in one batch. Skipped
+    # when --check-updates isn't set, since it costs ~1s per item.
+    civitai_updates: dict[str, dict] = {}
+    if getattr(args, 'check_updates', False):
+        try:
+            from .model_detector import detect_available_updates
+        except ImportError:
+            try:
+                from model_detector import detect_available_updates
+            except ImportError:
+                detect_available_updates = None
+        if detect_available_updates is not None:
+            civ_candidates: list[dict] = []
+            for feat_key, feat in manifest["features"].items():
+                if not selected.get(feat_key, False):
+                    continue
+                for category, items in (feat.get("models") or {}).items():
+                    if not isinstance(items, list):
+                        continue
+                    for item in items:
+                        if (isinstance(item, dict)
+                                and "civitai.com" in (item.get("page_url") or "")):
+                            civ_candidates.append(item)
+            if civ_candidates:
+                print(f"\n  {C_DIM}Checking Civitai for newer versions of "
+                      f"{len(civ_candidates)} model(s)...{C_RESET}")
+                try:
+                    rows = detect_available_updates(
+                        civ_candidates,
+                        civitai_key=getattr(args, 'civitai_key', '') or '')
+                    for r in rows:
+                        if r.get("path"):
+                            civitai_updates[r["path"]] = r
+                except Exception as e:
+                    print(f"  {C_YELLOW}Update probe failed: {e}{C_RESET}")
+
+    _category_by_subdir = {
+        "checkpoints": "checkpoints", "loras": "loras",
+        "controlnet": "controlnet", "vae": "vae",
+        "clip": "clip", "unet": "unet",
+        "upscale_models": "upscale_models",
+    }
+
+    def _already_on_server(rel_path: str, cat_hint: str) -> bool:
+        """True when the manifest entry's basename is in the server's
+        loader enumeration. Tries the hinted category first, then
+        every category \u2014 users re-organise folders."""
+        if not server_models:
+            return False
+        base = rel_path.replace("\\", "/").rsplit("/", 1)[-1].lower()
+        cats = [cat_hint] + [c for c in server_models if c != cat_hint]
+        for cat in cats:
+            for f in server_models.get(cat) or ():
+                if f.replace("\\", "/").rsplit("/", 1)[-1].lower() == base:
+                    return True
+        return False
+
     for feat_key, feat in manifest["features"].items():
         if not selected.get(feat_key, False):
             continue
@@ -2693,10 +2781,38 @@ def step_install_models(manifest: dict, selected: dict[str, bool], paths: dict,
             else:
                 dest = models_dir / rel_path
 
+            # Category hint for the server-side check. Manifest paths
+            # like "checkpoints/SDXL/Base/foo.safetensors" lead with
+            # the category name \u2014 strip it off for the hint.
+            _cat_hint = rel_path.split("/", 1)[0] if "/" in rel_path else ""
+            if server_models and _already_on_server(rel_path, _cat_hint):
+                print(f"  {C_GREEN}\u2713 Already on ComfyUI server:{C_RESET} "
+                      f"{rel_path}")
+                already_present += 1
+                continue
+
             if dest.exists() and not args.dry_run:
                 print(f"  {C_GREEN}✓ Already present:{C_RESET} {rel_path}")
                 already_present += 1
                 continue
+
+            # Update-available path: --check-updates populated
+            # ``civitai_updates`` with fresher version URLs when the
+            # manifest was out of date. Swap in the latest URL so the
+            # download below picks up v2/v3/etc. rather than the
+            # baked manifest version.
+            _upd = civitai_updates.get(rel_path)
+            if _upd and _upd.get("status") == "update_available" and _upd.get("latest_url"):
+                old_url = model.get("url")
+                model = dict(model)  # don't mutate the shared manifest
+                model["url"] = _upd["latest_url"]
+                if _upd.get("latest_size_mb"):
+                    model["size_mb"] = _upd["latest_size_mb"]
+                print(f"  {C_CYAN}\u21c8 Update available:{C_RESET} {rel_path}  "
+                      f"{C_DIM}({_upd.get('note', '')}){C_RESET}")
+                if not old_url:
+                    print(f"    {C_DIM}previously required manual download, "
+                          f"now auto-fetching latest.{C_RESET}")
 
             url = model.get("url")
             note = model.get("note", "")
@@ -3799,6 +3915,14 @@ def build_arg_parser():
                         help="Skip model downloads (install plugins and nodes only)")
     parser.add_argument("--skip-nodes", action="store_true",
                         help="Skip custom node installation")
+    parser.add_argument("--check-updates", action="store_true",
+                        help="Probe Civitai for newer versions of every manifest "
+                             "entry and propose the latest download URL. Slower "
+                             "(one API call per model) but keeps you current.")
+    parser.add_argument("--no-server-probe", action="store_true",
+                        help="Skip the ComfyUI /object_info enumeration. Use when "
+                             "the server is unreachable and you want to fall back "
+                             "to local-dir checks only.")
     parser.add_argument("--llm-url", default="",
                         help="Local LLM server URL (KoboldCpp/Ollama). Empty = skip prompt enhancement")
     parser.add_argument("--mode", choices=("guided", "expert"), default=None,
