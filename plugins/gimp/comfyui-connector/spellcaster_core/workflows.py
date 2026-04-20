@@ -311,7 +311,8 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
                   # so only the described region visibly changes. Requires
                   # SAM3Segment on the server (preflight at the caller side).
                   sam3_prompt=None, sam3_invert=False, sam3_confidence=0.6,
-                  sam3_expand=4, sam3_blur=4):
+                  sam3_expand=4, sam3_blur=4, enhance=True,
+                  quality="balanced"):
     """Image-to-image generation (standard diffusion variant).
 
     Loads an input image, encodes it to latent space, diffuses it with a prompt,
@@ -396,10 +397,17 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
     if is_klein:
         ref_pos = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="60")
         ref_neg = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="61")
-        guider_id = nf.cfg_guider(model_ref, [ref_pos, 0], [ref_neg, 0],
+        # Optional Flux2Klein-Enhancer chain. Wraps the model so the guider
+        # AND scheduler receive the enhanced ref; no-op when enhance=False
+        # or when the custom nodes aren't present on the server (preflight
+        # surfaces that upstream).
+        guider_model = (_klein_enhance_model(nf, model_ref, [pos_id, 0],
+                                              node_base_id=880)
+                        if enhance else model_ref)
+        guider_id = nf.cfg_guider(guider_model, [ref_pos, 0], [ref_neg, 0],
                                   preset.get("cfg", 1.0), node_id="62")
         sampler_sel = nf.ksampler_select("euler", node_id="63")
-        sched_id = nf.basic_scheduler(model_ref, preset.get("steps", 20),
+        sched_id = nf.basic_scheduler(guider_model, preset.get("steps", 20),
                                        preset.get("denoise", 0.65),
                                        scheduler="simple", node_id="64")
         noise_id = nf.random_noise(seed, node_id="65")
@@ -408,9 +416,18 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
             [sched_id, 0], [enc_id, 0], node_id="6",
         )
     else:
+        # Flux 1 Dev / Kontext: apply the foundational boosters
+        # (ModelSamplingFlux + FluxGuidance). No-op on other arches.
+        model_ref, pos_ref_boosted = _apply_flux1_boosters(
+            nf, model_ref, [pos_id, 0], preset, node_base_id=740)
+        # Generic quality wrapping (PAG, RescaleCFG, FreeU_V2 — gated per arch).
+        sampler_cfg = preset.get("cfg")
+        model_ref = _apply_quality_boost(
+            nf, model_ref, arch_key,
+            quality=quality, cfg=sampler_cfg, node_base_id=700)
         samp_id = nf.ksampler(
             model_ref,
-            [pos_id, 0], [neg_id, 0], [enc_id, 0],
+            pos_ref_boosted, [neg_id, 0], [enc_id, 0],
             seed, preset["steps"], preset["cfg"],
             preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
             preset.get("denoise", 0.65),
@@ -468,7 +485,8 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
 #  txt2img — Text-to-image generation
 # ═══════════════════════════════════════════════════════════════════════════
 
-def build_txt2img(preset, prompt_text, negative_text, seed, loras=None):
+def build_txt2img(preset, prompt_text, negative_text, seed, loras=None,
+                   enhance=True, quality="balanced"):
     """Text-to-image generation (from scratch).
 
     Generates an image entirely from a text prompt by starting with an empty
@@ -515,12 +533,17 @@ def build_txt2img(preset, prompt_text, negative_text, seed, loras=None):
     empty_id = nf.empty_latent_image(preset["width"], preset["height"],
                                       batch_size=1, node_id="4")
 
-    is_klein = preset.get("arch") == "flux2klein"
+    arch_key = preset.get("arch", "sdxl")
+    is_klein = arch_key == "flux2klein"
     if is_klein:
-        guider_id = nf.cfg_guider(model_ref, [pos_id, 0], [neg_id, 0],
+        # Optional Flux2Klein-Enhancer chain (same contract as build_img2img).
+        guider_model = (_klein_enhance_model(nf, model_ref, [pos_id, 0],
+                                              node_base_id=870)
+                        if enhance else model_ref)
+        guider_id = nf.cfg_guider(guider_model, [pos_id, 0], [neg_id, 0],
                                   preset.get("cfg", 1.0), node_id="60")
         sampler_sel = nf.ksampler_select("euler", node_id="61")
-        sched_id = nf.basic_scheduler(model_ref, preset.get("steps", 20),
+        sched_id = nf.basic_scheduler(guider_model, preset.get("steps", 20),
                                        1.0, scheduler="simple", node_id="62")
         noise_id = nf.random_noise(seed, node_id="63")
         samp_id = nf.sampler_custom_advanced(
@@ -528,9 +551,14 @@ def build_txt2img(preset, prompt_text, negative_text, seed, loras=None):
             [sched_id, 0], [empty_id, 0], node_id="5",
         )
     else:
+        model_ref, pos_ref_boosted = _apply_flux1_boosters(
+            nf, model_ref, [pos_id, 0], preset, node_base_id=745)
+        model_ref = _apply_quality_boost(
+            nf, model_ref, arch_key,
+            quality=quality, cfg=preset.get("cfg"), node_base_id=705)
         samp_id = nf.ksampler(
             model_ref,
-            [pos_id, 0], [neg_id, 0], [empty_id, 0],
+            pos_ref_boosted, [neg_id, 0], [empty_id, 0],
             seed, preset["steps"], preset["cfg"],
             preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
             1.0,  # denoise always 1.0 for txt2img
@@ -1063,6 +1091,112 @@ def _klein_enhance_model(nf, model_ref, conditioning_ref,
         [balance, 0], conditioning_ref, strength=color_anchor_strength,
         node_id=str(node_base_id + 2))
     return [anchor, 0]
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  GENERIC QUALITY BOOSTERS — per-architecture, sampler-agnostic
+# ═══════════════════════════════════════════════════════════════════════════
+# These helpers attach ComfyUI-core quality nodes (PAG, RescaleCFG,
+# FreeU_V2) + Flux-specific samplings (ModelSamplingFlux, FluxGuidance)
+# to a builder's model/conditioning chain.
+#
+# Design:
+#   * quality="fast"     -> no extras, return model unchanged
+#   * quality="balanced" -> PAG on SDXL/Illustrious/Flux1/Chroma/Kontext,
+#                           RescaleCFG when cfg >= 7.5 on SD variants.
+#                           Default for all builders that accept `quality`.
+#   * quality="max"      -> balanced + FreeU_V2 on SDXL realistic.
+#
+#   Klein (flux2klein) is intentionally excluded from all PAG/FreeU wrapping
+#   because its custom sampler pipeline already carries the Flux2Klein-Enhancer
+#   chain, and PAG interacts badly with the ReferenceLatent+CFGGuider stack.
+#
+#   SD1.5 is excluded from PAG (low benefit, sometimes destabilises) — gets
+#   only RescaleCFG.
+#
+# Node-ID tranche for quality boosts: 700-739 (disjoint from the 770-999
+# enhancer tranche). Each builder passes its own node_base_id in that range.
+
+_QUALITY_ARCHES_PAG = {"sdxl", "illustrious", "flux1dev", "chroma", "flux_kontext"}
+_QUALITY_ARCHES_RESCALE = {"sd15", "sdxl", "illustrious"}
+_QUALITY_ARCHES_FREEU = {"sdxl"}  # not illustrious — FreeU hurts anime
+
+
+def _apply_quality_boost(nf, model_ref, arch_key, *,
+                          quality="balanced", cfg=None,
+                          node_base_id=700):
+    """Apply architecture-appropriate quality boosters to a MODEL ref.
+
+    Called by builders RIGHT BEFORE the guider/sampler consumes the model,
+    AFTER any architecture-specific patching (LoRA, enhancer, IPAdapter,
+    ModelSamplingFlux). Returns the updated ref (or the original when
+    no boosters fire).
+
+    Args:
+      nf: NodeFactory
+      model_ref: [node_id, slot] MODEL ref to wrap.
+      arch_key: architecture key from preset (e.g. "sdxl", "flux1dev").
+      quality: "fast" | "balanced" | "max"
+      cfg: float guidance value; used to decide whether to wire RescaleCFG.
+      node_base_id: starting node id in the 700-739 tranche.
+    """
+    if quality == "fast" or arch_key == "flux2klein":
+        return model_ref
+    nid = node_base_id
+
+    if arch_key in _QUALITY_ARCHES_PAG:
+        pag = nf.perturbed_attention_guidance(model_ref, scale=3.0,
+                                               node_id=str(nid))
+        model_ref = [pag, 0]
+        nid += 1
+
+    if cfg is not None and cfg >= 7.5 and arch_key in _QUALITY_ARCHES_RESCALE:
+        rc = nf.rescale_cfg(model_ref, multiplier=0.7, node_id=str(nid))
+        model_ref = [rc, 0]
+        nid += 1
+
+    if quality == "max" and arch_key in _QUALITY_ARCHES_FREEU:
+        fu = nf.freeu_v2(model_ref, node_id=str(nid))
+        model_ref = [fu, 0]
+        nid += 1
+
+    return model_ref
+
+
+def _apply_flux1_boosters(nf, model_ref, pos_cond_ref, preset, *,
+                           node_base_id=740):
+    """Apply Flux 1 Dev foundational boosters:
+
+      * ModelSamplingFlux — per-resolution sigma shift. Wraps MODEL.
+      * FluxGuidance      — guidance scale injection. Wraps CONDITIONING.
+
+    Flux 1 Dev / Kontext quality is noticeably worse without these. Call on
+    the non-Klein Flux branch of every builder that generates with
+    arch_key in ("flux1dev", "flux_kontext").
+
+    Returns (new_model_ref, new_pos_cond_ref).
+    """
+    arch_key = preset.get("arch")
+    if arch_key not in ("flux1dev", "flux_kontext"):
+        return model_ref, pos_cond_ref
+
+    width = preset.get("width", 1024)
+    height = preset.get("height", 1024)
+    # Flux-paper defaults: max_shift=1.15, base_shift=0.5
+    max_shift = preset.get("flux_max_shift", 1.15)
+    base_shift = preset.get("flux_base_shift", 0.5)
+    ms = nf.model_sampling_flux(model_ref, max_shift=max_shift,
+                                 base_shift=base_shift,
+                                 width=width, height=height,
+                                 node_id=str(node_base_id))
+    model_ref = [ms, 0]
+
+    # FluxGuidance wraps the POSITIVE conditioning; negative stays untouched.
+    # Canonical value is 3.5 for Flux 1 Dev, user can override via preset.
+    guidance = preset.get("flux_guidance", 3.5)
+    fg = nf.flux_guidance(pos_cond_ref, guidance, node_id=str(node_base_id + 1))
+    pos_cond_ref = [fg, 0]
+    return model_ref, pos_cond_ref
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1610,7 +1744,8 @@ def build_detail_hallucinate(image_filename, upscale_model, preset,
                               controlnet=None, controlnet_2=None,
                               guide_modes=None,
                               sam3_prompt=None, sam3_invert=False,
-                              sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
+                              sam3_confidence=0.6, sam3_expand=4, sam3_blur=4,
+                              enhance=True, quality="balanced"):
     """Super-resolution with detail hallucination via img2img diffusion.
 
     When sam3_prompt is set, the transform is composited back onto the original
@@ -1720,10 +1855,13 @@ def build_detail_hallucinate(image_filename, upscale_model, preset,
     if is_klein:
         ref_pos = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="60")
         ref_neg = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="61")
-        guider_id = nf.cfg_guider(model_ref, [ref_pos, 0], [ref_neg, 0],
+        guider_model = (_klein_enhance_model(nf, model_ref, [pos_id, 0],
+                                              node_base_id=780)
+                        if enhance else model_ref)
+        guider_id = nf.cfg_guider(guider_model, [ref_pos, 0], [ref_neg, 0],
                                   cfg, node_id="62")
         sampler_sel = nf.ksampler_select("euler", node_id="63")
-        sched_id = nf.basic_scheduler(model_ref, steps or preset.get("steps", 20),
+        sched_id = nf.basic_scheduler(guider_model, steps or preset.get("steps", 20),
                                        denoise, scheduler="simple", node_id="64")
         noise_id = nf.random_noise(seed, node_id="65")
         samp_id = nf.sampler_custom_advanced(
@@ -1731,9 +1869,14 @@ def build_detail_hallucinate(image_filename, upscale_model, preset,
             [sched_id, 0], [enc_id, 0], node_id="8",
         )
     else:
+        model_ref, pos_boosted = _apply_flux1_boosters(
+            nf, model_ref, [pos_id, 0], preset, node_base_id=640)
+        model_ref = _apply_quality_boost(
+            nf, model_ref, arch_key,
+            quality=quality, cfg=cfg, node_base_id=600)
         samp_id = nf.ksampler(
             model_ref,
-            [pos_id, 0], [neg_id, 0], [enc_id, 0],
+            pos_boosted, [neg_id, 0], [enc_id, 0],
             seed, steps or preset["steps"], cfg,
             preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
             denoise, node_id="8",
@@ -1784,7 +1927,8 @@ def build_colorize(image_filename, preset, prompt_text, negative_text, seed,
                     controlnet_2=None, guide_modes=None, loras=None,
                     lineart_models=None,
                     sam3_prompt=None, sam3_invert=False,
-                    sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
+                    sam3_confidence=0.6, sam3_expand=4, sam3_blur=4,
+                    enhance=True, quality="balanced"):
     """Colorize B&W photo. Drop-in for _build_colorize().
 
     lineart_models: CONTROLNET_LINEART_MODELS dict from main plugin.
@@ -1842,10 +1986,13 @@ def build_colorize(image_filename, preset, prompt_text, negative_text, seed,
     if is_klein:
         ref_pos = nf.reference_latent([cn_apply_id, 0], [enc_id, 0], node_id="60")
         ref_neg = nf.reference_latent([cn_apply_id, 1], [enc_id, 0], node_id="61")
-        guider_id = nf.cfg_guider(model_ref, [ref_pos, 0], [ref_neg, 0],
+        guider_model = (_klein_enhance_model(nf, model_ref, [pos_id, 0],
+                                              node_base_id=790)
+                        if enhance else model_ref)
+        guider_id = nf.cfg_guider(guider_model, [ref_pos, 0], [ref_neg, 0],
                                   cfg or preset.get("cfg", 1.0), node_id="62")
         sampler_sel = nf.ksampler_select("euler", node_id="63")
-        sched_id = nf.basic_scheduler(model_ref, steps or preset.get("steps", 20),
+        sched_id = nf.basic_scheduler(guider_model, steps or preset.get("steps", 20),
                                        denoise, scheduler="simple", node_id="64")
         noise_id = nf.random_noise(seed, node_id="65")
         samp_id = nf.sampler_custom_advanced(
@@ -1853,9 +2000,17 @@ def build_colorize(image_filename, preset, prompt_text, negative_text, seed,
             [sched_id, 0], [enc_id, 0], node_id="9",
         )
     else:
+        # Positive here is the CN-augmented conditioning; FluxGuidance
+        # (if applicable) wraps that just like a raw positive.
+        model_ref, pos_boosted = _apply_flux1_boosters(
+            nf, model_ref, [cn_apply_id, 0], preset, node_base_id=645)
+        model_ref = _apply_quality_boost(
+            nf, model_ref, arch_key,
+            quality=quality, cfg=cfg or preset.get("cfg"),
+            node_base_id=605)
         samp_id = nf.ksampler(
             model_ref,
-            [cn_apply_id, 0], [cn_apply_id, 1], [enc_id, 0],
+            pos_boosted, [cn_apply_id, 1], [enc_id, 0],
             seed, steps or preset["steps"], cfg or preset["cfg"],
             preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
             denoise, node_id="9",
@@ -1891,7 +2046,7 @@ def build_colorize(image_filename, preset, prompt_text, negative_text, seed,
 def build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
                           preset, prompt, negative, seed, width, height,
                           steps, cfg, sampler, scheduler, cn_strength=0.8,
-                          loras=None):
+                          loras=None, enhance=True, quality="balanced"):
     """Text-to-image generation with ControlNet spatial constraint.
 
     Generates an image from scratch (empty latent) with spatial guidance from
@@ -1981,10 +2136,13 @@ def build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
     empty_id = nf.empty_latent_image(width, height, 1, node_id="8")
     is_klein = preset.get("arch") == "flux2klein"
     if is_klein:
-        guider_id = nf.cfg_guider(model_ref, [cn_apply_id, 0], [cn_apply_id, 1],
+        guider_model = (_klein_enhance_model(nf, model_ref, [pos_id, 0],
+                                              node_base_id=800)
+                        if enhance else model_ref)
+        guider_id = nf.cfg_guider(guider_model, [cn_apply_id, 0], [cn_apply_id, 1],
                                   cfg, node_id="60")
         sampler_sel = nf.ksampler_select("euler", node_id="61")
-        sched_id = nf.basic_scheduler(model_ref, steps, 1.0,
+        sched_id = nf.basic_scheduler(guider_model, steps, 1.0,
                                        scheduler="simple", node_id="62")
         noise_id = nf.random_noise(seed, node_id="63")
         samp_id = nf.sampler_custom_advanced(
@@ -2369,7 +2527,8 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
                    negative_text, seed, loras=None,
                    controlnet=None, controlnet_2=None, guide_modes=None,
                    sam3_prompt=None, sam3_invert=False,
-                   sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
+                   sam3_confidence=0.6, sam3_expand=4, sam3_blur=4,
+                   enhance=True, quality="balanced"):
     """Inpainting: regenerate masked region using diffusion.
 
     Selectively regenerates only the masked area of an image while preserving
@@ -2481,10 +2640,14 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
     if is_klein:
         ref_pos = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="60")
         ref_neg = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="61")
-        guider_id = nf.cfg_guider(model_ref, [ref_pos, 0], [ref_neg, 0],
+        # Optional Flux2Klein-Enhancer chain (same contract as build_img2img).
+        guider_model = (_klein_enhance_model(nf, model_ref, [pos_id, 0],
+                                              node_base_id=890)
+                        if enhance else model_ref)
+        guider_id = nf.cfg_guider(guider_model, [ref_pos, 0], [ref_neg, 0],
                                   preset.get("cfg", 1.0), node_id="62")
         sampler_sel = nf.ksampler_select("euler", node_id="63")
-        sched_id = nf.basic_scheduler(model_ref, preset.get("steps", 20),
+        sched_id = nf.basic_scheduler(guider_model, preset.get("steps", 20),
                                        preset.get("denoise", 0.65),
                                        scheduler="simple", node_id="64")
         noise_id = nf.random_noise(seed, node_id="65")
@@ -2493,9 +2656,20 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
             [sched_id, 0], [masked_id, 0], node_id="8",
         )
     else:
+        # Differential diffusion smooths the boundary between masked and
+        # preserved pixels. Wires on every non-Klein inpaint path — the
+        # node is ComfyUI core and strictly improves edge quality.
+        dd_id = nf.differential_diffusion(model_ref, node_id="80")
+        model_ref = [dd_id, 0]
+        # Flux1 boosters + generic quality wrap.
+        model_ref, pos_ref_boosted = _apply_flux1_boosters(
+            nf, model_ref, [pos_id, 0], preset, node_base_id=750)
+        model_ref = _apply_quality_boost(
+            nf, model_ref, arch_key,
+            quality=quality, cfg=preset.get("cfg"), node_base_id=710)
         samp_id = nf.ksampler(
             model_ref,
-            [pos_id, 0], [neg_id, 0], [masked_id, 0],
+            pos_ref_boosted, [neg_id, 0], [masked_id, 0],
             seed, preset["steps"], preset["cfg"],
             preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
             preset.get("denoise", 0.65), node_id="8",
@@ -2537,7 +2711,7 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
 
 def build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
                     left, top, right, bottom, feathering, loras=None,
-                    controlnet=None, guide_modes=None):
+                    controlnet=None, guide_modes=None, quality="balanced"):
     """Canvas extension via outpainting.
 
     Extends an image beyond its original boundaries by generating new content
@@ -2661,9 +2835,18 @@ def build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
                                          pos_id="2", neg_id="3")
         enc_id = nf.vae_encode(padded_ref, vae_ref, node_id="6")
         masked_id = nf.set_latent_noise_mask([enc_id, 0], [pad_id, 1], node_id="7")
+        # Differential diffusion for smoother pad/original boundary.
+        dd_id = nf.differential_diffusion(model_ref, node_id="81")
+        model_ref = [dd_id, 0]
+        # Flux1 boosters + quality wrap (no-op on non-Flux1 / non-SDXL).
+        model_ref, pos_ref_boosted = _apply_flux1_boosters(
+            nf, model_ref, [pos_id, 0], preset, node_base_id=755)
+        model_ref = _apply_quality_boost(
+            nf, model_ref, arch_key,
+            quality=quality, cfg=preset.get("cfg"), node_base_id=715)
         samp_id = nf.ksampler(
             model_ref,
-            [pos_id, 0], [neg_id, 0], [masked_id, 0],
+            pos_ref_boosted, [neg_id, 0], [masked_id, 0],
             seed, preset["steps"], preset["cfg"],
             preset.get("sampler", "euler"), preset.get("scheduler", "normal"),
             0.85, node_id="8",
@@ -2697,7 +2880,7 @@ def build_faceid_img2img(target_filename, face_ref_filename, preset,
                           faceid_preset="FACEID PLUS V2",
                           lora_strength=0.6, weight=0.85, weight_v2=1.0,
                           denoise=None, steps=None, cfg=None,
-                          loras=None):
+                          loras=None, enhance=True):
     """IPAdapter FaceID img2img. Drop-in for _build_faceid_img2img().
 
     preset: dict with ckpt, arch, width, height, steps, cfg, denoise, sampler, scheduler.
@@ -2739,10 +2922,15 @@ def build_faceid_img2img(target_filename, face_ref_filename, preset,
     if is_klein:
         ref_pos = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="60")
         ref_neg = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="61")
-        guider_id = nf.cfg_guider([faceid_id, 0], [ref_pos, 0], [ref_neg, 0],
+        # Wrap the IPAdapter-patched model with the Klein enhancer so the
+        # final MODEL seen by the guider/scheduler is: FaceID → enhancer.
+        guider_model = (_klein_enhance_model(nf, [faceid_id, 0], [pos_id, 0],
+                                              node_base_id=810)
+                        if enhance else [faceid_id, 0])
+        guider_id = nf.cfg_guider(guider_model, [ref_pos, 0], [ref_neg, 0],
                                   cfg, node_id="62")
         sampler_sel = nf.ksampler_select("euler", node_id="63")
-        sched_id = nf.basic_scheduler([faceid_id, 0], steps, denoise,
+        sched_id = nf.basic_scheduler(guider_model, steps, denoise,
                                        scheduler="simple", node_id="64")
         noise_id = nf.random_noise(seed, node_id="65")
         samp_id = nf.sampler_custom_advanced(
@@ -2771,7 +2959,7 @@ def build_pulid_flux(target_filename, face_ref_filename,
                       pulid_model="pulid_flux_v0.9.1.safetensors",
                       strength=0.9, steps=20, guidance=3.5,
                       denoise=0.65, width=1024, height=1024,
-                      loras=None):
+                      loras=None, enhance=True):
     """PuLID Flux — auto-detects Flux1 vs Flux2 (Klein). Drop-in for _build_pulid_flux().
 
     Flux.1-dev → PulidFlux* nodes
@@ -2834,9 +3022,18 @@ def build_pulid_flux(target_filename, face_ref_filename,
     vae_id = nf.vae_loader(vae_name, node_id="10")
     enc_id = nf.vae_encode([target_id, 0], [vae_id, 0], node_id="11")
 
+    # For Klein (Flux 2), wrap the PuLID-patched model with the
+    # Flux2Klein-Enhancer chain so identity injection and reference
+    # fidelity/color-anchor both fire. Non-Klein (Flux 1 Dev) keeps
+    # the raw PuLID output — enhancer is a no-op outside Klein.
+    sampler_model = [apply_id, 0]
+    if is_flux2 and enhance:
+        sampler_model = _klein_enhance_model(nf, [apply_id, 0], [pos_id, 0],
+                                              node_base_id=840)
+
     # Sample (Flux uses positive for both pos and neg)
     samp_id = nf.ksampler(
-        [apply_id, 0],
+        sampler_model,
         [pos_id, 0], [pos_id, 0],  # Flux: no negative, use same conditioning
         [enc_id, 0],
         seed, steps, guidance, "euler", "simple", denoise, node_id="12",
@@ -4016,7 +4213,8 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
                           controlnet=None, controlnet_2=None,
                           guide_modes=None,
                           sam3_prompt=None, sam3_invert=False,
-                          sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
+                          sam3_confidence=0.6, sam3_expand=4, sam3_blur=4,
+                          enhance=True):
     """Style transfer via IPAdapter. Drop-in for _build_style_transfer().
 
     Pipeline: model stack → IPAdapterUnifiedLoader → IPAdapterAdvanced(style transfer)
@@ -4069,10 +4267,14 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
     if is_klein:
         ref_pos = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="60")
         ref_neg = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="61")
-        guider_id = nf.cfg_guider([ipa_id, 0], [ref_pos, 0], [ref_neg, 0],
+        # Wrap the IPAdapter-patched model: style reference → enhancer.
+        guider_model = (_klein_enhance_model(nf, [ipa_id, 0], [pos_id, 0],
+                                              node_base_id=820)
+                        if enhance else [ipa_id, 0])
+        guider_id = nf.cfg_guider(guider_model, [ref_pos, 0], [ref_neg, 0],
                                   preset.get("cfg", 1.0), node_id="62")
         sampler_sel = nf.ksampler_select("euler", node_id="63")
-        sched_id = nf.basic_scheduler([ipa_id, 0], preset.get("steps", 20),
+        sched_id = nf.basic_scheduler(guider_model, preset.get("steps", 20),
                                        denoise, scheduler="simple", node_id="64")
         noise_id = nf.random_noise(seed, node_id="65")
         samp_id = nf.sampler_custom_advanced(
@@ -4131,7 +4333,7 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
 def build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_text,
                    seed, denoise, cfg, steps, scale_factor, orig_width, orig_height,
                    controlnet=None, controlnet_2=None, guide_modes=None,
-                   loras=None):
+                   loras=None, enhance=True):
     """SeedV2R: upscale + img2img. Drop-in for _build_seedv2r().
 
     For scale > 1x: upscale with model to target factor, then img2img.
@@ -4175,10 +4377,13 @@ def build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_t
     if is_klein:
         ref_pos = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="60")
         ref_neg = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="61")
-        guider_id = nf.cfg_guider(model_ref, [ref_pos, 0], [ref_neg, 0],
+        guider_model = (_klein_enhance_model(nf, model_ref, [pos_id, 0],
+                                              node_base_id=830)
+                        if enhance else model_ref)
+        guider_id = nf.cfg_guider(guider_model, [ref_pos, 0], [ref_neg, 0],
                                   cfg, node_id="62")
         sampler_sel = nf.ksampler_select("euler", node_id="63")
-        sched_id = nf.basic_scheduler(model_ref, steps, denoise,
+        sched_id = nf.basic_scheduler(guider_model, steps, denoise,
                                        scheduler="simple", node_id="64")
         noise_id = nf.random_noise(seed, node_id="65")
         samp_id = nf.sampler_custom_advanced(

@@ -246,6 +246,19 @@ All three talk to the same ComfyUI backend. Every generated asset is visible fro
 
 ---
 
+<details>
+<summary><strong>💎 SillyTavern integration</strong></summary>
+
+<p align="center">
+  <img src="assets/ST.png" alt="SillyTavern — roleplay interface with Spellcaster" width="100%"/>
+</p>
+
+Spellcaster's [SillyTavern plugin](plugins/sillytavern/) turns the roleplay surface into a fourth interface. Slash commands (`/scene`, `/portrait`, `/animate`) render Klein-2 stills and LTX-2 clips in-chat. A round-trip-safe **Character Card Editor** in GIMP lets you paint card art, edit the V2 metadata with LLM-scaffolded best-practice auto-optimization, and save spec-compliant `chara` PNGs without damaging the embedded data. [SillyTavern upstream →](https://github.com/SillyTavern/SillyTavern) · [How it works →](DEEP_DIVE.md#-cross-interface-backbone--every-surface-is-the-same-surface)
+
+</details>
+
+---
+
 ## For people who can't computer
 
 If you can order food on your phone, you can use this. If you once successfully connected a printer on the first try, you're overqualified.

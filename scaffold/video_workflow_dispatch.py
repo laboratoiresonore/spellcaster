@@ -336,21 +336,25 @@ def resolve_wan_preset(preset_key: str, models: dict) -> Optional[dict]:
 
     # CLIP — Wan uses UMT5-XXL. Prefer the fp8 safetensors (canonical
     # ComfyUI reference workflows ship `umt5_xxl_fp8_e4m3fn_scaled`),
-    # then full-precision safetensors, and only fall back to the GGUF
-    # quantization when no safetensors are available. GGUF UMT5 has
-    # known implementation quirks on some ComfyUI releases that
-    # manifest as unconditioned output (blue-with-text artifacts —
-    # the prompt embedding leaks through the VAE as visible pixels
-    # instead of steering the diffusion).
+    # then full-precision safetensors, then the Q8 GGUF, and only if
+    # nothing else exists fall back to Q6. Q3 and Q4 GGUF are
+    # explicitly rejected — live-test on the user's RTX 5060 Ti
+    # proved Q3_K_S produces pure-black WAN output (degenerate text
+    # embeddings). Same bug band spans Q2-Q4 for UMT5. Leave the
+    # legacy "blue-with-text artifacts" note for context; the black
+    # frame is the more common failure.
     clip_pool = models.get("clip", []) + models.get("clip_gguf", [])
     clip = (_pick(clip_pool, {"umt5"}, {"fp8", "xxl", "scaled", "safetensors"},
                   {"gguf", "nsfw"})
             or _pick(clip_pool, {"umt5"}, {"xxl", "fp16", "safetensors"},
                      {"gguf", "nsfw"})
             or _pick(clip_pool, {"umt5"}, {"q8", "xxl"})
-            or _pick(clip_pool, {"umt5"}))
+            or _pick(clip_pool, {"umt5"}, {"q6", "xxl"})
+            or _pick(clip_pool, {"umt5"}, {"q5", "xxl"}))
     if not clip:
-        log.info("resolve_wan_preset(%s): no UMT5 clip found", preset_key)
+        log.info("resolve_wan_preset(%s): no safe UMT5 clip found "
+                 "(Q3/Q4 GGUFs ignored — they produce black WAN output)",
+                 preset_key)
         return None
 
     # VAE — Wan 2.2 A14B models share the Wan 2.1 VAE (16-channel
@@ -656,8 +660,14 @@ def build_native_workflow(preset_key: str, *, prompt: str,
         from spellcaster_core.workflows import (  # type: ignore
             build_wan22_t2v, build_wan_video,
         )
+        # Canon: every build_wan_video call pairs with wan_turbo_kwargs so
+        # the turbo/full-step schedule (steps/cfg/second_step) is the same
+        # across every WAN consumer. See CLAUDE.md §16.4 rule #2.
+        from spellcaster_core import video_presets as _vp  # type: ignore
     except ImportError as e:
         return None, f"spellcaster_core.workflows (R128 builders) missing: {e}"
+
+    _canon = _vp.wan_turbo_kwargs(bool(turbo))
 
     try:
         if task == "t2v":
@@ -675,6 +685,11 @@ def build_native_workflow(preset_key: str, *, prompt: str,
                 prompt_text=prompt, negative_text=negative, seed=seed,
                 width=width, height=height, length=length,
                 fps=fps, turbo=turbo,
+                # Canon turbo/full-step schedule. When turbo=False this
+                # injects steps=30, cfg=3.5, second_step=15 — without these
+                # the preset's turbo defaults leak through and the LoRA-less
+                # full-step path produces black frames (CLAUDE.md §16.2).
+                **_canon,
                 # Pass through user-chosen / caller-chosen quality
                 # knobs. The canonical build_wan_video knows how to
                 # wire each one (face swap via ReActor, RIFE 4× for

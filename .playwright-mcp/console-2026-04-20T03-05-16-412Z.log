@@ -1,0 +1,20 @@
+[     409ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:8002/:0
+[     896ms] [WARNING] No input elements found for key: api_key_comfy_runpod @ http://127.0.0.1:8002/scripts/secrets.js:570
+[     900ms] [WARNING] Unsupported language: en-gb @ http://127.0.0.1:8002/scripts/i18n.js:142
+[    1088ms] [LOG] OpenAI model changed to gpt-4-turbo @ http://127.0.0.1:8002/scripts/openai.js:5145
+[    1790ms] [INFO] Using default TTS Provider settings @ http://127.0.0.1:8002/scripts/extensions/tts/system.js:119
+[    1863ms] [LOG] [QR2] sets:  [QuickReplySet] @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[    1863ms] [LOG] [QR2] settings:  QuickReplySettings @ http://127.0.0.1:8002/scripts/extensions/quick-reply/index.js:18
+[    1882ms] [LOG] [ToolManager] Registered function tool: ToolDefinition @ http://127.0.0.1:8002/scripts/tool-calling.js:288
+[    1882ms] [LOG] [ToolManager] Registered function tool: ToolDefinition @ http://127.0.0.1:8002/scripts/tool-calling.js:288
+[    1882ms] [LOG] [ToolManager] Registered function tool: ToolDefinition @ http://127.0.0.1:8002/scripts/tool-calling.js:288
+[    1883ms] [LOG] [Spellcaster] Extension loaded. ComfyUI: http://<INTERNAL_HOST>:8188 @ http://127.0.0.1:8002/scripts/extensions/third-party/spellcaster-st/index.js:1585
+[    1975ms] [WARNING] Failed to insert focus rule: SyntaxError: Failed to execute 'insertRule' on 'CSSStyleSheet': Failed to parse the rule '::-webkit-scrollbar-track:focus-visible { background-color: rgba(126, 126, 126, 0.2); }'.
+    at http://127.0.0.1:8002/scripts/dynamic-styles.js:144:34
+    at Array.forEach (<anonymous>)
+    at applyDynamicFocusStyles (http://127.0.0.1:8002/scripts/dynamic-styles.js:117:16)
+    at http://127.0.0.1:8002/scripts/dynamic-styles.js:192:13
+    at Array.forEach (<anonymous>)
+    at initDynamicStyles (http://127.0.0.1:8002/scripts/dynamic-styles.js:190:38)
+    at firstLoadInit (http://127.0.0.1:8002/script.js:751:5)
+    at async HTMLDocument.<anonymous> (http://127.0.0.1:8002/script.js:12473:5) @ http://127.0.0.1:8002/scripts/dynamic-styles.js:145

@@ -410,7 +410,10 @@ LTX 2.3's distilled corpus includes subtitled video, so without this the model r
 1. **No parallel detection.** If you see `_detect_wan_preset` / `_detect_ltx_preset` anywhere outside `spellcaster_core/video_presets.py`, delete it and import the canonical one. Same for WAN VAE pairing and turbo kwargs.
 2. **No parallel turbo formula.** Every `build_wan_video(…, turbo=…)` call must pair with `**video_presets.wan_turbo_kwargs(turbo)` OR the caller has a comment explaining why it deviates.
 3. **Preset fields are additive only.** `detect_wan_preset` returns a stable dict shape; code downstream reads by key. Don't rename keys — extend.
-4. **Plugin path:** GIMP / Resolve / Darktable plugins call `build_wan_video` + `build_ltx_video` directly via `spellcaster_core.workflows`, using the detection helpers in `video_presets`. They NEVER hand-roll WAN/LTX workflow JSON.
+4. **Plugin path:**
+   - Python plugins (GIMP `_spellcaster_main.py`, Resolve scripts) call `build_wan_video` + `build_ltx_video` directly via `spellcaster_core.workflows`, paired with `wan_turbo_kwargs`.
+   - Lua / JS / remote plugins (Darktable, SillyTavern) POST to the Guild's `/api/video/shots` endpoints instead — that surface wraps the canon server-side. The GIMP plugin uses `_build_wan_video` (its local wrapper) that applies `wan_turbo_kwargs` itself.
+   - No plugin hand-rolls WAN/LTX workflow JSON. The Darktable plugin's `build_wan_i2v_json` is an emergency escape hatch ONLY — live code goes through `guild_create_shot` → Guild → canon.
 5. **Arch filter does not touch WAN/LTX LoRAs.** The cross-family LoRA filter in `composites.inject_lora_chain` doesn't run on video — video builders call `lora_loader_model_only` directly so WAN-specific LoRAs aren't dropped.
 
 ## File Structure Quick Reference

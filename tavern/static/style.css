@@ -629,8 +629,48 @@ body.is-generating .health-stats .meter-fill {
     box-shadow: 0 0 16px rgba(0,0,0,0.5), 0 0 0 2px rgba(178, 70, 242, 0.5), 0 0 20px var(--accent-glow);
     transform: scale(1.05);
 }
-.avatar-animated { overflow: hidden; position: relative; }
-.avatar-animated video { width: 100%; height: 100%; object-fit: cover; object-position: center top; border-radius: 50%; }
+/* ── Animated avatars — dual-layer still + video ──────────────────────
+   The sidebar has 30+ avatars, each an autoplay-looping <video>. Real
+   Chrome throttles those when the GPU memory budget or the decoder
+   pool fills up, briefly painting a blank frame that completely
+   covers the gradient behind. Result: avatar looks like it "vanished"
+   for a split second every loop / every scroll / every tab refocus.
+   Fix: layer a still <img> underneath the video. The still is
+   ALWAYS visible. The video sits on top at opacity 0 until JS fires
+   `playing` on it (adds .avatar-video-live to the wrapper), then the
+   video fades in + the still fades out. Any pause / stalled / suspend
+   / error / emptied event fades them back the other way. The still
+   is never removed from the DOM, so there is no frame in which the
+   avatar slot is empty. */
+.avatar-animated {
+    overflow: hidden;
+    position: relative;
+}
+.avatar-animated .avatar-still,
+.avatar-animated video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center top;
+    border-radius: 50%;
+    transition: opacity 240ms ease-out;
+}
+.avatar-animated .avatar-still {
+    opacity: 1;
+    z-index: 1;
+}
+.avatar-animated video {
+    background: transparent;
+    opacity: 0;
+    z-index: 2;
+}
+/* `avatar-video-live` is added by app.js when the video fires
+   `playing`, and removed on pause/stalled/suspend/emptied/error/ended.
+   Inside that state, the video is on top and the still is dimmed. */
+.avatar-animated.avatar-video-live video { opacity: 1; }
+.avatar-animated.avatar-video-live .avatar-still { opacity: 0; }
 
 .avatar-small {
     width: 36px; height: 36px; border-radius: 50%;

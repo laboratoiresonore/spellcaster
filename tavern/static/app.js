@@ -3364,18 +3364,29 @@ function _avatarStateForChar(char) {
 function _avatarHtmlForCard(char, gradient) {
     // Returns the inner HTML for a sidebar card's avatar div.
     //
-    // POLICY: when an animated avatar exists, it plays in the sidebar
-    // card AND in the header. The still image (avatar_url) is only a
-    // first-paint fallback + a <video> poster so the slot shows content
-    // before the MP4 buffers. Browsers automatically pause videos that
-    // are off-screen for a lot of layouts, keeping the cost reasonable
-    // even with 30+ wizards in the list.
+    // POLICY: when an animated avatar exists, render BOTH a still <img>
+    // sibling AND the <video>, layered inside the .avatar-animated div.
+    // The still is always in the DOM at opacity 1; the video sits on
+    // top at opacity 0 until it fires `playing`, at which point the
+    // still fades out. On `pause` / `stalled` / `emptied` / `error`
+    // the still fades back in.
+    //
+    // Why: real Chrome aggressively throttles <video> elements when
+    // the tab has many simultaneous autoplay loops (we have 34+ wizards
+    // in the sidebar). A throttled video briefly renders a blank frame
+    // that fully covers the div's background, making the avatar look
+    // "disappeared" for a split second before Chrome resumes decoding.
+    // Layering a persistent still underneath means something visible
+    // is ALWAYS painted there, whether or not the browser feels like
+    // decoding video this tick.
     if (char.animated_url) {
+        const still = char.avatar_url || _PLACEHOLDER_AVATAR_URL;
         const poster = char.avatar_url
             ? ` poster="${char.avatar_url}"` : '';
         return `
             <div class="avatar avatar-animated" style="background: ${gradient};">
-                <video src="${char.animated_url}"${poster} autoplay loop muted playsinline></video>
+                <img class="avatar-still" src="${still}" alt="" loading="lazy" />
+                <video src="${char.animated_url}"${poster} autoplay loop muted playsinline preload="metadata"></video>
             </div>`;
     }
     if (char.avatar_url) {
@@ -3387,6 +3398,58 @@ function _avatarHtmlForCard(char, gradient) {
     return `
         <div class="avatar avatar-placeholder pending-${state}" style="background: ${gradient}; background-image: url('${_PLACEHOLDER_AVATAR_URL}');"></div>`;
 }
+
+// ── Animated-avatar resilience ──────────────────────────────────────
+// Attach playing/stalled/pause/error listeners to every animated
+// avatar's <video> so the layered still PNG fades in whenever the
+// video isn't actively painting frames. Idempotent + delegated so
+// dynamically-inserted cards get wired up automatically.
+function _armAvatarVideo(vid) {
+    if (!vid || vid._avatarArmed) return;
+    vid._avatarArmed = true;
+    const wrap = vid.closest('.avatar-animated');
+    if (!wrap) return;
+    const still = wrap.querySelector('.avatar-still');
+    const show = () => { wrap.classList.remove('avatar-video-live'); };
+    const hide = () => { wrap.classList.add('avatar-video-live'); };
+    // Default state = still visible, video hidden. Becomes "video
+    // live" only after we get a `playing` event, and flips back on
+    // any of the events that signal the video stopped painting.
+    show();
+    vid.addEventListener('playing', hide);
+    vid.addEventListener('pause', show);
+    vid.addEventListener('stalled', show);
+    vid.addEventListener('suspend', show);
+    vid.addEventListener('emptied', show);
+    vid.addEventListener('error', show);
+    vid.addEventListener('ended', show);   // loop=true usually prevents this; defensive
+}
+// One-time mutation observer — arms every new .avatar-animated video.
+(function _watchAvatarVideos() {
+    if (typeof document === 'undefined' || document._avatarObserverAttached) return;
+    document._avatarObserverAttached = true;
+    const arm = (root) => {
+        root.querySelectorAll('.avatar-animated video').forEach(_armAvatarVideo);
+    };
+    // Arm anything already in the DOM
+    arm(document);
+    // And anything that shows up later
+    try {
+        new MutationObserver(records => {
+            for (const r of records) {
+                r.addedNodes.forEach(n => {
+                    if (n.nodeType === 1) {
+                        if (n.matches && n.matches('.avatar-animated video')) {
+                            _armAvatarVideo(n);
+                        } else if (n.querySelectorAll) {
+                            arm(n);
+                        }
+                    }
+                });
+            }
+        }).observe(document.body, { childList: true, subtree: true });
+    } catch (_e) { /* browsers without MutationObserver just get the eager pass */ }
+})();
 
 function _refreshAnimateAllButtonGate() {
     // Disable "Animate All Avatars" while ANY wizard's portrait is
@@ -5267,10 +5330,10 @@ document.getElementById('avatar-generate-now').addEventListener('click', async (
         const data = await response.json();
         if (data.avatar_url) {
             const char = characters.find(c => c.id === activeCharacterId);
-            const refreshUrl = data.avatar_url + "&t=" + new Date().getTime();
-            char.avatar_url = refreshUrl;
+            char.avatar_url = data.avatar_url;
             saveIdentity(char);
-            activeAvatar.style.backgroundImage = `url('${char.avatar_url}')`;
+            const sep = data.avatar_url.includes('?') ? '&' : '?';
+            activeAvatar.style.backgroundImage = `url('${data.avatar_url}${sep}t=${Date.now()}')`;
             renderSidebar(searchInput.value);
             addSystemMessage(`<strong>Avatar Updated!</strong><br>Generated new ${styleKey.replace('_', ' ')} avatar for ${char.name}.`);
         } else if (data.error) {
@@ -5381,12 +5444,12 @@ batchGenerateBtn.addEventListener('click', async () => {
                         if(result.status === 'ok' && result.avatar_url) {
                             const char = characters.find(c => c.id === result.id);
                             if(char && !char._batch_applied) {
-                                const refreshUrl = result.avatar_url + "&t=" + new Date().getTime();
-                                char.avatar_url = refreshUrl;
+                                char.avatar_url = result.avatar_url;
                                 char._batch_applied = true;
                                 saveIdentity(char);
                                 if(char.id === activeCharacterId) {
-                                    activeAvatar.style.backgroundImage = `url('${char.avatar_url}')`;
+                                    const sep = result.avatar_url.includes('?') ? '&' : '?';
+                                    activeAvatar.style.backgroundImage = `url('${result.avatar_url}${sep}t=${Date.now()}')`;
                                 }
                                 renderSidebar(searchInput.value);
                             }
@@ -6033,10 +6096,10 @@ summonCreate.addEventListener('click', async () => {
                 });
                 const aData = await avatarRes.json();
                 if (aData.avatar_url) {
-                    const refreshUrl = aData.avatar_url + "&t=" + new Date().getTime();
-                    newChar.avatar_url = refreshUrl;
+                    newChar.avatar_url = aData.avatar_url;
                     saveIdentity(newChar);
-                    activeAvatar.style.backgroundImage = `url('${newChar.avatar_url}')`;
+                    const sep = aData.avatar_url.includes('?') ? '&' : '?';
+                    activeAvatar.style.backgroundImage = `url('${aData.avatar_url}${sep}t=${Date.now()}')`;
                     renderSidebar(searchInput.value);
                     addSystemMessage(`<strong>Avatar Conjured!</strong><br>${name}'s portrait has been rendered.`);
                 }
