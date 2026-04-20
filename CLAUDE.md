@@ -12,19 +12,24 @@ Spellcaster is **middleware** between ComfyUI and user-facing apps (GIMP, Darkta
 - `workflows.py` — ALL workflow builders (build_img2img, build_klein_*, etc.)
 - `node_factory.py` — ALL ComfyUI node constructors
 - `composites.py` — multi-node building blocks (load_model_stack, inject_lora_chain, etc.)
-- `architectures.py` — architecture registry and ArchConfig
+- `architectures.py` — architecture registry, ArchConfig, `supported_methods` contract (22 archs — see §17)
 - `prompt_enhance.py` — LLM prompt enhancement (all backends)
 - `comfyui_llm.py` — ComfyUI-based LLM text generation
 - `guild_llm.py` — LLM chat abstraction (ComfyUI → KoboldCpp → Ollama)
 - `privacy.py` — server file cleanup (privacy mode)
 - `preflight.py` — workflow validation and node substitution
-- `model_detect.py` — architecture detection from model filename
+- `model_detect.py` — architecture detection + size-aware fallback (§17)
 - `video_presets.py` — **canonical WAN + LTX detection + turbo/mode formulas** (see rule 16)
 - `asset_gallery.py` — **canonical blob store + metadata index** for every generated image/video (see rule 15)
 - `event_bus.py` — cross-interface event fan-out; `<origin>.asset.created` etc.
 - `interface_registry.py` — registered consumer interfaces (GIMP, Resolve, Darktable, SillyTavern, Guild)
 - `mailbox.py` — per-interface pull queues for directed asset delivery
 - `cross_interface.py` — client helper for plugins to publish to inbox/bridge
+- `lora_knowledge.py` — per-LoRA metadata aggregator (Civitai + safetensors + shipped defaults) — see §19
+- `lora_calibration_store.py` — SFW/NSFW calibration-recipe persistence — see §19
+- `lora_scorer.py` — local Ollama multimodal scorer (gemma3:4b default) — see §19
+- `faceswap_health.py` — auto-recovering face-swap guard with crash attribution — see §20
+- `preflight_status.py` — whole-system traffic-light health aggregator — see §20
 
 **If you find yourself writing the same logic in two places:** STOP. Extract it into `spellcaster_core/` and have both consumers import it. The GIMP plugin at `_spellcaster_main.py` and the Guild server at `tavern/server.py` must NEVER have parallel implementations of the same feature.
 
@@ -76,6 +81,19 @@ The canonical source for all shared library code is `comfyui-spellcaster/spellca
 | `comfyui_llm.py`, `guild_llm.py` | LLM chat abstractions |
 | `privacy.py` | Server file cleanup |
 | `asset_gallery.py`, `event_bus.py`, `interface_registry.py`, `mailbox.py`, `cross_interface.py` | Cross-interface backbone (see §15) |
+| `lora_knowledge.py`, `lora_calibration_store.py`, `lora_scorer.py` | LoRA calibration stack (see §19) |
+| `faceswap_health.py`, `preflight_status.py` | Resilience layer (see §20) |
+| `lora_calibrations_sfw.json` | Shipped SFW calibration recipes (PUBLIC repo). NSFW companion lives in `nsfw/lora_calibrations_nsfw.json` and is patched in by `build_nsfw.py` |
+| `events.py` | Typed event schema — dataclass per canonical bus kind (see §17) |
+
+**Pack-root modules (NOT inside `spellcaster_core/`) that also mirror:**
+
+| File | Where | Why |
+|---|---|---|
+| `presence.py` | `comfyui-spellcaster/presence.py` | Peer-discovery broker on ComfyUI (see §17) |
+| `blob_bus.py` | `comfyui-spellcaster/blob_bus.py` | Guild-less asset transport on ComfyUI (see §17) |
+
+Mirror `presence.py` + `blob_bus.py` to `../ComfyUI-Spellcaster/` and `../ComfyUI-Spellcaster-NSFW/` (pack roots, NOT `spellcaster_core/` subdirs). The GIMP dev copy does NOT carry these — plugins that need the routes hit ComfyUI over HTTP, they don't import them.
 
 **After ANY change to the above files:**
 
@@ -162,6 +180,8 @@ Always verify node names against the actual ComfyUI server at `/object_info`.
 
 ### 9. Architecture-Specific Rules
 
+**The authoritative list is `spellcaster_core/architectures.py`**, which registers 22 arch keys (8 fully-built + 14 covering video + SDXL-variants + DiT stubs). See §17 for the full coverage matrix. The table below lists the CORE 8 whose workflow builders are deeply integrated; for any other arch, `get_arch(key)` returns an ArchConfig with correct defaults but callers must check `arch.supports_method(m)` before dispatching.
+
 | Architecture | Supports Negative | Sampler | ControlNet | Enhancer |
 |-------------|-------------------|---------|------------|----------|
 | sd15 | Yes | KSampler | Yes | No |
@@ -177,6 +197,7 @@ Always verify node names against the actual ComfyUI server at `/object_info`.
 - Klein: ALWAYS use CFGGuider + BasicScheduler (not KSampler)
 - Flux/Kontext: NEVER use quality tags ("masterpiece", "8k" etc.)
 - Prompt enhancement: SKIP for flux_kontext (edit instructions) and zit (too fast)
+- **Every workflow builder calls `_assert_method_for_preset(preset, method)` at entry** — raises `UnsupportedMethodError` if the preset's arch doesn't declare `method` in its `supported_methods` tuple. This catches e.g. `build_wan_video` called with an SDXL preset, or `build_txt2img` called with an SD3 stub. See §17.
 
 ### 10. Theme System
 
@@ -221,7 +242,7 @@ git rm --cached path/to/file   # removes from tracking, keeps file locally
 - NEVER use `git add -f` on gitignored files (especially nsfw/)
 - Before pushing, check for accidentally staged personal data
 - Use descriptive commit messages that explain WHY, not just WHAT
-- Always include `Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>`
+- Always include `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>` (bump the version label when the active model changes)
 
 ### 13. Server Restarts During Testing — AUTO-UPDATE WILL CLOBBER UNCOMMITTED WORK
 
@@ -611,6 +632,272 @@ The Wizard Guild's global preset button cycles through **three** session-scoped 
 - The GIMP plugin's `_build_ltx_video` wrapper and `_run_ltx_t2v` use the dialog's explicit mode checkboxes (distilled / two_stage), NOT the Guild mode. GIMP users pick per-run; Guild users pick globally.
 - The scaffold dispatcher's LTX branch respects caller overrides over hint defaults (§16.4 rule #6), so the remapped preset + overrides flow through without further interference.
 
+### 17. Model Coverage & the `supported_methods` contract
+
+**22 architectures are registered** in `spellcaster_core/architectures.py` — up from the original 8. Every arch key the detector (`model_detect.py`) can emit now has a first-class ArchConfig entry, so `get_arch(key)` returns correct defaults instead of silently falling back to SDXL and crashing at dispatch time.
+
+**Fully-built archs** (registered=True + populated `supported_methods`):
+
+| Arch | Default (steps / CFG / res) | Notes |
+|---|---|---|
+| `sd15` | 25 / 7.0 / 512² | Classic, dpmpp_2m karras |
+| `sdxl` | 30 / 6.5 / 1024² | dpmpp_2m_sde karras |
+| `illustrious` | 28 / 5.5 / 1024² | Booru tags, euler_ancestral |
+| `zit` | 6 / 2.0 / 1024² | Z-Image-Turbo distill, 4-6 steps |
+| `flux1dev` | 25 / 3.5 / 1024² | dual CLIP (clip_l + t5xxl) |
+| `flux2klein` | 4 / 1.0 / 1024² | SamplerCustomAdvanced + CFGGuider |
+| `flux_kontext` | 25 / 3.5 / 1024² | edit instructions, no negative |
+| `chroma` | 25 / 3.0 / 1024² | single CLIPLoader type="chroma" |
+| `sdxl_turbo` | 6 / 1.5 / 1024² | euler_ancestral sgm_uniform |
+| `pony` | 30 / 7.0 / 1024² | booru score cascade autoset prompts |
+| `playground` | 30 / 3.0 / 1024² | SDXL backbone, aesthetic tuning |
+| `wan` | 30 / 3.5 / 832×480 | `supported_methods=VIDEO_METHODS` |
+| `ltx` | 30 / 4.0 / 768×512 | Gemma text encoder, VIDEO_METHODS |
+| `seedvr` | 15 / 1.0 / 1280×720 | `supported_methods=("video_upscale",)` |
+
+**Stubs** (`registered=False`, `supported_methods=()`): `sd3`, `sd3_turbo`, `hunyuan_dit`, `pixart`, `auraflow`, `kolors`, `cogvideo`. Detector knows them, defaults are correct, but no builder dispatches them yet — `_assert_method` raises an explicit "detected but not yet scaffolded" error instead of a cryptic runtime crash. Promote a stub by (a) implementing its builder chain, (b) flipping `registered=True`, (c) populating `supported_methods`.
+
+**The `supported_methods` contract:**
+- Canonical method lists: `IMAGE_METHODS`, `VIDEO_METHODS`, `KLEIN_METHODS`, `ALL_IMAGE_METHODS` (import from `architectures.py`).
+- Each ArchConfig's `supported_methods: tuple[str, ...]` lists the methods it can dispatch.
+- **Enforcement is at builder entry** (`workflows.py`): `_assert_method_for_preset(preset, method_name)` is the FIRST line of every core image + video builder. Raises `UnsupportedMethodError` when the preset's arch is registered AND explicitly doesn't support the method, OR when the arch is a stub. Unknown / custom arch keys pass through silently (backward compat for 3rd-party arch_registry entries).
+- **UI gating rides on the same data.** Summon flow, calibration UI, and Chimera's router read `supported_methods` to decide which actions to advertise — no more video wizards listing txt2img buttons that explode at sampler time.
+
+**Size-aware unknown-checkpoint fallback** (`model_detect.py::classify_ckpt_model(name, file_size=None)`):
+  - No keyword match + no size → `sd15` (legacy default).
+  - No keyword match + ≥ 9 GB → `flux1dev`.
+  - No keyword match + ≥ 4.5 GB → `sdxl`.
+  - Keyword rules always win. Size is a fallback only.
+  - `fallback_arch_for_size(bytes)` exposes the heuristic standalone.
+
+**Rule of thumb when adding a new arch:**
+1. Register it in `architectures.py` with correct defaults. Use `registered=True` only when a builder chain actually exists.
+2. Populate `supported_methods` honestly (IMAGE_METHODS / VIDEO_METHODS / ALL_IMAGE_METHODS / custom subset).
+3. New `build_*` function → drop `_assert_method_for_preset(preset, "<method_name>")` as its first body line.
+4. Add a test case in `tests/test_model_coverage.py`.
+
+### 18. GIMP Result Routing — Upscalers Open As a New Image
+
+**Every ComfyUI result downloaded by the GIMP plugin flows through `_import_result_as_layer` in [plugins/gimp/comfyui-connector/_spellcaster_main.py](plugins/gimp/comfyui-connector/_spellcaster_main.py) (via the shared `_apply_mask_mode` wrapper).** That helper decides whether the result becomes a new layer or a new GIMP image — handlers must NOT open their own display.
+
+**The rule — dimensional, not flag-based:**
+
+| Result dims vs. canvas | Outcome |
+|---|---|
+| Larger than canvas on either axis | `Gimp.Display.new(result_image)` — opens as a new GIMP image |
+| Same size or smaller              | Insert as a new top layer on the existing image (scale up to canvas if smaller) |
+| `keep_size=True` caller flag      | Always a layer, centered, never auto-routed (SAM3, normal-map auto-gen) |
+
+**Why dimensional:** one check catches every upscaler automatically — `_run_upscale`, `_run_quick_upscale`, `_run_upscale_blend`, `_run_detail_hallucinate`, `_run_seedv2r` with scale > 1x, `_run_outpaint`, `_run_klein_outpaint`. No per-handler flag needed. Scale-to-fit would have discarded the upscale pass. The "z1 / enhance only" case (scale = 1.0) naturally produces output dims == input dims → stays a layer, which is what the user expects.
+
+**Rules for new handlers:**
+1. Download the result bytes and hand them to `_apply_mask_mode(server, image, data, layer_name, mask_enabled)` — do not call `Gimp.Display.new` yourself.
+2. If your workflow is genuinely same-size-only (face restore, recolour, img2img at canvas dims), the layer path is taken automatically.
+3. If your workflow may return a cropped subject that should overlay at its natural position, call `_import_result_as_layer(..., keep_size=True)` directly — that bypasses the auto-route.
+4. Never add a handler-side dimension check. The helper owns this decision; divergent copies will drift.
+
+**UI text:** if a dialog label claims "Result is imported as a new layer" for a handler whose output may exceed canvas dims, the label is stale — fix it. The upscale-4x dialog label already reflects the dual behavior; mirror that wording when adding similar handlers.
+
+### 19. LoRA Calibration Stack — ✧ Calibration unified studio
+
+The UI button is **✧ Calibration** (`tavern/static/lora_calibration.js`). It merged the old ⚔ Shootouts + ✨ Auto-calibrate entry points into one tabbed modal: **Confirm** (auto-rendered cards grouped by (arch, purpose_group)) / **Compare duplicates** (pending shootout groups; delegates to the legacy shootouts modal via `window.SpellcasterShootout.open()`) / **Stats** (coverage + scorer health + preflight breakdown). The ⚔ Shootouts button injection is disabled in `lora_shootout.js::ensureEntryButton`; the UI stays reachable only from the Compare tab.
+
+**The four-layer knowledge stack:**
+
+1. **`lora_knowledge.py::get_knowledge(name, path=..., user_override=..., use_network=True)`**
+   Merges every source we can cheaply read, in precedence order:
+   - User registry (highest priority — user-confirmed recipes)
+   - `.civitai.info` sidecar next to the LoRA file (A1111 convention)
+   - Safetensors `__metadata__` header (trainer-embedded triggers)
+   - Shipped community defaults (`lora_calibrations_sfw.json` + `lora_calibrations_nsfw.json`)
+   - Civitai public API by SHA-256 hash (one shot, cached forever per hash in `<state_dir>/lora_knowledge_cache.json`)
+   - Heuristic fallbacks keyed on base_model
+   Every populated field records its source in `provenance` so the UI can badge it (civitai / community / user / heuristic).
+
+2. **`lora_calibration_store.py`** — SFW/NSFW split JSON stores.
+   - `sfw_path()` → `comfyui-spellcaster/spellcaster_core/lora_calibrations_sfw.json` (shipped in public repo).
+   - `nsfw_path()` → same dir + `lora_calibrations_nsfw.json`. The NSFW file lives in `nsfw/` in the source tree (gitignored); `nsfw/build_nsfw.py::patch_nsfw_lora_calibrations` copies it into the staged `spellcaster_core/` so the NSFW build ships it.
+   - `write_calibration(name, *, nsfw=bool, ...)` routes to the right store. Classification is `lora_knowledge.classify_nsfw(knowledge, filename)` — Civitai flag OR keyword match on filename/triggers. Conservative by design (false-positive leaks to NSFW store which is private; false-negative would leak NSFW into the public SFW store which is NOT acceptable).
+
+3. **`lora_scorer.py::score_image(image_b64, prompt, *, ollama_url, model="gemma3:4b")`**
+   Posts the rendered sample to a local Ollama multimodal model via `/api/chat` with `format: "json"`. Returns `ScoreResult(ok, score, reason, model, elapsed_ms, error)`. `probe_available()` hits `/api/tags` so the UI can gray out auto-confirm when the model isn't installed. Gracefully returns `ok=False` on any failure — the calibration pipeline proceeds without scoring.
+
+4. **`scaffold/lora_grouping.py`** — the calibration engine.
+   - `resolve_shootout_recipe_for_lora(name, group, arch, ...)` consults `lora_knowledge` and returns `{prompt, negative, strength, sampler, cfg, trigger_words, nsfw, provenance}`.
+   - `render_calibration_sample(server, name, group, arch, models, **opts)` renders ONE sample with that recipe. Opts include `score_with_llm`, `stability_seeds` (1 = default; 3 = opt-in stability check — render at N seeds, median-score picks winner, `unstable=True` flag when score range > 3.0), `sweep_strengths` (opt-in list like `[0.4, 0.7, 1.0]` — runs only when weight provenance is heuristic-only; scorer picks winner; losing images are dropped to keep payload small).
+   - `start_calibration_job(server, targets, models, *, preflight=True, ...)` kicks off a background batch. **Preflight** (default on) renders ONE minimal base sample per unique arch to catch broken pipelines before 50 red error cards stream in. Archs that fail preflight get all their LoRAs moved to `skipped` with the arch-level reason.
+   - **Job persistence**: state serializes to `<state_dir>/calibration_jobs/<job_id>.json` on every update (metadata only — image_b64 is stripped). On Guild restart, `set_calibration_persist_dir()` marks any still-running jobs as `interrupted`. The UI's Confirm tab shows a resume banner when interrupted jobs exist.
+
+**Shipped calibration JSON schema (both SFW and NSFW files share):**
+```json
+{
+  "schema_version": 1,
+  "loras": {
+    "SomeLora.safetensors": {
+      "updated_at": 1700000000,
+      "source": "user_confirm | auto_confirm_llm | auto",
+      "recommended_weight": 0.85,
+      "recommended_sampler": "dpmpp_2m",
+      "recommended_cfg": 7.5,
+      "subject_key": "portrait_f",
+      "trigger_words": ["sinozick style"],
+      "base_model": "sdxl",
+      "sha256": "abc123...",
+      "confirmed_by_user": true,
+      "confirmed_at": 1700000000,
+      "nsfw": false
+    }
+  }
+}
+```
+
+**Server endpoints (all in `tavern/server.py`):**
+- `GET /api/spellcaster/lora/knowledge?name=X` → merged knowledge record
+- `GET /api/spellcaster/lora/calibrate/summary` → confirmed/pending counts + store paths
+- `POST /api/spellcaster/lora/calibrate/auto/start` (body: `{subset: "unconfirmed", use_network, score_with_llm, preflight, stability_seeds, sweep_strengths}`) → spawns job
+- `GET /api/spellcaster/lora/calibrate/auto/status?job=X` → polls samples + skipped + preflight
+- `POST /api/spellcaster/lora/calibrate/auto/cancel?job=X` → sets `cancel_requested` + POSTs ComfyUI `/interrupt` + `/queue {clear:true}`
+- `POST /api/spellcaster/lora/calibrate/confirm` → writes recipe to SFW or NSFW store + flips registry flag
+- `GET /api/spellcaster/lora/calibrate/resumable` / `POST /.../resumable/clear` → interrupted-job metadata + dismiss
+- `GET /api/spellcaster/lora/scorer/probe` → Ollama multimodal availability
+
+### 20. Resilience — Faceswap Auto-Recovery & Preflight Status Dot
+
+Two independent resilience layers landed in the 2026-04 cycle.
+
+#### 20.1 Faceswap auto-recovering guard (`faceswap_health.py`)
+
+comfy-mtb + ReActor face-swap nodes load `inswapper_128.onnx` via ONNX Runtime + TensorRT. When `nvinfer_builder_resource_*.dll` fails to load, the native path crashes ComfyUI with a Windows access violation — Python can't catch it.
+
+The guard wraps every face-swap workflow builder in `workflows.py` (`build_faceswap`, `build_faceswap_model`, `build_faceswap_mtb`, `build_face_restore`, `build_klein_headswap`, `build_photobooth`) via `_faceswap_guard(feature)`. The state machine:
+
+- **`AUTO_ON`** (default) — guard passes; `record_dispatch()` stamps `last_dispatch_ts` for attribution.
+- **Heartbeat** (`tavern/server.py` boot) — background thread pings ComfyUI `/system_stats` every 15s and calls `record_probe(ok)`.
+- **Attribution**: if `record_probe(False)` lands within 60s of a dispatch AND not already auto-disabled → flip `auto_disabled=True`. Next face-swap build raises `FaceswapDisabledError` with a clear message.
+- **Recovery**: after ComfyUI stays reachable continuously for 30 min AND the disable was automatic (not user-forced) AND we haven't escalated → flip `auto_disabled=False` automatically. `state_reason` surfaces the recovery.
+- **Escalation**: after `CRASH_ESCALATION_COUNT` (3) attributed crashes we stop auto-re-enabling. User must call `POST /api/spellcaster/faceswap/reset` or set `faceswap_force_enable: true` in `guild_config.json`.
+- **Persistence**: `set_persist_path(<state_dir>/faceswap_state.json)` at boot; state survives Guild auto-updates (see §13).
+
+**User overrides** (highest precedence, in order):
+- `SPELLCASTER_FACESWAP_DISABLED=1` env var → forced off
+- `faceswap_disabled: true` in `guild_config.json` → forced off
+- `faceswap_force_enable: true` in `guild_config.json` → forced on (bypasses auto-disable for users who fixed TRT and don't want to wait the 30-min stability window)
+
+**Endpoints:** `GET /api/spellcaster/faceswap/health` (full state + run history) + `POST /api/spellcaster/faceswap/reset` (wipe crash history, clear escalation).
+
+**Calibration / Shootouts / Preflight do NOT use face-swap nodes** (verified 2026-04-20 audit) — they route through `build_txt2img` only. The guard is strictly for face-swap / head-swap / photobooth workflows.
+
+#### 20.2 Preflight status dot (`preflight_status.py`)
+
+Small colored dot sits left of the ✧ Calibration button in `chat-shootout-slot`. Traffic light aggregates:
+
+- ComfyUI `/system_stats` reachability
+- Faceswap `get_effective_state()` (red when escalated, yellow when auto_off)
+- Scorer `probe_available()` (yellow when offline)
+- Per-arch render canaries cached in `<state_dir>/preflight_cache.json` (red on failure, yellow when stale > 24h, green when fresh + all passing)
+
+Colour rules live in `_classify_overall()`; first matching rule wins.
+
+**Install-flow trigger**: end of `_setup_flow` in `tavern/server.py` (right after `_setup_marker_done()`) spawns a daemon thread that runs `run_full_preflight(COMFYUI_URL, _preflight_arch_probe, models)` — one minimal render per unique installed arch (skip video archs). Results cache to disk; the dot picks up the verdict on its next 60s poll. User sees green/yellow/red the moment setup ends.
+
+**Endpoints:**
+- `GET /api/spellcaster/preflight/status` → aggregate traffic light + headline + canary list + active run_job (if any)
+- `POST /api/spellcaster/preflight/run` → kick off fresh canaries in a background thread (idempotent while running)
+
+UI-side: tooltip on the dot shows the one-line headline; click opens Calibration → Stats tab which surfaces the full breakdown + "Re-run preflight" button. During a run, the dot shows a spinning ring.
+
+### 21. Summon Archetypes — 5 specialised wizard kinds
+
+The classic Summon flow (pick model → auto-studio → LLM-name) is **path A**. Five archetype kinds sit alongside as **path B**: summon a wizard whose mechanic isn't tied to a single model. UI lives in `tavern/static/app.js` + `tavern/static/index.html` (new step 0 archetype picker + step-arc per-archetype config screen).
+
+**Character-record shape** (persisted in `.guild_state/custom_wizards.json`):
+```json
+{
+  "id": "archetype_<kind>_<slug>",
+  "type": "archetype",
+  "archetype_kind": "forensic|chimera|oracle|lore_keeper|scalpel",
+  "archetype_config": { ... kind-specific ... },
+  "system_prompt": "...",    // pulled from _ARCHETYPE_CATALOGUE in server.py
+  "name", "subtext", "color1", "color2", "personality"
+}
+```
+
+**Per-kind config + runtime endpoint:**
+
+| Kind | Config | Runtime endpoint | Back-end |
+|---|---|---|---|
+| **forensic** | `{}` | `POST /api/archetype/forensic/extract` (body: `image_b64`) | `forge.reverse_engineer_image` parses PNG tEXt chunks for workflow / prompt / seed / LoRAs |
+| **chimera** | `{models: [{name, arch, type, domain}, 2-5 items]}` | `POST /api/archetype/chimera/route` (body: `prompt, char_id`) | Keyword classifier picks the best-domain head per prompt |
+| **oracle** | `{llm_model: "gemma3:4b", ...}` | `POST /api/archetype/oracle/review` (body: `image_b64, prompt, llm_model`) | Delegates to `lora_scorer.score_image` |
+| **lore_keeper** | `{}` | `POST /api/archetype/lore_keeper/query` (body: `query, limit`) | Substring search over `_LORA_REGISTRY` + `lora_calibration_store.load_merged()`; confirmed recipes sort first |
+| **scalpel** | `{base_model: {name, arch, type}}` | `POST /api/archetype/scalpel/plan` (body: `char_id, instruction`) | Verb detection (erase / replace / add) → returns SAM3 chain plan (full dispatch TBD) |
+
+**Summon-side validation** (`_validate_archetype_config` in `tavern/server.py`): Chimera needs 2-5 models; Oracle needs a non-empty `llm_model`; Scalpel needs a `base_model` with `name`; Forensic / Lore-keeper accept empty config. Unknown `archetype_kind` → 400.
+
+**Rule:** when adding a new archetype, update `_ARCHETYPE_CATALOGUE` (server.py) with `icon` + `default_subtext` + `hue` + `system_prompt`, add a per-kind validator branch in `_validate_archetype_config`, wire a runtime endpoint, and add an entry to `SUMMON_ARCHETYPES` in `app.js`. Tests live in `tests/test_summon_archetypes.py`.
+
+### 22. Quality + Speedup Cascade — `quality` and `fast_mode` parameters
+
+**Every image builder that goes through `spellcaster_core.workflows._apply_quality_boost` + `_apply_speedup`** layers boosters on the model ref, gated per-arch. These are the canonical knobs every surface (GIMP preset picker, Darktable Advanced panels, Guild `/api/run_builder`) exposes via two scalars the caller passes to `build_*`:
+
+- `quality`: `"fast"` | `"balanced"` (default) | `"max"`
+- `fast_mode`: `bool` (default `False`)
+- `compile_mode`: `bool` (default `False`; opt-in torch.compile, persistent-server only — 20–40 s warm-up)
+
+**Per-arch cascade (module-level sets in [workflows.py](comfyui-spellcaster/spellcaster_core/workflows.py)):**
+
+| Booster | Set variable | Scope | Applies when |
+|---|---|---|---|
+| CFGZeroStar         | `_QUALITY_ARCHES_CFG_ZERO_STAR` | `{zit, flux1dev, flux_kontext}`                                   | quality ≠ fast AND cfg < 4.5 |
+| PerturbedAttention  | `_QUALITY_ARCHES_PAG`           | `{sdxl, illustrious, flux1dev, chroma, flux_kontext, zit}`         | quality ≠ fast |
+| RescaleCFG          | `_QUALITY_ARCHES_RESCALE`       | `{sd15, sdxl, illustrious}`                                        | cfg ≥ 7.5 |
+| FreeU_V2            | `_QUALITY_ARCHES_FREEU`         | `{sdxl}`                                                           | quality == max |
+| SkipLayerGuidanceDiT| `_QUALITY_ARCHES_SLG`           | `{flux1dev, flux_kontext, zit}`                                    | quality == max |
+| SageAttention       | `_SAGE_ATTENTION_ARCHES`        | `{flux1dev, flux_kontext, flux2klein, zit, wan, ltx, chroma}`      | fast_mode |
+| torch.compile       | (all arches)                    | any                                                                | compile_mode |
+| TeaCache            | explicit list                   | `{flux1dev, flux_kontext, zit}`                                    | fast_mode |
+| DetailDaemon sampler| `_DETAIL_DAEMON_ARCHES`         | `{zit}`                                                            | quality == max (replaces KSampler with SamplerCustomAdvanced) |
+
+**Klein is intentionally excluded from every model-patch booster** — its own `Flux2KleinEnhancer` chain (§8) already handles guidance shaping, and PAG / SLG would conflict with the `ReferenceLatent + CFGGuider` stack. Klein does still receive Sage Attention when `fast_mode=True` (pure attention-backend swap, no guidance interaction).
+
+**Per-arch tunings** (inside `_apply_quality_boost` / `_apply_speedup`):
+- PAG scale: `1.5` on ZIT (distilled cfg=2 hates PAG 3.0), `3.0` elsewhere.
+- SLG scale: `2.0` on ZIT, `3.0` on Flux; layers 7–9 in both streams.
+- TeaCache threshold: `0.3` on ZIT (distilled per-step deltas are larger), `0.4` on Flux.
+- Detail Daemon: `detail_amount=0.1`, `start=0.2`, `end=0.8`, `smooth=True` (muerrilla defaults, community-tested at 6 steps).
+
+**Ordering invariant:** CFGZeroStar fires BEFORE PAG/SLG so subsequent patches stack on the corrected guidance. `_apply_speedup` node-id tranche is `base / base+1 / base+2` = Sage / torch.compile / TeaCache. Callers passing only the legacy `node_id` still get a valid 3-slot tranche computed from it; do NOT remove that fallback.
+
+**Smoke check** for a new arch opt-in: `cd comfyui-spellcaster && python -c "from spellcaster_core import workflows as wf; print('zit' in wf._DETAIL_DAEMON_ARCHES)"`. Full stack coverage lives in [tests/test_quality_boost.py](tests/test_quality_boost.py).
+
+### 23. ControlNet Compatibility Gating — `cn_is_compatible`
+
+**Every UI picker that exposes a ControlNet combobox MUST filter through `spellcaster_core.model_detect.cn_is_compatible`** (or its list wrapper `cn_modes_for_arch`). User report that kicked this off: picking a 3D Normal Map ControlNet on a Klein preset silently failed at sampling because the picker showed every mode regardless of loaded arch.
+
+**The canonical filter (`spellcaster_core/model_detect.py`):**
+- `CN_FORBIDDEN_ARCHES = frozenset({"flux2klein", "flux_kontext", "chroma"})` — these arches see ONLY the "Off" entry, never a real CN mode. §9 architecture matrix is the source of truth.
+- `cn_is_compatible(cn_models, target_arch)` — True iff `cn_models is None` (the synthetic "Off" entry, always available) OR `target_arch` is non-forbidden AND is a key of the `cn_models` dict.
+- `cn_modes_for_arch(modes_dict, target_arch)` — iteration-order-preserving list helper; use this in comboboxes so "Off" stays at index 0.
+
+**UI integration points:**
+- **GIMP** ([`_spellcaster_main.py`](plugins/gimp/comfyui-connector/_spellcaster_main.py)): local `cn_modes_for_arch` wrapper delegates to the canonical helper with an inline fallback (same pattern as `_filter_loras_for_arch`). Both `_cn_mode_combo` and `_cn_mode_combo_2` populate through it. `_refresh_cn_combos()` re-filters on preset change, preserving the user's pick across arch switches when it survives, falling back to Off otherwise. Hooked into `_on_preset_changed` next to the existing LoRA / scene refresh calls.
+- **Darktable** ([`comfyui_connector.lua`](plugins/darktable/comfyui_connector.lua)): `CN_MODEL_MAP` — every ZIT mode routes to the `ZIT_UNION_CN = "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"` constant. Commit `dcfc2aa` fixed a copy-paste bug that pointed every ZIT mode at SDXL canny.
+- **Guild**: delegates to the GIMP/Darktable flows — no standalone CN picker.
+
+**Enforcement at the builder layer:** separate from the UI gate, every `build_*` calls `_assert_method_for_preset` at entry (§17). The UI filter is a usability win; the builder assertion is the safety net for API callers, scaffolds, and anything that bypasses the picker.
+
+**Systematic coverage** ([`tests/test_cn_compat.py`](tests/test_cn_compat.py)): loads `CONTROLNET_GUIDE_MODES` out of the GIMP plugin without importing Gtk (brace-balance walks the dict literal out of the source) and validates every (mode, arch) pair across 14 modes × 20 architectures = 280 pairs. Must pass on every commit that touches CN routing.
+
+### 24. The `/api/run_builder` Bridge — Thin Plugins Into Canonical Builders
+
+**Thin client plugins (Darktable Lua, future Lua/JS surfaces, remote scripts) call `POST /api/run_builder` instead of inlining workflow JSON.** Body: `{"builder": "build_klein_inpaint", "params": {...}, "comfy_url": "..."}`. The Guild routes through `_build_and_dispatch` → `spellcaster_core.workflows.<builder>`, dispatches to ComfyUI, caches the result via `AssetGallery` (§15), and returns canonical `/api/assets/<hash>` URLs.
+
+**Use this path for any new image-edit feature in a non-Python plugin.** Inlining a 200-line workflow JSON DAG in Lua/JS duplicates the canonical builder and guarantees divergence on the next bug fix — precisely the scenario §3 forbids. The Python GIMP plugin imports `spellcaster_core` directly and doesn't need this bridge.
+
+**Canonical example:** the Darktable "Klein Surgical Edits" + "Z-Image-Turbo (Advanced)" panels use `_run_builder(builder_name, params_json)` + `_download_guild_assets(urls, prefix)` helpers in [comfyui_connector.lua](plugins/darktable/comfyui_connector.lua). ~50 Lua lines per feature, zero workflow JSON, bug fixes in `spellcaster_core/workflows.py` reach every client automatically.
+
+**Parameter conventions for Lua/JS callers:** flat keyword shape (`image_filename`, `prompt_text`, `negative_text`, `seed`, `denoise`, `quality`, `fast_mode`, `arch`, `ckpt`, `loras`, `sam3_prompt`). The Guild's `_translate_params` (`tavern/server.py`) handles renames (e.g. `prompt` → `prompt_text`), builds the `preset` dict from flat params + auto-detection, and re-uploads any `/api/assets/<hash>` or `/api/cached_asset/<name>` filenames to ComfyUI before dispatch.
+
 ## File Structure Quick Reference
 
 ```
@@ -626,6 +913,12 @@ spellcaster/
 ├── nsfw/                             ← GITIGNORED — NSFW build system
 │   ├── build_nsfw.py                 ← NSFW build/patch/push script
 │   ├── staging/                      ← Patched SFW copy
-│   └── nsfw_klein_presets.json       ← NSFW presets (NEVER commit to main)
+│   ├── nsfw_klein_presets.json       ← NSFW presets (NEVER commit to main)
+│   └── lora_calibrations_nsfw.json   ← NSFW calibration recipes (§19; patched into NSFW build)
+├── tests/
+│   ├── test_model_coverage.py        ← arch registry + supported_methods enforcement (§17)
+│   ├── test_lora_auto_calibrate.py   ← calibration stack (§19)
+│   ├── test_summon_archetypes.py     ← archetype validators + runtime endpoints (§21)
+│   └── ...                           ← other canonical test harnesses
 └── CLAUDE.md                         ← This file
 ```
