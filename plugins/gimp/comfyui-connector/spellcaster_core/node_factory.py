@@ -236,7 +236,20 @@ class NodeFactory:
     def lora_loader_model_only(self, model_ref, lora_name,
                                strength_model=1.0, node_id=None):
         """LoraLoaderModelOnly — applies LoRA to model only (no CLIP).
+
         Outputs: [0]=MODEL
+
+        **This is the canonical path for WAN/LTX LoRA injection**
+        (CLAUDE.md §16.4 rule #5). Video builders (`build_wan_video`,
+        `build_wan_flf`, `build_wan22_t2v`) call this helper directly
+        rather than going through `composites.inject_lora_chain`,
+        because the arch-family filter in `inject_lora_chain` is
+        tuned for image models (SDXL / Flux / Klein / Chroma / …)
+        and would DROP WAN-specific LoRAs (lightx2v, lightning_i2v,
+        LoRAs tagged with the "wan" arch). For video, the caller is
+        explicitly in charge of picking compatible LoRAs (usually
+        via `video_presets.pick_wan_accel_loras`), so filter-bypass
+        is intentional.
         """
         return self._add("LoraLoaderModelOnly", {
             "model": model_ref,

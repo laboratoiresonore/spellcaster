@@ -314,10 +314,24 @@ _WAN_PRESET_HINTS: Dict[str, Dict[str, Any]] = {
 
 
 def resolve_wan_preset(preset_key: str, models: dict) -> Optional[dict]:
-    """Build a build_wan_video-compatible preset dict from probed model
-    lists. Returns None if we can't find all required models.
+    """Build a build_wan_video-compatible preset dict from probed model lists.
 
-    models: as returned by probe_comfyui_models().
+    **Canon boundary (CLAUDE.md §16.4):**
+      - This is the SCAFFOLD resolver — NOT the canonical
+        `video_presets.detect_wan_preset`. It exists because the
+        scaffold dispatcher must also support T2V (e.g.
+        `preset_key == "wan22_t2v"`), whereas the canonical helper
+        is I2V-only by design.
+      - For the I2V branch we DELEGATE to canon where possible:
+          * VAE pairing → `video_presets.pick_wan_vae`
+          * Accel LoRA pairing → `video_presets.pick_wan_accel_loras`
+      - Only the UNET family picking (token-based `_pick` with
+        hints from `_WAN_PRESET_HINTS`) is local, because the
+        canon refuses T2V outright and the scaffold can't.
+
+    Returns None if we can't find all required models.
+
+    models: as returned by `probe_comfyui_models()`.
     """
     hint = _WAN_PRESET_HINTS.get(preset_key)
     if not hint:
