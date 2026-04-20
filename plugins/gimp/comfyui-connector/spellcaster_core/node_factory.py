@@ -2104,6 +2104,51 @@ class NodeFactory:
             "cache_device": cache_device,
         }, node_id)
 
+    def patch_sage_attention_kj(self, model_ref, *,
+                                  sage_attention="auto",
+                                  allow_compile=False, node_id=None):
+        """PathchSageAttentionKJ — global swap of ComfyUI's attention
+        kernel for SageAttention (a quantised attention impl by
+        thu-ml). 20-30% speedup on transformer-attention models
+        (Flux, Klein, ZIT, Wan, LTX) with negligible quality loss.
+
+        ``sage_attention='auto'`` lets KJNodes pick the best variant
+        for the GPU (sageattn_qk_int8_pv_fp16_cuda on Ada/Lovelace,
+        triton fallback on others). The patch is GLOBAL — once a
+        workflow enables it, every subsequent attention call uses
+        SageAttention until a node with sage_attention='disabled'
+        runs. We always pass 'auto' here; toggling is the caller's
+        responsibility.
+
+        Note the typo in the class name (Pathch, not Patch) — that
+        IS the canonical KJNodes spelling, do not "fix" it.
+
+        Source: kijai/ComfyUI-KJNodes; sageattention package on
+        the ComfyUI server side. Outputs: [0]=MODEL
+        """
+        return self._add("PathchSageAttentionKJ", {
+            "model": model_ref,
+            "sage_attention": sage_attention,
+            "allow_compile": allow_compile,
+        }, node_id)
+
+    def torch_compile_model(self, model_ref, *,
+                              backend="inductor", node_id=None):
+        """TorchCompileModel — wrap a MODEL with torch.compile() so
+        subsequent denoising steps run on a fused graph. First call
+        pays a 20-40s JIT warm-up; subsequent gens are 20-40% faster.
+
+        Best paired with persistent ComfyUI processes (the warm-up
+        cost amortises across many gens). On a one-shot workflow it
+        usually loses to plain eager mode. Caller must opt in.
+
+        Outputs: [0]=MODEL
+        """
+        return self._add("TorchCompileModel", {
+            "model": model_ref,
+            "backend": backend,
+        }, node_id)
+
     # ═══════════════════════════════════════════════════════════════════
     #  VIDEO UPSCALE
     # ═══════════════════════════════════════════════════════════════════

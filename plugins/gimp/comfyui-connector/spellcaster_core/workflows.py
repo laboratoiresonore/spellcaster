@@ -1214,32 +1214,77 @@ def _apply_quality_boost(nf, model_ref, arch_key, *,
     return model_ref
 
 
-def _apply_speedup(nf, model_ref, arch_key, *, fast_mode=False, node_id=None):
-    """Wire TeaCache on the model when fast_mode=True AND the arch
-    benefits. Supported arches: flux1dev, flux_kontext, zit. TeaCache
-    on SDXL/SD1.5 works but the quality trade at rel_l1_thresh=0.4 is
-    more noticeable there (PAG hides its artefacts on transformer-based
-    models). Z-Image-Turbo runs at 6 distilled steps; the cache benefit
-    is smaller per-step but real on repeat-gen workflows (batch, seed
-    sweep, calibration shootouts).
+# Arches whose attention kernel can be safely swapped for SageAttention.
+# All use transformer-attention and benefit from the int8/fp8 kernel.
+# KJNodes' patch is a global swap — every attention call after the
+# patch uses SageAttention until disabled, which is exactly what we
+# want for a fast-mode workflow.
+_SAGE_ATTENTION_ARCHES = {"flux1dev", "flux_kontext", "flux2klein",
+                           "zit", "wan", "ltx", "chroma"}
 
-    The caller MUST have the ComfyUI-TeaCache custom pack installed or
-    the workflow fails at submit with "unknown class_type
-    ApplyTeaCachePatch". Opt-in — default False preserves previous
-    behaviour.
+
+def _apply_speedup(nf, model_ref, arch_key, *, fast_mode=False,
+                    compile_mode=False, node_id=None,
+                    node_base_id=None):
+    """Stack speedups on the model when fast_mode/compile_mode is set
+    AND the arch benefits. Three independent layers, applied in order:
+
+      1. SageAttention swap (fast_mode + transformer-attention arches).
+         Global int8/fp8 attention kernel via KJNodes'
+         PathchSageAttentionKJ — 20-30% throughput at negligible
+         quality cost. Applies to Flux/Klein/ZIT/WAN/LTX/Chroma.
+      2. torch.compile (compile_mode, all arches). Wraps the model
+         with TorchCompileModel(backend="inductor"); first run pays
+         a 20-40s warm-up, subsequent gens are 20-40% faster.
+         Persistent ComfyUI servers only — one-shot workflows lose.
+      3. TeaCache (fast_mode + Flux/Kontext/ZIT). Per-step feature
+         cache via ApplyTeaCachePatch. Bigger win on multi-gen
+         workflows than single shots; rel_l1_thresh 0.3 for ZIT
+         (larger distilled per-step deltas) vs 0.4 for full-step Flux.
+
+    Each layer's failure mode is "submit-time error if its custom pack
+    is missing" — they don't depend on each other. Default off across
+    the board; legacy callers see no behaviour change.
+
+    ``node_id`` is the legacy single-id slot kept for backwards
+    compatibility (used as the TeaCache id when no tranche is given).
+    ``node_base_id`` is the new tranche start (consumed in order:
+    base = sage, base+1 = compile, base+2 = teacache). When both are
+    passed, ``node_base_id`` wins.
     """
-    if not fast_mode:
+    if not fast_mode and not compile_mode:
         return model_ref
-    if arch_key not in ("flux1dev", "flux_kontext", "zit"):
-        return model_ref
-    # Slightly lower threshold for zit — distilled steps already differ
-    # more between adjacent denoising iterations than full-step Flux,
-    # so the cache hits less often at the same threshold. 0.3 keeps
-    # the speedup meaningful without re-introducing artefacts.
-    thresh = 0.3 if arch_key == "zit" else 0.4
-    tc = nf.apply_tea_cache_patch(model_ref, rel_l1_thresh=thresh,
-                                    node_id=node_id)
-    return [tc, 0]
+
+    # Reserve 3 slots in the speedup tranche. Fall back to the legacy
+    # node_id for the TeaCache slot when no tranche was passed (so old
+    # callers that supplied just node_id still get a unique id).
+    base = (node_base_id if node_base_id is not None
+            else (int(node_id) - 2 if node_id is not None and str(node_id).isdigit()
+                  else 562))
+
+    # 1. Sage Attention — fast_mode + transformer-attention arches
+    if fast_mode and arch_key in _SAGE_ATTENTION_ARCHES:
+        sa = nf.patch_sage_attention_kj(model_ref, sage_attention="auto",
+                                          allow_compile=False,
+                                          node_id=str(base))
+        model_ref = [sa, 0]
+
+    # 2. torch.compile — compile_mode, any arch
+    if compile_mode:
+        tcomp = nf.torch_compile_model(model_ref, backend="inductor",
+                                         node_id=str(base + 1))
+        model_ref = [tcomp, 0]
+
+    # 3. TeaCache — fast_mode + Flux/Kontext/ZIT
+    if fast_mode and arch_key in ("flux1dev", "flux_kontext", "zit"):
+        thresh = 0.3 if arch_key == "zit" else 0.4
+        teacache_id = (str(base + 2) if node_base_id is not None
+                       else (node_id if node_id is not None else str(base + 2)))
+        teac = nf.apply_tea_cache_patch(model_ref, rel_l1_thresh=thresh,
+                                         node_id=teacache_id)
+        model_ref = [teac, 0]
+
+    return model_ref
 
 
 _AYS_ARCHES = {"sd15", "sdxl", "illustrious"}
@@ -4767,6 +4812,19 @@ def build_photobooth(ref_filename, prompt_text, seed,
                      swap_model="reswapper_256.onnx",
                      face_restore_model="codeformer-v0.1.0.pth",
                      face_restore_vis=0.9, codeformer_weight=0.6,
+                     # Final-restore pass tuning — visibility controls
+                     # how much of the restored face blends over the
+                     # swap output (1.0 = full restore, 0.0 = no-op),
+                     # codeformer_weight tunes the CodeFormer network
+                     # at that final pass specifically (the stage-2
+                     # weight is shared with ReActor's FaceBoost).
+                     final_restore_vis=1.0, final_restore_weight=0.5,
+                     # Sampler override (default "euler" — matches the
+                     # Klein reference workflow). Advanced users can
+                     # try "dpmpp_2m" or "heun" for different sampling
+                     # characteristics. Scheduler stays flux2_scheduler
+                     # since that's Klein-specific.
+                     sampler_name="euler",
                      transparent=False,
                      klein_models=None):
     """Photobooth: generate passport-style headshots with extreme character fidelity.
@@ -4834,7 +4892,7 @@ def build_photobooth(ref_filename, prompt_text, seed,
     # Sampling at FIXED portrait dimensions (not derived from reference)
     guider_id = nf.cfg_guider(_pb_model, [ref_pos_id, 0], [ref_neg_id, 0],
                               guidance, node_id="20")
-    sampler_id = nf.ksampler_select("euler", node_id="21")
+    sampler_id = nf.ksampler_select(sampler_name or "euler", node_id="21")
     sched_id = nf.flux2_scheduler(steps, STUDIO_FACE_W, STUDIO_FACE_H,
                                    node_id="22")
     noise_id = nf.random_noise(seed, node_id="23")
@@ -4875,8 +4933,8 @@ def build_photobooth(ref_filename, prompt_text, seed,
         [swap_id, 0],
         model=face_restore_model,
         facedetection="retinaface_resnet50",
-        visibility=1.0,
-        codeformer_weight=0.5,
+        visibility=final_restore_vis,
+        codeformer_weight=final_restore_weight,
         node_id="50",
     )
 
@@ -4974,7 +5032,7 @@ def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
                       scale=None, position_x=0.5, position_y=0.5,
                       klein_model_key="Klein 9B", steps=20, denoise=0.25,
                       guidance=1.0, loras=None, klein_models=None,
-                      enhance=True):
+                      enhance=True, sampler_name="euler"):
     """Klein Blend: composite foreground onto background, then harmonize with Klein.
 
     Pipeline: LoadImage(FG) + LoadImage(BG) → AILab_ImageCombiner → Klein
@@ -5038,7 +5096,7 @@ def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
     # Sampler — BasicScheduler with low denoise
     guider_id = nf.cfg_guider(_bl_model, [ref_pos_id, 0], [ref_neg_id, 0],
                               guidance, node_id="30")
-    sampler_id = nf.ksampler_select("euler", node_id="31")
+    sampler_id = nf.ksampler_select(sampler_name or "euler", node_id="31")
     sched_id = nf.basic_scheduler(_bl_model, steps, denoise,
                                    scheduler="simple", node_id="32")
     noise_id = nf.random_noise(seed, node_id="33")
@@ -5203,7 +5261,8 @@ def build_klein_inpaint(image_filename, mask_filename=None, prompt_text="", seed
                         solid_mask_height=1024, loras=None,
                         klein_models=None, enhance=True,
                         sam3_prompt=None, sam3_invert=False,
-                        sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
+                        sam3_confidence=0.6, sam3_expand=4, sam3_blur=4,
+                        sampler_name="euler"):
     """Klein Inpaint: regenerate masked area using FluxGuidance + SetLatentNoiseMask.
 
     Supports three mask sources (precedence top → bottom):
@@ -5286,7 +5345,7 @@ def build_klein_inpaint(image_filename, mask_filename=None, prompt_text="", seed
     # SetLatentNoiseMask already constrains generation to the masked region.
     guider_id = nf.cfg_guider(model_ref, [guided_id, 0], [neg_id, 0],
                               1.0, node_id="30")
-    sampler_id = nf.ksampler_select("euler", node_id="31")
+    sampler_id = nf.ksampler_select(sampler_name or "euler", node_id="31")
     sched_id = nf.basic_scheduler(model_ref, steps, denoise,
                                    scheduler="simple", node_id="32")
     noise_id = nf.random_noise(seed, node_id="33")
@@ -5456,7 +5515,8 @@ def build_klein_scene_img2img(image_filename, prompt_text, seed,
                                klein_model_key="Klein 9B", steps=20,
                                denoise=0.30, guidance=1.0,
                                klein_models=None,
-                               loras=None, enhance=True):
+                               loras=None, enhance=True,
+                               sampler_name="euler"):
     """Klein scene img2img: harmonize a composited scene.
 
     Unlike build_klein_img2img which uses ReferenceLatent (generates from noise
@@ -5503,7 +5563,7 @@ def build_klein_scene_img2img(image_filename, prompt_text, seed,
     # Sampler — BasicScheduler with denoise
     guider_id = nf.cfg_guider(_sc_model, [guided_id, 0], [neg_id, 0],
                               1.0, node_id="30")
-    sampler_id = nf.ksampler_select("euler", node_id="31")
+    sampler_id = nf.ksampler_select(sampler_name or "euler", node_id="31")
     sched_id = nf.basic_scheduler(_sc_model, steps, denoise,
                                    scheduler="simple", node_id="32")
     noise_id = nf.random_noise(seed, node_id="33")
