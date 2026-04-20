@@ -57,6 +57,14 @@ const DEFAULT_SETTINGS = {
     video_backend: 'auto',         // 'auto' | 'wan22' | 'none'
     quality_profile: 'balanced',   // 'fast' | 'balanced' | 'max'
     wizard_completed: false,       // First-run wizard flag; shown once on load
+
+    // R120: auto-drain the cross-interface inbox so assets sent from
+    // GIMP / Resolve / Darktable appear in chat without the user
+    // having to type /sc-inbox. Off by default — an always-on poll
+    // against the Guild is cheap but not zero-cost, and some users
+    // don't use the cross-interface bridge at all.
+    auto_inbox_poll: false,
+    auto_inbox_interval_s: 30,     // Poll cadence when auto_inbox_poll is on
 };
 
 function getSettings() {
@@ -1209,6 +1217,26 @@ function registerSlashCommands() {
 //  Function Tools (LLM-Autonomous Image Generation)
 // ═══════════════════════════════════════════════════════════════════
 
+// LLMs sometimes pass `null`, an empty string, or an object as a
+// "string" argument; some models also produce multi-kilobyte
+// hallucinated descriptions. Normalize here before the value lands in
+// a network payload or a markdown message.
+const _FN_MAX_ARG_CHARS = 2000;
+function _ftString(v) {
+    if (v == null) return '';
+    return String(v).slice(0, _FN_MAX_ARG_CHARS);
+}
+
+// Markdown-safe truncation for labels that land inside `*italic*` /
+// `![alt](...)` constructions. Strips characters that would break out
+// of the markdown token, replaces newlines, caps length.
+function _ftLabel(s, max = 80) {
+    return String(s ?? '')
+        .replace(/[\r\n]+/g, ' ')
+        .replace(/[\[\]()*_`~]/g, '')
+        .slice(0, max);
+}
+
 function registerFunctionTools() {
     const context = getContext();
     if (!context.registerFunctionTool) return;
@@ -1233,23 +1261,24 @@ function registerFunctionTools() {
             required: ['scene_description'],
         },
         action: async (args) => {
+            const desc = _ftString(args && args.scene_description);
+            if (!desc) return 'Scene generation skipped: missing description.';
             try {
                 const settings = getSettings();
                 const result = await spellcasterAPI('/scene', {
-                    description: args.scene_description,
+                    description: desc,
                     width: settings.scene_width,
                     height: settings.scene_height,
                 });
                 if (result.bg_filename && args.set_as_background !== false) {
-                    const ctx = getContext();
                     await SlashCommandParser.commands['bg']?.callback?.(null, result.bg_filename);
                 }
                 if (result.images?.[0]) {
-                    return `![scene](data:image/png;base64,${result.images[0].base64})\n*Scene: ${args.scene_description.substring(0, 80)}...*`;
+                    return `![scene](data:image/png;base64,${result.images[0].base64})\n*Scene: ${_ftLabel(desc)}*`;
                 }
-                return `Scene generated: ${args.scene_description.substring(0, 80)}...`;
+                return `Scene generated: ${_ftLabel(desc)}`;
             } catch (e) {
-                return `Failed to generate scene: ${e.message}`;
+                return `Failed to generate scene: ${e && e.message ? e.message : e}`;
             }
         },
         formatMessage: 'Conjuring scene...',
@@ -1272,16 +1301,18 @@ function registerFunctionTools() {
             required: ['character_description'],
         },
         action: async (args) => {
+            const desc = _ftString(args && args.character_description);
+            if (!desc) return 'Portrait generation skipped: missing description.';
             try {
                 const result = await spellcasterAPI('/portrait', {
-                    description: args.character_description,
+                    description: desc,
                 });
                 if (result.images?.[0]) {
-                    return `![portrait](data:image/png;base64,${result.images[0].base64})\n*${args.character_description.substring(0, 60)}...*`;
+                    return `![portrait](data:image/png;base64,${result.images[0].base64})\n*${_ftLabel(desc, 60)}*`;
                 }
                 return 'Portrait generation failed';
             } catch (e) {
-                return `Failed: ${e.message}`;
+                return `Failed: ${e && e.message ? e.message : e}`;
             }
         },
         formatMessage: 'Painting portrait...',
@@ -1308,8 +1339,11 @@ function registerFunctionTools() {
             required: ['atmosphere'],
         },
         action: async (args) => {
+            const atmosphere = _ftString(args && args.atmosphere);
+            const location = _ftString(args && args.location) || 'scene';
+            if (!atmosphere) return 'Atmosphere change skipped: missing atmosphere.';
             try {
-                const desc = `${args.location || 'scene'}, ${args.atmosphere}, cinematic atmosphere`;
+                const desc = `${location}, ${atmosphere}, cinematic atmosphere`;
                 const settings = getSettings();
                 const result = await spellcasterAPI('/scene', {
                     description: desc,
@@ -1317,12 +1351,11 @@ function registerFunctionTools() {
                     height: settings.scene_height,
                 });
                 if (result.bg_filename) {
-                    const ctx = getContext();
                     await SlashCommandParser.commands['bg']?.callback?.(null, result.bg_filename);
                 }
-                return `Atmosphere set: ${args.atmosphere}`;
+                return `Atmosphere set: ${_ftLabel(atmosphere)}`;
             } catch (e) {
-                return `Failed: ${e.message}`;
+                return `Failed: ${e && e.message ? e.message : e}`;
             }
         },
         formatMessage: 'Shifting atmosphere...',
@@ -1859,7 +1892,7 @@ function renderSettingsPanel() {
 
         <div class="spellcaster-row">
             <label>Background interval (every N messages):</label>
-            <input type="number" id="spellcaster-bg-interval" value="${settings.auto_background_interval}" min="1" max="20" style="width:60px">
+            <input type="number" id="spellcaster-bg-interval" value="${_escape(settings.auto_background_interval)}" min="1" max="20" style="width:60px">
         </div>
 
         <label class="spellcaster-toggle">
@@ -1872,20 +1905,25 @@ function renderSettingsPanel() {
             <span>Auto-cast on startup (slow)</span>
         </label>
 
+        <label class="spellcaster-toggle" title="Poll the Wizard Guild every ${_escape(settings.auto_inbox_interval_s || 30)}s for cross-plugin assets (images sent from GIMP / Resolve / Darktable). New items appear in chat automatically instead of only when you type /sc-inbox. Off by default.">
+            <input type="checkbox" id="spellcaster-auto-inbox" ${settings.auto_inbox_poll ? 'checked' : ''}>
+            <span>Auto-show assets from other apps</span>
+        </label>
+
         <div class="spellcaster-row">
             <label>ComfyUI URL:</label>
-            <input type="text" id="spellcaster-comfyui-url" value="${settings.comfyui_url}" style="width:100%">
+            <input type="text" id="spellcaster-comfyui-url" value="${_escape(settings.comfyui_url)}" style="width:100%">
         </div>
 
         <div class="spellcaster-row">
             <label>Restyle prompt:</label>
-            <textarea id="spellcaster-restyle-prompt" rows="2" style="width:100%">${settings.restyle_prompt}</textarea>
+            <textarea id="spellcaster-restyle-prompt" rows="2" style="width:100%">${_escape(settings.restyle_prompt)}</textarea>
         </div>
 
         <div class="spellcaster-row">
             <label>Restyle denoise (0.3=subtle, 0.7=heavy):</label>
-            <input type="range" id="spellcaster-restyle-denoise" min="0.2" max="0.8" step="0.05" value="${settings.restyle_denoise}">
-            <span id="spellcaster-denoise-val">${settings.restyle_denoise}</span>
+            <input type="range" id="spellcaster-restyle-denoise" min="0.2" max="0.8" step="0.05" value="${_escape(settings.restyle_denoise)}">
+            <span id="spellcaster-denoise-val">${_escape(settings.restyle_denoise)}</span>
         </div>
 
         <div class="spellcaster-commands">
@@ -1940,6 +1978,14 @@ function renderSettingsPanel() {
         document.getElementById('spellcaster-auto-expr')?.addEventListener('change', (e) => {
             settings.auto_expressions = e.target.checked;
             saveSettings();
+        });
+        document.getElementById('spellcaster-auto-inbox')?.addEventListener('change', (e) => {
+            settings.auto_inbox_poll = e.target.checked;
+            saveSettings();
+            // If the user just turned it on, fire one poll right away
+            // so they don't have to wait a full interval to see
+            // anything that's been sitting in the queue.
+            if (e.target.checked) pollInboxOnce().catch(() => {});
         });
         document.getElementById('spellcaster-auto-cast')?.addEventListener('change', (e) => {
             settings.auto_cast = e.target.checked;
@@ -2021,6 +2067,115 @@ function blobToBase64(blob) {
  * Runs after a short delay to not block UI initialization.
  * Skips characters already cast in this session.
  */
+// Auto-inbox poller — when `auto_inbox_poll` is enabled, fetch new
+// cross-interface messages every `auto_inbox_interval_s` seconds and
+// render them as chat messages. Mirrors the /sc-inbox slash-command's
+// output format so the user experience is identical whether they type
+// the command or just let assets appear. Guarded by several layers:
+//   * Off by default — the user has to opt in.
+//   * Skipped when the tab is hidden (document.hidden) — no point
+//     pinging the Guild while the tab is backgrounded.
+//   * Skipped when plugin is disabled.
+//   * Single-flight: the next tick won't start while the previous is
+//     still in flight.
+//   * Clamped interval (10–300 s) so a bad setting can't hammer the
+//     Guild or starve forever.
+let _inboxInFlight = false;
+async function pollInboxOnce() {
+    if (_inboxInFlight) return 0;
+    _inboxInFlight = true;
+    try {
+        const r = await fetch(`${API_BASE}/cross/inbox`, {
+            headers: getContext().getRequestHeaders(),
+        });
+        if (!r.ok) return 0;
+        const data = await r.json();
+        const msgs = (data && data.messages) || [];
+        if (!msgs.length) return 0;
+
+        // Same renderer as /sc-inbox — kept in sync so both paths
+        // produce identical output. Attacker-controlled `source`,
+        // `title`, `image_url` (published by any interface with
+        // Guild bus access) are scrubbed / allowlisted.
+        const _stripMd = (s) => String(s == null ? '' : s)
+            .replace(/[\r\n]+/g, ' ')
+            .replace(/[\[\]()`*_~]/g, '')
+            .slice(0, 200);
+        const _urlOk = (u) => {
+            if (typeof u !== 'string' || !u) return false;
+            if (u.startsWith('/api/')) return true;
+            try {
+                const p = new URL(u);
+                if (p.protocol === 'http:' || p.protocol === 'https:') return true;
+                if (p.protocol === 'data:' && /^data:image\//i.test(u)) return true;
+            } catch { return false; }
+            return false;
+        };
+        const parts = msgs.map((m, i) => {
+            const d = m.data || {};
+            const src = _stripMd(d.source || '?');
+            const title = _stripMd(d.title || m.kind);
+            const rawUrl = d.image_url || '';
+            const url = _urlOk(rawUrl) ? rawUrl.replace(/[\s)]/g, encodeURIComponent) : '';
+            return `**${i + 1}. From ${src}:** ${title}\n\n` +
+                   (url ? `![${title}](${url})` : '(no usable image url)');
+        });
+        const body = `💎 ${msgs.length} item(s) from cross-plugin:\n\n` +
+                     parts.join('\n\n---\n\n');
+        // Post as a system-ish message via ST's addOneMessage API if
+        // available; fall back to toastr + console so the user still
+        // sees something on older ST builds.
+        try {
+            const ctx = getContext();
+            if (ctx && typeof ctx.addOneMessage === 'function') {
+                const msg = {
+                    name: 'Spellcaster',
+                    is_user: false,
+                    is_system: true,
+                    send_date: Date.now(),
+                    mes: body,
+                    extra: { type: 'narrator' },
+                };
+                if (Array.isArray(ctx.chat)) ctx.chat.push(msg);
+                ctx.addOneMessage(msg);
+            } else if (typeof toastr !== 'undefined') {
+                toastr.info(`Cross-plugin inbox: ${msgs.length} new item(s).`, 'Spellcaster');
+            }
+        } catch (e) {
+            console.warn('[Spellcaster] inbox render failed:', e);
+        }
+        return msgs.length;
+    } catch (e) {
+        // Network hiccup — fine, try again next tick.
+        return 0;
+    } finally {
+        _inboxInFlight = false;
+    }
+}
+
+let _inboxTimer = null;
+function startInboxAutoPoll() {
+    if (_inboxTimer !== null) return;  // idempotent
+    const tick = async () => {
+        try {
+            const settings = getSettings();
+            if (!settings.enabled || !settings.auto_inbox_poll) return;
+            if (typeof document !== 'undefined' && document.hidden) return;
+            await pollInboxOnce();
+        } catch (e) {
+            console.warn('[Spellcaster] inbox poll tick failed:', e);
+        }
+    };
+    // Clamp the interval to [10 s, 5 min] — a sane range prevents a
+    // fat-fingered setting from hammering the Guild or waiting forever.
+    const raw = Number(getSettings().auto_inbox_interval_s);
+    const interval = Math.min(300, Math.max(10, Number.isFinite(raw) ? raw : 30)) * 1000;
+    _inboxTimer = setInterval(tick, interval);
+    // Also fire once right away so users don't wait a full cycle on
+    // freshly-enabled auto-poll.
+    setTimeout(tick, 500);
+}
+
 async function autoCastOnStartup() {
     const settings = getSettings();
     if (!settings.enabled || !settings.auto_cast) {
@@ -2181,6 +2336,11 @@ async function autoCastOnStartup() {
         autoCastOnStartup().catch(err =>
             console.warn('[Spellcaster] autoCastOnStartup failed:', err));
     }, 5000);
+
+    // Start the cross-interface inbox auto-poller. No-ops if the
+    // feature is disabled in settings; see startInboxAutoPoll() for
+    // the gating. Lives independently of autoCastOnStartup.
+    startInboxAutoPoll();
 
     console.log('[Spellcaster] Extension loaded. ComfyUI:', settings.comfyui_url);
 })();
