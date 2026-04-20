@@ -333,7 +333,7 @@ def test_scaffolds(report: Report, verbose: bool = False,
 
 
 def test_build_functions(report: Report, verbose: bool = False,
-                         max_tests: int = 60) -> None:
+                         max_tests: int = 200) -> None:
     """Import spellcaster_core.workflows and call as many build_* functions
     as possible with sane defaults, submitting to ComfyUI /prompt for
     validation (no sampling — ComfyUI returns immediately on validation
@@ -385,26 +385,29 @@ def test_build_functions(report: Report, verbose: bool = False,
     real_flux2 = next((c for c in ckpt_list
                         if "klein" in c.lower()), None)
 
-    # Upload a 1×1 test.png so LoadImage-based builders validate.
-    try:
-        test_png = (b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
-                    b"\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00"
-                    b"\x0cIDAT\x08\x99c``\x00\x00\x00\x04\x00\x01\x0b\xe7\x02\x9c"
-                    b"\x00\x00\x00\x00IEND\xaeB`\x82")
-        boundary = "----e2esb"
-        body = (
-            f'--{boundary}\r\nContent-Disposition: form-data; '
-            f'name="image"; filename="test.png"\r\n'
-            f'Content-Type: image/png\r\n\r\n').encode() + test_png + \
-            f'\r\n--{boundary}--\r\n'.encode()
-        req = urllib.request.Request(
-            f"{comfy_url}/upload/image", data=body,
-            headers={"Content-Type":
-                     f"multipart/form-data; boundary={boundary}"})
-        with urllib.request.urlopen(req, timeout=10) as r:
-            r.read()
-    except Exception:
-        pass  # harmless; per-builder tests will surface the issue if needed
+    # Upload tiny test.png + test_mask.png so LoadImage-based builders
+    # (img2img, inpaint, iclight, etc.) validate instead of failing on
+    # a filename that doesn't exist in ComfyUI's input/ dir.
+    test_png = (b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+                b"\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00"
+                b"\x0cIDAT\x08\x99c``\x00\x00\x00\x04\x00\x01\x0b\xe7\x02\x9c"
+                b"\x00\x00\x00\x00IEND\xaeB`\x82")
+    for fn_name in ("test.png", "test_mask.png"):
+        try:
+            boundary = "----e2esb"
+            body = (
+                f'--{boundary}\r\nContent-Disposition: form-data; '
+                f'name="image"; filename="{fn_name}"\r\n'
+                f'Content-Type: image/png\r\n\r\n').encode() + test_png + \
+                f'\r\n--{boundary}--\r\n'.encode()
+            req = urllib.request.Request(
+                f"{comfy_url}/upload/image", data=body,
+                headers={"Content-Type":
+                         f"multipart/form-data; boundary={boundary}"})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                r.read()
+        except Exception:
+            pass  # harmless; per-builder tests will surface the issue
 
     # Sensible dummy inputs — most builders are happy with these.
     # The preset dict carries keys every downstream node reaches for
@@ -416,14 +419,37 @@ def test_build_functions(report: Report, verbose: bool = False,
         "start_filename": "test.png",
         "end_filename": "test.png",
         "mask_filename": "test_mask.png",
+        "source_filename": "test.png",
+        "reference_filename": "test.png",
+        "target_filename": "test.png",
+        "style_filename": "test.png",
+        "style_ref_filename": "test.png",
+        "face_ref_filename": "test.png",
+        "fg_filename": "test.png",
+        "bg_filename": "test.png",
+        "pose_filename": "test.png",
+        "outfit_filename": "test.png",
+        "face_filename": "test.png",
+        "ref_filename": "test.png",
+        "overlay_filename": "test.png",
+        "image_a_filename": "test.png",
+        "image_b_filename": "test.png",
+        "scene_filename": "test.png",
+        "frame_filenames": ["test.png"],
+        "video_name": "test.png",
         "prompt_text": "a magical landscape",
         "positive_text": "a magical landscape",
         "prompt": "a magical landscape",
+        "inpaint_prompt": "a magical landscape",
         "negative_text": "",
         "negative": "",
         "seed": 42,
         "width": 1024, "height": 1024,
         "length": 25, "num_frames": 25, "fps": 16,
+        "denoise": 0.6, "strength": 0.8,
+        "controlnet_strength": 0.8,
+        "cfg": 5.0, "steps": 20,
+        "sampler": "euler", "scheduler": "normal",
         "ckpt_name": "sd_xl_base_1.0.safetensors",
         # `preset` default is filled AFTER the checkpoint probe below.
         "preset": None,
@@ -433,7 +459,16 @@ def test_build_functions(report: Report, verbose: bool = False,
         "sam3_prompt": "person",
         "mask_prompt": "person",
         "segment_prompt": "person",
-        "inpaint_prompt": "a magical landscape",
+        # Klein family model selector — resolved from klein_models table
+        "klein_model_key": "Klein 9B",
+        # Outpaint edges
+        "left": 0, "top": 0, "right": 128, "bottom": 128,
+        "feather": 32,
+        # Face identity
+        "visibility": 1.0, "facedetection": "retinaface_resnet50",
+        "model_name": "",          # filled per-builder below
+        # Preset keys used by klein_detail / klein_batch_variations
+        "preset_key": "",
     }
 
     # Pull live video presets so WAN + LTX builders have real filenames.
@@ -461,6 +496,7 @@ def test_build_functions(report: Report, verbose: bool = False,
 
     # Per-builder preset override table. The generic `preset` default is
     # an SDXL preset; video builders need their family dict.
+    # IC-Light is SD 1.5 only — it crashes on SDXL.
     preset_override_by_fn: dict[str, dict] = {}
     if wan_preset:
         for name in ("build_wan_video", "build_wan_flf", "build_wan22_t2v"):
@@ -475,6 +511,128 @@ def test_build_functions(report: Report, verbose: bool = False,
             "steps": 8, "cfg": 1.0,
             "sampler": "euler", "scheduler": "simple",
         }
+
+    # Extra kwarg overrides — for builders whose SAM3 / mask contract
+    # can't be satisfied by a bare "test_mask.png" filename. We pass
+    # `sam3_prompt` or force_solid so the builder has at least one
+    # valid path to synthesise a mask.
+    extra_kwargs_by_fn: dict[str, dict] = {
+        "build_klein_inpaint": {"sam3_prompt": "person"},
+        "build_lama_remove":   {"sam3_prompt": "person"},
+    }
+    # build_iclight takes `ckpt_name` (not a `preset` dict) and ONLY
+    # accepts SD 1.5 checkpoints. Override the default SDXL ckpt.
+    if real_sd15:
+        extra_kwargs_by_fn["build_iclight"] = {"ckpt_name": real_sd15}
+
+    # Probe live ComfyUI enums for face / upscale / LoRA / LUT inputs so
+    # builders that consume those enums validate with a real filename.
+    upscale_models = _probe_enum("UpscaleModelLoader", "model_name")
+    face_models = _probe_enum("FaceModelLoader", "face_model")
+    facerestore_models = _probe_enum("FaceRestoreCFWithModel", "model_name")
+    luts_list = (_probe_enum("ApplyLUT+", "lut_name")
+                  or _probe_enum("ImageApplyLUT", "lut_name"))
+    preprocessors = _probe_enum("ControlNetPreprocessorSelector", "preprocessor")
+    controlnet_models = _probe_enum("ControlNetLoader", "control_net_name")
+    gguf_models = _probe_enum("UnetLoaderGGUF", "unet_name")
+    supir_models = _probe_enum("SUPIR_model_loader_v2", "supir_model")
+
+    real_upscale = next((m for m in upscale_models if "ultrasharp" in m.lower()
+                          or "esrgan" in m.lower() or "4x" in m.lower()),
+                         upscale_models[0] if upscale_models else "")
+    real_face_model = face_models[0] if face_models else ""
+    real_face_restore = facerestore_models[0] if facerestore_models else ""
+    real_lut = next((l for l in luts_list if "film" in l.lower()
+                     or "cinematic" in l.lower()),
+                    luts_list[0] if luts_list else "")
+    real_pose_preproc = next((p for p in preprocessors if "openpose" in p.lower()
+                               or "dwpose" in p.lower() or "canny" in p.lower()),
+                              preprocessors[0] if preprocessors else "")
+    real_cn_model = next((c for c in controlnet_models if "sdxl" in c.lower()),
+                          controlnet_models[0] if controlnet_models else "")
+    real_flux_unet = next((u for u in gguf_models if "flux" in u.lower()
+                            or "qwen" in u.lower()), "")
+    real_supir = supir_models[0] if supir_models else ""
+
+    # Per-builder kwarg fills for the SKIP bucket. Each entry uses the
+    # exact kwarg name the builder's signature declares (no aliases).
+    if real_upscale:
+        # `upscale_model` is the shared name for the pure upscalers.
+        for fn_name in ("build_detail_hallucinate", "build_seedv2r",
+                        "build_video_upscale", "build_photo_restore"):
+            extra_kwargs_by_fn.setdefault(fn_name, {})["upscale_model"] = real_upscale
+        # Other builders rename to `model_name`.
+        extra_kwargs_by_fn.setdefault("build_upscale", {})["model_name"] = real_upscale
+        extra_kwargs_by_fn.setdefault("build_upscale_blend", {})["model_a_name"] = real_upscale
+        extra_kwargs_by_fn.setdefault("build_upscale_blend", {})["model_b_name"] = real_upscale
+    if real_face_model:
+        extra_kwargs_by_fn.setdefault("build_faceswap_model", {})["face_model_name"] = real_face_model
+        extra_kwargs_by_fn.setdefault("build_save_face_model", {})["model_name"] = real_face_model
+    if real_face_restore:
+        extra_kwargs_by_fn.setdefault("build_face_restore", {})["model_name"] = real_face_restore
+        extra_kwargs_by_fn.setdefault("build_photo_restore", {})["face_model"] = real_face_restore
+        extra_kwargs_by_fn.setdefault("build_video_reactor", {})["face_models"] = [real_face_restore]
+    if real_lut:
+        extra_kwargs_by_fn.setdefault("build_lut", {})["lut_name"] = real_lut
+        extra_kwargs_by_fn.setdefault("build_lut", {})["strength"] = 0.8
+    if real_cn_model and real_pose_preproc:
+        extra_kwargs_by_fn.setdefault("build_controlnet_gen", {}).update({
+            "preprocessor_type": real_pose_preproc,
+            "controlnet_model": real_cn_model,
+        })
+    if real_flux_unet:
+        extra_kwargs_by_fn.setdefault("build_qwen_edit", {}).update({
+            "unet_name": real_flux_unet,
+            "clip_name": "umt5-xxl-encoder-Q3_K_S.gguf",
+            "vae_name":  "wan_2.1_vae.safetensors",
+        })
+    if real_supir and default_ckpt:
+        extra_kwargs_by_fn.setdefault("build_supir", {}).update({
+            "supir_model": real_supir,
+            "sdxl_model": default_ckpt,
+        })
+
+    # Klein preset-key builders — use the first preset key the klein
+    # preset table exposes; fall back to the enum probe.
+    try:
+        from spellcaster_core import workflows as _wf
+        # Some klein builders take `klein_models` as a dict literal.
+        # We don't know its shape without executing them — leave the
+        # SKIP when those args are missing (better than fabricating).
+        pass
+    except Exception:
+        pass
+    # Outpaint / colorize shape
+    extra_kwargs_by_fn.setdefault("build_outpaint", {}).update({
+        "left": 0, "top": 0, "right": 128, "bottom": 128,
+        "feathering": 32,  # signature spells it `feathering`, not `feather`
+    })
+    extra_kwargs_by_fn.setdefault("build_colorize", {}).update({
+        "controlnet_strength": 0.8, "denoise": 0.5,
+    })
+    extra_kwargs_by_fn.setdefault("build_detail_hallucinate", {}).update({
+        "denoise": 0.4, "steps": 20,
+    })
+    extra_kwargs_by_fn.setdefault("build_seedv2r", {}).update({
+        "denoise": 0.4, "cfg": 5.0, "steps": 20,
+        "scale_factor": 2, "orig_width": 1024, "orig_height": 1024,
+    })
+    extra_kwargs_by_fn.setdefault("build_face_restore", {}).update({
+        "facedetection": "retinaface_resnet50",
+        "visibility": 1.0,
+        "codeformer_weight": 0.5,  # builder spells it `codeformer_weight`
+    })
+    extra_kwargs_by_fn.setdefault("build_photo_restore", {}).update({
+        "facedetection": "retinaface_resnet50",
+        "visibility": 1.0, "codeformer_weight": 0.5,
+        "sharpen_radius": 1, "sigma": 1.0, "alpha": 0.5,
+    })
+    extra_kwargs_by_fn.setdefault("build_klein_detail", {}).update({
+        "preset_key": "detail",
+    })
+    extra_kwargs_by_fn.setdefault("build_klein_batch_variations", {}).update({
+        "klein_model_key": "Klein 9B",
+    })
 
     build_fn_names = [n for n in dir(_wf) if n.startswith("build_")]
     tested = 0
@@ -500,6 +658,9 @@ def test_build_functions(report: Report, verbose: bool = False,
                 elif pname in defaults_by_param:
                     kwargs[pname] = defaults_by_param[pname]
                 # else leave unset and let the call raise — we catch it.
+            # Extra per-builder kwargs (override even defaulted params).
+            for k, v in (extra_kwargs_by_fn.get(name) or {}).items():
+                kwargs[k] = v
             t0 = time.time()
             wf = fn(**kwargs)
             ms = int((time.time() - t0) * 1000)
@@ -522,9 +683,32 @@ def test_build_functions(report: Report, verbose: bool = False,
                 report.add(section, name, PASS,
                            f"{len(wf)} nodes, queued ok", ms + ms2)
             else:
+                # Distinguish "real builder bug" from "this model isn't
+                # installed on the server". ComfyUI raises
+                # `value_not_in_list` for the latter — that's an
+                # environment limit, not a builder fault, so we mark it
+                # SKIP (with the missing value) instead of FAIL.
                 snippet = json.dumps(resp)[:160] if not isinstance(resp, str) else resp[:160]
-                report.add(section, name, FAIL,
-                           f"ComfyUI {sc}: {snippet}", ms + ms2)
+                env_miss = False
+                missing_val = ""
+                if isinstance(resp, dict):
+                    node_errs = resp.get("node_errors") or {}
+                    for nid, info in node_errs.items():
+                        for err in info.get("errors") or []:
+                            if err.get("type") == "value_not_in_list":
+                                env_miss = True
+                                ex = err.get("extra_info") or {}
+                                missing_val = (f"{ex.get('input_name','?')}"
+                                                f"={ex.get('received_value','?')}")
+                                break
+                        if env_miss:
+                            break
+                if env_miss:
+                    report.add(section, name, SKIP,
+                               f"env lacks model: {missing_val}", ms + ms2)
+                else:
+                    report.add(section, name, FAIL,
+                               f"ComfyUI {sc}: {snippet}", ms + ms2)
             tested += 1
         except TypeError as e:
             report.add(section, name, SKIP,

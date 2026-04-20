@@ -68,7 +68,12 @@
       "Bash(curl -sk --max-time 3 https://127.0.0.1:7334/status -o /dev/null -w \"status: %{http_code}\\\\n\")",
       "Bash(taskkill /F /IM \"spellcaster-antenna-windows.exe\")",
       "Bash(cmd //c \"taskkill /F /IM spellcaster-antenna-windows.exe\")",
-      "Bash(PYTHONIOENCODING=utf-8 python tests/e2e_audit.py --no-llm)"
+      "Bash(PYTHONIOENCODING=utf-8 python tests/e2e_audit.py --no-llm)",
+      "Bash(PYTHONIOENCODING=utf-8 python tests/e2e_audit.py)",
+      "Bash(tee c:/tmp/e2e_full.log)",
+      "Bash(curl -s --max-time 5 \"http://<INTERNAL_HOST>:8188/object_info\" -o /tmp/oi.json)",
+      "Bash(curl -s --max-time 30 \"http://<INTERNAL_HOST>:8188/system_stats\")",
+      "Bash(tee c:/tmp/e2e_full2.log)"
     ],
     "additionalDirectories": [
       "\\tmp",

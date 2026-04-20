@@ -118,10 +118,39 @@ if %errorlevel% neq 0 (
     exit /b 3
 )
 
-REM ── 4. Launch ─────────────────────────────────────────────────────
+REM ── 5. Tk/tcl preflight ─────────────────────────────────────────
+REM  Windows Store Python ships WITHOUT tkinter. A subset of
+REM  custom-built / Chocolatey / corporate Python packages also
+REM  omit it. Without tkinter the first-run setup dialog never
+REM  appears and the splash silently no-ops, leaving the user
+REM  staring at a tray that may or may not be visible — the
+REM  "ugly as fuck" symptom on the wrong machine.
+REM  Fail loud with the actual fix: reinstall Python from
+REM  python.org with the "tcl/tk and IDLE" checkbox ticked.
+echo   [...]   Checking tkinter / Tcl-Tk
+python -c "import tkinter, tkinter.ttk; r=tkinter.Tk(); r.destroy()" 2>nul
+if %errorlevel% neq 0 (
+    echo.
+    echo   [error] tkinter isn't available in this Python installation.
+    echo           The antenna splash + first-run setup dialog need it.
+    echo           Likely causes:
+    echo             - Windows Store Python ships without tkinter.
+    echo             - A slimmed-down / embedded Python build.
+    echo             - tcl/tk was unticked when installing from python.org.
+    echo.
+    echo           Fix: install Python from https://www.python.org/downloads/
+    echo                and tick "tcl/tk and IDLE" on the Optional Features page.
+    echo.
+    pause
+    exit /b 4
+)
+
+REM ── 6. Launch ─────────────────────────────────────────────────────
 echo.
 echo   [ok]    Starting the antenna…
-echo           (first launch will ask about desktop / Start Menu / startup)
+echo           (first launch will ask about desktop / Start Menu / startup
+echo            AND about creating a Windows Firewall rule for port 7334
+echo            so LAN clients can reach this machine — click Yes on UAC.)
 echo.
 pushd "%REPO_DIR%"
 python -m antenna
