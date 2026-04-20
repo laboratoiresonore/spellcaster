@@ -24,3 +24,5 @@
 {"ts": 1776630578.0544767, "action": "shot_created", "shot_id": "59ae1758436b4910837b9f2a24b6122c", "title": "R139 ovi_720p_audio"}
 {"ts": 1776646426.4705904, "action": "shot_created", "shot_id": "b8e2856c5b9849578831aa509ffa8beb", "title": "Shot 22"}
 {"ts": 1776658223.2736602, "action": "shot_created", "shot_id": "e89e28d52c654295a6a01609f92ff0f0", "title": ""}
+{"ts": 1776659454.6906912, "action": "shot_created", "shot_id": "a3ec13862a834633a75831edd12553e2", "title": "audit-smoketest"}
+{"ts": 1776659455.2420082, "action": "shot_removed", "shot_id": "a3ec13862a834633a75831edd12553e2"}

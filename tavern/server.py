@@ -9066,16 +9066,19 @@ class GuildHandler(SimpleHTTPRequestHandler):
             # alias lookups and is stripped here.
             snap.pop("host_url", None)
             return self.end_json(200, snap)
-        elif self.path == '/api/user_settings':
+        elif self.path == '/api/user_settings' and self.command == 'GET':
             # Server-side mirror of per-user UI choices that used to
             # live only in localStorage (guild_preset etc.). The
             # frontend POSTs on every change; GET returns the stored
             # map so a fresh browser still sees the same preferences.
+            # Gate this branch to GET only — otherwise it shadowed the
+            # POST handler (/api/user_settings at command=='POST') that
+            # lives further down the same elif chain.
             cfg = _guided_install_load_config()
             return self.end_json(200, {
                 "user_settings": cfg.get("user_settings") or {},
             })
-        elif self.path == '/api/app_control/config':
+        elif self.path == '/api/app_control/config' and self.command == 'GET':
             # GET the per-app control matrix: target machine (local or
             # antenna hostname) for every known app. The UI renders a
             # tiny ⚡ Start button on each chip that posts to
@@ -9676,7 +9679,14 @@ class GuildHandler(SimpleHTTPRequestHandler):
             health["status"] = "ok"
             return self.end_json(200, health)
 
-        elif self.path.startswith('/api/video/shots/') and self.path.endswith('/reference'):
+        elif (self.path.startswith('/api/video/shots/')
+              and self.path.endswith('/reference')
+              and self.command == 'GET'):
+            # GET gate — without it, the POST upload handler at
+            # command=='POST' later in this chain was unreachable.
+            # Darktable's guild_attach_reference + ST's _animateViaGuild
+            # both POST to this path; the 404 they got was this branch
+            # replying before the POST handler ran.
             if not _VIDEO_BRIDGE:
                 return self.end_json(503, {"error": "Video Bridge not initialised"})
             shot_id = self.path.split('/api/video/shots/')[1].rsplit('/reference', 1)[0]

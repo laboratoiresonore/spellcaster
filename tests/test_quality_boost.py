@@ -462,6 +462,152 @@ def case_ays_outpaint_sdxl_max():
     assert _sampler_is_custom_advanced(g)
 
 
+# --- AYS on the 6 secondary Klein-capable builders ------------------------
+
+def case_ays_detail_hallucinate_sdxl_max():
+    g = workflows.build_detail_hallucinate(
+        "in.png", "4x-UltraSharp.pth", SDXL_PRESET,
+        "sharper", "", 1, denoise=0.4, cfg=8.0, quality="max")
+    assert count(g, "AlignYourStepsScheduler") == 1
+    assert _sampler_is_custom_advanced(g)
+
+
+def case_ays_colorize_sdxl_max():
+    """Colorize feeds the CN-augmented negative conditioning to the guider.
+    Verify both that AYS fires AND that the CFGGuider's negative is the CN
+    apply output, not raw CLIP — regression guard on the else-branch rewire.
+    """
+    g = workflows.build_colorize(
+        "in.png", SDXL_PRESET, "colorful", "", 1,
+        controlnet_strength=0.8, denoise=0.55, cfg=8.0, quality="max")
+    assert count(g, "AlignYourStepsScheduler") == 1
+    # The guider connected to AYS must have its negative pointing at a
+    # ControlNetApplyAdvanced output (slot 1).
+    guider = next(n for n in g.values() if n["class_type"] == "CFGGuider")
+    neg_ref = guider["inputs"]["negative"]
+    src = g[neg_ref[0]]
+    assert src["class_type"] == "ControlNetApplyAdvanced"
+    assert neg_ref[1] == 1  # slot 1 = negative out of ControlNetApplyAdvanced
+
+
+def case_ays_controlnet_gen_sdxl_max():
+    g = workflows.build_controlnet_gen(
+        "in.png", "CannyEdgePreprocessor",
+        "SDXL\\controlnet-canny-sdxl-1.0.safetensors",
+        SDXL_PRESET, "a castle", "", 1,
+        width=1024, height=1024, steps=20, cfg=8.0,
+        sampler="euler", scheduler="normal", quality="max")
+    assert count(g, "AlignYourStepsScheduler") == 1
+
+
+def case_ays_faceid_sdxl_max_ipa_still_upstream():
+    """faceid guider.model must still trace back through the IPAdapter
+    node (not bypass it) when AYS is active."""
+    g = workflows.build_faceid_img2img(
+        "target.png", "face.png", SDXL_PRESET,
+        "a portrait", "", 1, denoise=0.6, steps=20, cfg=8.0, quality="max")
+    assert count(g, "AlignYourStepsScheduler") == 1
+    guider = next(n for n in g.values() if n["class_type"] == "CFGGuider")
+    # Walk the guider.model back; eventually we should hit node "4"
+    # (IPAdapterFaceID) after the quality chain.
+    seen = []
+    ref = guider["inputs"]["model"]
+    for _ in range(6):
+        seen.append(ref[0])
+        if ref[0] == "4":
+            break
+        ref = g[ref[0]]["inputs"].get("model")
+        if not ref:
+            break
+    assert "4" in seen, f"IPAdapter (node 4) missing from guider chain: {seen}"
+
+
+def case_ays_style_transfer_sdxl_max():
+    g = workflows.build_style_transfer(
+        "target.png", "style.png", SDXL_PRESET,
+        "match style", "", 1, weight=0.8, denoise=0.6, quality="max")
+    assert count(g, "AlignYourStepsScheduler") == 1
+
+
+def case_ays_seedv2r_sdxl_max():
+    g = workflows.build_seedv2r(
+        "in.png", "4x-UltraSharp.pth", SDXL_PRESET,
+        "sharp", "", 1, denoise=0.5, cfg=8.0, steps=20,
+        scale_factor=2.0, orig_width=512, orig_height=512,
+        quality="max")
+    assert count(g, "AlignYourStepsScheduler") == 1
+
+
+def case_ays_seedv2r_flux1_max_still_skips():
+    """flux1dev at max: AYS still skipped (arch gate), plain KSampler runs."""
+    g = workflows.build_seedv2r(
+        "in.png", "4x-UltraSharp.pth", FLUX1_PRESET,
+        "sharp", "", 1, denoise=0.5, cfg=3.5, steps=20,
+        scale_factor=2.0, orig_width=512, orig_height=512,
+        quality="max")
+    assert count(g, "AlignYourStepsScheduler") == 0
+    assert _sampler_is_plain_ksampler(g)
+
+
+def case_slg_fires_flux1_max():
+    g = workflows.build_img2img("in.png", FLUX1_PRESET, "dragon", "", 1,
+                                 quality="max")
+    assert count(g, "SkipLayerGuidanceDiT") == 1, (
+        "Flux 1 Dev at quality=max should wire SkipLayerGuidanceDiT")
+
+
+def case_slg_skipped_flux1_balanced():
+    g = workflows.build_img2img("in.png", FLUX1_PRESET, "dragon", "", 1,
+                                 quality="balanced")
+    assert count(g, "SkipLayerGuidanceDiT") == 0
+
+
+def case_slg_skipped_sdxl_max():
+    """SLG is a DiT-only (Flux / SD3) technique. Must NOT fire on SDXL
+    (no transformer_blocks to skip — U-Net arch)."""
+    g = workflows.build_img2img("in.png", SDXL_PRESET, "cat", "", 1,
+                                 quality="max")
+    assert count(g, "SkipLayerGuidanceDiT") == 0
+
+
+def case_fast_mode_teacache_flux1():
+    g = workflows.build_img2img("in.png", FLUX1_PRESET, "dragon", "", 1,
+                                 fast_mode=True)
+    assert count(g, "ApplyTeaCachePatch") == 1
+
+
+def case_fast_mode_off_no_teacache():
+    g = workflows.build_img2img("in.png", FLUX1_PRESET, "dragon", "", 1,
+                                 fast_mode=False)
+    assert count(g, "ApplyTeaCachePatch") == 0
+
+
+def case_fast_mode_skipped_on_sdxl():
+    """fast_mode=True on SDXL: we refuse to wire TeaCache (PAG hides
+    flux caching artefacts but not SDXL caching artefacts). Silently
+    degrades — graph stays as if fast_mode were False."""
+    g = workflows.build_img2img("in.png", SDXL_PRESET, "cat", "", 1,
+                                 fast_mode=True)
+    assert count(g, "ApplyTeaCachePatch") == 0
+
+
+def case_ays_node_id_tranches_disjoint():
+    """Ensure each builder's AYS tranche is unique — if we accidentally
+    stamped two builders with the same ays_node_base a multi-builder
+    meta-graph would collide."""
+    bases = {
+        "img2img": 670, "txt2img": 675, "inpaint": 680, "outpaint": 685,
+        "detail_hallucinate": 500, "colorize": 505, "controlnet_gen": 510,
+        "faceid_img2img": 515, "style_transfer": 520, "seedv2r": 525,
+    }
+    seen = set()
+    for name, base in bases.items():
+        for i in range(4):  # AYS chain is 4 IDs wide
+            nid = str(base + i)
+            assert nid not in seen, f"AYS id collision at {nid} (via {name})"
+            seen.add(nid)
+
+
 # --- Runner ---------------------------------------------------------------
 
 CASES = [
@@ -508,6 +654,24 @@ CASES = [
     ("AYS | skips zit at max",                         case_ays_skips_zit_even_at_max),
     ("AYS | skips klein (own pipeline)",               case_ays_skips_klein),
     ("AYS | outpaint sdxl max fires",                  case_ays_outpaint_sdxl_max),
+
+    ("AYS sec | detail_hallucinate sdxl max",          case_ays_detail_hallucinate_sdxl_max),
+    ("AYS sec | colorize CN-neg preserved",            case_ays_colorize_sdxl_max),
+    ("AYS sec | controlnet_gen sdxl max",              case_ays_controlnet_gen_sdxl_max),
+    ("AYS sec | faceid IPA stays upstream",            case_ays_faceid_sdxl_max_ipa_still_upstream),
+    ("AYS sec | style_transfer sdxl max",              case_ays_style_transfer_sdxl_max),
+    ("AYS sec | seedv2r sdxl max",                     case_ays_seedv2r_sdxl_max),
+    ("AYS sec | seedv2r flux1 still skips",            case_ays_seedv2r_flux1_max_still_skips),
+
+    ("SLG | flux1 max fires",                          case_slg_fires_flux1_max),
+    ("SLG | flux1 balanced skips",                     case_slg_skipped_flux1_balanced),
+    ("SLG | sdxl max skips (DiT-only)",                case_slg_skipped_sdxl_max),
+
+    ("TeaCache | flux1 fast_mode=True wires",          case_fast_mode_teacache_flux1),
+    ("TeaCache | fast_mode=False no-op",               case_fast_mode_off_no_teacache),
+    ("TeaCache | sdxl fast_mode refused",              case_fast_mode_skipped_on_sdxl),
+
+    ("AYS invariant: tranches disjoint",               case_ays_node_id_tranches_disjoint),
 ]
 
 
