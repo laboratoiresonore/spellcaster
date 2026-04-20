@@ -25,6 +25,8 @@ heavy lifting delegates to the existing `_build_test_workflow` +
 from __future__ import annotations
 
 import base64
+import json
+import os
 import re
 import threading
 import time
@@ -772,6 +774,68 @@ def _comfy_cancel(server: str, timeout: float = 3.0) -> dict:
     return results
 
 
+def _preflight_arch_probe(
+    server: str,
+    arch: str,
+    models: list[dict],
+    timeout: int = 45,
+) -> tuple[bool, str]:
+    """Render ONE minimal base sample for `arch` with no LoRAs.
+
+    Catches pipeline breakage (missing CLIP / VAE, mis-declared
+    arch_extra, bad checkpoint header) BEFORE the batch loop streams
+    20 red error cards. Kept deliberately small — 256×256, ≤8 steps,
+    uses the shortest path through `build_txt2img`.
+
+    Returns (ok, error_string). Errors swallow a traceback so the
+    calibration job sees a one-line reason to report on the skip card.
+    """
+    try:
+        from spellcaster_core.workflows import build_txt2img
+        from spellcaster_core.architectures import get_arch
+        from spellcaster_core.preference_calibration import generate_and_download
+    except ImportError:
+        from workflows import build_txt2img  # type: ignore
+        from architectures import get_arch  # type: ignore
+        from preference_calibration import generate_and_download  # type: ignore
+
+    model = _pick_representative_model(models, arch)
+    if not model:
+        return (False, f"no installed model for arch {arch!r}")
+    arch_obj = get_arch(arch)
+    default_res = getattr(arch_obj, "default_resolution", (768, 768))
+    w = min(512, default_res[0])
+    h = min(512, default_res[1])
+    if w < 256: w = 256
+    if h < 256: h = 256
+    arch_extra = dict(getattr(arch_obj, "extra", {}) or {})
+    preset = {
+        "arch": arch, "ckpt": model["name"],
+        "width": w, "height": h,
+        "steps": min(8, getattr(arch_obj, "default_steps", 20)),
+        "cfg": getattr(arch_obj, "default_cfg", 6.0),
+        "denoise": 1.0,
+        "sampler": getattr(arch_obj, "default_sampler", "euler"),
+        "scheduler": getattr(arch_obj, "default_scheduler", "normal"),
+        "loader": getattr(arch_obj, "loader", "checkpoint"),
+        "clip_name1": arch_extra.get("clip_name1", ""),
+        "clip_name2": arch_extra.get("clip_name2", ""),
+        "clip_type":  arch_extra.get("clip_type",  ""),
+        "vae_name":   arch_extra.get("vae_name",   ""),
+    }
+    try:
+        wf = build_txt2img(preset, "a simple test image", "", 12345, loras=[])
+    except Exception as e:
+        return (False, f"build failed: {e!s}"[:200])
+    try:
+        png = generate_and_download(server, wf, timeout=timeout)
+    except Exception as e:
+        return (False, f"dispatch failed: {e!s}"[:200])
+    if not png:
+        return (False, "empty output")
+    return (True, "")
+
+
 def _pick_representative_model(discover_models_out: list, arch: str) -> Optional[dict]:
     candidates = [m for m in discover_models_out if m.get("arch") == arch]
     if not candidates:
@@ -1112,6 +1176,41 @@ def get_shootout_job(job_id: str) -> Optional[ShootoutJobState]:
 
 # ── Auto-calibration (one confirm-ready sample per unconfirmed LoRA) ────
 
+def _score_sample_if_enabled(
+    out: dict,
+    *,
+    score_with_llm: bool,
+    ollama_url: Optional[str],
+    scorer_model: Optional[str],
+) -> None:
+    """Mutate `out` in place to add score fields. No-op when scoring
+    is disabled OR the render itself failed OR the scorer raises."""
+    if not score_with_llm or not out.get("ok") or not out.get("image_b64"):
+        return
+    try:
+        try:
+            from spellcaster_core.lora_scorer import (
+                score_image, DEFAULT_OLLAMA_URL, DEFAULT_MODEL,
+            )
+        except ImportError:
+            from lora_scorer import score_image, DEFAULT_OLLAMA_URL, DEFAULT_MODEL  # type: ignore
+        result = score_image(
+            out["image_b64"], out.get("prompt") or "",
+            ollama_url=ollama_url or DEFAULT_OLLAMA_URL,
+            model=scorer_model or DEFAULT_MODEL,
+        )
+        out["score"] = result.score
+        out["score_reason"] = result.reason
+        out["score_ok"] = bool(result.ok)
+        out["score_model"] = result.model
+        out["score_elapsed_ms"] = result.elapsed_ms
+        if not result.ok:
+            out["score_error"] = result.error
+    except Exception as e:
+        out["score_ok"] = False
+        out["score_error"] = f"scorer exception: {e!s}"[:160]
+
+
 def render_calibration_sample(
     server: str,
     lora_name: str,
@@ -1129,6 +1228,8 @@ def render_calibration_sample(
     score_with_llm: bool = False,
     ollama_url: Optional[str] = None,
     scorer_model: Optional[str] = None,
+    stability_seeds: int = 1,
+    sweep_strengths: Optional[list[float]] = None,
 ) -> dict:
     """Render ONE sample using the LoRA's auto-derived recipe.
 
@@ -1137,12 +1238,26 @@ def render_calibration_sample(
     shootout does. Return shape matches the shootout sample dict so
     the UI can reuse its card renderer.
 
-    When `score_with_llm=True`, a successful render is also sent to
-    a local Ollama multimodal model (default `gemma3:4b`) which
-    returns a 0-10 quality score. The score is stapled onto the
-    sample dict as `score` / `score_reason` so the UI can auto-
-    confirm everything above a threshold. Scoring failures degrade
-    silently — the sample still returns.
+    When `score_with_llm=True`, each rendered image is sent to a
+    local Ollama multimodal model (default `gemma3:4b`) for a 0-10
+    quality score.
+
+    When `stability_seeds > 1`, we render the SAME recipe with N
+    different seeds, score all of them, and keep the median-scored
+    one as the visible sample. Score spread across seeds lands on
+    `stability_range`; cards with a range > 3.0 get `unstable=True`
+    flagged so the UI can tag them.
+
+    When `sweep_strengths` is a list AND the recipe's weight came
+    from heuristics (no Civitai / user / shipped guidance), we
+    render at every listed strength, score each, and keep the
+    winner. The losing images are dropped to keep the payload small
+    but their scores are retained on `sweep_scores`. Combining
+    stability_seeds > 1 with a sweep falls back to a single seed per
+    strength — 3×3 = 9 renders per LoRA is too expensive.
+
+    All extra modes are opt-in; with defaults (`stability_seeds=1`,
+    `sweep_strengths=None`) behaviour is identical to the original.
     """
     recipe = resolve_shootout_recipe_for_lora(
         lora_name, purpose_group, arch,
@@ -1151,60 +1266,121 @@ def render_calibration_sample(
         user_override=user_override,
         use_network=use_network,
     )
-    sample = _render_single_sample(
-        server, arch, lora_name, float(recipe["strength"]),
-        recipe["prompt"], recipe["negative"], seed, models,
-        preferred_model=preferred_model,
-        timeout=timeout,
-        sampler_override=recipe.get("sampler"),
-        cfg_override=recipe.get("cfg"),
-    )
-    out = sample.to_dict()
-    out.update({
-        "arch":          arch,
-        "purpose_group": purpose_group,
-        "prompt":        recipe["prompt"],
-        "negative":      recipe["negative"],
-        "subject":       recipe["subject_key"],
-        "strength":      recipe["strength"],
-        "sampler":       recipe.get("sampler"),
-        "cfg":           recipe.get("cfg"),
-        "trigger_words": recipe.get("trigger_words") or [],
-        "nsfw":          recipe.get("nsfw"),
-        "provenance":    recipe.get("provenance") or {},
-        "knowledge":     recipe.get("knowledge"),
-        "model":         preferred_model or (
-                            _pick_representative_model(models, arch) or {}
-                         ).get("name", ""),
-    })
-    # Optional vision scoring. Only attempt when the render succeeded
-    # (no point scoring a red error card) and when the caller opted in.
-    if score_with_llm and out.get("ok") and out.get("image_b64"):
-        try:
-            try:
-                from spellcaster_core.lora_scorer import (
-                    score_image, DEFAULT_OLLAMA_URL, DEFAULT_MODEL,
-                )
-            except ImportError:
-                from lora_scorer import score_image, DEFAULT_OLLAMA_URL, DEFAULT_MODEL  # type: ignore
-            result = score_image(
-                out["image_b64"], out["prompt"],
-                ollama_url=ollama_url or DEFAULT_OLLAMA_URL,
-                model=scorer_model or DEFAULT_MODEL,
-            )
-            out["score"] = result.score
-            out["score_reason"] = result.reason
-            out["score_ok"] = bool(result.ok)
-            if not result.ok:
-                out["score_error"] = result.error
-            out["score_model"] = result.model
-            out["score_elapsed_ms"] = result.elapsed_ms
-        except Exception as e:
-            # Scoring is strictly optional; don't let its failures
-            # corrupt the sample return value.
-            out["score_ok"] = False
-            out["score_error"] = f"scorer exception: {e!s}"[:160]
-    return out
+
+    def _one_render(strength_override: Optional[float], seed_used: int) -> dict:
+        """Inner helper: render one sample at the given strength/seed
+        and run optional scoring. Returns the sample dict."""
+        str_eff = float(strength_override if strength_override is not None
+                        else recipe["strength"])
+        sample = _render_single_sample(
+            server, arch, lora_name, str_eff,
+            recipe["prompt"], recipe["negative"], seed_used, models,
+            preferred_model=preferred_model,
+            timeout=timeout,
+            sampler_override=recipe.get("sampler"),
+            cfg_override=recipe.get("cfg"),
+        )
+        d = sample.to_dict()
+        d.update({
+            "arch":          arch,
+            "purpose_group": purpose_group,
+            "prompt":        recipe["prompt"],
+            "negative":      recipe["negative"],
+            "subject":       recipe["subject_key"],
+            "strength":      str_eff,
+            "sampler":       recipe.get("sampler"),
+            "cfg":           recipe.get("cfg"),
+            "trigger_words": recipe.get("trigger_words") or [],
+            "nsfw":          recipe.get("nsfw"),
+            "provenance":    recipe.get("provenance") or {},
+            "knowledge":     recipe.get("knowledge"),
+            "seed":          seed_used,
+            "model":         preferred_model or (
+                                _pick_representative_model(models, arch) or {}
+                             ).get("name", ""),
+        })
+        _score_sample_if_enabled(d, score_with_llm=score_with_llm,
+                                  ollama_url=ollama_url,
+                                  scorer_model=scorer_model)
+        return d
+
+    # Strength sweep path: only kicks in when we have no confident
+    # weight (recipe came purely from heuristic) AND the caller
+    # supplied candidate weights. Requires the scorer to be meaningful;
+    # without it we just pick the middle weight as a blind default.
+    weight_prov = (recipe.get("provenance") or {}).get("recommended_weight")
+    want_sweep = (sweep_strengths
+                   and len(sweep_strengths) > 1
+                   and weight_prov in (None, "heuristic", "shipped_heuristic"))
+    if want_sweep:
+        sweep_results = []
+        for w in sweep_strengths:
+            out_w = _one_render(float(w), seed)
+            sweep_results.append({
+                "strength":    float(w),
+                "score":       out_w.get("score"),
+                "score_ok":    out_w.get("score_ok"),
+                "ok":          out_w.get("ok"),
+                "error":       out_w.get("error"),
+                "image_b64":   out_w.get("image_b64"),
+            })
+        scored = [r for r in sweep_results
+                   if r.get("score") is not None and r.get("ok")]
+        if scored:
+            winner = max(scored, key=lambda r: r["score"])
+        else:
+            # Scorer off or all scoring failed — pick middle strength
+            # that successfully rendered, else first successful.
+            ok_results = [r for r in sweep_results if r.get("ok")]
+            if not ok_results:
+                # All renders failed — return the first so the user
+                # sees the error card instead of an empty tile.
+                return _one_render(float(sweep_strengths[0]), seed)
+            mid = len(ok_results) // 2
+            winner = ok_results[mid]
+        main = _one_render(winner["strength"], seed)
+        # Drop the loser image blobs to keep the payload small; their
+        # scores stay for the UI's tooltip.
+        main["sweep_scores"] = [
+            {k: r[k] for k in ("strength", "score", "score_ok", "ok", "error")}
+            for r in sweep_results
+        ]
+        main["sweep_winner"] = float(winner["strength"])
+        return main
+
+    # Multi-seed stability path: fallback when not sweeping.
+    if stability_seeds > 1 and stability_seeds <= 9:
+        variants = []
+        for i in range(int(stability_seeds)):
+            # Derived seed so two calibrations with the same base seed
+            # stay deterministic across users / restarts.
+            sd = (int(seed) + i * 1_009_003) & 0x7FFFFFFF
+            variants.append(_one_render(None, sd))
+        scored = [v for v in variants
+                   if v.get("ok") and isinstance(v.get("score"), (int, float))]
+        if scored:
+            scored.sort(key=lambda v: v["score"])
+            median = scored[len(scored) // 2]
+            out = dict(median)
+            scores = [v["score"] for v in scored]
+            out["stability_scores"] = [
+                {"seed": v.get("seed"), "score": v.get("score"),
+                 "ok": v.get("ok")} for v in variants
+            ]
+            out["stability_range"] = round(max(scores) - min(scores), 2)
+            out["unstable"] = bool(out["stability_range"] > 3.0)
+            return out
+        # No scorer or no successes across seeds — fall back to the
+        # first successful render, plus surface the seeds we tried.
+        ok_v = next((v for v in variants if v.get("ok")), variants[0])
+        out = dict(ok_v)
+        out["stability_scores"] = [
+            {"seed": v.get("seed"), "ok": v.get("ok")} for v in variants
+        ]
+        return out
+
+    # Default path: one render, one scorer call.
+    return _one_render(None, seed)
 
 
 @dataclass
@@ -1215,12 +1391,15 @@ class CalibrationJobState:
     current: str = ""
     samples: list[dict] = field(default_factory=list)
     skipped: list[dict] = field(default_factory=list)
-    status: str = "running"           # running | complete | error | cancelled
+    status: str = "running"           # running | complete | error | cancelled | interrupted
     error: str = ""
     started_at: float = field(default_factory=time.time)
     finished_at: Optional[float] = None
     cancel_requested: bool = False
     server: str = ""                   # kept so cancel can call ComfyUI
+    # Preflight: {arch_lower: {ok: bool, error: str}}. Populated when
+    # the caller enables preflight; empty dict otherwise.
+    preflight: dict = field(default_factory=dict)
 
     def to_public_dict(self) -> dict:
         return {
@@ -1235,11 +1414,158 @@ class CalibrationJobState:
             "samples":     list(self.samples),
             "skipped":     list(self.skipped),
             "cancel_requested": self.cancel_requested,
+            "preflight":   dict(self.preflight),
+        }
+
+    def to_persistent_dict(self) -> dict:
+        """Same shape as `to_public_dict` but with `image_b64` and
+        other large per-sample blobs stripped so the on-disk file
+        stays small. The resume path only needs metadata — the images
+        themselves are regenerated on re-run."""
+        def _strip(sample: dict) -> dict:
+            d = dict(sample)
+            d.pop("image_b64", None)
+            # sweep_scores entries also carry image_b64 for losers;
+            # sweep_scores itself is small metadata after trimming.
+            sc = d.get("sweep_scores")
+            if isinstance(sc, list):
+                d["sweep_scores"] = [
+                    {k: v for k, v in s.items() if k != "image_b64"}
+                    for s in sc
+                ]
+            return d
+        return {
+            "job_id":      self.job_id,
+            "status":      self.status,
+            "total":       self.total,
+            "done":        self.done,
+            "current":     self.current,
+            "error":       self.error,
+            "started_at":  self.started_at,
+            "finished_at": self.finished_at,
+            "samples":     [_strip(s) for s in self.samples],
+            "skipped":     list(self.skipped),
+            "preflight":   dict(self.preflight),
         }
 
 
 _CALIB_JOBS: dict[str, CalibrationJobState] = {}
 _CALIB_LOCK = threading.Lock()
+
+
+# ── Persistence ─────────────────────────────────────────────────────────
+#
+# The Guild auto-updates on every launch (CLAUDE.md §13). A restart
+# mid-calibration loses every in-flight sample the user hadn't yet
+# confirmed. We persist job metadata (no image_b64) to the state dir
+# so the UI can show "last run stopped at 37/58 — resume?" and the
+# user can pick up where they left off.
+
+_PERSIST_DIR: Optional[str] = None
+
+
+def set_calibration_persist_dir(path: Optional[str]) -> None:
+    """Caller (Guild server) points us at its state dir. On call, any
+    previously-running jobs from a prior process get marked
+    `interrupted` so resume-hint logic can pick them up."""
+    global _PERSIST_DIR
+    _PERSIST_DIR = path
+    if not path:
+        return
+    try:
+        jobs_dir = _persist_jobs_dir()
+        if not jobs_dir or not os.path.isdir(jobs_dir):
+            return
+        for fn in os.listdir(jobs_dir):
+            if not fn.endswith(".json"):
+                continue
+            fp = os.path.join(jobs_dir, fn)
+            try:
+                with open(fp, "r", encoding="utf-8") as f:
+                    doc = json.load(f)
+                if doc.get("status") == "running":
+                    doc["status"] = "interrupted"
+                    doc["finished_at"] = time.time()
+                    tmp = fp + ".tmp"
+                    with open(tmp, "w", encoding="utf-8") as f:
+                        json.dump(doc, f, ensure_ascii=False, indent=1)
+                    os.replace(tmp, fp)
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+
+def _persist_jobs_dir() -> Optional[str]:
+    if not _PERSIST_DIR:
+        return None
+    return os.path.join(_PERSIST_DIR, "calibration_jobs")
+
+
+def _persist_job(state: "CalibrationJobState") -> None:
+    jobs_dir = _persist_jobs_dir()
+    if not jobs_dir:
+        return
+    try:
+        os.makedirs(jobs_dir, exist_ok=True)
+        fp = os.path.join(jobs_dir, f"{state.job_id}.json")
+        tmp = fp + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(state.to_persistent_dict(), f,
+                       ensure_ascii=False, indent=1)
+        os.replace(tmp, fp)
+    except Exception:
+        # Persistence is best-effort; don't break the job loop.
+        pass
+
+
+def list_resumable_jobs() -> list[dict]:
+    """Read every persisted job metadata file and return those whose
+    status is 'interrupted' — i.e. a prior Guild process was killed
+    mid-run. The UI uses these to show a resume hint."""
+    jobs_dir = _persist_jobs_dir()
+    if not jobs_dir or not os.path.isdir(jobs_dir):
+        return []
+    out: list[dict] = []
+    for fn in sorted(os.listdir(jobs_dir), reverse=True):
+        if not fn.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(jobs_dir, fn), "r", encoding="utf-8") as f:
+                doc = json.load(f)
+        except Exception:
+            continue
+        if doc.get("status") == "interrupted":
+            out.append({
+                "job_id":      doc.get("job_id"),
+                "total":       doc.get("total"),
+                "done":        doc.get("done"),
+                "started_at":  doc.get("started_at"),
+                "finished_at": doc.get("finished_at"),
+                "sample_count": len(doc.get("samples") or []),
+                "skipped_count": len(doc.get("skipped") or []),
+            })
+    return out
+
+
+def clear_resumable_jobs() -> int:
+    """Delete all persisted job files. Used after the user confirms
+    "I don't want to resume, start fresh"."""
+    jobs_dir = _persist_jobs_dir()
+    if not jobs_dir or not os.path.isdir(jobs_dir):
+        return 0
+    n = 0
+    for fn in list(os.listdir(jobs_dir)):
+        if not fn.endswith(".json"):
+            continue
+        try:
+            os.remove(os.path.join(jobs_dir, fn))
+            n += 1
+        except Exception:
+            pass
+    return n
+
+
 
 
 def start_calibration_job(
@@ -1254,6 +1580,9 @@ def start_calibration_job(
     score_with_llm: bool = False,
     ollama_url: Optional[str] = None,
     scorer_model: Optional[str] = None,
+    preflight: bool = True,
+    stability_seeds: int = 1,
+    sweep_strengths: Optional[list[float]] = None,
 ) -> CalibrationJobState:
     """Kick off a background batch auto-calibration.
 
@@ -1308,9 +1637,45 @@ def start_calibration_job(
     state.skipped = skipped
     with _CALIB_LOCK:
         _CALIB_JOBS[job_id] = state
+    _persist_job(state)
 
     def _worker():
         try:
+            # Preflight — one base render per unique arch. Archs that
+            # fail get ALL their LoRAs moved to the skipped list with
+            # the arch-level failure reason, so the batch doesn't stream
+            # 20 identical error cards for a broken pipeline.
+            if preflight and renderable:
+                unique_archs = sorted({r["arch"].lower() for r in renderable})
+                still_renderable = list(renderable)
+                for a in unique_archs:
+                    if state.cancel_requested:
+                        break
+                    state.current = f"preflight: {a}"
+                    _persist_job(state)
+                    ok, err = _preflight_arch_probe(server, a, models)
+                    state.preflight[a] = {"ok": ok, "error": err}
+                    if ok:
+                        continue
+                    rejected = [r for r in still_renderable
+                                 if r["arch"].lower() == a]
+                    still_renderable = [r for r in still_renderable
+                                         if r["arch"].lower() != a]
+                    for r in rejected:
+                        state.skipped.append({
+                            "lora_name":     r["name"],
+                            "arch":          r["arch"],
+                            "purpose_group": r["purpose_group"],
+                            "reason":        f"arch pipeline broken: {err}",
+                        })
+                # Adjust total so progress bar reflects only what we'll
+                # actually try to render.
+                removed = len(renderable) - len(still_renderable)
+                if removed:
+                    state.total = max(0, state.total - removed)
+                renderable[:] = still_renderable
+                _persist_job(state)
+
             for t in renderable:
                 if state.cancel_requested:
                     break
@@ -1332,6 +1697,8 @@ def start_calibration_job(
                         score_with_llm=score_with_llm,
                         ollama_url=ollama_url,
                         scorer_model=scorer_model,
+                        stability_seeds=stability_seeds,
+                        sweep_strengths=sweep_strengths,
                     )
                 except Exception as e:
                     out = {
@@ -1341,12 +1708,14 @@ def start_calibration_job(
                     }
                 state.samples.append(out)
                 state.done += 1
+                _persist_job(state)
             state.status = "cancelled" if state.cancel_requested else "complete"
         except Exception as e:
             state.status = "error"
             state.error = f"{e!s}"[:400]
         finally:
             state.finished_at = time.time()
+            _persist_job(state)
 
     t = threading.Thread(target=_worker, daemon=True,
                          name=f"lora-calibrate-{job_id}")
@@ -1415,4 +1784,7 @@ __all__ = [
     "get_calibration_job",
     "cancel_shootout_job",
     "cancel_calibration_job",
+    "set_calibration_persist_dir",
+    "list_resumable_jobs",
+    "clear_resumable_jobs",
 ]

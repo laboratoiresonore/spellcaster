@@ -23,6 +23,7 @@ import os
 import struct
 import sys
 import tempfile
+import time
 import traceback
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -493,6 +494,280 @@ def case_scorer_rejects_non_json_model_response():
         srv.shutdown()
 
 
+# ── Persistence (interrupted-job detection + resume hint) ─────────────
+
+def case_persistence_marks_running_as_interrupted():
+    """Simulate a Guild restart: write a job JSON with status=running
+    to the persist dir, then call set_calibration_persist_dir. The
+    module should flip that file's status to 'interrupted' so
+    list_resumable_jobs picks it up."""
+    from scaffold.lora_grouping import (
+        set_calibration_persist_dir, list_resumable_jobs,
+        clear_resumable_jobs,
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        jobs_dir = os.path.join(tmp, "calibration_jobs")
+        os.makedirs(jobs_dir, exist_ok=True)
+        with open(os.path.join(jobs_dir, "lcal_abc.json"), "w", encoding="utf-8") as f:
+            json.dump({
+                "job_id": "lcal_abc",
+                "status": "running",
+                "total": 10, "done": 4,
+                "samples": [], "skipped": [],
+                "started_at": 1700000000,
+            }, f)
+        set_calibration_persist_dir(tmp)
+        jobs = list_resumable_jobs()
+        try:
+            assert len(jobs) == 1
+            assert jobs[0]["job_id"] == "lcal_abc"
+            assert jobs[0]["done"] == 4 and jobs[0]["total"] == 10
+            # clear_resumable_jobs purges the folder
+            assert clear_resumable_jobs() == 1
+            assert list_resumable_jobs() == []
+        finally:
+            set_calibration_persist_dir(None)
+
+
+def case_persistence_leaves_complete_jobs_alone():
+    """Jobs already marked `complete` must NOT be re-flagged — they
+    aren't resumable."""
+    from scaffold.lora_grouping import (
+        set_calibration_persist_dir, list_resumable_jobs,
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        jobs_dir = os.path.join(tmp, "calibration_jobs")
+        os.makedirs(jobs_dir, exist_ok=True)
+        with open(os.path.join(jobs_dir, "lcal_done.json"), "w", encoding="utf-8") as f:
+            json.dump({"job_id": "lcal_done", "status": "complete",
+                        "total": 3, "done": 3,
+                        "samples": [], "skipped": []}, f)
+        set_calibration_persist_dir(tmp)
+        try:
+            assert list_resumable_jobs() == []
+        finally:
+            set_calibration_persist_dir(None)
+
+
+def case_calibration_state_persistent_dict_strips_images():
+    """The on-disk JSON must never include image_b64 payloads —
+    otherwise a 50-LoRA job's state file would be 50 MB."""
+    from scaffold.lora_grouping import CalibrationJobState
+    s = CalibrationJobState(job_id="lcal_x", total=2)
+    s.samples = [
+        {"lora_name": "a", "ok": True, "image_b64": "AAAA" * 1000,
+         "strength": 0.7},
+        {"lora_name": "b", "ok": True, "image_b64": "BBBB" * 1000,
+         "sweep_scores": [{"strength": 0.4, "score": 5,
+                            "image_b64": "C" * 100}]},
+    ]
+    s.skipped = [{"lora_name": "c", "reason": "no model"}]
+    d = s.to_persistent_dict()
+    # No sample carries image_b64 after stripping
+    for sm in d["samples"]:
+        assert "image_b64" not in sm
+        for sc in (sm.get("sweep_scores") or []):
+            assert "image_b64" not in sc
+    # Metadata kept
+    assert d["skipped"][0]["lora_name"] == "c"
+    assert d["samples"][0]["strength"] == 0.7
+
+
+# ── Preflight + multi-seed + sweep wiring ─────────────────────────────
+
+def case_preflight_short_circuits_bad_arch():
+    """Monkeypatch _preflight_arch_probe so the auraflow arch fails;
+    verify all auraflow LoRAs land in `skipped` with the preflight
+    reason and no renders are attempted for them."""
+    import scaffold.lora_grouping as lg
+
+    # Stub the render paths so we don't touch ComfyUI. Capture which
+    # LoRAs the worker actually tried to render.
+    rendered: list[str] = []
+    def _fake_preflight(server, arch, models, timeout=45):
+        if arch == "auraflow":
+            return (False, "missing CLIP")
+        return (True, "")
+    def _fake_render(server, name, group, arch, models, **kw):
+        rendered.append(name)
+        return {"lora_name": name, "arch": arch, "purpose_group": group,
+                "ok": True, "image_b64": "x", "strength": 0.7,
+                "prompt": "p", "negative": "n", "subject": "portrait_f",
+                "provenance": {}, "trigger_words": [],
+                "knowledge": {"base_model": arch}}
+
+    orig_probe = lg._preflight_arch_probe
+    orig_render = lg.render_calibration_sample
+    lg._preflight_arch_probe = _fake_preflight
+    lg.render_calibration_sample = _fake_render
+    try:
+        state = lg.start_calibration_job(
+            server="http://fake",
+            targets=[
+                {"name": "aura_lora.safetensors", "arch": "auraflow",
+                 "purpose_group": "style_anime"},
+                {"name": "sdxl_lora.safetensors", "arch": "sdxl",
+                 "purpose_group": "portrait_f"},
+            ],
+            models=[{"name": "aura-base", "arch": "auraflow"},
+                     {"name": "sdxl-base", "arch": "sdxl"}],
+            preflight=True,
+        )
+        # The worker runs on a thread — wait for it.
+        deadline = time.time() + 5.0
+        while state.status == "running" and time.time() < deadline:
+            time.sleep(0.05)
+        assert state.status == "complete", f"status={state.status}"
+        # Only the sdxl LoRA was rendered
+        assert rendered == ["sdxl_lora.safetensors"]
+        # Auraflow LoRA landed in skipped with the preflight error
+        reasons = [s["reason"] for s in state.skipped
+                    if s["lora_name"] == "aura_lora.safetensors"]
+        assert reasons and "arch pipeline broken" in reasons[0]
+        assert "missing CLIP" in reasons[0]
+        # Preflight map recorded both arches
+        assert state.preflight["auraflow"]["ok"] is False
+        assert state.preflight["sdxl"]["ok"] is True
+        # Total was adjusted to reflect actually-rendered count
+        assert state.total == 1
+    finally:
+        lg._preflight_arch_probe = orig_probe
+        lg.render_calibration_sample = orig_render
+
+
+def case_multi_seed_stability_picks_median_score():
+    """Stability path: 3 renders, 3 different scores. The sample
+    returned should be the median-scored one, with range and
+    unstable flag populated."""
+    import scaffold.lora_grouping as lg
+    import spellcaster_core.lora_knowledge as lk
+
+    # Stub knowledge so we don't hit disk / network
+    orig_get = lk.get_knowledge
+    lk.get_knowledge = lambda *a, **kw: lk.LoraKnowledge(
+        name="x.safetensors", recommended_weight=0.7,
+        provenance={"recommended_weight": "civitai"},
+    )
+    # Stub the single-render path to return a successful image;
+    # stub the scorer to return different scores per call.
+    sequence = iter([2.0, 9.0, 5.5])  # low, high, median
+    def _fake_render(server, arch, lora, strength, p, n, seed, models, **kw):
+        from scaffold.lora_grouping import ShootoutSample
+        return ShootoutSample(lora_name=lora, strength=strength,
+                               image_b64="img-" + str(seed),
+                               ok=True, elapsed_ms=10)
+    def _fake_score(image_b64, prompt, **kw):
+        from spellcaster_core.lora_scorer import ScoreResult
+        s = next(sequence)
+        return ScoreResult(ok=True, score=s, reason="", model="test",
+                            elapsed_ms=1)
+    orig_single = lg._render_single_sample
+    lg._render_single_sample = _fake_render
+    import spellcaster_core.lora_scorer as ls
+    orig_score = ls.score_image
+    ls.score_image = _fake_score
+    try:
+        out = lg.render_calibration_sample(
+            server="http://fake", lora_name="x.safetensors",
+            purpose_group="portrait_f", arch="sdxl",
+            models=[{"name": "m", "arch": "sdxl"}],
+            seed=100, stability_seeds=3,
+            score_with_llm=True,
+        )
+        assert out["ok"] is True
+        assert out["score"] == 5.5           # median of sorted [2, 5.5, 9]
+        assert out["stability_range"] == 7.0  # 9 - 2
+        assert out["unstable"] is True
+        assert len(out["stability_scores"]) == 3
+    finally:
+        lg._render_single_sample = orig_single
+        ls.score_image = orig_score
+        lk.get_knowledge = orig_get
+
+
+def case_sweep_skipped_when_civitai_weight_present():
+    """If Civitai already gave us a recommended weight, the sweep
+    must NOT run — we trust the source."""
+    import scaffold.lora_grouping as lg
+    import spellcaster_core.lora_knowledge as lk
+
+    orig_get = lk.get_knowledge
+    lk.get_knowledge = lambda *a, **kw: lk.LoraKnowledge(
+        name="x.safetensors", recommended_weight=0.85,
+        provenance={"recommended_weight": "civitai"},
+    )
+    call_count = [0]
+    def _fake_render(server, arch, lora, strength, p, n, seed, models, **kw):
+        from scaffold.lora_grouping import ShootoutSample
+        call_count[0] += 1
+        return ShootoutSample(lora_name=lora, strength=strength,
+                               image_b64="img", ok=True, elapsed_ms=10)
+    orig_single = lg._render_single_sample
+    lg._render_single_sample = _fake_render
+    try:
+        out = lg.render_calibration_sample(
+            server="http://fake", lora_name="x.safetensors",
+            purpose_group="portrait_f", arch="sdxl",
+            models=[{"name": "m", "arch": "sdxl"}],
+            sweep_strengths=[0.4, 0.7, 1.0],
+            score_with_llm=False,
+        )
+        assert call_count[0] == 1   # no sweep, just one render
+        assert "sweep_winner" not in out
+        assert abs(out["strength"] - 0.85) < 1e-6
+    finally:
+        lg._render_single_sample = orig_single
+        lk.get_knowledge = orig_get
+
+
+def case_sweep_runs_when_weight_is_heuristic():
+    """Heuristic-only weight + sweep_strengths + scorer on → the
+    sweep renders N times, scores each, picks the winner."""
+    import scaffold.lora_grouping as lg
+    import spellcaster_core.lora_knowledge as lk
+    import spellcaster_core.lora_scorer as ls
+
+    orig_get = lk.get_knowledge
+    lk.get_knowledge = lambda *a, **kw: lk.LoraKnowledge(
+        name="x.safetensors", recommended_weight=0.75,
+        provenance={"recommended_weight": "heuristic"},
+    )
+    # 3 sweep renders + 1 winner render = 4 total calls
+    strength_seen: list[float] = []
+    def _fake_render(server, arch, lora, strength, p, n, seed, models, **kw):
+        from scaffold.lora_grouping import ShootoutSample
+        strength_seen.append(strength)
+        return ShootoutSample(lora_name=lora, strength=strength,
+                               image_b64=f"img-{strength}", ok=True,
+                               elapsed_ms=10)
+    orig_single = lg._render_single_sample
+    lg._render_single_sample = _fake_render
+    # Score mapping: strength 0.4 → 5, 0.7 → 9, 1.0 → 6. Winner 0.7.
+    def _fake_score(image_b64, prompt, **kw):
+        score_map = {"img-0.4": 5.0, "img-0.7": 9.0, "img-1.0": 6.0}
+        return ls.ScoreResult(ok=True, score=score_map.get(image_b64, 5.0),
+                               reason="", model="test", elapsed_ms=1)
+    orig_score = ls.score_image
+    ls.score_image = _fake_score
+    try:
+        out = lg.render_calibration_sample(
+            server="http://fake", lora_name="x.safetensors",
+            purpose_group="portrait_f", arch="sdxl",
+            models=[{"name": "m", "arch": "sdxl"}],
+            sweep_strengths=[0.4, 0.7, 1.0],
+            score_with_llm=True,
+        )
+        assert out["sweep_winner"] == 0.7
+        assert out["strength"] == 0.7
+        # sweep_scores carries all three
+        weights = sorted(r["strength"] for r in out["sweep_scores"])
+        assert weights == [0.4, 0.7, 1.0]
+    finally:
+        lg._render_single_sample = orig_single
+        ls.score_image = orig_score
+        lk.get_knowledge = orig_get
+
+
 def case_recipe_graceful_fallback_on_knowledge_error():
     """Forcing a knowledge error should degrade cleanly, not crash."""
     from scaffold.lora_grouping import resolve_shootout_recipe_for_lora
@@ -554,6 +829,15 @@ CASES = [
     ("scorer: probe offline reports reason",            case_scorer_probe_offline_reports_reason),
     ("scorer: parses mocked good response",             case_scorer_parses_mocked_good_response),
     ("scorer: rejects non-JSON model response",         case_scorer_rejects_non_json_model_response),
+
+    ("persistence: running job marked interrupted",     case_persistence_marks_running_as_interrupted),
+    ("persistence: complete jobs untouched",            case_persistence_leaves_complete_jobs_alone),
+    ("persistence: state strips image_b64",             case_calibration_state_persistent_dict_strips_images),
+
+    ("preflight: short-circuits bad arch",              case_preflight_short_circuits_bad_arch),
+    ("multi-seed: picks median score, flags unstable",  case_multi_seed_stability_picks_median_score),
+    ("sweep: skipped when Civitai weight present",      case_sweep_skipped_when_civitai_weight_present),
+    ("sweep: runs when weight is heuristic",            case_sweep_runs_when_weight_is_heuristic),
 ]
 
 
