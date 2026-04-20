@@ -9587,12 +9587,42 @@ local inbox_btn = dt.new_widget("button") {
 -- _asset_upload_and_emit. Diamond (\xf0\x9f\x92\x8e = 💎) prefix
 -- matches the Resolve-plugin convention from R104 so the "AI-related
 -- branch" jumps out of Darktable's lighttable module list.
+-- Tri-state presence check. Returns "yes" if we confirmed the peer
+-- is live, "no" if a presence query succeeded but didn't list the
+-- target, "unknown" if we couldn't reach any presence surface. UI
+-- code treats "unknown" the same as "yes" — don't pre-emptively block
+-- when we can't tell.
+local function _peer_online_tristate(target_key)
+  local queried = false
+  local peers = comfy_presence_list()
+  if type(peers) == "table" then
+    if #peers > 0 then queried = true end
+    for _, p in ipairs(peers) do
+      if p and p.key == target_key then return "yes" end
+    end
+  end
+  -- No Guild-side fallback yet in the Lua plugin (guild_active_peers
+  -- doesn't exist here — only the ComfyUI broker is queried). If that
+  -- query failed we can't be sure, so we return "unknown" and let the
+  -- send proceed; errors from _asset_upload_and_emit still surface to
+  -- the user.
+  if queried then return "no" end
+  return "unknown"
+end
+
 local function _cross_send_active_image(target, friendly)
   local sel = dt.gui.selection() or {}
   local image = sel[1] or dt.gui.act_image
   if not image then
     dt.print(_("💎 Select an image first, then click Send to ") ..
              friendly)
+    return
+  end
+  local presence = _peer_online_tristate(target)
+  if presence == "no" then
+    dt.print(string.format(
+      _("💎 %s isn't running right now. Start it and click Send again."),
+      friendly))
     return
   end
   dt.print(_("💎 Exporting image for ") .. friendly .. _(" …"))

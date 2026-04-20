@@ -707,6 +707,25 @@ class NodeFactory:
             "model": model_ref, "b1": b1, "b2": b2, "s1": s1, "s2": s2,
         }, node_id)
 
+    def cfg_zero_star(self, model_ref, node_id=None):
+        """CFGZeroStar — zero-init CFG correction for distilled DiT
+        samplers (Z-Image-Turbo, Flux Schnell, Lightning, etc.).
+
+        Replaces the standard CFG formula at the first denoising step
+        with a zero-noise reference, which empirically removes the
+        characteristic "washed colours / lost saturation" failure mode
+        that distilled samplers (cfg ~1-2, 4-8 steps) hit at higher
+        guidance scales. Free quality boost — model patch only, no
+        extra denoising passes.
+
+        Source paper: "CFG-Zero*: Improved Classifier-Free Guidance
+        for Flow Matching Models" (2025). Available in ComfyUI core
+        as the CFGZeroStar node.
+
+        Outputs: [0]=MODEL
+        """
+        return self._add("CFGZeroStar", {"model": model_ref}, node_id)
+
     def model_sampling_flux(self, model_ref, max_shift=1.15, base_shift=0.5,
                              width=1024, height=1024, node_id=None):
         """ModelSamplingFlux — Flux-specific per-resolution shift for
