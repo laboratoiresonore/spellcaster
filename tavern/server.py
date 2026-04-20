@@ -11514,40 +11514,76 @@ class GuildHandler(SimpleHTTPRequestHandler):
             # our side is flush the HTTP response and die.
             import subprocess as _sp, threading as _th, time as _ti
             import os as _os, sys as _sys, shlex as _shlex
+            import tempfile as _tf
             argv = list(_sys.argv)
             exe = _sys.executable
             env = dict(_os.environ)
+            parent_cwd = _os.getcwd()
             spawn_err = None
+            # The previous implementation chained `timeout /t 2 & start ""
+            # /B <argv...>` inside a `cmd.exe /c "<shell_cmd>"`. Two bugs
+            # combined to silently break the restart:
+            #   1. subprocess.list2cmdline produces MSVCRT-style `\"`
+            #      escapes inside the /c string. cmd.exe's parser does
+            #      NOT understand `\"` — it reads `\` as literal and
+            #      `"` as a quote-toggle. The mangled string ends up
+            #      with a `\\`-prefixed token that cmd tries to execute
+            #      as a UNC path ("The network path was not found.").
+            #   2. The `timeout` command requires a console handle.
+            #      Under `DETACHED_PROCESS` cmd has no console, so
+            #      `timeout` exits immediately with "Input redirection
+            #      is not supported" — the 2 s delay vanishes and the
+            #      new Guild races the old one for port 7777, losing.
+            # Fix: write the relaunch to a throw-away .bat file and have
+            # cmd.exe invoke THAT. The .bat is parsed by cmd with ONE
+            # level of quote-doubling (cmd-native `""`, not MSVCRT `\"`).
+            # Delay via `ping -n 3 127.0.0.1` which works fine without
+            # a console. Child stdio redirected to DEVNULL so it doesn't
+            # inherit the dying parent's handles.
             try:
                 if _os.name == "nt":
-                    # cmd.exe chains: timeout /t 2 & python argv...
-                    # `start "" /B` detaches without a new window.
-                    # Each argv token is wrapped in double-quotes via
-                    # a simple escape — Windows cmd can't handle the
-                    # shlex POSIX-style quoting.
-                    def _win_quote(s):
-                        # Escape embedded double-quotes by doubling.
+                    def _cq(s):  # cmd-native quote-doubling (NOT MSVCRT \")
                         return '"' + str(s).replace('"', '""') + '"'
-                    argv_str = " ".join(_win_quote(a) for a in [exe] + argv)
-                    shell_cmd = (
-                        f'timeout /t 2 /nobreak >nul & '
-                        f'start "" /B {argv_str}'
-                    )
-                    # DETACHED_PROCESS (0x08) + NEW_PROCESS_GROUP (0x200)
-                    # + CREATE_NO_WINDOW (0x08000000) so the cmd.exe
-                    # shim doesn't flash a console on Windows.
+                    # Absolutize argv[0] against the parent CWD so the
+                    # child finds the launcher script even if its own
+                    # inherited CWD drifts (shouldn't, but cheap insurance).
+                    if argv and argv[0] and not _os.path.isabs(argv[0]):
+                        argv[0] = _os.path.abspath(argv[0])
+                    target_line = " ".join(_cq(a) for a in [exe] + argv)
+                    bat_path = _os.path.join(
+                        _tf.gettempdir(),
+                        f"spellcaster_relaunch_{_os.getpid()}.bat")
+                    with open(bat_path, "w", encoding="utf-8") as _bf:
+                        _bf.write(
+                            "@echo off\r\n"
+                            "REM Spellcaster Guild auto-relauncher.\r\n"
+                            "REM Self-deletes on the last line.\r\n"
+                            f"cd /d {_cq(parent_cwd)}\r\n"
+                            # ping = ~2 s, console-free. Alternative to
+                            # `timeout /t 2` which dies on detached cmd.
+                            "ping -n 3 127.0.0.1 >nul 2>&1\r\n"
+                            f"start \"\" /B {target_line}\r\n"
+                            "del \"%~f0\"\r\n"
+                        )
                     _sp.Popen(
-                        ["cmd.exe", "/c", shell_cmd],
+                        ["cmd.exe", "/c", bat_path],
                         env=env,
-                        creationflags=0x00000008 | 0x00000200 | 0x08000000,
+                        creationflags=0x00000008 | 0x00000200,  # DETACHED | NEW_PGRP
                         close_fds=True,
+                        stdin=_sp.DEVNULL,
+                        stdout=_sp.DEVNULL,
+                        stderr=_sp.DEVNULL,
                     )
                 else:
                     shell_cmd = "sleep 2; exec " + " ".join(
                         _shlex.quote(a) for a in [exe] + argv)
                     _sp.Popen(
                         ["sh", "-c", shell_cmd],
-                        env=env, start_new_session=True, close_fds=True,
+                        env=env, cwd=parent_cwd,
+                        start_new_session=True, close_fds=True,
+                        stdin=_sp.DEVNULL,
+                        stdout=_sp.DEVNULL,
+                        stderr=_sp.DEVNULL,
                     )
             except Exception as e:
                 spawn_err = str(e)

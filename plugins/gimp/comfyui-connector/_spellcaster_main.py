@@ -5508,6 +5508,29 @@ def _find_wan_lora_pair(lora_name, all_loras):
     return lora_name, lora_name
 
 
+def _tri_to_canon(v):
+    """Map dialog tri-state ("auto"/"on"/"off"/bool/None) → canon (None/True/False).
+
+    The WanI2VDialog stores checkbox group choices as strings so we can tell
+    "user left it on default" (auto) apart from "user explicitly picked off".
+    The canonical build_wan_video expects None (auto), True (force-enable),
+    or False (force-disable). This helper does the translation. Plain bools
+    pass through for legacy callers that haven't been updated.
+    """
+    if isinstance(v, bool) or v is None:
+        return v
+    if not isinstance(v, str):
+        return bool(v)
+    sv = v.strip().lower()
+    if sv in ("auto", "", "none"):
+        return None
+    if sv in ("on", "true", "yes", "1"):
+        return True
+    if sv in ("off", "false", "no", "0"):
+        return False
+    return None  # unknown strings default to auto
+
+
 def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, seed,
                       width=832, height=480, length=81,
                       steps=None, cfg=None, shift=None, second_step=None,
@@ -5516,12 +5539,18 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
                       all_server_loras=None, server_url=None,
                       rtx_scale=2.5, interpolate=True,
                       face_swap=True, save_raw=False,
-                      teacache=False, tiled_vae=False,
+                      teacache=None, tiled_vae=False,
                       ip_adapter_image=None, ip_adapter_weight=0.5,
                       ip_adapter_start=0.0, ip_adapter_end=1.0,
                       motion_mask=None,
                       pingpong=False, fps=16,
-                      end_image_filename=None):
+                      end_image_filename=None,
+                      # Tri-state per-call overrides. None = defer to the
+                      # server probe (auto-enable when the node is present);
+                      # True/False = force on/off. Accepts dialog strings
+                      # ("auto"/"on"/"off") via _tri_to_canon normaliser.
+                      sage=None, cfg_zero=None, slg=None, nag=None,
+                      sampler_name=None, scheduler=None):
     """→ Delegated to canonical build_wan_video with GIMP-side extras.
 
     See CLAUDE.md §16 "Canonical Video Pipelines" — this wrapper adds
@@ -5547,16 +5576,27 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
                   f"not found on server — disabling Face Identity Lock for this run. "
                   f"Available: {available}")
             ip_adapter_image = None
-    enable_slg = False
-    enable_nag = False
-    enable_sage = False
-    enable_cfg_zero = False
+    # Probe the server for optional quality/speed patches. The probe is the
+    # "auto" default — a per-call override (tri-state) can force on/off.
+    probe = {"slg": False, "nag": False, "sage": False, "cfg_zero": False}
     if server_url:
         probe = _wan_quality_patches_available(server_url)
-        enable_slg = probe["slg"]
-        enable_nag = probe["nag"]
-        enable_sage = probe["sage"]
-        enable_cfg_zero = probe["cfg_zero"]
+
+    def _resolve_patch(override_val, probe_val):
+        """auto (None) → probe; explicit True/False → caller wins.
+        A user-forced True on a server that doesn't have the node will
+        fail validation — that's intentional (tells the user the node
+        is missing) instead of silently downgrading."""
+        canon = _tri_to_canon(override_val)
+        if canon is None:
+            return probe_val
+        return canon
+
+    enable_slg      = _resolve_patch(slg,      probe["slg"])
+    enable_nag      = _resolve_patch(nag,      probe["nag"])
+    enable_sage     = _resolve_patch(sage,     probe["sage"])
+    enable_cfg_zero = _resolve_patch(cfg_zero, probe["cfg_zero"])
+    teacache        = _tri_to_canon(teacache)
 
     # Canon: apply the turbo/full-step schedule when the caller did not
     # override it explicitly. Caller's own steps/cfg/second_step win.
@@ -5572,6 +5612,12 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
     if second_step is None and "second_step" in _canon:
         second_step = _canon["second_step"]
 
+    extra = {}
+    if sampler_name:
+        extra["sampler_name"] = sampler_name
+    if scheduler:
+        extra["scheduler"] = scheduler
+
     return build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
                            width=width, height=height, length=length,
                            steps=steps, cfg=cfg, shift=shift, second_step=second_step,
@@ -5586,7 +5632,8 @@ def _build_wan_video(image_filename, preset_key, prompt_text, negative_text, see
                            pingpong=pingpong, fps=fps,
                            end_image_filename=end_image_filename,
                            enable_slg=enable_slg, enable_nag=enable_nag,
-                           enable_sage=enable_sage, enable_cfg_zero=enable_cfg_zero)
+                           enable_sage=enable_sage, enable_cfg_zero=enable_cfg_zero,
+                           **extra)
 
 def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negative_text, seed,
                     width=832, height=480, length=81,
@@ -5595,11 +5642,13 @@ def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negati
                     all_server_loras=None, server_url=None,
                     rtx_scale=2.5, interpolate=True,
                     face_swap=True, save_raw=False,
-                    teacache=False, tiled_vae=False,
+                    teacache=None, tiled_vae=False,
                     ip_adapter_image=None, ip_adapter_weight=0.5,
                     ip_adapter_start=0.0, ip_adapter_end=1.0,
                     motion_mask=None,
-                    pingpong=False, fps=16):
+                    pingpong=False, fps=16,
+                    sage=None, cfg_zero=None, slg=None, nag=None,
+                    sampler_name=None, scheduler=None):
     """→ Delegated through _build_wan_video wrapper with end_image_filename."""
     return _build_wan_video(
         start_filename, preset_key, prompt_text, negative_text, seed,
@@ -5616,6 +5665,8 @@ def _build_wan_flf(start_filename, end_filename, preset_key, prompt_text, negati
         motion_mask=motion_mask,
         pingpong=pingpong, fps=fps,
         end_image_filename=end_filename,
+        sage=sage, cfg_zero=cfg_zero, slg=slg, nag=nag,
+        sampler_name=sampler_name, scheduler=scheduler,
     )
 
 
@@ -8814,19 +8865,22 @@ class WanI2VDialog(Gtk.Dialog):
         self.turbo_check.connect("toggled", _on_turbo_toggle)
         grid.attach(self.turbo_check, 0, 5, 2, 1)
 
-        # TeaCache (requires ComfyUI_Patches_ll custom node)
-        self.teacache_check = Gtk.CheckButton(label="TeaCache")
-        self.teacache_check.set_active(False)
-        self.teacache_check.set_tooltip_text(
+        # TeaCache — tri-state: "Auto" (default) enables on full-step, off on turbo.
+        # "On"/"Off" force the respective state. "Auto" lets the canonical
+        # builder decide via the teacache=None path (CLAUDE.md §16.2).
+        self.teacache_combo = Gtk.ComboBoxText()
+        self.teacache_combo.append("auto", "TeaCache: Auto")
+        self.teacache_combo.append("on",   "TeaCache: On")
+        self.teacache_combo.append("off",  "TeaCache: Off")
+        self.teacache_combo.set_active_id("auto")
+        self.teacache_combo.set_tooltip_text(
             "TeaCache — intelligent transformer block caching during sampling.\n\n"
-            "HOW IT WORKS: Some transformer blocks produce nearly identical\n"
-            "output between steps. TeaCache detects this and reuses cached\n"
-            "results instead of recomputing, saving 20-50% generation time.\n\n"
-            "QUALITY: Conservative threshold (0.20). Virtually no visible\n"
-            "quality loss. Safe to leave on for all generations.\n\n"
-            "REQUIRES: ComfyUI_Patches_ll custom node on your ComfyUI server.\n"
-            "If not installed, the generation will fail with a node-not-found error.")
-        grid.attach(self.teacache_check, 2, 5, 1, 1)
+            "Auto (default): ON for full-step runs (30% faster, no quality loss),\n"
+            "  OFF for turbo (already fast, caching overhead not worth it).\n"
+            "On:  force-enable regardless of turbo mode.\n"
+            "Off: force-disable — use when you see caching artefacts.\n\n"
+            "REQUIRES: ComfyUI_Patches_ll custom node on your ComfyUI server.")
+        grid.attach(self.teacache_combo, 2, 5, 1, 1)
 
         # Tiled VAE decode
         self.tiled_vae_check = Gtk.CheckButton(label="Tiled VAE")
@@ -8842,6 +8896,45 @@ class WanI2VDialog(Gtk.Dialog):
             "  - Recommended for 8-12GB GPUs or videos > 81 frames\n"
             "  - 16GB+ GPUs can usually leave this off for speed")
         grid.attach(self.tiled_vae_check, 3, 5, 1, 1)
+
+        # ── Advanced quality + speed patches (row 6) ──────────────────────
+        # All four are auto-probed by _wan_quality_patches_available when
+        # the dialog is submitted — server must have the custom nodes
+        # installed. The "Auto" default means "use whatever the server
+        # has"; "Off" force-disables even if available. Good for debugging
+        # a new server config or isolating which patch causes artefacts.
+        patch_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        _patch_lbl = Gtk.Label(label="<b>Advanced patches:</b>", xalign=0, use_markup=True)
+        patch_row.pack_start(_patch_lbl, False, False, 0)
+
+        def _tri(label, tooltip):
+            cb = Gtk.ComboBoxText()
+            cb.append("auto", f"{label}: Auto")
+            cb.append("on",   f"{label}: On")
+            cb.append("off",  f"{label}: Off")
+            cb.set_active_id("auto")
+            cb.set_tooltip_text(tooltip)
+            return cb
+
+        self.sage_combo = _tri("SAGE",
+            "SageAttention (PatchSageAttentionKJ) — 50-100% sampler speedup\n"
+            "on RTX 40/50xx GPUs, neutral quality. Auto: on when installed.\n"
+            "Requires ComfyUI-KJNodes.")
+        self.cfg_zero_combo = _tri("CFG0★",
+            "CFG Zero Star — sets CFG=0 for the first sampling step to\n"
+            "reduce burn-in artefacts. Small quality win at zero cost.\n"
+            "Auto: on when the CFGZeroStar node is installed.")
+        self.slg_combo = _tri("SLG",
+            "Skip Layer Guidance (SkipLayerGuidanceSD3) — cleaner motion\n"
+            "by skipping mid-block layers during CFG. Core ComfyUI node.\n"
+            "Auto: on when available.")
+        self.nag_combo = _tri("NAG",
+            "Normalized Attention Guidance (WanVideoNAG) — sharper motion,\n"
+            "less drift. Auto: on when Kijai WanVideoWrapper is installed.")
+
+        for cb in (self.sage_combo, self.cfg_zero_combo, self.slg_combo, self.nag_combo):
+            patch_row.pack_start(cb, False, False, 0)
+        grid.attach(patch_row, 0, 6, 4, 1)
 
         # Apply turbo defaults
         _on_turbo_toggle(self.turbo_check)
@@ -9275,7 +9368,15 @@ class WanI2VDialog(Gtk.Dialog):
             "interpolate": self.interpolate_check.get_active(),
             "face_swap": self.face_swap_check.get_active(),
             "save_raw": self.save_raw_check.get_active(),
-            "teacache": self.teacache_check.get_active(),
+            # teacache + the four patches are tri-state ("auto"/"on"/"off")
+            # — stored as string so _run_wan_i2v can map to None/True/False
+            # for the canonical builder. "auto" lets the canon decide
+            # (CLAUDE.md §16.2).
+            "teacache": self.teacache_combo.get_active_id() or "auto",
+            "sage":     self.sage_combo.get_active_id() or "auto",
+            "cfg_zero": self.cfg_zero_combo.get_active_id() or "auto",
+            "slg":      self.slg_combo.get_active_id() or "auto",
+            "nag":      self.nag_combo.get_active_id() or "auto",
             "tiled_vae": self.tiled_vae_check.get_active(),
             "ip_adapter": self.ipa_check.get_active(),
             "ip_adapter_weight": self.ipa_weight.get_value(),
@@ -12708,7 +12809,7 @@ class Spellcaster(Gimp.PlugIn):
                     interpolate=v.get("interpolate", True),
                     face_swap=v.get("face_swap", True),
                     save_raw=v.get("save_raw", False),
-                    teacache=v.get("teacache", False),
+                    teacache=v.get("teacache", "auto"),
                     tiled_vae=v.get("tiled_vae", False),
                     ip_adapter_image=ipa_image,
                     ip_adapter_weight=v.get("ip_adapter_weight", 0.5),
@@ -12717,6 +12818,12 @@ class Spellcaster(Gimp.PlugIn):
                     motion_mask=motion_mask_name,
                     pingpong=v.get("pingpong", False),
                     fps=v["fps"],
+                    sage=v.get("sage", "auto"),
+                    cfg_zero=v.get("cfg_zero", "auto"),
+                    slg=v.get("slg", "auto"),
+                    nag=v.get("nag", "auto"),
+                    sampler_name=v.get("sampler_name"),
+                    scheduler=v.get("scheduler"),
                 )
                 label = f"Wan I2V run {run_i+1}/{runs}" if runs > 1 else "Wan I2V"
                 _wf = wf
@@ -12915,10 +13022,16 @@ class Spellcaster(Gimp.PlugIn):
                     interpolate=v.get("interpolate", True),
                     face_swap=v.get("face_swap", True),
                     save_raw=v.get("save_raw", False),
-                    teacache=v.get("teacache", False),
+                    teacache=v.get("teacache", "auto"),
                     tiled_vae=v.get("tiled_vae", False),
                     pingpong=v.get("pingpong", False),
                     fps=v["fps"],
+                    sage=v.get("sage", "auto"),
+                    cfg_zero=v.get("cfg_zero", "auto"),
+                    slg=v.get("slg", "auto"),
+                    nag=v.get("nag", "auto"),
+                    sampler_name=v.get("sampler_name"),
+                    scheduler=v.get("scheduler"),
                 )
                 label = f"Wan FLF run {run_i+1}/{runs}" if runs > 1 else "Wan FLF"
                 _wf = wf
@@ -13240,9 +13353,15 @@ class Spellcaster(Gimp.PlugIn):
                         rtx_scale=v.get("upscale_factor", 2.5),
                         interpolate=v.get("interpolate", True),
                         face_swap=False,  # we handle face swap manually with dual actors
-                        teacache=v.get("teacache", False),
+                        teacache=v.get("teacache", "auto"),
                         tiled_vae=v.get("tiled_vae", False),
-                        pingpong=False, fps=v["fps"])
+                        pingpong=False, fps=v["fps"],
+                        sage=v.get("sage", "auto"),
+                        cfg_zero=v.get("cfg_zero", "auto"),
+                        slg=v.get("slg", "auto"),
+                        nag=v.get("nag", "auto"),
+                        sampler_name=v.get("sampler_name"),
+                        scheduler=v.get("scheduler"))
 
                     label = f"Duo Step {step_idx+1} Var {var_idx+1}"
                     _wf = wf
@@ -13537,8 +13656,14 @@ class Spellcaster(Gimp.PlugIn):
                         loras_high=v.get("loras_high"), loras_low=v.get("loras_low"),
                         all_server_loras=v.get("all_server_loras"), server_url=srv,
                         rtx_scale=v.get("upscale_factor", 2.5), interpolate=v.get("interpolate", True),
-                        face_swap=False, teacache=v.get("teacache", False),
-                        tiled_vae=v.get("tiled_vae", False), pingpong=False, fps=v["fps"])
+                        face_swap=False, teacache=v.get("teacache", "auto"),
+                        tiled_vae=v.get("tiled_vae", False), pingpong=False, fps=v["fps"],
+                        sage=v.get("sage", "auto"),
+                        cfg_zero=v.get("cfg_zero", "auto"),
+                        slg=v.get("slg", "auto"),
+                        nag=v.get("nag", "auto"),
+                        sampler_name=v.get("sampler_name"),
+                        scheduler=v.get("scheduler"))
                     _wf = wf
                     results = _run_with_spinner(f"Trio S{step_idx+1}V{var_idx+1} ({mode})...",
                                                  lambda: list(_run_comfyui_workflow(srv, _wf, timeout=600)))
@@ -18427,9 +18552,15 @@ class Spellcaster(Gimp.PlugIn):
                             rtx_scale=v.get("upscale_factor", 2.5),
                             interpolate=v.get("interpolate", True),
                             face_swap=v.get("face_swap", True),
-                            teacache=v.get("teacache", False),
+                            teacache=v.get("teacache", "auto"),
                             tiled_vae=v.get("tiled_vae", False),
                             pingpong=False, fps=v["fps"],
+                            sage=v.get("sage", "auto"),
+                            cfg_zero=v.get("cfg_zero", "auto"),
+                            slg=v.get("slg", "auto"),
+                            nag=v.get("nag", "auto"),
+                            sampler_name=v.get("sampler_name"),
+                            scheduler=v.get("scheduler"),
                             end_image_filename=end_name)
                     else:
                         wf = _build_wan_video(
@@ -18444,9 +18575,15 @@ class Spellcaster(Gimp.PlugIn):
                             rtx_scale=v.get("upscale_factor", 2.5),
                             interpolate=v.get("interpolate", True),
                             face_swap=v.get("face_swap", True),
-                            teacache=v.get("teacache", False),
+                            teacache=v.get("teacache", "auto"),
                             tiled_vae=v.get("tiled_vae", False),
-                            pingpong=False, fps=v["fps"])
+                            pingpong=False, fps=v["fps"],
+                            sage=v.get("sage", "auto"),
+                            cfg_zero=v.get("cfg_zero", "auto"),
+                            slg=v.get("slg", "auto"),
+                            nag=v.get("nag", "auto"),
+                            sampler_name=v.get("sampler_name"),
+                            scheduler=v.get("scheduler"))
 
                     label = f"Step {step_idx+1} Var {var_idx+1}"
                     _wf = wf

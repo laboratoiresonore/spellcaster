@@ -476,6 +476,21 @@ class VideoBridge:
         loras_high = ov.get("loras_high")  # list of (name, strength)
         loras_low = ov.get("loras_low")
 
+        # teacache: None = defer to canonical auto-logic (True on full-step,
+        # False on turbo). Only coerce to bool when the caller explicitly
+        # set it — this way the canon's auto-TeaCache still fires for
+        # Guild/Resolve/SillyTavern shots that don't pass the key.
+        _tc = ov.get("teacache")
+        if _tc is not None:
+            _tc = bool(_tc)
+
+        # Optional quality + speed patches (CLAUDE.md §16.2). None = let
+        # the canonical builder / GIMP wrapper's auto-probe decide. Callers
+        # that want explicit control set True/False in the overrides dict.
+        def _opt_bool(key):
+            v = ov.get(key)
+            return bool(v) if v is not None else None
+
         workflow, err = _build_native_workflow(
             shot.preset,
             prompt=shot.prompt or "subtle gentle motion",
@@ -491,12 +506,21 @@ class VideoBridge:
             face_swap=bool(ov.get("face_swap", False)),
             interpolate=bool(ov.get("interpolate", False)),
             rtx_scale=float(ov.get("rtx_scale", 1.0)),
-            teacache=bool(ov.get("teacache", False)),
+            teacache=_tc,
             tiled_vae=bool(ov.get("tiled_vae", False)),
             ip_adapter_image=ov.get("ip_adapter_image"),
             ip_adapter_weight=float(ov.get("ip_adapter_weight", 0.5)),
             motion_mask=ov.get("motion_mask"),
             pingpong=bool(ov.get("pingpong", False)),
+            # New optional patches — tri-state (None/True/False). Callers
+            # that want to force-enable pass True; force-disable pass False;
+            # leave key absent to fall through to the canonical auto-logic.
+            enable_slg=_opt_bool("enable_slg"),
+            enable_nag=_opt_bool("enable_nag"),
+            enable_sage=_opt_bool("enable_sage"),
+            enable_cfg_zero=_opt_bool("enable_cfg_zero"),
+            sampler_name=ov.get("sampler_name") or None,
+            scheduler=ov.get("scheduler") or None,
         )
         if not workflow:
             return {"status": "error", "message": err or "build failed"}

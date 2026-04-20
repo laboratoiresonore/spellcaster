@@ -299,3 +299,83 @@ All 5 modules synced to all four `spellcaster_core/` copies (MD5 verified identi
 
 **Restart warning (CLAUDE.md §13):** the running Guild at `127.0.0.1:7777` is still executing the pre-fix `server.py`. On next Guild restart the auto-updater will pull the fixed code. GIMP likewise needs a restart to pick up `_spellcaster_main.py` and `spellcaster_core/` updates. The NSFW auto-updater pulls from `spellcaster_NSFW` — already pushed.
 
+---
+
+## 10. Phase-5 — sibling-surface audits + live-probe finding
+
+After phase-4's sync-checker pass, ran a **parallel audit across three new surfaces**: installer (supply chain), Guild frontend (XSS), and ComfyUI custom nodes. Also live-probed the running Guild to confirm the phase-3 dispatcher fix landed — which surfaced a fresh leak.
+
+### 10.1 Guild API path-leak (live-probe discovery)
+
+Probed the running Guild at `127.0.0.1:7777` with a valid `/reference` POST. The endpoint now works (dispatcher fix live) but replied with:
+
+```json
+"ref_image": "C:\\Users\\redacted\\Documents\\AI\\Spellcaster\\spellcaster\\tavern\\creations\\tmp87v9modl.png"
+```
+
+**The Guild's shot API leaks absolute local paths containing the user's account name to every caller on the LAN.** Affects every shot-returning endpoint (list, add, update, duplicate, cancel, variation, revert, restore-snapshot, archived-shots) because they all pass `scaffold.shotboard.Shot.to_dict()` verbatim.
+
+**Fix:** `GuildHandler._sanitize_shot` redacts `ref_image`, `video_path`, `input_video`, `mask_image` — the four path fields — to stable derived API URLs (`/api/video/shots/<id>/reference`, `.../video`) or `None`. `_shot_json()` wrapper handles envelope shapes (`{"shot": {...}}`, `{"shots": [...]}`). Frontend impact: none — `video_panel.jsx` uses these fields only as truthy checks (verified across 20+ sites).
+
+### 10.2 Installer (supply-chain surface)
+
+| # | Location | Severity | Issue | Status |
+|--|--|--|--|--|
+| I1 | `installer/bootstrap.py` | **CRITICAL** | No hash/signature verification of fetched code. MITM or compromised CDN could inject Python executed as the user. | **deferred** — needs release-process change (signing key + tags) |
+| I2 | `installer/bootstrap.py` | **HIGH** | No size cap on `resp.read()` → hostile mirror fills `/tmp` | **fixed** — 10 MB bounded read |
+| I3 | `installer/bootstrap.py` | **HIGH** | No version pinning (`BRANCH = "main"`) | **deferred** — needs release-tag workflow |
+| I4 | `installer/install_remote.py` | **CRITICAL** | NSFW PAT file written without `chmod 0o600` → other users on the box can read the token | **fixed** — explicit chmod with Windows-safe OSError swallow |
+| I5 | `installer/manual_update.py` | MEDIUM | `os.system(gimp_exe)` — quoting issues on paths with spaces | deferred — cosmetic until someone hits it |
+
+### 10.3 Guild frontend XSS sweep
+
+Four confirmed `innerHTML` sinks in `tavern/static/app.js` injecting attacker-controllable strings (character-card fields come from ST-imported cards; chat text is user input; event-bus avatar URLs come from any interface with publish access):
+
+| # | Site | Field(s) | Fix |
+|--|--|--|--|
+| F1 | [app.js:addUserMessage](tavern/static/app.js) | `text` (user chat) | `_esc()` + `\n → <br>` on escaped output |
+| F2 | [app.js:character-card render](tavern/static/app.js) | `char.name`, `char.subtext` | `_esc()` |
+| F3 | [app.js:wizard-tooltip render](tavern/static/app.js) | `char.name`, `char.subtext`, `info.personality`, `avatarUrl` | `_esc()` on text + `_safeSrc()` on avatar |
+| F4 | [app.js:archivist-arrival](tavern/static/app.js) | `av.name`, `av.avatar_url` | `_esc()` + `_safeSrc()` |
+| F5 | [lora_shootout.js:tile error](tavern/static/lora_shootout.js) | `res.error`, `e.message`, `displayName` | local `_escH` helper |
+
+Added two helpers at the top of `app.js`:
+- `_esc(s)` — 5-char HTML escape (`& < > " '`)
+- `_safeSrc(u)` — allowlists `http(s):`, `data:image/`, relative `/api/` paths. Rejects `javascript:`, `data:text/html`, etc.
+
+**Deferred:** `dangerouslySetInnerHTML` sites in `video_panel.jsx` (currently use a `renderMarkdown` function that does escape, but need a DOMPurify pass to prove the renderer can't be bypassed). Inline-event-handler hygiene in `setup_wizard.js` / `index.html`.
+
+### 10.4 ComfyUI custom nodes (both repos)
+
+| # | Location | Severity | Issue | Status |
+|--|--|--|--|--|
+| N1 | `ComfyUI-Spellcaster-NSFW/__init__.py` | **CRITICAL** | `SpellcasterNSFWLoRA` + `SpellcasterNSFWLoRAModelOnly` classes shipped in `nodes/nsfw_loras.py` but never registered in `NODE_CLASS_MAPPINGS` — ComfyUI ignored them; the NSFW variant's distinguishing feature was dead code | **fixed** |
+| N2 | `spellcaster_core/guild_llm.py:chat()` | HIGH | Caller-supplied `server` / `kobold_url` had no scheme clamp; attacker-tampered config could smuggle `file://`/`gopher://` URLs urllib follows | **fixed** — `_valid_backend_url()` gate drops non-http(s) silently, fallback chain handles it |
+| N3 | `nsfw_loras.py:_get_installed_nsfw_loras` | MEDIUM | Basename-only matching ambiguous when two LoRAs share basename in different folders | deferred — low practical risk, requires design change |
+
+### 10.5 Commit + push ledger (phase-5)
+
+| Commit | Repo | Scope |
+|--|--|--|
+| `aea7db6` | spellcaster | shot API path-leak redaction |
+| `a08e741` | spellcaster | XSS + installer + LLM URL clamp |
+| `cd3cdb3` | ComfyUI-Spellcaster | `guild_llm` sync |
+| `6399185` | ComfyUI-Spellcaster-NSFW | `guild_llm` sync + NSFW node registration |
+| `(build)` | spellcaster_NSFW | patched rebuild via `nsfw/build_nsfw.py --patch-only --push` |
+
+### 10.6 Cumulative tally (phases 1-5)
+
+- **13 CRITICAL + 21 HIGH + 20 MEDIUM + 10 LOW** security issues closed
+- **5 Guild dispatcher shadows** (G1–G5) recovered from dead code via static analysis
+- **6 plugins/components** hardened: ST (server + UI), GIMP (main + inbox), Resolve (bridge + sync + SSE), Darktable (Lua), Guild (dispatcher + API responses + XSS), installer (bootstrap + NSFW token), ComfyUI nodes (NSFW registration + URL clamp)
+- **38 files** in `spellcaster_core/` kept byte-identical across 4 tracked repos after every phase (sync verified by MD5)
+- **4 repos pushed** on every change (spellcaster + ComfyUI-Spellcaster + ComfyUI-Spellcaster-NSFW + spellcaster_NSFW via `build_nsfw.py`)
+- **No personal data leaked** in any committed code (scan: `<INTERNAL_HOST>.`, `redacted`, `redacted`, `@gmail`, `ghp_`)
+
+**Truly deferred items:**
+- Installer signing + version pinning (release-process change, not a code fix)
+- M6 ST story-change regex false positives (needs semantic classifier)
+- M10 ST `/cross/inbox` consume-on-fetch (protocol change across 4 clients)
+- video_panel.jsx markdown sanitizer audit (needs DOMPurify pass)
+- Darktable `shell_esc` tightening (theoretical; strings are already double-quoted at call sites)
+
