@@ -2633,6 +2633,62 @@ def _collect_normal_map_from_dialog(dlg, image, server_url):
 _CN_INCOMPATIBLE_ARCHS = frozenset({"flux2klein", "flux_kontext", "chroma"})
 
 
+def _layer_label(method, *, preset=None, preset_key=None,
+                  extra=None, run_i=None, runs=None, i=None):
+    """Build a consistent GIMP layer name for a generated result.
+
+    Standard shape::
+
+        "<Method> · <preset/model> · <extra> · run N/M #K"
+
+    Parts are joined by ``" · "`` (middle-dot) and only included
+    when truthy. Missing pieces collapse cleanly — a single-output
+    img2img run on SDXL reads "Img2Img · SDXL Photoreal #1",
+    while a 3-run video sweep reads
+    "Video ReActor frame · run 2/3 #1".
+
+    Args:
+        method:      short human-readable method name. Required.
+                     Examples: "Img2Img", "Inpaint", "Outpaint",
+                     "Face Swap", "Klein Outpaint", "Upscale Blend",
+                     "Video ReActor frame", "WAN Director Duo",
+                     "Director Frame", "Colorized", "IC-Light",
+                     "Kontext", "Style Transfer", "SUPIR Restored",
+                     "Normal Map", "Scene + Actor".
+        preset:      optional preset DICT — label pulled from
+                     preset.get("label"); falls back to
+                     preset.get("ckpt") tail if no label.
+        preset_key:  optional preset label string (used when the
+                     caller has a key but not the whole dict).
+        extra:       optional string tacked on mid-label (e.g.
+                     "Q4", "iclight lighting=golden hour").
+        run_i:       0-indexed current run number (used with runs).
+        runs:        total run count; when > 1, appends "run N/M".
+        i:           0-indexed output index; appends "#K" when set.
+
+    Returns the composed label string — never ``None``.
+    """
+    parts = [str(method)]
+    preset_label = None
+    if isinstance(preset, dict):
+        preset_label = (preset.get("label")
+                        or (preset.get("ckpt") or "")
+                        .rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
+                        .rsplit(".", 1)[0])
+    elif preset_key:
+        preset_label = str(preset_key)
+    if preset_label and preset_label.strip():
+        parts.append(preset_label.strip())
+    if extra:
+        parts.append(str(extra).strip())
+    if runs is not None and runs > 1 and run_i is not None:
+        parts.append(f"run {run_i + 1}/{runs}")
+    base = " · ".join(p for p in parts if p)
+    if i is not None:
+        base = f"{base} #{i + 1}"
+    return base
+
+
 def _populate_model_combo(combo, label_task="img2img", *,
                            arch_predicate=None,
                            unavailable_note=None):
@@ -15702,8 +15758,8 @@ class Spellcaster(Gimp.PlugIn):
                         _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), "ControlNet Debug (invisible)", False)
                         image.get_layers()[0].set_visible(False)
                         continue
-                    lbl = f"{v['preset'].get('label','')} run {run_i+1} #{i+1}" if runs > 1 \
-                          else f"{v['preset'].get('label','')} #{i+1}"
+                    lbl = _layer_label("Img2Img", preset=v.get("preset"),
+                                        run_i=run_i, runs=runs, i=i)
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, mask_mode, False)
                 Gimp.displays_flush()  # show each run immediately
             _LAST_PROCEDURE["name"] = "spellcaster-img2img"
@@ -15753,8 +15809,8 @@ class Spellcaster(Gimp.PlugIn):
                                             lambda: list(_run_comfyui_workflow(srv, _wf)))
                 mask_mode = v.get("mask_mode", False)
                 for i, (fn, sf, ft) in enumerate(results):
-                    lbl = f"{v['preset'].get('label','')} run {run_i+1} #{i+1}" if runs > 1 \
-                          else f"{v['preset'].get('label','')} #{i+1}"
+                    lbl = _layer_label("Txt2Img", preset=v.get("preset"),
+                                        run_i=run_i, runs=runs, i=i)
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, mask_mode, False)
                 Gimp.displays_flush()
             _LAST_PROCEDURE["name"] = "spellcaster-txt2img"
