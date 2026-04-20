@@ -18,15 +18,21 @@ import sys
 from pathlib import Path
 
 # ── Palette ──────────────────────────────────────────────────────────
-BG              = "#0B0715"  # deep violet-black (body)
-BG_SIDEBAR      = "#150D26"  # one step lighter (sidebar / panel)
-BG_CARD         = "#110A1F"  # card inner
-BG_ELEVATED     = "#21153B"  # hovered button / row-highlight
+# Mirrors :root in tavern/static/style.css so the installer looks like
+# the same product as the Wizard Guild. Swap hex values here and
+# every Spellcaster surface that reads from theme.py follows.
+BG              = "#12101d"  # Guild --bg-main (deep violet)
+BG_SIDEBAR      = "#1a1730"  # Guild --bg-panel (indigo panel)
+BG_CARD         = "#161228"  # Between bg + panel (card inner)
+BG_ELEVATED     = "#281D45"  # Guild --user-bubble (elevated / hover)
 
-ACCENT          = "#D122E3"  # magenta — primary
-ACCENT_HOVER    = "#E84DF7"
-ACCENT_SECONDARY = "#9B59B6"  # purple — secondary accent (arcane)
-ACCENT_GOLD     = "#FFD700"   # crystal-gold highlight (rare / premium)
+# GOLD is now the primary interactive accent — matches the Guild's
+# gold focus rings + active pill highlights. The previous magenta
+# #D122E3 clashed with the Guild's identity.
+ACCENT          = "#ffd700"  # Guild --accent (gold)
+ACCENT_HOVER    = "#ffea00"  # Guild --accent-hover
+ACCENT_SECONDARY = "#B246F2"  # Guild --primary-purple (frames, chips)
+ACCENT_GOLD     = "#ffd700"  # alias for back-compat; matches ACCENT
 
 OK              = "#00E676"  # success / running
 WARN            = "#FFB300"  # amber / starting
@@ -34,9 +40,9 @@ ERROR           = "#FF5252"  # red / failure
 INFO            = "#6BB6FF"  # info / hint
 
 TEXT            = "#FFFFFF"
-TEXT_MUTED      = "#8E889D"
-TEXT_SUBTLE     = "#6C3483"  # runes / hairline copy
-BORDER          = "#3A2863"  # card borders
+TEXT_MUTED      = "#c4b8e3"  # Guild --text-muted (soft lavender)
+TEXT_SUBTLE     = "#8a7eaf"  # hairline / runic muted
+BORDER          = "#3A2863"  # card borders (kept — still fits)
 
 # Tray state ring colours — slightly desaturated so the 64px icon
 # stays legible on light + dark taskbars.
@@ -44,7 +50,7 @@ TRAY_OK         = (80, 200, 120, 255)
 TRAY_WARN       = (240, 170, 70, 255)
 TRAY_ERROR      = (220, 60, 60, 255)
 TRAY_STOPPED    = (160, 160, 160, 255)
-TRAY_ACCENT     = (209, 34, 227, 255)  # ACCENT as RGBA — pairing state
+TRAY_ACCENT     = (255, 215, 0, 255)  # ACCENT as RGBA — pairing state (gold)
 
 # ── Typography ────────────────────────────────────────────────────────
 # Segoe UI on Windows, Inter elsewhere if installed, fallbacks Tk always
@@ -60,7 +66,11 @@ def font(size: int = 10, *, bold: bool = False, mono: bool = False) -> tuple:
 
 # ── ANSI equivalents for console banners (manual_update.py) ──────────
 # Kept here so any CLI surface uses the same identity.
-ANSI_ACCENT = "\033[95m"   # bright magenta
+# ANSI_ACCENT is bright yellow now that the GUI accent is gold (was
+# bright magenta when the GUI accent was #D122E3). Keeps CLI and GUI
+# banners colour-coordinated.
+ANSI_ACCENT = "\033[93m"   # bright yellow (gold-ish)
+ANSI_PURPLE = "\033[95m"   # bright magenta — secondary arcane accent
 ANSI_OK     = "\033[92m"
 ANSI_WARN   = "\033[93m"
 ANSI_ERR    = "\033[91m"

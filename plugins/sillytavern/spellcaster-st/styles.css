@@ -1,12 +1,69 @@
-/* Spellcaster Extension Styles for SillyTavern */
+/* ═══════════════════════════════════════════════════════════════════════
+ *  Spellcaster Extension Styles for SillyTavern
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ *  Mirrors the Wizard Guild's :root palette (tavern/static/style.css)
+ *  and the GIMP/Darktable themes so all four surfaces look like the
+ *  same product. Purple frames + gold accents + lavender text.
+ *
+ *  Palette tokens (change here and the whole extension follows):
+ *    --sp-bg-panel    — indigo panel background
+ *    --sp-bg-deep     — darker elevated surface inside a panel
+ *    --sp-text-main   — lavender body text
+ *    --sp-text-muted  — soft lavender / dim
+ *    --sp-purple      — Guild primary purple (structure, frames)
+ *    --sp-purple-dim  — muted purple border tone
+ *    --sp-accent      — gold (interactive highlight, focus, hover)
+ *    --sp-accent-soft — gold with alpha for glow
+ */
 
 .spellcaster-panel {
-    background: rgba(30, 20, 50, 0.85);
-    border: 1px solid rgba(178, 70, 242, 0.3);
-    border-radius: 12px;
+    --sp-bg-panel:    rgba(26, 23, 48, 0.92);   /* Guild --bg-panel */
+    --sp-bg-deep:     rgba(18, 16, 29, 0.70);   /* Guild --bg-main */
+    --sp-text-main:   #e8e6f5;                  /* Guild --text-main */
+    --sp-text-muted:  #c4b8e3;                  /* Guild --text-muted */
+    --sp-text-dim:    #8a7eaf;
+    --sp-purple:      #B246F2;                  /* Guild --primary-purple */
+    --sp-purple-dim:  rgba(178, 70, 242, 0.35);
+    --sp-purple-soft: rgba(178, 70, 242, 0.15);
+    --sp-accent:      #ffd700;                  /* Guild --accent */
+    --sp-accent-hover:#ffea00;
+    --sp-accent-soft: rgba(255, 215, 0, 0.18);
+    --sp-accent-glow: rgba(255, 215, 0, 0.45);
+
+    background: linear-gradient(135deg,
+        var(--sp-bg-panel),
+        rgba(18, 16, 29, 0.88));
+    border: 1px solid var(--sp-purple-dim);
+    border-radius: 14px;
     padding: 16px;
     margin: 12px 0;
     backdrop-filter: blur(8px);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35),
+                0 0 12px var(--sp-accent-soft),
+                inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    color: var(--sp-text-main);
+    position: relative;
+}
+
+/* Subtle gold-purple halo pulse — matches the Guild's header aura. */
+.spellcaster-panel::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: 14px;
+    padding: 1px;
+    background: linear-gradient(135deg,
+        var(--sp-purple) 0%,
+        transparent 40%,
+        transparent 60%,
+        var(--sp-accent) 100%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box,
+                  linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+            mask-composite: exclude;
+    opacity: 0.4;
+    pointer-events: none;
 }
 
 .spellcaster-header {
@@ -14,102 +71,179 @@
     align-items: center;
     gap: 8px;
     margin-bottom: 12px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid rgba(178, 70, 242, 0.2);
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--sp-purple-dim);
 }
 
 .spellcaster-icon {
     font-size: 20px;
+    filter: drop-shadow(0 0 6px var(--sp-accent-glow));
 }
 
 .spellcaster-header strong {
     flex: 1;
     font-size: 14px;
-    color: #e0d0ff;
-    letter-spacing: 1px;
+    letter-spacing: 1.5px;
+    background: linear-gradient(92deg,
+        var(--sp-accent) 0%,
+        #fff2c6 35%,
+        var(--sp-purple) 65%,
+        var(--sp-accent) 100%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0 0 12px rgba(255, 215, 0, 0.25);
+    animation: spellcaster-title-sweep 7s linear infinite;
+}
+
+@keyframes spellcaster-title-sweep {
+    0%   { background-position: 0% 50%; }
+    100% { background-position: 200% 50%; }
 }
 
 .spellcaster-status {
     font-size: 11px;
     font-weight: 600;
-    transition: color 0.3s;
+    letter-spacing: 0.4px;
+    transition: color 0.3s, text-shadow 0.3s;
 }
 
 .spellcaster-toggle {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     padding: 6px 0;
     cursor: pointer;
     font-size: 13px;
-    color: #ccc;
+    color: var(--sp-text-main);
+    transition: color 0.2s;
+}
+
+.spellcaster-toggle:hover {
+    color: var(--sp-accent-hover);
 }
 
 .spellcaster-toggle input[type="checkbox"] {
-    accent-color: #b246f2;
+    accent-color: var(--sp-accent);
     width: 16px;
     height: 16px;
 }
 
 .spellcaster-row {
-    padding: 6px 0;
+    padding: 8px 0;
 }
 
 .spellcaster-row label {
     display: block;
     font-size: 12px;
-    color: #999;
-    margin-bottom: 4px;
+    color: var(--sp-text-muted);
+    margin-bottom: 5px;
+    letter-spacing: 0.3px;
 }
 
 .spellcaster-row input[type="text"],
-.spellcaster-row textarea {
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(178, 70, 242, 0.2);
-    border-radius: 6px;
-    color: #eee;
-    padding: 6px 8px;
+.spellcaster-row textarea,
+.spellcaster-row input[type="number"] {
+    background: var(--sp-bg-deep);
+    border: 1px solid var(--sp-purple-dim);
+    border-radius: 8px;
+    color: var(--sp-text-main);
+    padding: 7px 10px;
     font-family: inherit;
     font-size: 12px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.spellcaster-row input[type="text"]:hover,
+.spellcaster-row textarea:hover,
+.spellcaster-row input[type="number"]:hover {
+    border-color: rgba(178, 70, 242, 0.55);
 }
 
 .spellcaster-row input[type="text"]:focus,
-.spellcaster-row textarea:focus {
-    border-color: rgba(178, 70, 242, 0.6);
+.spellcaster-row textarea:focus,
+.spellcaster-row input[type="number"]:focus {
+    border-color: var(--sp-accent);
     outline: none;
-    box-shadow: 0 0 8px rgba(178, 70, 242, 0.2);
+    box-shadow: 0 0 0 1px var(--sp-accent-soft),
+                0 0 14px var(--sp-accent-glow);
 }
 
 .spellcaster-row input[type="range"] {
     width: 100%;
-    accent-color: #b246f2;
-}
-
-.spellcaster-row input[type="number"] {
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(178, 70, 242, 0.2);
-    border-radius: 6px;
-    color: #eee;
-    padding: 4px 8px;
-    font-family: inherit;
+    accent-color: var(--sp-accent);
 }
 
 .spellcaster-commands {
-    margin-top: 12px;
-    padding-top: 8px;
-    border-top: 1px solid rgba(178, 70, 242, 0.15);
+    margin-top: 14px;
+    padding: 10px 12px;
+    background: var(--sp-bg-deep);
+    border-left: 2px solid var(--sp-accent);
+    border-radius: 6px;
     font-size: 11px;
-    color: #888;
-    line-height: 1.6;
+    color: var(--sp-text-dim);
+    line-height: 1.7;
 }
 
 .spellcaster-commands strong {
-    color: #b246f2;
+    color: var(--sp-accent);
     display: block;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    font-size: 10px;
 }
 
 .spellcaster-commands div {
-    font-family: monospace;
-    color: #aaa;
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+    color: var(--sp-text-muted);
+}
+
+.spellcaster-commands div code {
+    color: var(--sp-accent-hover);
+    background: var(--sp-accent-soft);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 10.5px;
+}
+
+/* Status colour ramp — shared by .spellcaster-status when the
+   extension sets classes on it (online/busy/idle). Kept tonally
+   consistent with the Guild's dot indicators. */
+.spellcaster-status.is-online  { color: #2ed573; text-shadow: 0 0 8px rgba(46,213,115,0.45); }
+.spellcaster-status.is-busy    { color: var(--sp-accent); text-shadow: 0 0 8px var(--sp-accent-glow); }
+.spellcaster-status.is-idle    { color: var(--sp-text-dim); }
+.spellcaster-status.is-error   { color: #ff4757; text-shadow: 0 0 8px rgba(255,71,87,0.45); }
+
+/* Spellcaster-branded button inside the panel (any future CTA). */
+.spellcaster-panel button,
+.spellcaster-panel .spellcaster-btn {
+    background: linear-gradient(135deg,
+        var(--sp-purple) 0%,
+        #8e39c5 100%);
+    color: #fff;
+    border: 1px solid var(--sp-accent-soft);
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 0 0 transparent;
+}
+
+.spellcaster-panel button:hover,
+.spellcaster-panel .spellcaster-btn:hover {
+    border-color: var(--sp-accent);
+    box-shadow: 0 0 14px var(--sp-accent-glow),
+                inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    transform: translateY(-1px);
+}
+
+.spellcaster-panel button:active,
+.spellcaster-panel .spellcaster-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 0 6px var(--sp-accent-soft);
 }
