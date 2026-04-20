@@ -99,6 +99,10 @@ def wait_for(server, pid, timeout=300):
 
 def download_output(server, outputs, dest_dir="."):
     """Download output files from ComfyUI to local directory."""
+    # 500 MB ceiling — videos can be bigger than stills but no legit
+    # generation exceeds this; beyond it we're protecting against a
+    # misconfigured or compromised server streaming forever.
+    _MAX_OUT = 500 * 1024 * 1024
     saved = []
     for nid, out in outputs.items():
         for key in ("images", "gifs", "videos"):
@@ -108,7 +112,10 @@ def download_output(server, outputs, dest_dir="."):
                 ft = item.get("type", "output")
                 url = f"{server}/view?filename={fn}&subfolder={sf}&type={ft}"
                 try:
-                    data = urllib.request.urlopen(url, timeout=120).read()
+                    data = urllib.request.urlopen(url, timeout=120).read(_MAX_OUT + 1)
+                    if len(data) > _MAX_OUT:
+                        print(f"  SKIPPED {fn}: exceeded {_MAX_OUT} bytes")
+                        continue
                     dest = os.path.join(dest_dir, fn)
                     with open(dest, "wb") as f:
                         f.write(data)
