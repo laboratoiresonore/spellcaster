@@ -580,24 +580,61 @@ function init(router) {
     });
 
     // ── Generate animated moment (video) ──
+    // Preference order:
+    //   1. WAN 2.2 I2V via canonical two-pass pipeline (real motion)
+    //   2. Fallback to the legacy noise-injection path (NOT real video,
+    //      just frame-variation jitter). Only lands here when the Guild
+    //      preset fetch returned null (no WAN install or Guild offline).
+    //
+    // Client response shape is unchanged — { status, videos:[], images:[] }.
+    // WAN output is a GIF (see buildWanI2VWorkflow notes on format).
     router.post('/animate', async (req, res) => {
         try {
-            const { image_base64, prompt, length } = req.body;
+            const { image_base64, prompt, length, turbo, pingpong,
+                    engine } = req.body || {};
             if (!image_base64) return res.status(400).json({ error: 'image_base64 required' });
 
             const imgBuf = Buffer.from(image_base64, 'base64');
             const uploadName = `spellcaster_anim_${Date.now()}.png`;
             await uploadToComfyUI(imgBuf, uploadName);
 
-            // Build animation workflow (img2img batch with noise injection → GIF)
-            const workflow = buildAnimationWorkflow(
-                uploadName,
-                prompt || 'subtle animation, gentle movement',
-                length || 8
-            );
+            // Probe the Guild for a WAN preset (unless the caller
+            // explicitly asked for the legacy engine via engine="legacy").
+            let workflow = null;
+            let usedEngine = "legacy";
+            if (engine !== "legacy") {
+                const wanPreset = await fetchVideoPreset("wan");
+                if (wanPreset) {
+                    usedEngine = "wan";
+                    workflow = buildWanI2VWorkflow(
+                        uploadName,
+                        prompt || 'subtle breathing, gentle movement, living portrait',
+                        wanPreset,
+                        {
+                            length: length || 33,
+                            turbo:    turbo    !== undefined ? !!turbo    : true,
+                            pingpong: pingpong !== undefined ? !!pingpong : true,
+                        },
+                    );
+                }
+            }
+            if (workflow === null) {
+                // Either the Guild is unreachable, the server has no
+                // WAN / LTX install, or the caller forced legacy mode.
+                workflow = buildAnimationWorkflow(
+                    uploadName,
+                    prompt || 'subtle animation, gentle movement',
+                    length || 8,
+                );
+            }
+
+            // WAN full-step can take 60-120s on the RTX 5060 Ti;
+            // turbo ~20s. Keep 300s ceiling so slow servers don't
+            // bail early on a valid job.
             const result = await dispatchWorkflow(workflow, 300000);
             res.json({
                 status: 'ok',
+                engine: usedEngine,
                 videos: result.videos.map(v => ({ base64: v.base64, filename: v.filename })),
                 images: result.images.map(i => ({ base64: i.base64, filename: i.filename })),
             });
@@ -1202,11 +1239,201 @@ function buildSceneCompositeWorkflow(scenePrompt, characters, modelName) {
     return workflow;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  WAN 2.2 I2V — canonical Spellcaster animation pipeline
+// ═══════════════════════════════════════════════════════════════════
+//
+// This is the REAL animation path. It mirrors `build_wan_video` in
+// spellcaster_core/workflows.py. DO NOT diverge — every WAN workflow
+// in the Spellcaster app flows through the same two-pass high/low
+// KSamplerAdvanced pattern. See CLAUDE.md §16 for the canon.
+//
+// The ST plugin fetches the WAN preset from the Guild
+// (`GET /api/video_preset?engine=wan`), which in turn calls
+// `spellcaster_core.video_presets.detect_wan_preset`. If the Guild
+// isn't reachable the endpoint we fall back to
+// `buildAnimationWorkflow` below (legacy noise-injection) so nothing
+// regresses on installs without a Guild running.
+
+// Fetch the WAN/LTX preset from the local Wizard Guild. Returns null
+// on any failure — callers must handle the null path.
+//
+// The Guild lives on the same machine as the SillyTavern server
+// plugin in the supported install (both run on the user's
+// workstation), so localhost:7777 is the usual target. GUILD_URL is
+// configurable via the `/settings` endpoint.
+async function fetchVideoPreset(engine = "wan") {
+    try {
+        const comfyParam = encodeURIComponent(COMFYUI_URL);
+        const url = `${GUILD_URL}/api/video_preset?engine=${engine}&comfy_url=${comfyParam}`;
+        const r = await fetchJSON(url);
+        if (r.status !== 200) return null;
+        const p = r.data && r.data.preset;
+        return p || null;
+    } catch {
+        return null;
+    }
+}
+
+// Build the canonical WAN 2.2 I2V workflow. `preset` is the dict
+// returned by fetchVideoPreset — see video_presets.py for the schema.
+// Parameters beyond `preset` are animation-shape only (dims, length,
+// fps) plus `turbo` and `pingpong` which are common caller overrides.
+function buildWanI2VWorkflow(avatarImage, prompt, preset, opts = {}) {
+    const {
+        width = 512, height = 512,       // mod-16 square for ST avatars
+        length = 33,                      // 33 frames ≈ 2s @ 16fps
+        fps = 16,
+        turbo = true,                     // preset defaults are already turbo
+        pingpong = true,                  // looping avatar is the common case
+        negative_prompt = null,
+    } = opts;
+    const seed = Math.floor(Math.random() * 2147483647);
+
+    // Full-step override: the preset is tuned for turbo (6 steps,
+    // cfg=1.0, second_step=3). When turbo=false, apply the canonical
+    // full-step kwargs from wan_turbo_kwargs(turbo=False).
+    const steps       = turbo ? preset.steps       : 30;
+    const cfg         = turbo ? preset.cfg         : 3.5;
+    const second_step = turbo ? preset.second_step : 15;
+    const shift       = preset.shift != null ? preset.shift : 8.0;
+
+    const isGgufClip = !!preset.clip_is_gguf;
+    const isGgufHigh = (preset.high_model || "").toLowerCase().endsWith(".gguf");
+    const isGgufLow  = (preset.low_model  || "").toLowerCase().endsWith(".gguf");
+
+    const neg = negative_prompt || "static, frozen, blurry, low quality, distorted";
+
+    const wf = {};
+
+    // ── Model loaders ──
+    wf["1"] = isGgufClip
+        ? { class_type: "CLIPLoaderGGUF", inputs: { clip_name: preset.clip, type: "wan" }}
+        : { class_type: "CLIPLoader",     inputs: { clip_name: preset.clip, type: "wan", device: "default" }};
+
+    wf["2"] = isGgufHigh
+        ? { class_type: "UnetLoaderGGUF", inputs: { unet_name: preset.high_model }}
+        : { class_type: "UNETLoader",     inputs: { unet_name: preset.high_model, weight_dtype: "default" }};
+
+    wf["3"] = isGgufLow
+        ? { class_type: "UnetLoaderGGUF", inputs: { unet_name: preset.low_model }}
+        : { class_type: "UNETLoader",     inputs: { unet_name: preset.low_model, weight_dtype: "default" }};
+
+    wf["4"] = { class_type: "VAELoader", inputs: { vae_name: preset.vae }};
+
+    // ── Conditioning ──
+    wf["5"] = { class_type: "CLIPTextEncode", inputs: { text: prompt, clip: ["1", 0] }};
+    wf["6"] = { class_type: "CLIPTextEncode", inputs: { text: neg,    clip: ["1", 0] }};
+
+    // ── Start image: load + exact-fit resize (lanczos, center crop) ──
+    // The canonical builder pre-resizes so WanImageToVideo doesn't make
+    // its own center-crop decision and clip the source unexpectedly.
+    wf["7"]  = { class_type: "LoadImage", inputs: { image: avatarImage }};
+    wf["7r"] = { class_type: "ImageScale", inputs: {
+        image: ["7", 0], upscale_method: "lanczos",
+        width, height, crop: "center",
+    }};
+
+    // ── CLIPVision: encode the ORIGINAL image (more detail for
+    // semantic conditioning). Canonical pattern — don't shortcut to
+    // the scaled version.
+    wf["7cv"] = { class_type: "CLIPVisionLoader", inputs: {
+        clip_name: "clip_vision_h.safetensors",
+    }};
+    wf["7ce"] = { class_type: "CLIPVisionEncode", inputs: {
+        clip_vision: ["7cv", 0], image: ["7", 0],
+        crop: "none",
+    }};
+
+    // ── Acceleration LoRAs (turbo only) — LightX2V/Lightning I2V pair
+    // stored on the preset. Strength 1.5 is the calibrated default.
+    let highRef = ["2", 0];
+    let lowRef  = ["3", 0];
+    if (turbo) {
+        const str = preset.accel_strength || 1.5;
+        if (preset.high_accel_lora) {
+            wf["100"] = { class_type: "LoraLoaderModelOnly", inputs: {
+                model: highRef, lora_name: preset.high_accel_lora,
+                strength_model: str,
+            }};
+            highRef = ["100", 0];
+        }
+        if (preset.low_accel_lora) {
+            wf["120"] = { class_type: "LoraLoaderModelOnly", inputs: {
+                model: lowRef, lora_name: preset.low_accel_lora,
+                strength_model: str,
+            }};
+            lowRef = ["120", 0];
+        }
+    }
+
+    // ── ModelSamplingSD3 shift on both branches ──
+    if (shift && shift > 0) {
+        wf["30"] = { class_type: "ModelSamplingSD3", inputs: { model: highRef, shift }};
+        wf["31"] = { class_type: "ModelSamplingSD3", inputs: { model: lowRef,  shift }};
+        highRef = ["30", 0];
+        lowRef  = ["31", 0];
+    }
+
+    // ── WanImageToVideo: outputs [positive, negative, latent] ──
+    wf["40"] = { class_type: "WanImageToVideo", inputs: {
+        positive:            ["5", 0],
+        negative:            ["6", 0],
+        vae:                 ["4", 0],
+        width, height, length, batch_size: 1,
+        clip_vision_output:  ["7ce", 0],
+        start_image:         ["7r", 0],
+    }};
+
+    // ── Two-pass KSamplerAdvanced (HIGH frames 0..second_step,
+    //    LOW frames second_step..end). The LOW pass disables noise
+    //    injection and forces cfg=1 — it's a refinement pass,
+    //    matching the canonical pattern exactly.
+    wf["50"] = { class_type: "KSamplerAdvanced", inputs: {
+        model: highRef,
+        positive: ["40", 0], negative: ["40", 1],
+        latent_image: ["40", 2],
+        add_noise: "enable", noise_seed: seed,
+        steps, cfg, sampler_name: "euler", scheduler: "simple",
+        start_at_step: 0, end_at_step: second_step,
+        return_with_leftover_noise: "enable",
+    }};
+    wf["51"] = { class_type: "KSamplerAdvanced", inputs: {
+        model: lowRef,
+        positive: ["40", 0], negative: ["40", 1],
+        latent_image: ["50", 0],
+        add_noise: "disable", noise_seed: 0,
+        steps, cfg: 1, sampler_name: "euler", scheduler: "simple",
+        start_at_step: second_step, end_at_step: 10000,
+        return_with_leftover_noise: "disable",
+    }};
+
+    // ── Decode + encode as GIF ──
+    // GIF (not MP4) because the existing SillyTavern client renders
+    // videos via the markdown image syntax `![animated](data:image/gif;...)`
+    // — MP4 would need a <video> tag the client doesn't emit. Keep
+    // MP4 as a future opt-in.
+    wf["60"] = { class_type: "VAEDecode", inputs: {
+        samples: ["51", 0], vae: ["4", 0],
+    }};
+    wf["70"] = { class_type: "VHS_VideoCombine", inputs: {
+        images: ["60", 0], frame_rate: fps,
+        loop_count: 0, filename_prefix: "Spellcaster_ST_wan_i2v",
+        format: "image/gif", pingpong: !!pingpong,
+        save_output: true,
+    }};
+
+    return wf;
+}
+
 function buildAnimationWorkflow(imageName, prompt, numFrames) {
-    // Img2img with low denoise on each frame variation — generates a short
-    // animated GIF by creating subtle variations of the source image.
-    // This is a lightweight animation approach that works with any SD/SDXL
-    // checkpoint (no LTX/WAN models required).
+    // FALLBACK path — img2img with low-denoise noise injection on a
+    // latent batch. This was the ST plugin's original animation
+    // implementation; it's NOT real video, just 8 slightly-different
+    // frames of the same image. Kept as a safety net for users whose
+    // ComfyUI server lacks WAN / LTX / Kijai nodes (the animate
+    // endpoint checks the WAN preset first and only lands here on
+    // preset miss). Do not route new callers through this.
     const seed = Math.floor(Math.random() * 2147483647);
     return {
         "1": { "class_type": "LoadImage", "inputs": { "image": imageName }},
