@@ -20,6 +20,7 @@ import time
 import signal
 import socket
 import threading
+from typing import Optional
 
 # ── Path setup ────────────────────────────────────────────────────────
 # Add parent dirs so scaffold/ and spellcaster_core can be found
@@ -4715,6 +4716,289 @@ def _spellcaster_lora_subjects() -> tuple[int, dict]:
     return (200, {"subjects": list_subject_templates()})
 
 
+# ── Auto-calibration: Civitai + knowledge-driven per-LoRA recipes ───────
+
+_LORA_KNOWLEDGE_CACHE_INITED = False
+
+
+def _spellcaster_lora_knowledge_cache_init() -> None:
+    """Point the lora_knowledge module at our state dir so its Civitai
+    cache survives restarts. Idempotent; safe to call per request."""
+    global _LORA_KNOWLEDGE_CACHE_INITED
+    if _LORA_KNOWLEDGE_CACHE_INITED:
+        return
+    try:
+        from spellcaster_core.lora_knowledge import set_cache_path
+        set_cache_path(os.path.join(_STATE_DIR, "lora_knowledge_cache.json"))
+        _LORA_KNOWLEDGE_CACHE_INITED = True
+    except Exception:
+        # Non-fatal: the module works without persistence, just re-fetches.
+        pass
+
+
+def _resolve_lora_abs_path(lora_name: str) -> Optional[str]:
+    """LoRA filename → absolute path on disk, or None if the ComfyUI
+    models directory isn't locally readable. Used by the auto-
+    calibrate path so lora_knowledge can read the safetensors header
+    and (optionally) compute SHA256 for Civitai lookup."""
+    if not lora_name:
+        return None
+    root = _spellcaster_detect_loras_root()
+    if not root:
+        return None
+    p = os.path.join(root, "loras", lora_name)
+    return p if os.path.exists(p) else None
+
+
+def _spellcaster_lora_knowledge_get(name: str, use_network: bool = True) -> tuple[int, dict]:
+    """GET /api/spellcaster/lora/knowledge?name=X — return the merged
+    knowledge record for one LoRA (triggers, recommended weight,
+    Civitai url, NSFW flag, per-field provenance). Useful for the
+    UI's "why is this the recipe?" tooltip."""
+    if not name:
+        return (400, {"error": "name param required"})
+    try:
+        from spellcaster_core.lora_knowledge import get_knowledge
+    except Exception as e:
+        return (500, {"error": f"knowledge module unavailable: {e}"})
+    _spellcaster_lora_knowledge_cache_init()
+    user_override = _LORA_REGISTRY.get(name) or None
+    try:
+        k = get_knowledge(
+            name,
+            path=_resolve_lora_abs_path(name),
+            user_override=user_override,
+            use_network=bool(use_network),
+        )
+    except Exception as e:
+        return (500, {"error": f"knowledge lookup failed: {e}"})
+    return (200, {"knowledge": k.to_dict()})
+
+
+def _spellcaster_lora_calibrate_auto_start(
+    targets: list = None,
+    subset: str = "",
+    use_network: bool = True,
+) -> tuple[int, dict]:
+    """POST /api/spellcaster/lora/calibrate/auto/start — render ONE
+    auto-recipe sample per target LoRA.
+
+    Payload:
+      targets:      [{name,arch?,purpose_group?}, ...] — explicit set
+      subset:       "all" | "unconfirmed" — derived from registry when
+                    `targets` is empty
+      use_network:  bool — allow Civitai lookups
+
+    The derived recipe uses lora_knowledge (safetensors → sidecar →
+    shipped defaults → Civitai → heuristics). Each target that skips
+    (bad arch, missing registry entry) is recorded in the results
+    rather than short-circuiting the batch.
+    """
+    try:
+        from scaffold.lora_grouping import (
+            start_calibration_job, classify_lora_purpose,
+        )
+        from spellcaster_core.preference_calibration import discover_models
+    except Exception as e:
+        return (500, {"error": f"module unavailable: {e}"})
+
+    _spellcaster_lora_knowledge_cache_init()
+
+    # Build concrete target list from (targets || subset filter).
+    final_targets: list[dict] = []
+    if targets:
+        for t in targets:
+            if not isinstance(t, dict):
+                continue
+            name = str(t.get("name") or "").strip()
+            if not name:
+                continue
+            entry = _LORA_REGISTRY.get(name) or {}
+            arch = str(t.get("arch")
+                       or (entry.get("archs") or [""])[0] or "").strip()
+            purpose = str(t.get("purpose_group")
+                          or classify_lora_purpose(name, entry)).strip() or "other"
+            final_targets.append({"name": name, "arch": arch,
+                                   "purpose_group": purpose})
+    else:
+        # subset-driven: walk the registry.
+        want = (subset or "unconfirmed").lower()
+        for name, entry in _LORA_REGISTRY.items():
+            if not isinstance(entry, dict):
+                continue
+            if want == "unconfirmed" and entry.get("calibration_confirmed"):
+                continue
+            archs = entry.get("archs") or []
+            if isinstance(archs, str):
+                archs = [archs]
+            if not archs:
+                continue
+            arch = str(archs[0])
+            purpose = classify_lora_purpose(name, entry)
+            final_targets.append({"name": name, "arch": arch,
+                                   "purpose_group": purpose})
+
+    if not final_targets:
+        return (409, {"error": "no targets — registry is empty or all confirmed"})
+
+    try:
+        models = discover_models(COMFYUI_URL)
+    except Exception as e:
+        return (502, {"error": f"ComfyUI not reachable: {e}"})
+
+    state = start_calibration_job(
+        COMFYUI_URL, final_targets, models,
+        lora_path_resolver=_resolve_lora_abs_path,
+        user_override_resolver=lambda n: _LORA_REGISTRY.get(n),
+        use_network=bool(use_network),
+    )
+    return (200, {"ok": True, "job_id": state.job_id,
+                  "total": state.total, "status": state.status})
+
+
+def _spellcaster_lora_calibrate_auto_status(job_id: str) -> tuple[int, dict]:
+    """GET /api/spellcaster/lora/calibrate/auto/status?job=X."""
+    try:
+        from scaffold.lora_grouping import get_calibration_job
+    except Exception as e:
+        return (500, {"error": f"module unavailable: {e}"})
+    state = get_calibration_job(job_id)
+    if not state:
+        return (404, {"error": f"unknown job {job_id!r}"})
+    return (200, state.to_public_dict())
+
+
+def _spellcaster_lora_calibrate_confirm(
+    lora_name: str,
+    *,
+    nsfw: Optional[bool] = None,
+    strength: Optional[float] = None,
+    sampler: Optional[str] = None,
+    cfg: Optional[float] = None,
+    subject_key: Optional[str] = None,
+    trigger_words: Optional[list] = None,
+    base_model: Optional[str] = None,
+    sha256: Optional[str] = None,
+    source: str = "user_confirm",
+    extra: Optional[dict] = None,
+) -> tuple[int, dict]:
+    """POST /api/spellcaster/lora/calibrate/confirm — user says the
+    auto-rendered sample looks right. Persists the recipe to the SFW
+    or NSFW shipped-calibration store AND flips the user registry's
+    `calibration_confirmed` flag so subsequent "unconfirmed" queries
+    skip this LoRA.
+
+    When `nsfw` is None we derive it from lora_knowledge's classifier
+    — that's the normal path. Passing explicit nsfw=true/false lets
+    the UI override an obvious misclassification.
+    """
+    if not lora_name:
+        return (400, {"error": "lora_name required"})
+    if lora_name not in _LORA_REGISTRY:
+        return (404, {"error": f"LoRA {lora_name!r} not in registry"})
+
+    try:
+        from spellcaster_core import lora_calibration_store as store
+        from spellcaster_core.lora_knowledge import get_knowledge, classify_nsfw
+    except Exception as e:
+        return (500, {"error": f"calibration module unavailable: {e}"})
+
+    _spellcaster_lora_knowledge_cache_init()
+
+    # Derive missing fields from the merged knowledge record so the
+    # user can confirm a thin payload (`{name}` only) and we still
+    # persist a complete recipe. Caller values always win.
+    try:
+        k = get_knowledge(
+            lora_name,
+            path=_resolve_lora_abs_path(lora_name),
+            user_override=_LORA_REGISTRY.get(lora_name),
+            use_network=False,   # no network on confirm — we already rendered
+        )
+        if strength is None and k.recommended_weight is not None:
+            strength = float(k.recommended_weight)
+        if not sampler and k.recommended_sampler:
+            sampler = k.recommended_sampler
+        if cfg is None and k.recommended_cfg is not None:
+            cfg = float(k.recommended_cfg)
+        if not trigger_words and k.trigger_words:
+            trigger_words = list(k.trigger_words)
+        if not base_model and k.base_model:
+            base_model = k.base_model
+        if not sha256 and k.sha256:
+            sha256 = k.sha256
+        is_nsfw = bool(nsfw) if nsfw is not None else classify_nsfw(k, filename=lora_name)
+    except Exception as e:
+        return (500, {"error": f"knowledge resolution failed: {e}"})
+
+    path_written = store.write_calibration(
+        lora_name,
+        nsfw=is_nsfw,
+        recommended_weight=strength,
+        recommended_sampler=sampler,
+        recommended_cfg=cfg,
+        subject_key=subject_key,
+        trigger_words=trigger_words,
+        base_model=base_model,
+        sha256=sha256,
+        source=source,
+        extra=extra,
+        confirmed_by_user=True,
+    )
+
+    # Flip the registry flag so "unconfirmed" subsets skip this LoRA.
+    entry = _LORA_REGISTRY.setdefault(lora_name, {})
+    entry["calibration_confirmed"] = True
+    entry["calibration_confirmed_at"] = int(time.time())
+    entry["calibration_nsfw"] = is_nsfw
+    if strength is not None:
+        entry["user_default_strength"] = float(strength)
+    if subject_key:
+        entry["user_default_subject"] = str(subject_key)
+    try:
+        _save_lora_registry()
+    except Exception:
+        pass
+
+    return (200, {
+        "ok": True,
+        "lora_name": lora_name,
+        "nsfw": is_nsfw,
+        "path": path_written,
+        "recipe": {
+            "strength": strength, "sampler": sampler, "cfg": cfg,
+            "subject_key": subject_key, "trigger_words": trigger_words,
+            "base_model": base_model,
+        },
+    })
+
+
+def _spellcaster_lora_calibrate_summary() -> tuple[int, dict]:
+    """GET /api/spellcaster/lora/calibrate/summary — counts, lists of
+    confirmed vs unconfirmed LoRAs, and paths to the SFW/NSFW stores.
+    Drives the progress bar in the confirm-calibrations UI."""
+    try:
+        from spellcaster_core import lora_calibration_store as store
+    except Exception as e:
+        return (500, {"error": f"module unavailable: {e}"})
+    confirmed, unconfirmed = [], []
+    for name, entry in _LORA_REGISTRY.items():
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("calibration_confirmed"):
+            confirmed.append(name)
+        else:
+            unconfirmed.append(name)
+    st = store.stats()
+    st.update({
+        "registry_confirmed":   len(confirmed),
+        "registry_unconfirmed": len(unconfirmed),
+        "registry_total":       len(_LORA_REGISTRY),
+        "unconfirmed_names":    unconfirmed[:500],
+    })
+    return (200, st)
+
+
 def _spellcaster_lora_suggest(
     char_id: str, prompt: str,
 ) -> tuple[int, dict]:
@@ -8619,6 +8903,19 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 params.get('job', [''])[0]))
         if self.path == '/api/spellcaster/lora/subjects':
             return self.end_json(*_spellcaster_lora_subjects())
+        if self.path.startswith('/api/spellcaster/lora/calibrate/auto/status'):
+            qs = urllib.parse.urlparse(self.path).query
+            params = urllib.parse.parse_qs(qs)
+            return self.end_json(*_spellcaster_lora_calibrate_auto_status(
+                params.get('job', [''])[0]))
+        if self.path == '/api/spellcaster/lora/calibrate/summary':
+            return self.end_json(*_spellcaster_lora_calibrate_summary())
+        if self.path.startswith('/api/spellcaster/lora/knowledge'):
+            qs = urllib.parse.urlparse(self.path).query
+            params = urllib.parse.parse_qs(qs)
+            return self.end_json(*_spellcaster_lora_knowledge_get(
+                params.get('name', [''])[0],
+                use_network=(params.get('network', ['1'])[0] != '0')))
         if self.path.startswith('/api/spellcaster/lora/suggest'):
             qs = urllib.parse.urlparse(self.path).query
             params = urllib.parse.parse_qs(qs)
@@ -12816,6 +13113,25 @@ class GuildHandler(SimpleHTTPRequestHandler):
             # for payload shape.
             return self.end_json(*_spellcaster_lora_approve(
                 approvals=data.get('approvals') or []))
+        if self.path == '/api/spellcaster/lora/calibrate/auto/start':
+            return self.end_json(*_spellcaster_lora_calibrate_auto_start(
+                targets=data.get('targets') or [],
+                subset=data.get('subset') or '',
+                use_network=bool(data.get('use_network', True))))
+        if self.path == '/api/spellcaster/lora/calibrate/confirm':
+            return self.end_json(*_spellcaster_lora_calibrate_confirm(
+                data.get('lora_name', ''),
+                nsfw=(bool(data['nsfw']) if 'nsfw' in data else None),
+                strength=(float(data['strength'])
+                           if 'strength' in data else None),
+                sampler=data.get('sampler') or None,
+                cfg=(float(data['cfg']) if 'cfg' in data else None),
+                subject_key=data.get('subject_key') or None,
+                trigger_words=data.get('trigger_words') or None,
+                base_model=data.get('base_model') or None,
+                sha256=data.get('sha256') or None,
+                source=data.get('source') or 'user_confirm',
+                extra=data.get('extra') or None))
 
         # -- /api/horde_generate -- server-side proxy to AI Horde
         #    Browser can't call Horde directly (CORS), so we relay.

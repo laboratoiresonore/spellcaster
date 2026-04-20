@@ -392,6 +392,156 @@ def resolve_shootout_recipe(
     return chosen_subject, pos, neg, float(strength)
 
 
+def _stitch_triggers_into_prompt(base_prompt: str, trigger_words: list[str]) -> str:
+    """Prepend distinct trigger words to `base_prompt`, skipping any
+    already present (case-insensitive). Keeps the template readable
+    instead of just concatenating duplicates.
+    """
+    if not trigger_words:
+        return base_prompt
+    lowered = base_prompt.lower()
+    to_add: list[str] = []
+    for t in trigger_words:
+        t = (t or "").strip()
+        if not t:
+            continue
+        if t.lower() in lowered or t.lower() in (x.lower() for x in to_add):
+            continue
+        to_add.append(t)
+    if not to_add:
+        return base_prompt
+    return ", ".join(to_add) + ", " + base_prompt
+
+
+def _pick_example_snippet(examples: list[str], max_words: int = 14) -> str:
+    """Return a short, template-friendly snippet from a Civitai example
+    prompt. We trim to `max_words` tokens, strip lora/embedding tags,
+    and reject anything that looks like a full recipe. The goal is
+    flavour, not a verbatim copy — this keeps the comparison shootout
+    honest (same base subject + each LoRA's contextual cue).
+    """
+    import re as _re
+    for ex in examples:
+        if not isinstance(ex, str):
+            continue
+        ex = _re.sub(r"<[^>]+>", "", ex).strip()          # drop <lora:...> tags
+        ex = _re.sub(r"\s+", " ", ex)
+        if not ex:
+            continue
+        tokens = ex.split()
+        if len(tokens) > max_words:
+            tokens = tokens[:max_words]
+        candidate = " ".join(tokens).strip(" ,;:-")
+        if len(candidate) >= 8:
+            return candidate
+    return ""
+
+
+def resolve_shootout_recipe_for_lora(
+    lora_name: str,
+    purpose_group: str,
+    arch: str,
+    *,
+    subject: Optional[str] = None,
+    strength: Optional[float] = None,
+    lora_abs_path: Optional[str] = None,
+    user_override: Optional[dict] = None,
+    use_network: bool = True,
+) -> dict:
+    """Per-LoRA recipe blending group defaults with `lora_knowledge`.
+
+    Returns a dict with the full rendering recipe PLUS a `provenance`
+    map so the UI can show "weight from Civitai / sampler from
+    community / trigger from safetensors". On any failure we fall
+    back to `resolve_shootout_recipe` — the caller always gets a
+    rendering-ready result.
+
+    Never raises: every step is wrapped so a bad import or a flaky
+    Civitai response doesn't crash the shootout engine.
+    """
+    try:
+        try:
+            from spellcaster_core.lora_knowledge import (
+                get_knowledge, classify_nsfw,
+            )
+        except ImportError:
+            from lora_knowledge import get_knowledge, classify_nsfw  # type: ignore
+
+        k = get_knowledge(
+            lora_name,
+            path=lora_abs_path,
+            user_override=user_override,
+            use_network=use_network,
+        )
+    except Exception as e:
+        # Full fallback to group defaults on any knowledge error.
+        subj, pos, neg, s = resolve_shootout_recipe(
+            purpose_group, arch, subject=subject, strength=strength,
+        )
+        return {
+            "subject_key":   subj,
+            "prompt":        pos,
+            "negative":      neg,
+            "strength":      s,
+            "sampler":       None,
+            "cfg":           None,
+            "trigger_words": [],
+            "nsfw":          False,
+            "provenance":    {"error": f"knowledge_error: {e!s}"[:160]},
+            "knowledge":     None,
+        }
+
+    # Base template comes from subject picker (user override > arch
+    # override > group default). Same resolver as the plain recipe.
+    subj, base_pos, base_neg, group_strength = resolve_shootout_recipe(
+        purpose_group, arch, subject=subject, strength=strength,
+    )
+
+    # Weave in trigger words (every LoRA's style head key) + one short
+    # example phrase from Civitai. The example phrase gives the LoRA a
+    # context it was trained on so the comparison shootout actually
+    # exercises the LoRA rather than just the base model.
+    prompt = _stitch_triggers_into_prompt(base_pos, k.trigger_words)
+    snippet = _pick_example_snippet(k.example_prompts)
+    if snippet and snippet.lower() not in prompt.lower():
+        prompt = prompt + ", " + snippet
+
+    # Strength: explicit caller > knowledge > group default. The
+    # knowledge layer already applied user registry + shipped +
+    # civitai + heuristic in that order, so we trust it when
+    # populated.
+    if strength is not None:
+        final_strength = float(strength)
+    elif k.recommended_weight is not None:
+        final_strength = float(k.recommended_weight)
+    else:
+        final_strength = float(group_strength)
+    # Clamp to a sane band — burn-in weights from bad training
+    # crashes the LoRA's output into noise.
+    if final_strength > 1.5:
+        final_strength = 1.5
+    if final_strength < 0.1:
+        final_strength = 0.1
+
+    try:
+        nsfw = classify_nsfw(k, filename=lora_name)
+    except Exception:
+        nsfw = bool(getattr(k, "nsfw", False))
+
+    return {
+        "subject_key":   subj,
+        "prompt":        prompt,
+        "negative":      base_neg,
+        "strength":      final_strength,
+        "sampler":       k.recommended_sampler,
+        "cfg":           k.recommended_cfg,
+        "trigger_words": list(k.trigger_words),
+        "nsfw":          nsfw,
+        "provenance":    dict(k.provenance),
+        "knowledge":     k.to_dict(),
+    }
+
+
 def list_subject_templates() -> list[dict]:
     """Public list for the UI's subject dropdown."""
     labels = {
@@ -624,6 +774,8 @@ def _render_single_sample(
     models_pool: list[dict],
     preferred_model: Optional[str] = None,
     timeout: int = 90,
+    sampler_override: Optional[str] = None,
+    cfg_override: Optional[float] = None,
 ) -> ShootoutSample:
     """Render one LoRA sample with automatic model fallback.
 
@@ -687,9 +839,12 @@ def _render_single_sample(
             "arch": arch, "ckpt": model["name"],
             "width": w, "height": h,
             "steps": getattr(arch_obj, "default_steps", 20),
-            "cfg":   getattr(arch_obj, "default_cfg", 6.0),
+            "cfg":   (cfg_override
+                      if cfg_override is not None
+                      else getattr(arch_obj, "default_cfg", 6.0)),
             "denoise": 1.0,
-            "sampler":   getattr(arch_obj, "default_sampler", "euler"),
+            "sampler":   (sampler_override
+                          or getattr(arch_obj, "default_sampler", "euler")),
             "scheduler": getattr(arch_obj, "default_scheduler", "normal"),
             "loader":    getattr(arch_obj, "loader", "checkpoint"),
             # Default filenames — arch_extra overrides below when the
@@ -915,15 +1070,198 @@ def get_shootout_job(job_id: str) -> Optional[ShootoutJobState]:
         return _JOBS.get(job_id)
 
 
+# ── Auto-calibration (one confirm-ready sample per unconfirmed LoRA) ────
+
+def render_calibration_sample(
+    server: str,
+    lora_name: str,
+    purpose_group: str,
+    arch: str,
+    models: list[dict],
+    *,
+    lora_abs_path: Optional[str] = None,
+    user_override: Optional[dict] = None,
+    subject: Optional[str] = None,
+    seed: int = 12345,
+    timeout: int = 90,
+    use_network: bool = True,
+    preferred_model: Optional[str] = None,
+) -> dict:
+    """Render ONE sample using the LoRA's auto-derived recipe.
+
+    Pulls from `lora_knowledge` (Civitai + safetensors + sidecar +
+    shipped defaults + heuristic), then dispatches the same way the
+    shootout does. Return shape matches the shootout sample dict so
+    the UI can reuse its card renderer.
+    """
+    recipe = resolve_shootout_recipe_for_lora(
+        lora_name, purpose_group, arch,
+        subject=subject,
+        lora_abs_path=lora_abs_path,
+        user_override=user_override,
+        use_network=use_network,
+    )
+    sample = _render_single_sample(
+        server, arch, lora_name, float(recipe["strength"]),
+        recipe["prompt"], recipe["negative"], seed, models,
+        preferred_model=preferred_model,
+        timeout=timeout,
+        sampler_override=recipe.get("sampler"),
+        cfg_override=recipe.get("cfg"),
+    )
+    out = sample.to_dict()
+    out.update({
+        "arch":          arch,
+        "purpose_group": purpose_group,
+        "prompt":        recipe["prompt"],
+        "negative":      recipe["negative"],
+        "subject":       recipe["subject_key"],
+        "strength":      recipe["strength"],
+        "sampler":       recipe.get("sampler"),
+        "cfg":           recipe.get("cfg"),
+        "trigger_words": recipe.get("trigger_words") or [],
+        "nsfw":          recipe.get("nsfw"),
+        "provenance":    recipe.get("provenance") or {},
+        "knowledge":     recipe.get("knowledge"),
+        "model":         preferred_model or (
+                            _pick_representative_model(models, arch) or {}
+                         ).get("name", ""),
+    })
+    return out
+
+
+@dataclass
+class CalibrationJobState:
+    job_id: str
+    total: int
+    done: int = 0
+    current: str = ""
+    samples: list[dict] = field(default_factory=list)
+    status: str = "running"           # running | complete | error
+    error: str = ""
+    started_at: float = field(default_factory=time.time)
+    finished_at: Optional[float] = None
+
+    def to_public_dict(self) -> dict:
+        return {
+            "job_id":      self.job_id,
+            "status":      self.status,
+            "total":       self.total,
+            "done":        self.done,
+            "current":     self.current,
+            "error":       self.error,
+            "started_at":  self.started_at,
+            "finished_at": self.finished_at,
+            "samples":     list(self.samples),
+        }
+
+
+_CALIB_JOBS: dict[str, CalibrationJobState] = {}
+_CALIB_LOCK = threading.Lock()
+
+
+def start_calibration_job(
+    server: str,
+    targets: list[dict],
+    models: list[dict],
+    *,
+    lora_path_resolver: Optional[Callable[[str], Optional[str]]] = None,
+    user_override_resolver: Optional[Callable[[str], Optional[dict]]] = None,
+    seed: int = 12345,
+    use_network: bool = True,
+) -> CalibrationJobState:
+    """Kick off a background batch auto-calibration.
+
+    `targets` is a list of dicts with keys:
+        {"name": <lora filename>, "arch": <arch>, "purpose_group": <group>}
+    The worker renders one sample per target using that LoRA's
+    `resolve_shootout_recipe_for_lora` recipe. The UI polls via
+    `get_calibration_job(job_id)` and, on completion, walks each
+    sample to show the user a "Confirm / Customize" card.
+
+    Callers supply optional resolvers so this module stays decoupled
+    from the Guild's registry + filesystem layout.
+    """
+    job_id = f"lcal_{uuid.uuid4().hex[:12]}"
+    state = CalibrationJobState(job_id=job_id, total=len(targets))
+    with _CALIB_LOCK:
+        _CALIB_JOBS[job_id] = state
+
+    def _worker():
+        try:
+            for t in targets:
+                name = str(t.get("name") or "").strip()
+                arch = str(t.get("arch") or "").strip()
+                group = str(t.get("purpose_group") or "other").strip()
+                if not name or not arch:
+                    state.done += 1
+                    state.samples.append({
+                        "lora_name": name, "ok": False,
+                        "error": "missing name or arch",
+                    })
+                    continue
+                if arch.lower() in _SKIP_SHOOTOUT_ARCHS:
+                    state.done += 1
+                    state.samples.append({
+                        "lora_name": name, "ok": False, "arch": arch,
+                        "purpose_group": group,
+                        "error": "arch not supported for calibration",
+                    })
+                    continue
+                state.current = name
+                lora_abs_path = (lora_path_resolver(name)
+                                  if lora_path_resolver else None)
+                user_over = (user_override_resolver(name)
+                              if user_override_resolver else None)
+                try:
+                    out = render_calibration_sample(
+                        server, name, group, arch, models,
+                        lora_abs_path=lora_abs_path,
+                        user_override=user_over,
+                        seed=seed,
+                        use_network=use_network,
+                    )
+                except Exception as e:
+                    out = {
+                        "lora_name": name, "arch": arch,
+                        "purpose_group": group, "ok": False,
+                        "error": f"calibration error: {e!s}"[:200],
+                    }
+                state.samples.append(out)
+                state.done += 1
+            state.status = "complete"
+        except Exception as e:
+            state.status = "error"
+            state.error = f"{e!s}"[:400]
+        finally:
+            state.finished_at = time.time()
+
+    t = threading.Thread(target=_worker, daemon=True,
+                         name=f"lora-calibrate-{job_id}")
+    t.start()
+    return state
+
+
+def get_calibration_job(job_id: str) -> Optional[CalibrationJobState]:
+    with _CALIB_LOCK:
+        return _CALIB_JOBS.get(job_id)
+
+
 __all__ = [
     "classify_lora_purpose",
     "enumerate_groups",
     "groups_needing_pick",
     "shootout_prompt_for",
+    "resolve_shootout_recipe",
+    "resolve_shootout_recipe_for_lora",
     "ShootoutSample",
     "ShootoutResult",
     "ShootoutJobState",
+    "CalibrationJobState",
     "run_shootout",
     "start_shootout_job",
     "get_shootout_job",
+    "render_calibration_sample",
+    "start_calibration_job",
+    "get_calibration_job",
 ]
