@@ -4806,6 +4806,39 @@ local function process_klein_img2img_ref(image, ref_path, klein_model_label,
   dt.print(string.format(_("Klein img2img+ref done — %d image(s) imported"), imported))
 end
 
+-- ── Generate 3D Normal Map (NormalCrafter, canonical) ─────────────────
+-- Routes through POST /api/run_builder → build_normal_map. Produces a
+-- 3D surface normal map useful for relighting, ControlNet normal
+-- guidance in GIMP, or 3D reconstruction workflows. The GIMP plugin
+-- has a native menu entry for the same builder; this DT button mirrors
+-- it so a RAW processor user can generate the normal map without
+-- leaving Darktable first.
+local function process_normal_map(image, max_res)
+  local server = get_server()
+  dt.print(_("Exporting for normal map..."))
+  local path, fname = export_to_temp(image)
+  if not path then dt.print(_("Export failed")); return end
+  dt.print(_("Uploading to ComfyUI..."))
+  local img_name = "dt_normal_" .. os.time() .. "_" .. math.random(10000, 99999) .. ".png"
+  curl_upload(server .. "/upload/image", path, img_name)
+  os.remove(path)
+  local params = string.format(
+    '{"image_filename":"%s","max_res":%d}',
+    json_escape(img_name), max_res or 1024)
+  dt.print(_("Generating 3D normal map via NormalCrafter..."))
+  local urls, err = _run_builder("build_normal_map", params)
+  if not urls then
+    dt.print(_("Normal map failed: ") .. tostring(err))
+    return
+  end
+  if #urls == 0 then
+    dt.print(_("Normal map returned no images"))
+    return
+  end
+  local imported = _download_guild_assets(urls, "normal_map")
+  dt.print(string.format(_("Normal map done — %d image(s) imported"), imported))
+end
+
 -- ── Upscale Blend (canonical) ──────────────────────────────────────────
 -- Run two upscaler models in parallel and blend the outputs. Useful
 -- when one model is sharp-but-crunchy (e.g. RealESRGAN) and the other
@@ -8242,6 +8275,31 @@ local upscale_blend_scale_slider = dt.new_widget("slider") {
   step = 0.05, digits = 2, value = 1.0,
 }
 
+-- 3D Normal Map generation — canonical NormalCrafter path. Mirrors the
+-- GIMP plugin's "Enhance > 3D Normal Map" menu entry. Handy inside
+-- Darktable for RAW-based relighting workflows where the user wants a
+-- normal map to feed into a downstream GIMP IC-Light pass or Klein
+-- surgical-edit that uses normal-map ControlNet (CLAUDE.md §25 / the
+-- "Normal Map (use existing layer)" CN mode). No dialog — just runs
+-- at a sensible default max_res tied to the exported image size.
+local normal_map_btn = dt.new_widget("button") {
+  label = _("💎 3D Normal Map (NormalCrafter)"),
+  tooltip = _("Generate a 3D surface normal map for the selected image via the canonical build_normal_map builder. "
+              .. "Useful for relighting + ControlNet normal guidance."),
+  clicked_callback = function()
+    local images = dt.gui.selection()
+    if #images == 0 then dt.print(_("No images selected")); return end
+    for i, img in ipairs(images) do
+      dt.print(string.format(_("Normal map %d/%d"), i, #images))
+      local ok, err = pcall(process_normal_map, img, 1024)
+      if not ok then
+        dt.print(_("Error: ") .. tostring(err))
+        dt.print_error("Spellcaster normal map error: " .. tostring(err))
+      end
+    end
+  end
+}
+
 local upscale_blend_send_btn = dt.new_widget("button") {
   label = _("Hybrid Upscale (Blend)"),
   tooltip = _("Run two upscalers in parallel and blend the outputs (canonical workflow via the Guild)"),
@@ -10211,6 +10269,13 @@ local module_widget = dt.new_widget("box") {
   upscale_blend_factor_slider,
   upscale_blend_scale_slider,
   upscale_blend_send_btn,
+  dt.new_widget("separator") {},
+
+  -- 3D Normal Map (NormalCrafter) — standalone generation via the
+  -- canonical builder. Pairs with GIMP's IC-Light + Normal-Map CN
+  -- modes for cross-app relighting workflows.
+  dt.new_widget("label") { label = _("\xe2\x9c\xa6 3D / RELIGHTING") },
+  normal_map_btn,
   dt.new_widget("separator") {},
 
   -- Z-Image-Turbo (advanced) — full PAG + SLG + optional TeaCache stack

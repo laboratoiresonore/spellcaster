@@ -177,11 +177,39 @@ class VideoBridge:
         }
 
     # ------------------------------------------------------------------
-    # SSE event bus
+    # SSE event bus (video-local — NOT the same thing as EventBus)
+    #
+    # There are TWO parallel event systems in the Guild and future Claude
+    # WILL conflate them without this annotation. They are distinct:
+    #
+    #   • `VideoBridge.subscribe()` (this one) — a queue-backed fan-out
+    #     for `shot-update`, `shot-status` etc. Consumed by Guild's
+    #     `/api/video/events` SSE route. Only video-pipeline events.
+    #     Per-subscriber Queue(maxsize=64). No replay.
+    #
+    #   • `spellcaster_core.event_bus.EventBus.default()` — the
+    #     cross-interface bus that asset gallery / interface registry /
+    #     mailbox fan through. Kinds look like `<origin>.asset.created`,
+    #     `resolve.playhead.send_to_peer`, etc. Consumed by Guild's
+    #     `/api/events/stream` SSE route. Has a ring buffer for replay.
+    #
+    # Why two buses? Historical: the video shotboard existed before the
+    # cross-interface backbone. Merging them would require teaching one
+    # SSE endpoint to fan in from both backends + validating every
+    # existing video-events subscriber still gets its shot-update msgs.
+    # Not done yet; flagged in _dev_docs/HANDOVER_CROSS_APP_AUDIT.md §6.3.
+    #
+    # If you're adding a NEW cross-interface event kind, it goes through
+    # EventBus (and the typed schema in `spellcaster_core/events.py`).
+    # If you're adding a NEW video-shot-lifecycle signal that only the
+    # video UI cares about, it goes through `_emit()` below.
     # ------------------------------------------------------------------
 
     def subscribe(self):
-        """Return a Queue that will receive SSE events."""
+        """Return a Queue that will receive VIDEO-LOCAL SSE events
+        (shot-update, shot-status, render-progress, ...). NOT related
+        to spellcaster_core.event_bus.EventBus — see the block comment
+        above for the split rationale."""
         import queue as _queue
         q = _queue.Queue(maxsize=64)
         with self._sse_lock:
@@ -197,7 +225,9 @@ class VideoBridge:
                 pass
 
     def _emit(self, event: str, data: Dict[str, Any]) -> None:
-        """Push an event to all SSE subscribers."""
+        """Push an event to the video-local fan-out only. For cross-
+        interface events (assets, peer presence, send-to-X), publish
+        through `_EVENT_BUS.publish()` instead."""
         msg = {"event": event, "data": data, "ts": time.time()}
         with self._sse_lock:
             dead = []

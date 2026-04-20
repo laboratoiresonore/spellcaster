@@ -900,6 +900,114 @@ The classic Summon flow (pick model → auto-studio → LLM-name) is **path A**.
 
 **Parameter conventions for Lua/JS callers:** flat keyword shape (`image_filename`, `prompt_text`, `negative_text`, `seed`, `denoise`, `quality`, `fast_mode`, `arch`, `ckpt`, `loras`, `sam3_prompt`). The Guild's `_translate_params` (`tavern/server.py`) handles renames (e.g. `prompt` → `prompt_text`), builds the `preset` dict from flat params + auto-detection, and re-uploads any `/api/assets/<hash>` or `/api/cached_asset/<name>` filenames to ComfyUI before dispatch.
 
+### 25. Cross-Interface Backbone — presence broker + blob bus + typed events (post-audit, 2026-04-20)
+
+The cross-app audit (2026-04-20) added a second HTTP surface alongside the Guild. Both now live; each owns a different concern. Any new cross-plugin work should route through the right one.
+
+**Two HTTP surfaces:**
+
+| Surface | Process | Ownership |
+|---|---|---|
+| **ComfyUI pack** (`comfyui-spellcaster/`) | ComfyUI PromptServer | Peer discovery (`presence.py`), LAN-resilient blob transport (`blob_bus.py`) |
+| **Wizard Guild** (`tavern/server.py`) | Guild Python process | Persistent asset gallery, event bus, mailboxes, video shotboard, all `/api/*` |
+
+ComfyUI is ambient — every plugin already reaches it. Presence + blob routes on ComfyUI give plugins a way to discover each other AND hand bytes around without needing the Guild process to be up.
+
+#### 25.1 Presence broker — `comfyui-spellcaster/presence.py`
+
+Routes on ComfyUI's PromptServer:
+
+```
+POST /spellcaster/presence/register      body: {key, host?, instance_id?, label, icon, capabilities, version, url, meta}
+POST /spellcaster/presence/heartbeat     body: {key, host?, instance_id?, meta}      # auto-registers on first beat
+GET  /spellcaster/presence/list          → {peers: [{key, instance_id, label, icon, capabilities, host, address, age_s, meta}], ttl_s}
+POST /spellcaster/presence/unregister    body: {key, host?, instance_id?}            # idempotent
+```
+
+TTL is 45 s (2× the recommended 20 s heartbeat). Broker keys records by `instance_id` — `key@host` when client provides host, else `key@<observed remote_addr>`. This means same plugin on two machines coexists in the peer list (they get different `instance_id`s). X-Forwarded-For honored for reverse proxies.
+
+Every plugin heartbeats here at module load. Clients: [plugins/gimp/comfyui-connector/_spellcaster_main.py:_start_comfy_presence_heartbeat](plugins/gimp/comfyui-connector/_spellcaster_main.py), [plugins/darktable/comfyui_connector.lua:comfy_presence_heartbeat](plugins/darktable/comfyui_connector.lua), [plugins/sillytavern/spellcaster-st/server-plugin.js:_startPresenceHeartbeat](plugins/sillytavern/spellcaster-st/server-plugin.js), [plugins/resolve/spellcaster_bridge/bridge.py:_send_comfyui_presence](plugins/resolve/spellcaster_bridge/bridge.py).
+
+**Why this matters:** Guild restart used to blind every plugin. Now presence survives Guild outages — plugins still see each other, still gate their Send-to-X UIs correctly.
+
+#### 25.2 Blob bus — `comfyui-spellcaster/blob_bus.py`
+
+Routes on ComfyUI's PromptServer:
+
+```
+POST /spellcaster/blob/put       multipart: file + origin + kind + ttl_s?    → {hash, url (absolute), size, kind, mime, expires_at}
+GET  /spellcaster/blob/<hash>    → raw bytes + sniffed Content-Type
+GET  /spellcaster/blob/list      → {blobs: [...], total_bytes, max_store_bytes, max_blob_bytes}
+```
+
+Storage lives under `<comfyui>/output/spellcaster_bus/`, content-hash (SHA-256) addressed. TTL 1 h default, 24 h max per blob. Hard ceilings: 256 MB per blob, 2 GB aggregate. Reaper thread every 60 s. Dedup by content hash — re-upload of identical bytes just bumps TTL.
+
+**`url` is absolute** (built from the `Host:` header) so peers on other LAN machines can fetch without needing to know ComfyUI's IP.
+
+**Three senders already use it** as the preferred Send-to-X transport, with Guild `AssetGallery` fallback:
+
+| Sender | Handler |
+|---|---|
+| GIMP | [_cross_interface_send](plugins/gimp/comfyui-connector/_spellcaster_main.py) — uses `CrossInterfaceClient.blob_put` |
+| Darktable | [_asset_upload_and_emit](plugins/darktable/comfyui_connector.lua) — uses curl `-F` multipart |
+| Resolve | [_handle_playhead_send_to_peer](plugins/resolve/spellcaster_bridge/bridge.py) — hand-built multipart (no `spellcaster_core` dep) |
+
+Event published after upload has `transport: "blob"|"guild"` so subscribers + logs can tell which path landed.
+
+**When NOT to use blob bus:** for assets that need to persist beyond 1 hour (avatars, backgrounds, generation gallery). Those belong in `AssetGallery` — §15.
+
+#### 25.3 Typed event schema — `spellcaster_core/events.py`
+
+Every canonical wire kind has a dataclass. Publishers can construct the typed event instead of a raw dict; subscribers get a typed view via `parse_event(kind, data)`. Wildcard suffixes (`*.asset.created`, `*.generation.finished`, `*.asset.send`) match any origin prefix.
+
+```python
+from spellcaster_core.events import AssetSend, publish_event, parse_event
+
+# publisher
+publish_event(bus, AssetSend(image_url="/api/assets/abc", hash="abc",
+                              source="gimp", kind="generation"),
+              origin="gimp")   # emits gimp.asset.send
+
+# subscriber
+evt = parse_event(kind, data)
+if isinstance(evt, AssetSend):
+    use(evt.image_url, evt.hash)
+```
+
+Guild's `_cache_comfyui_asset` already uses it (`AssetCreated` on every generation). Existing subscribers that read raw dicts see no wire-format change — extra fields (mime, size) ride through unchanged.
+
+**Add new kinds by**: adding a dataclass to `events.py`, registering in `EVENT_SCHEMAS` (or relying on wildcard-suffix match), then mirroring to all 4 canonical copies per §3.
+
+#### 25.4 When Guild is down
+
+- Presence still works (ComfyUI is the discovery hub, Guild is optional fallback in plugin client code).
+- Blob bus still works (bytes move Guild-lessly).
+- **Event signalling does NOT** (no bus without Guild). Receivers need the Guild's SSE stream to know a blob is waiting. Design for restoring signalling when Guild is down is in [_dev_docs/HANDOVER_CROSS_APP_AUDIT.md](_dev_docs/HANDOVER_CROSS_APP_AUDIT.md) §6.4 — three options listed, none shipped. The pragmatic answer today is: Guild is still the coordinator; blob bus is a transport optimisation, not a full Guild replacement.
+
+#### 25.5 Verification — `tests/e2e_audit.py`
+
+Post-audit sections added 2026-04-20:
+
+```bash
+python tests/e2e_audit.py --only presence_broker,blob_bus,events_schema
+python tests/e2e_audit.py --only guild_client,cn_model_coverage
+python tests/e2e_audit.py --only coverage_inventory
+python tests/e2e_audit.py --offline                    # no Guild required
+```
+
+`presence_broker` exercises multi-host coexistence, `blob_bus` exercises put/get/dedup/404, `events_schema` round-trips every dataclass, `cn_model_coverage` verifies every ControlNet mode × arch references a real CN file on the live ComfyUI server, `coverage_inventory` ast-walks all plugin surfaces and counts public functions.
+
+Expected green bar includes 17+ passes from events_schema alone (one per dataclass + publish_event helper).
+
+#### 25.6 Known gaps
+
+See [_dev_docs/HANDOVER_CROSS_APP_AUDIT.md](_dev_docs/HANDOVER_CROSS_APP_AUDIT.md) §6. Summary:
+- Mailbox → EventBus collapse (needs addressing-layer design for multi-instance delivery)
+- `/api/cached_asset/*` route removal (needs installer data migration)
+- Resolve's two SSE streams (Guild-side endpoint merge required)
+- Blob bus signalling when Guild is offline (3 candidate designs, none shipped)
+- SillyTavern Send-to-X client UI (routes exist server-side, no button yet)
+
 ## File Structure Quick Reference
 
 ```
@@ -908,8 +1016,22 @@ spellcaster/
 │   ├── comfyui-connector.py          ← IMMUTABLE boot shim
 │   ├── _spellcaster_main.py          ← main plugin (22K+ lines)
 │   └── spellcaster_core/             ← shared library (dev copy)
+├── plugins/darktable/comfyui_connector.lua   ← DT plugin (~10K Lua lines)
+├── plugins/sillytavern/spellcaster-st/
+│   ├── server-plugin.js              ← ST server plugin (routes under /api/plugins/spellcaster-st/)
+│   └── ...                           ← frontend extension assets
+├── plugins/resolve/
+│   ├── shared/spellcaster_api.py     ← GuildClient (HTTP facade for Resolve)
+│   └── spellcaster_bridge/           ← Bridge daemon (SSE + heartbeat + send_to_peer)
 ├── comfyui-spellcaster/
+│   ├── __init__.py                   ← Pack init (wires presence + blob bus)
+│   ├── presence.py                   ← Peer discovery broker (§25.1)
+│   ├── blob_bus.py                   ← Guild-less asset transport (§25.2)
+│   ├── nodes/                        ← Custom ComfyUI nodes (SpellcasterLoader etc.)
 │   └── spellcaster_core/             ← CANONICAL source (auto-updater reads this)
+│       ├── events.py                 ← Typed event schema (§25.3)
+│       ├── cross_interface.py        ← Plugin-side client (heartbeat, publish, upload, blob_*)
+│       └── ...                       ← workflows, node_factory, composites, architectures, etc.
 ├── tavern/                           ← Wizard Guild server + web UI
 ├── installer/                        ← Windows/macOS/Linux installers
 ├── nsfw/                             ← GITIGNORED — NSFW build system
@@ -918,9 +1040,12 @@ spellcaster/
 │   ├── nsfw_klein_presets.json       ← NSFW presets (NEVER commit to main)
 │   └── lora_calibrations_nsfw.json   ← NSFW calibration recipes (§19; patched into NSFW build)
 ├── tests/
+│   ├── e2e_audit.py                  ← Live E2E sweep (15 sections; see §25.5)
 │   ├── test_model_coverage.py        ← arch registry + supported_methods enforcement (§17)
 │   ├── test_lora_auto_calibrate.py   ← calibration stack (§19)
-│   ├── test_summon_archetypes.py     ← archetype validators + runtime endpoints (§21)
+│   ├── test_summon_archetypes.py    ← archetype validators + runtime endpoints (§21)
 │   └── ...                           ← other canonical test harnesses
+├── _dev_docs/                        ← dev notes (AUDIT_*.md, HANDOVER_*.md, DEEP_DIVE.md, …)
+│                                        HANDOVER_*.md files are GITIGNORED
 └── CLAUDE.md                         ← This file
 ```
