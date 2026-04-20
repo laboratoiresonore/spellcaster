@@ -23,8 +23,6 @@ Thumbs.db
 Desktop.ini
 
 # NSFW Content — NEVER commit
-*_NSFW.*
-Wizard_Guild_NSFW.exe
 
 # User-generated content — never commit (could contain NSFW images)
 tavern/creations/
