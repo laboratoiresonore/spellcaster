@@ -1137,6 +1137,7 @@ class CalibrationJobState:
     done: int = 0
     current: str = ""
     samples: list[dict] = field(default_factory=list)
+    skipped: list[dict] = field(default_factory=list)
     status: str = "running"           # running | complete | error
     error: str = ""
     started_at: float = field(default_factory=time.time)
@@ -1153,6 +1154,7 @@ class CalibrationJobState:
             "started_at":  self.started_at,
             "finished_at": self.finished_at,
             "samples":     list(self.samples),
+            "skipped":     list(self.skipped),
         }
 
 
@@ -1182,32 +1184,52 @@ def start_calibration_job(
     Callers supply optional resolvers so this module stays decoupled
     from the Guild's registry + filesystem layout.
     """
+    # Pre-filter: split targets into renderable vs skipped so the
+    # progress bar counts only LoRAs we can actually render. A LoRA is
+    # skipped when (a) its arch has zero installed base models, (b) the
+    # arch is video-only (wan/ltx use a different inference path), or
+    # (c) required fields are missing from the target dict. Skipped
+    # entries still surface in the UI but don't trigger a failed
+    # render attempt.
+    archs_with_models: set[str] = {
+        str(m.get("arch") or "").lower() for m in models if m.get("arch")
+    }
+    renderable: list[dict] = []
+    skipped: list[dict] = []
+    for t in targets:
+        name = str(t.get("name") or "").strip()
+        arch = str(t.get("arch") or "").strip()
+        group = str(t.get("purpose_group") or "other").strip()
+        if not name or not arch:
+            skipped.append({"lora_name": name, "arch": arch,
+                             "purpose_group": group,
+                             "reason": "missing name or arch"})
+            continue
+        if arch.lower() in _SKIP_SHOOTOUT_ARCHS:
+            skipped.append({"lora_name": name, "arch": arch,
+                             "purpose_group": group,
+                             "reason": "video arch (uses its own inference path)"})
+            continue
+        if arch.lower() not in archs_with_models:
+            skipped.append({"lora_name": name, "arch": arch,
+                             "purpose_group": group,
+                             "reason": f"no installed model for arch {arch!r}"})
+            continue
+        renderable.append({"name": name, "arch": arch,
+                            "purpose_group": group})
+
     job_id = f"lcal_{uuid.uuid4().hex[:12]}"
-    state = CalibrationJobState(job_id=job_id, total=len(targets))
+    state = CalibrationJobState(job_id=job_id, total=len(renderable))
+    state.skipped = skipped
     with _CALIB_LOCK:
         _CALIB_JOBS[job_id] = state
 
     def _worker():
         try:
-            for t in targets:
-                name = str(t.get("name") or "").strip()
-                arch = str(t.get("arch") or "").strip()
-                group = str(t.get("purpose_group") or "other").strip()
-                if not name or not arch:
-                    state.done += 1
-                    state.samples.append({
-                        "lora_name": name, "ok": False,
-                        "error": "missing name or arch",
-                    })
-                    continue
-                if arch.lower() in _SKIP_SHOOTOUT_ARCHS:
-                    state.done += 1
-                    state.samples.append({
-                        "lora_name": name, "ok": False, "arch": arch,
-                        "purpose_group": group,
-                        "error": "arch not supported for calibration",
-                    })
-                    continue
+            for t in renderable:
+                name = t["name"]
+                arch = t["arch"]
+                group = t["purpose_group"]
                 state.current = name
                 lora_abs_path = (lora_path_resolver(name)
                                   if lora_path_resolver else None)
