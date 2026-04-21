@@ -1,0 +1,108 @@
+================================================================
+  SPELLCASTER STUDIO — licence notice for bundled software
+================================================================
+
+This portable bundle redistributes several independent pieces of
+software, each under its own licence. This file is a pointer; the
+authoritative licence text for each component ships in that
+component's own directory inside the bundle.
+
+----------------------------------------------------------------
+
+1. Spellcaster plug-in + spellcaster_core library
+   ---------------------------------------------------------------
+   MIT Licence (Copyright (c) Laboratoire Sonore).
+   Source: https://github.com/laboratoiresonore/spellcaster
+
+2. ComfyUI-Spellcaster node pack
+   ---------------------------------------------------------------
+   MIT Licence (same authors).
+   Source: https://github.com/laboratoiresonore/ComfyUI-Spellcaster
+   Bundled at:  comfyui/ComfyUI/custom_nodes/ComfyUI-Spellcaster/
+
+3. GIMP 3.x
+   ---------------------------------------------------------------
+   GNU General Public Licence, version 3 or later.
+   Source: https://www.gimp.org/ ; https://gitlab.gnome.org/GNOME/gimp
+   Bundled installer at bundle root (gimp-installer.exe) on first
+   run; installed into  gimp/  thereafter. Full LICENCE text at
+   gimp/share/gimp/3.0/Licence.txt once installed.
+
+   Spellcaster Studio redistributes an UNMODIFIED official GIMP
+   installer. We do not ship a patched or re-branded GIMP binary.
+   The "Studio" branding applies to the overall package (GIMP +
+   ComfyUI + Spellcaster plug-in + launcher) — not to GIMP itself,
+   which runs as-is.
+
+   "GIMP" and the GIMP logo are trademarks of the GIMP Project. This
+   bundle is not affiliated with or endorsed by the GIMP Project.
+
+4. ComfyUI
+   ---------------------------------------------------------------
+   GNU General Public Licence, version 3 or later.
+   Source: https://github.com/comfyanonymous/ComfyUI
+   Bundled as the official "ComfyUI_windows_portable_nvidia"
+   release. Full LICENCE text at  comfyui/ComfyUI/LICENSE .
+
+5. Python embedded interpreter (ships inside ComfyUI Portable)
+   ---------------------------------------------------------------
+   Python Software Foundation Licence.
+   See  comfyui/python_embedded/python3xx.zip  for the stdlib
+   licence bundle.
+
+6. ControlNet model files (pre-downloaded into comfyui/ComfyUI/models/controlnet/)
+   ---------------------------------------------------------------
+   Each file has its own licence on Hugging Face; we redistribute
+   unchanged, with credit:
+
+   * SDXL ControlNet Union Pro (Xinsir)
+     File:   SDXL/controlnet-union-sdxl-1.0/diffusion_pytorch_model.safetensors
+     Source: https://huggingface.co/xinsir/controlnet-union-sdxl-1.0
+     Licence: Apache 2.0
+
+   * ControlNet v1.1 set (lllyasviel / comfyanonymous fp16 mirror)
+     Files:  control_v11p_sd15_normalbae.pth,
+             control_v11f1p_sd15_depth_fp16.safetensors,
+             control_v11p_sd15_lineart_fp16.safetensors
+     Source: https://huggingface.co/lllyasviel/ControlNet-v1-1
+             https://huggingface.co/comfyanonymous/ControlNet-v1-1_fp16_safetensors
+     Licence: OpenRAIL-M (permits redistribution + commercial use
+              with attribution + use-restriction passthrough)
+
+   * Flux.1-dev ControlNet Union Pro 2.0 (Shakker Labs)
+     File:   FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors
+     Source: https://huggingface.co/Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0
+     Licence: CreativeML OpenRAIL-M (same passthrough terms)
+
+   By using these files through Spellcaster Studio you agree to each
+   upstream licence. The OpenRAIL-M and CreativeML OpenRAIL-M
+   licences include use-based restrictions — read them if your
+   intended use is commercial or may produce public output.
+
+7. Fonts, icons, CSS
+   ---------------------------------------------------------------
+   Outfit font (Google Fonts): SIL Open Font Licence.
+   Spellcaster theme CSS + splash imagery: MIT, same as plug-in.
+
+----------------------------------------------------------------
+
+COMPLIANCE NOTES
+----------------
+* GPL + MIT are mutually compatible: the MIT-licensed Spellcaster
+  components can be distributed alongside GPL GIMP and ComfyUI.
+  The bundle as a whole is distributed under GPLv3 (the most
+  restrictive constituent licence).
+* Source code for every GPL component is available at the URLs
+  listed above; no separate source offering is required because
+  upstream is distributed publicly.
+* This file + each component's own LICENCE file together satisfy
+  the GPL's §5(b) "keep intact all notices" requirement.
+
+----------------------------------------------------------------
+
+COMPLAINTS, TAKEDOWNS, DMCA
+---------------------------
+If you are an upstream maintainer who wants a specific note added,
+corrected, or removed:
+
+  https://github.com/laboratoiresonore/spellcaster/issues
