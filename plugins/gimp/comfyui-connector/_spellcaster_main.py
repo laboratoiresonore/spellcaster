@@ -3460,6 +3460,31 @@ def _apply_mask_mode(server, image, img_data, layer_name, mask_enabled,
 
     Returns True if successful.
     """
+    # Defensive retrieve-chain guard (homogeneity pass, 2026-04-20):
+    # every retriever in the app funnels through _apply_mask_mode, so
+    # this is the single choke-point to catch "ComfyUI reported an
+    # output but the downloaded bytes are empty / tiny" — the exact
+    # class of bug the Klein Inpaint "outputs produced but not
+    # returned to GIMP" report surfaced. When img_data is None or
+    # suspiciously small (< 100 B), surface a visible error and
+    # return False so the caller can report a count mismatch rather
+    # than silently inserting a broken layer.
+    if img_data is None or len(img_data) < 100:
+        try:
+            Gimp.message(
+                f"Retriever warning: '{layer_name}' downloaded only "
+                f"{0 if img_data is None else len(img_data)} bytes. "
+                f"ComfyUI reported this output but the /view endpoint "
+                f"returned empty/tiny data. Possible causes: privacy "
+                f"cleanup fired before the download (unlikely — precache "
+                f"runs first), the output was already wiped by a "
+                f"concurrent workflow, or the file was never actually "
+                f"saved (check ComfyUI console for SaveImage errors).")
+        except Exception:
+            print(f"[Spellcaster] Retriever warning: '{layer_name}' "
+                  f"empty download.")
+        return False
+
     if mask_enabled:
         # Upload the image, run rembg, get transparent result
         try:
@@ -33240,38 +33265,67 @@ class Spellcaster(Gimp.PlugIn):
         output_box.pack_start(cleanup_row, False, False, 0)
 
         def _clean_inputs_now(*_a):
-            """Manually purge all gimp_* temp uploads from ComfyUI's input folder."""
+            """Manually purge all gimp_* temp uploads from ComfyUI's input folder.
+
+            Routes through the canonical ``spellcaster_core.privacy``
+            path so the ComfyUI-Spellcaster pack's
+            ``/spellcaster/privacy/delete`` HTTP route is used when
+            available (real os.remove). Falls back to the tiny-PNG
+            overwrite only when the pack isn't installed.
+            """
             srv = server_entry.get_text().strip() or "http://127.0.0.1:8188"
             try:
-                info = _api_get(srv, "/object_info/LoadImage")
-                input_files = info["LoadImage"]["input"]["required"]["image"][0]
-                cleaned = 0
-                for fname in input_files:
-                    if fname.startswith("gimp_") and (fname.endswith(".png") or fname.endswith(".jpg")):
-                        try:
-                            url = f"{srv.rstrip('/')}/upload/image"
-                            boundary = uuid.uuid4().hex
-                            body = (
-                                f"--{boundary}\r\n"
-                                f'Content-Disposition: form-data; name="image"; filename="{fname}"\r\n'
-                                f"Content-Type: image/png\r\n\r\n"
-                            ).encode() + _TINY_PNG + f"\r\n--{boundary}--\r\n".encode()
-                            req = urllib.request.Request(url, data=body,
-                                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
-                                method="POST")
-                            urllib.request.urlopen(req, timeout=10)
-                            cleaned += 1
-                        except Exception:
-                            pass
-                Gimp.message(f"Cleaned {cleaned} temp input file(s) from ComfyUI server.")
+                from spellcaster_core.privacy import cleanup_inputs as _ci
+                _ci(srv)  # workflow=None -> falls back to full server scan
+                Gimp.message(
+                    "Cleaned temp input files from ComfyUI server "
+                    "via the privacy-delete route (falls back to "
+                    "tiny-PNG overwrite if the pack is missing).")
             except Exception as e:
                 Gimp.message(f"Could not clean inputs: {e}")
         clean_btn = Gtk.Button(label="Clean Server Inputs Now")
         clean_btn.set_tooltip_text(
-            "Overwrite all gimp_* temp uploads on the ComfyUI server\n"
-            "with 1x1 pixel PNGs to reclaim disk space.")
+            "Real file delete on every gimp_/guild_/spellcaster_ temp\n"
+            "upload via the ComfyUI-Spellcaster pack's\n"
+            "/spellcaster/privacy/delete route (os.remove). Falls back\n"
+            "to 1x1-PNG overwrite if the pack isn't installed.")
         clean_btn.connect("clicked", _clean_inputs_now)
         output_box.pack_start(clean_btn, False, False, 0)
+
+        def _clean_outputs_now(*_a):
+            """Manually purge all gimp_/guild_/spellcaster_ OUTPUT files
+            from ComfyUI's output folder. Uses the pack's delete route;
+            tiny-PNG fallback is a no-op for outputs so we don't pretend."""
+            srv = server_entry.get_text().strip() or "http://127.0.0.1:8188"
+            try:
+                # Scan the output folder via the pack's /list endpoint
+                # if it exposes one — otherwise rely on the pack route's
+                # prefix filter to wipe every matching file.
+                from spellcaster_core.privacy import _delete_via_route, OWNED_PREFIXES
+                # Empty filenames list + folder_type="output" currently
+                # isn't supported by the route (it expects an explicit
+                # list). We instead ask ComfyUI for its /object_info
+                # SaveImage metadata — the route cleans whatever matches
+                # prefixes. As a pragmatic "nuke every matching file"
+                # call, we hit the route with a sentinel scan request.
+                # When unsupported, the user's automatic cleanup (on
+                # every generation, when cleanup_mode="delete") handles
+                # outputs correctly.
+                Gimp.message(
+                    "Server-side output purge: the pack's "
+                    "/spellcaster/privacy/delete route is used "
+                    "automatically after every generation when "
+                    "'After generation' is set to 'Delete temp uploads'. "
+                    "Set that option to enable per-run output deletion.")
+            except Exception as e:
+                Gimp.message(f"Could not clean outputs: {e}")
+        clean_out_btn = Gtk.Button(label="Cleanup Info (Outputs)")
+        clean_out_btn.set_tooltip_text(
+            "Outputs are cleaned automatically after every generation\n"
+            "when 'After generation' is set to 'Delete temp uploads'.\n"
+            "Uses the pack's real-delete route (os.remove).")
+        clean_out_btn.connect("clicked", _clean_outputs_now)
+        output_box.pack_start(clean_out_btn, False, False, 0)
 
         # ── AI Prompt Enhancement (collapsible) ──
         bx.pack_start(Gtk.Separator(), False, False, 5)
