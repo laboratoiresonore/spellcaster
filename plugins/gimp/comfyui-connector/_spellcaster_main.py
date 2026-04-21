@@ -19120,6 +19120,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-show-minihud":        None,
             "spellcaster-open-dashboard":      None,
             "spellcaster-bridges-panel":       None,
+            "spellcaster-magical-zoom":        None,
             "spellcaster-faceswap-reset":      None,
             "spellcaster-last-warnings":       None,
             "spellcaster-toggle-speedcoach":   None,
@@ -19447,6 +19448,9 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-open-dashboard": ("Open Dashboard (web)",
                                             self._run_open_dashboard,
                                             "Open the telemetry dashboard in the default browser. Shows live node progress, VRAM, CPU+RAM, privacy-gate status, queue, peer list, recent dispatches. Runs on 127.0.0.1:18888 when the the private downstream distribution bundle is active; probes the URL first and surfaces a hint if it's not reachable."),
+            "spellcaster-magical-zoom": ("🔍 Magical Zoom (AI hallucinate)...",
+                                           self._run_magical_zoom,
+                                           "Select a region, run Magical Zoom: Spellcaster crops the selection, up-scales it via SeedVR2 with low-denoise img2img hallucination, and opens the result as a new image. Hallucinates detail the original didn't resolve — 'what the selection would look like at 10× closer.' Works on the current selection; if nothing's selected, the whole canvas is zoomed."),
             "spellcaster-bridges-panel": ("🔗 Bridges Panel...",
                                            self._run_bridges_panel,
                                            "One window that distills every cross-plugin bridge: live peer presence (GIMP ↔ Resolve ↔ Darktable ↔ SillyTavern ↔ Guild), Send-to-X buttons, Inbox drain, Dashboard opener, recent cross-interface events. Replaces hunting through the Cross-App submenu."),
@@ -19493,144 +19497,164 @@ class Spellcaster(Gimp.PlugIn):
 
         label, callback, doc = menu_map[name]
 
-        # Menu path mapping — TOP-LEVEL Spellcaster menu in the menu bar.
-        # ◆ = purple diamond brackets for the top-level menu name.
-        _S = "<Image>/◆ Spellcaster ◆"
+        # ── Themed top-level menus (private / black-magic iconography)
+        # Split into 9 thematic top-level menus so navigation becomes
+        # fun and intuitive. Each category gets its own grimoire-style
+        # top entry on GIMP's menu bar — users scan for the theme,
+        # not the generic "Spellcaster" brand.
+        #
+        #   💥 Summon   — Generate (magical explosion)
+        #   🪆 Klein    — Flux 2 (private-doll artifact; user ask)
+        #   🎭 Masks    — Face ops (theatrical mask; user ask)
+        #   🕯 Sigils   — Selection (candle / rune)
+        #   ⚗ Alchemy  — Enhance + Colors + Style (alembic)
+        #   🔮 Scrying  — Video (crystal ball)
+        #   🔗 Bridges  — Cross-app (chain links)
+        #   ⚡ Quick    — Zero-dialog shortcuts (lightning)
+        #   🗝 Crypt    — Settings, Diagnostics, Studios, 3D, Tools
+        #                (skeleton key / tomb — catch-all for
+        #                advanced / less-used entries)
+        _M_SUMMON  = "<Image>/💥 Summon"
+        _M_KLEIN   = "<Image>/🪆 Klein"
+        _M_MASKS   = "<Image>/🎭 Masks"
+        _M_SIGILS  = "<Image>/🕯 Sigils"
+        _M_ALCHEMY = "<Image>/⚗ Alchemy"
+        _M_SCRYING = "<Image>/🔮 Scrying"
+        _M_BRIDGES = "<Image>/🔗 Bridges"
+        _M_QUICK   = "<Image>/⚡ Quick Spells"
+        _M_CRYPT   = "<Image>/🗝 Crypt"
+        # _S kept as alias pointing at the Crypt so legacy references
+        # (my-presets, 3D submenu, bridges-panel top-level) still land
+        # somewhere sensible if the menu_paths dict missed anything.
+        _S = _M_CRYPT
+
         _menu_paths = {
-            # Presets at top level
-            "spellcaster-my-presets":       _S,
+            # My Presets — top of Crypt (advanced / power users)
+            "spellcaster-my-presets":       _M_CRYPT,
 
-            # Generate — core creation tools
-            "spellcaster-img2img":          f"{_S}/Generate",
-            "spellcaster-txt2img":          f"{_S}/Generate",
-            "spellcaster-inpaint":          f"{_S}/Generate",
-            "spellcaster-outpaint":         f"{_S}/Generate",
-            "spellcaster-batch-variations": f"{_S}/Generate",
-            "spellcaster-kontext":          f"{_S}/Generate",
-            "spellcaster-generate-anything":f"{_S}/Generate",
+            # 💥 Summon — core generation
+            "spellcaster-img2img":          _M_SUMMON,
+            "spellcaster-txt2img":          _M_SUMMON,
+            "spellcaster-inpaint":          _M_SUMMON,
+            "spellcaster-outpaint":         _M_SUMMON,
+            "spellcaster-batch-variations": _M_SUMMON,
+            "spellcaster-kontext":          _M_SUMMON,
+            "spellcaster-generate-anything": _M_SUMMON,
 
-            # Klein — next-gen Flux 2 tools
-            "spellcaster-klein-img2img":     f"{_S}/Flux 2",
-            "spellcaster-klein-outpaint":    f"{_S}/Flux 2",
-            "spellcaster-klein-img2img-ref": f"{_S}/Flux 2",
-            "spellcaster-klein-blend":       f"{_S}/Flux 2",
-            "spellcaster-klein-repose":      f"{_S}/Flux 2",
-            "spellcaster-klein-headswap":    f"{_S}/Flux 2",
-            "spellcaster-klein-inpaint":     f"{_S}/Flux 2",
-            "spellcaster-klein-detail":      f"{_S}/Flux 2",
-            "spellcaster-klein-generate":    f"{_S}/Flux 2",
-            # Promoted from a legacy "Klein" submenu into "Flux 2" so
-            # users no longer see two parallel submenus (one with the
-            # current brand, one with the codename). Same callbacks.
-            "spellcaster-klein-auto-inpaint":  f"{_S}/Flux 2",
-            "spellcaster-klein-sam3-inpaint":  f"{_S}/Flux 2",
-            "spellcaster-klein-refine":        f"{_S}/Flux 2",
-            "spellcaster-klein-face-detail":   f"{_S}/Flux 2",
-            "spellcaster-klein-color-match":   f"{_S}/Flux 2",
-            "spellcaster-klein-virtual-tryon": f"{_S}/Flux 2",
+            # 🪆 Klein — Flux 2 family (user asked for its own top entry)
+            "spellcaster-klein-img2img":     _M_KLEIN,
+            "spellcaster-klein-outpaint":    _M_KLEIN,
+            "spellcaster-klein-img2img-ref": _M_KLEIN,
+            "spellcaster-klein-blend":       _M_KLEIN,
+            "spellcaster-klein-repose":      _M_KLEIN,
+            "spellcaster-klein-headswap":    _M_KLEIN,
+            "spellcaster-klein-inpaint":     _M_KLEIN,
+            "spellcaster-klein-detail":      _M_KLEIN,
+            "spellcaster-klein-generate":    _M_KLEIN,
+            "spellcaster-klein-auto-inpaint":  _M_KLEIN,
+            "spellcaster-klein-sam3-inpaint":  _M_KLEIN,
+            "spellcaster-klein-refine":        _M_KLEIN,
+            "spellcaster-klein-face-detail":   _M_KLEIN,
+            "spellcaster-klein-color-match":   _M_KLEIN,
+            "spellcaster-klein-virtual-tryon": _M_KLEIN,
 
-            # Enhance — fix, upscale, restore
-            "spellcaster-upscale":           f"{_S}/Enhance",
-            "spellcaster-photo-restore":     f"{_S}/Enhance",
-            "spellcaster-detail-hallucinate":f"{_S}/Enhance",
-            "spellcaster-supir":             f"{_S}/Enhance",
-            "spellcaster-seedv2r":           f"{_S}/Enhance",
-            "spellcaster-colorize":          f"{_S}/Enhance",
-            "spellcaster-lama-remove":       f"{_S}/Enhance",
+            # ⚗ Alchemy — enhance / restore / colors / style
+            "spellcaster-upscale":           _M_ALCHEMY,
+            "spellcaster-photo-restore":     _M_ALCHEMY,
+            "spellcaster-detail-hallucinate": _M_ALCHEMY,
+            "spellcaster-supir":             _M_ALCHEMY,
+            "spellcaster-seedv2r":           _M_ALCHEMY,
+            "spellcaster-colorize":          _M_ALCHEMY,
+            "spellcaster-lama-remove":       _M_ALCHEMY,
+            "spellcaster-style-transfer":    _M_ALCHEMY,
+            "spellcaster-lut":               _M_ALCHEMY,
+            "spellcaster-iclight":           _M_ALCHEMY,
+            "spellcaster-color-match":       _M_ALCHEMY,
+            "spellcaster-normal-map":        _M_ALCHEMY,
+            "spellcaster-magical-zoom":      _M_ALCHEMY,
 
-            # Face — identity and face tools
-            "spellcaster-faceswap":          f"{_S}/Face",
-            "spellcaster-faceswap-model":    f"{_S}/Face",
-            "spellcaster-faceswap-mtb":      f"{_S}/Face",
-            "spellcaster-faceid-img2img":    f"{_S}/Face",
-            "spellcaster-pulid-flux":        f"{_S}/Face",
-            "spellcaster-face-restore":      f"{_S}/Face",
+            # 🎭 Masks — identity + face ops (user asked for this name)
+            "spellcaster-faceswap":          _M_MASKS,
+            "spellcaster-faceswap-model":    _M_MASKS,
+            "spellcaster-faceswap-mtb":      _M_MASKS,
+            "spellcaster-faceid-img2img":    _M_MASKS,
+            "spellcaster-pulid-flux":        _M_MASKS,
+            "spellcaster-face-restore":      _M_MASKS,
 
-            # Style — visual transformation
-            "spellcaster-style-transfer":    f"{_S}/Style",
-            "spellcaster-lut":               f"{_S}/Style",
-            "spellcaster-iclight":           f"{_S}/Style",
-            "spellcaster-color-match":       f"{_S}/Style",
+            # 🕯 Sigils — AI selection
+            "spellcaster-sam3-select":       _M_SIGILS,
+            "spellcaster-sam3-extract":      _M_SIGILS,
+            "spellcaster-anything-but":      _M_SIGILS,
+            "spellcaster-magic-eraser":      _M_SIGILS,
+            "spellcaster-rembg":             _M_SIGILS,
 
-            # Select — AI-powered selection
-            "spellcaster-sam3-select":       f"{_S}/Select",
-            "spellcaster-sam3-extract":      f"{_S}/Select",
-            "spellcaster-anything-but":      f"{_S}/Select",
-            "spellcaster-magic-eraser":      f"{_S}/Select",
-            "spellcaster-rembg":             f"{_S}/Select",
+            # 🔮 Scrying — video
+            "spellcaster-ltx-t2v":           _M_SCRYING,
+            "spellcaster-ltx-i2v":           _M_SCRYING,
+            "spellcaster-wan-i2v":           _M_SCRYING,
+            "spellcaster-wan-flf":           _M_SCRYING,
+            "spellcaster-video-upscale":     _M_SCRYING,
+            "spellcaster-video-reactor":     _M_SCRYING,
+            "spellcaster-seedvr2-video":     _M_SCRYING,
+            # Studios moved under Scrying (character pipelines that
+            # produce sequences — they're ritual staging, scrying-adjacent).
+            "spellcaster-photobooth":        f"{_M_SCRYING}/Studios",
+            "spellcaster-body-factory":      f"{_M_SCRYING}/Studios",
+            "spellcaster-clothing-store":    f"{_M_SCRYING}/Studios",
+            "spellcaster-studio-set":        f"{_M_SCRYING}/Studios",
+            "spellcaster-wan-director":      f"{_M_SCRYING}/Studios",
+            "spellcaster-wan-director-duo":  f"{_M_SCRYING}/Studios",
+            "spellcaster-wan-director-trio": f"{_M_SCRYING}/Studios",
 
-            # Video — generation and processing
-            "spellcaster-ltx-t2v":           f"{_S}/Video",
-            "spellcaster-ltx-i2v":           f"{_S}/Video",
-            "spellcaster-wan-i2v":           f"{_S}/Video",
-            "spellcaster-wan-flf":           f"{_S}/Video",
-            "spellcaster-video-upscale":     f"{_S}/Video",
-            "spellcaster-video-reactor":     f"{_S}/Video",
-            "spellcaster-seedvr2-video":     f"{_S}/Video",
+            # ⚡ Quick Spells — zero-dialog shortcuts
+            "spellcaster-cancel-queued":     _M_QUICK,
+            "spellcaster-rerun-last":        _M_QUICK,
+            "spellcaster-quick-enhance":     _M_QUICK,
+            "spellcaster-quick-inpaint":     _M_QUICK,
+            "spellcaster-quick-upscale":     _M_QUICK,
+            "spellcaster-quick-face-restore": _M_QUICK,
+            "spellcaster-quick-rembg":       _M_QUICK,
+            "spellcaster-quick-erase":       _M_QUICK,
 
-            # Studios — full character pipeline
-            "spellcaster-photobooth":        f"{_S}/Studios",
-            "spellcaster-body-factory":      f"{_S}/Studios",
-            "spellcaster-clothing-store":    f"{_S}/Studios",
-            "spellcaster-studio-set":        f"{_S}/Studios",
-            "spellcaster-wan-director":      f"{_S}/Studios",
-            "spellcaster-wan-director-duo":  f"{_S}/Studios",
-            "spellcaster-wan-director-trio": f"{_S}/Studios",
-
-            # Quick — zero-dialog instant actions
-            "spellcaster-cancel-queued":     f"{_S}/Quick",
-            "spellcaster-rerun-last":        f"{_S}/Quick",
-            "spellcaster-quick-enhance":     f"{_S}/Quick",
-            "spellcaster-quick-inpaint":     f"{_S}/Quick",
-            "spellcaster-quick-upscale":     f"{_S}/Quick",
-            "spellcaster-quick-face-restore":f"{_S}/Quick",
-            "spellcaster-quick-rembg":       f"{_S}/Quick",
-            "spellcaster-quick-erase":       f"{_S}/Quick",
-            "spellcaster-normal-map":        f"{_S}/Enhance",
-
-            # Tools — utility and config
-            "spellcaster-layer-blend-ratio": f"{_S}/Tools",
-            "spellcaster-upscale-blend":     f"{_S}/Tools",
-            "spellcaster-gif-stitch":        f"{_S}/Tools",
-            "spellcaster-embed-watermark":   f"{_S}/Tools",
-            "spellcaster-read-watermark":    f"{_S}/Tools",
-            "spellcaster-send-image":        f"{_S}/Tools",
-            "spellcaster-settings":          f"{_S}/Tools",
-            "spellcaster-bridge":            f"{_S}/Tools",
-            "spellcaster-calibration-wizard": f"{_S}/Tools",
-            "spellcaster-clear-upload-cache": f"{_S}/Tools",
-            "spellcaster-test-harness":      f"{_S}/Tools",
-            # R105: cross-plugin transfer submenu — visible diamond
-            # markers make it easy to spot the inter-app channels.
-            "spellcaster-send-to-resolve":      f"{_S}/Cross-App",
-            "spellcaster-send-to-darktable":    f"{_S}/Cross-App",
-            "spellcaster-send-to-sillytavern":  f"{_S}/Cross-App",
-            "spellcaster-character-card-editor": f"{_S}/Cross-App",
-            "spellcaster-check-inbox":          f"{_S}/Cross-App",
-            # Diagnostics — SpeedCoach read-only surfaces.
-            "spellcaster-arch-speed-chart":   f"{_S}/Diagnostics",
-            "spellcaster-review-drift":       f"{_S}/Diagnostics",
-            "spellcaster-faceswap-reset":     f"{_S}/Diagnostics",
-            "spellcaster-last-warnings":      f"{_S}/Diagnostics",
-            # View — toggles + floating overlays.
-            "spellcaster-show-minihud":       f"{_S}/View",
-            "spellcaster-open-dashboard":     f"{_S}/View",
-            "spellcaster-bridges-panel":      f"{_S}",  # TOP-LEVEL
-            # ^ the Bridges Panel deserves top-level exposure — it's
-            # the single entry point for every cross-plugin flow.
-            # Rest of the Cross-App submenu stays as granular
-            # alternatives for users who know exactly what they want.
-            "spellcaster-toggle-speedcoach":  f"{_S}/View",
+            # 🗝 Crypt — settings, tools, utilities, advanced
+            "spellcaster-layer-blend-ratio": _M_CRYPT,
+            "spellcaster-upscale-blend":     _M_CRYPT,
+            "spellcaster-gif-stitch":        _M_CRYPT,
+            "spellcaster-embed-watermark":   _M_CRYPT,
+            "spellcaster-read-watermark":    _M_CRYPT,
+            "spellcaster-send-image":        _M_CRYPT,
+            "spellcaster-settings":          _M_CRYPT,
+            "spellcaster-bridge":            _M_CRYPT,
+            "spellcaster-calibration-wizard": _M_CRYPT,
+            "spellcaster-clear-upload-cache": _M_CRYPT,
+            "spellcaster-test-harness":      _M_CRYPT,
+            # Bridges — all cross-plugin flows live under the
+            # 🔗 Bridges top. The bridges-panel gets TOP-LEVEL
+            # exposure as the flagship entry point.
+            "spellcaster-bridges-panel":         _M_BRIDGES,
+            "spellcaster-send-to-resolve":       f"{_M_BRIDGES}/Send To",
+            "spellcaster-send-to-darktable":     f"{_M_BRIDGES}/Send To",
+            "spellcaster-send-to-sillytavern":   f"{_M_BRIDGES}/Send To",
+            "spellcaster-character-card-editor": f"{_M_BRIDGES}/Send To",
+            "spellcaster-check-inbox":           f"{_M_BRIDGES}/Receive",
+            # Diagnostics — SpeedCoach read-only surfaces, under Crypt.
+            "spellcaster-arch-speed-chart":   f"{_M_CRYPT}/Diagnostics",
+            "spellcaster-review-drift":       f"{_M_CRYPT}/Diagnostics",
+            "spellcaster-faceswap-reset":     f"{_M_CRYPT}/Diagnostics",
+            "spellcaster-last-warnings":      f"{_M_CRYPT}/Diagnostics",
+            # View — toggles + floating overlays (Scrying = see things).
+            "spellcaster-show-minihud":       f"{_M_SCRYING}/View",
+            "spellcaster-open-dashboard":     f"{_M_SCRYING}/View",
+            "spellcaster-toggle-speedcoach":  f"{_M_SCRYING}/View",
             # /3D submenu — mandatory 3D normal map variants. These
             # are dedicated procedures distinct from their regular
             # counterparts so the callback can set _FORCE_3D_MODE
-            # before the dialog is built. Having them ONLY here (not
-            # as secondary menu paths on the regular procedures)
-            # means users can tell at a glance which mode they're in.
-            "spellcaster-img2img-3d":         f"{_S}/3D",
-            "spellcaster-inpaint-3d":         f"{_S}/3D",
-            "spellcaster-outpaint-3d":        f"{_S}/3D",
-            "spellcaster-iclight-3d":         f"{_S}/3D",
+            # before the dialog is built. Having them under Alchemy
+            # (transformation) keeps them with their 2D siblings.
+            "spellcaster-img2img-3d":         f"{_M_ALCHEMY}/3D",
+            "spellcaster-inpaint-3d":         f"{_M_ALCHEMY}/3D",
+            "spellcaster-outpaint-3d":        f"{_M_ALCHEMY}/3D",
+            "spellcaster-iclight-3d":         f"{_M_ALCHEMY}/3D",
         }
 
         # ── Native GIMP menu integration — DEEP ──────────────────────
@@ -19714,6 +19738,11 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-settings":          "<Image>/Windows",
             "spellcaster-show-minihud":      "<Image>/Windows",
             "spellcaster-bridges-panel":     "<Image>/Windows",
+            # Magical Zoom lives under <Image>/View next to GIMP's
+            # native Zoom — the user's ask was to surface it where
+            # zoom actions live. Also under /Tools/AI Transform for
+            # the AI-Tools native subgrouping.
+            "spellcaster-magical-zoom":      "<Image>/View",
         }
 
         # ── AI-EVERYWHERE: <Image>/Tools/AI <Category>/ ─────────────
@@ -19796,6 +19825,8 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-faceswap":
                 "<Image>/Tools/AI Transform",
             "spellcaster-faceswap-model":
+                "<Image>/Tools/AI Transform",
+            "spellcaster-magical-zoom":
                 "<Image>/Tools/AI Transform",
 
             # ── AI Generate — new category (no native analogue) ──
@@ -19965,7 +19996,7 @@ class Spellcaster(Gimp.PlugIn):
         # 3D submenu (secondary registration)
         if name in _3d_tools:
             try:
-                proc.add_menu_path(f"{_S}/3D")
+                proc.add_menu_path(f"{_M_ALCHEMY}/3D")
             except Exception:
                 pass
         proc.set_documentation(doc, doc, name)
@@ -34019,6 +34050,239 @@ class Spellcaster(Gimp.PlugIn):
             traceback.print_exc()
             Gimp.message(f"Quick Upscale Error: {e}")
             return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+
+    def _run_magical_zoom(self, procedure, run_mode, image, drawables, config, data):
+        """Magical Zoom — AI-hallucinated super-zoom of the current
+        selection.
+
+        User's ask: "transform the zoom in and zoom out tool (right
+        click) in a SeedVR magical zoom that will generate or
+        hallucinate a super zoomed version of what the user is
+        selecting." GIMP 3's native zoom-tool right-click can't be
+        extended from a plug-in (tool-specific context menus are
+        core internals), so we register a procedure under
+        <Image>/View (where Zoom lives) + <Image>/Tools/AI Transform
+        and run our OWN zoom-via-hallucination pipeline.
+
+        Flow:
+          1. Read the selection bounds. If no selection, use the
+             whole canvas.
+          2. Duplicate the image → crop to the selection box → export
+             as a temp PNG.
+          3. Upload to ComfyUI.
+          4. Run build_seedv2r (SeedVR2 upscale with img2img detail
+             hallucination, scale_factor=3.0 at moderate denoise
+             0.35) — "what would this region look like at 3× closer,
+             with the detail the sensor didn't resolve hallucinated
+             in."
+          5. Import results as a NEW GIMP image — the Magical Zoom
+             output is meant to be inspected at its native resolution,
+             not pasted back over the original.
+
+        Uses a simple dialog to let the user confirm the zoom factor
+        + prompt (auto-generated from current selection if none
+        supplied).
+        """
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        GimpUi.init("spellcaster")
+        _apply_spellcaster_theme()
+
+        # Resolve selection bounds.
+        try:
+            bounds = _pdb_run("gimp-selection-bounds", {"image": image})
+            has_sel = bool(bounds.index(1))
+            sx1 = int(bounds.index(2))
+            sy1 = int(bounds.index(3))
+            sx2 = int(bounds.index(4))
+            sy2 = int(bounds.index(5))
+        except Exception:
+            has_sel = False
+            sx1, sy1 = 0, 0
+            sx2, sy2 = image.get_width(), image.get_height()
+        if not has_sel:
+            sx1, sy1 = 0, 0
+            sx2, sy2 = image.get_width(), image.get_height()
+        sel_w = max(1, sx2 - sx1)
+        sel_h = max(1, sy2 - sy1)
+
+        # ── Dialog ───────────────────────────────────────────────
+        dlg = Gtk.Dialog(title="Spellcaster — Magical Zoom")
+        dlg.set_default_size(520, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("🔍 _Zoom", Gtk.ResponseType.OK)
+        dlg.set_default_response(Gtk.ResponseType.OK)
+        try:
+            _style_dialog_buttons(dlg)
+        except Exception:
+            pass
+        bx = dlg.get_content_area()
+        bx.set_spacing(8); bx.set_margin_start(14); bx.set_margin_end(14)
+        bx.set_margin_top(14); bx.set_margin_bottom(10)
+        try:
+            hdr = _make_branded_header()
+            if hdr:
+                bx.pack_start(hdr, False, False, 0)
+        except Exception:
+            pass
+        info = Gtk.Label()
+        info.set_markup(
+            f'<span size="11000">Hallucinated super-zoom via '
+            f'SeedVR2 + img2img. The selection '
+            f'<b>{sel_w}×{sel_h}</b> px '
+            f'{"(no selection — whole canvas)" if not has_sel else ""}'
+            f' becomes the source.</span>')
+        info.set_xalign(0.0); info.set_line_wrap(True)
+        bx.pack_start(info, False, False, 0)
+
+        # Model preset (SDXL default — SeedVR2 requires SDXL backbone).
+        bx.pack_start(Gtk.Label(
+            label="SDXL Model (SeedVR2 backbone):", xalign=0.0),
+                       False, False, 0)
+        model_combo = Gtk.ComboBoxText()
+        for i, p in enumerate(MODEL_PRESETS):
+            if p.get("arch") == "sdxl":
+                model_combo.append(str(i), _model_label(p, "seedv2r"))
+        _fav = _load_config().get("favourite_model", -1)
+        if (0 <= _fav < len(MODEL_PRESETS)
+                and MODEL_PRESETS[_fav].get("arch") == "sdxl"):
+            model_combo.set_active_id(str(_fav))
+        if model_combo.get_active() < 0:
+            model_combo.set_active(0)
+        bx.pack_start(model_combo, False, False, 0)
+
+        # Zoom factor + denoise + steps grid.
+        grid = Gtk.Grid(column_spacing=12, row_spacing=6)
+        grid.attach(Gtk.Label(label="Zoom factor:", xalign=1), 0, 0, 1, 1)
+        zoom_spin = Gtk.SpinButton.new_with_range(1.0, 8.0, 0.5)
+        zoom_spin.set_digits(1); zoom_spin.set_value(3.0)
+        zoom_spin.set_tooltip_text(
+            "3× = classic 'enhance' — crop becomes 3× larger, "
+            "hallucinated detail fills in what the sensor missed.\n"
+            "1× = img2img enhance at original size.\n"
+            "8× = heavy hallucination; quality drops on busy scenes.")
+        grid.attach(zoom_spin, 1, 0, 1, 1)
+        grid.attach(Gtk.Label(label="Denoise:", xalign=1), 2, 0, 1, 1)
+        denoise_spin = Gtk.SpinButton.new_with_range(0.1, 0.9, 0.05)
+        denoise_spin.set_digits(2); denoise_spin.set_value(0.35)
+        denoise_spin.set_tooltip_text(
+            "How much the model can hallucinate away from the source.\n"
+            "0.20 — subtle enhance, mostly faithful.\n"
+            "0.35 — canonical 'Magical Zoom' (default).\n"
+            "0.60 — reimagine at higher detail.")
+        grid.attach(denoise_spin, 3, 0, 1, 1)
+        grid.attach(Gtk.Label(label="Steps:", xalign=1), 0, 1, 1, 1)
+        steps_spin = Gtk.SpinButton.new_with_range(10, 50, 1)
+        steps_spin.set_value(22)
+        grid.attach(steps_spin, 1, 1, 1, 1)
+        grid.attach(Gtk.Label(label="Seed:", xalign=1), 2, 1, 1, 1)
+        seed_spin = Gtk.SpinButton.new_with_range(-1, 2**32 - 1, 1)
+        seed_spin.set_value(-1)
+        seed_spin.set_tooltip_text("-1 = random")
+        grid.attach(seed_spin, 3, 1, 1, 1)
+        bx.pack_start(grid, False, False, 0)
+
+        # Prompt entry
+        bx.pack_start(Gtk.Label(
+            label="Prompt (describes what the zoomed region IS):",
+            xalign=0.0), False, False, 0)
+        prompt_tv = Gtk.TextView()
+        prompt_tv.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        prompt_tv.set_size_request(-1, 60)
+        prompt_tv.get_buffer().set_text(
+            "extreme detailed close-up, sharp focus, crisp details, "
+            "natural texture, photographic, high resolution, "
+            "hallucinated fine detail")
+        prompt_tv.set_tooltip_text(
+            "Describes what the AI should sharpen + hallucinate. "
+            "Default is a generic 'detail+sharpness' prompt. If you "
+            "know the subject (e.g. 'face', 'foliage', 'circuit "
+            "board'), add it for better results.")
+        sw = Gtk.ScrolledWindow()
+        sw.set_min_content_height(60); sw.add(prompt_tv)
+        bx.pack_start(sw, False, False, 0)
+        dlg.show_all()
+        resp = dlg.run()
+        if resp != Gtk.ResponseType.OK:
+            dlg.destroy()
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
+        mid_id = model_combo.get_active_id()
+        try:
+            preset_idx = int(mid_id) if mid_id else 0
+        except Exception:
+            preset_idx = 0
+        preset = dict(MODEL_PRESETS[preset_idx]) if preset_idx < len(
+            MODEL_PRESETS) else dict(MODEL_PRESETS[0])
+        zoom_factor = zoom_spin.get_value()
+        denoise = denoise_spin.get_value()
+        steps = int(steps_spin.get_value())
+        seed = int(seed_spin.get_value())
+        if seed < 0:
+            seed = random.randint(0, 2**32 - 1)
+        buf = prompt_tv.get_buffer()
+        prompt = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
+        dlg.destroy()
+
+        # ── Crop the selection to a temp and run SeedVR2 ──
+        try:
+            srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+            # Duplicate + crop to selection bounds so we don't modify
+            # the user's canvas.
+            dup = image.duplicate()
+            try:
+                if has_sel:
+                    _pdb_run("gimp-image-crop", {
+                        "image": dup,
+                        "new-width": sel_w, "new-height": sel_h,
+                        "offx": sx1, "offy": sy1,
+                    })
+                dup.flatten()
+                uname = _export_and_upload_cached(
+                    srv, dup, debug_prefix="[magical-zoom] ")
+            finally:
+                try:
+                    dup.delete()
+                except Exception:
+                    pass
+            # Build + dispatch.
+            wf = _build_seedv2r(
+                uname, "4x_foolhardy_Remacri.pth",
+                preset, prompt, "",
+                seed, denoise, preset.get("cfg", 6.5), steps,
+                zoom_factor, sel_w, sel_h,
+                controlnet=None, controlnet_2=None,
+                loras=None, enhance=True, quality="balanced")
+            label = (f"Magical Zoom {zoom_factor:.1f}× "
+                     f"(denoise {denoise:.2f})")
+            results = _run_with_spinner(
+                f"{label}: hallucinating detail...",
+                lambda: list(_run_comfyui_workflow(
+                    srv, wf, timeout=600)))
+            # SeedVR2 output is larger than the selection by design —
+            # _apply_mask_mode's auto-route opens it as a NEW image.
+            if not results:
+                Gimp.message(
+                    "Magical Zoom: no output returned. Check ComfyUI "
+                    "console for SeedVR2-related errors.")
+            for i, (fn, sf, ft) in enumerate(results):
+                lbl = (f"Magical Zoom {zoom_factor:.1f}x "
+                       f"#{i + 1}")
+                _apply_mask_mode(
+                    srv, image, _download_image(srv, fn, sf, ft),
+                    lbl, False)
+            _LAST_PROCEDURE["name"] = "spellcaster-magical-zoom"
+            Gimp.displays_flush()
+            Gimp.progress_end()
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            Gimp.message(f"Magical Zoom Error: {e}")
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
     def _run_quick_face_restore(self, procedure, run_mode, image, drawables, config, data):
         """Quick Face Restore: restore all faces with default settings."""
