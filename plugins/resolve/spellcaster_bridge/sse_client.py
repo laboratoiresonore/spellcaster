@@ -43,6 +43,10 @@ class SSEClient:
         self._last_error: str = ""
         self._last_tick: float = 0.0
         self._known_shots: dict[str, dict] = {}  # id -> last-seen status
+        # Remember the last SSE event id so reconnects get event replay
+        # via Last-Event-ID header (sseclient-py honours this; the
+        # hand-rolled fallback parses and passes it through too).
+        self._last_event_id: str = ""
 
     # ── Lifecycle ────────────────────────────────────────────────────
 
@@ -117,15 +121,25 @@ class SSEClient:
                 backoff_s = min(backoff_s * 2.0, MAX_BACKOFF_S)
 
     def _run_sse(self):
-        """Try to maintain an SSE connection. Any failure bubbles up."""
+        """Try to maintain an SSE connection. Any failure bubbles up.
+
+        Uses ``Last-Event-ID`` replay — if we've seen events before
+        and the stream drops, the next connection asks the Guild to
+        resend everything after the last id we acknowledged. No more
+        silently missed shot-ready notifications across reconnects.
+        """
         self._mode = "sse"
-        stream = self.guild.open_event_stream()
+        stream = self.guild.open_event_stream(
+            last_event_id=self._last_event_id or None)
         if stream is None:
             raise RuntimeError("open_event_stream returned None")
         for event in stream:
             if self._stop.is_set():
                 return
             self._last_tick = time.time()
+            eid = event.get("id") if isinstance(event, dict) else ""
+            if eid:
+                self._last_event_id = eid
             self._dispatch(event)
             # Piggy-back: also update the known-shots map from shot events
             self._update_known(event.get("data") or {})
