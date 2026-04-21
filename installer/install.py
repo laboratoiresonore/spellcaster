@@ -2941,6 +2941,186 @@ def _find_spellcaster_core() -> Path | None:
     return None
 
 
+def step_check_cn_coverage(paths: dict, server_info: dict,
+                             server_url: str, args) -> None:
+    """Step 5b: Report + optionally repair ControlNet coverage gaps.
+
+    The GIMP plugin's 3D tools fail with cryptic "CN file not found" /
+    "incomplete metadata" / "controlnet file is invalid" errors when
+    the specific CN file Spellcaster expects isn't on the server. Now
+    the installer surfaces every gap up-front + offers to download
+    the canonical CN files directly into the server's
+    ``models/controlnet/`` folder, so first-time users never hit the
+    headache.
+
+    The URL map mirrors ``comfyui-spellcaster/model_repair.py``
+    (CN_URL_MAP) — one source of truth for both the server-side
+    repair route and the installer-time provisioning. Adding / moving
+    a CN file means updating just that file.
+    """
+    print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
+    print(f"{C_BOLD}  STEP 5b: ControlNet Coverage{C_RESET}")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
+
+    # Canonical URL map (mirrors CN_URL_MAP in model_repair.py).
+    CN_URL_MAP = {
+        "SDXL/controlnet-union-sdxl-1.0.safetensors":
+            ("https://huggingface.co/xinsir/controlnet-union-sdxl-1.0/"
+             "resolve/main/diffusion_pytorch_model_promax.safetensors",
+             2_500_000_000, "SDXL Union (Xinsir promax)"),
+        "control_v11p_sd15_normalbae.pth":
+            ("https://huggingface.co/lllyasviel/ControlNet-v1-1/"
+             "resolve/main/control_v11p_sd15_normalbae.pth",
+             1_450_000_000, "SD 1.5 normalbae (v1.1)"),
+        "control_v11f1p_sd15_depth_fp16.safetensors":
+            ("https://huggingface.co/comfyanonymous/"
+             "ControlNet-v1-1_fp16_safetensors/"
+             "resolve/main/control_v11f1p_sd15_depth_fp16.safetensors",
+             720_000_000, "SD 1.5 depth fp16 (v1.1)"),
+        "control_v11p_sd15_lineart_fp16.safetensors":
+            ("https://huggingface.co/comfyanonymous/"
+             "ControlNet-v1-1_fp16_safetensors/"
+             "resolve/main/control_v11p_sd15_lineart_fp16.safetensors",
+             720_000_000, "SD 1.5 lineart fp16 (v1.1)"),
+        "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors":
+            ("https://huggingface.co/Shakker-Labs/"
+             "FLUX.1-dev-ControlNet-Union-Pro-2.0/"
+             "resolve/main/diffusion_pytorch_model.safetensors",
+             2_500_000_000, "Flux.1-dev Union Pro 2.0 (Shakker Labs)"),
+    }
+
+    available = server_info.get('controlnets') or []
+    if not available:
+        print(f"  {C_YELLOW}Server isn't reachable or returned no ControlNet "
+              f"list — skipping coverage check.{C_RESET}")
+        return
+
+    # Match both flat paths and HF folder-form paths
+    # (``<repo>/diffusion_pytorch_model.safetensors``) against each
+    # canonical target. basename match + parent-folder match for
+    # generic HF filenames.
+    GENERIC_HF = {"diffusion_pytorch_model.safetensors",
+                   "pytorch_model.safetensors", "model.safetensors"}
+
+    def _is_installed(target: str) -> bool:
+        norm = target.replace("\\", "/")
+        bn = norm.rsplit("/", 1)[-1].lower()
+        parent = (norm.rsplit("/", 2)[-2].lower()
+                  if "/" in norm else None)
+        # Target itself might be stored flat OR folder-form
+        target_parent = norm.rsplit(".", 1)[0].lower()  # e.g. "SDXL/controlnet-union-sdxl-1.0"
+        for a in available:
+            a_norm = a.replace("\\", "/")
+            a_bn = a_norm.rsplit("/", 1)[-1].lower()
+            # Exact match
+            if a_norm == norm:
+                return True
+            # Flat basename match (only safe for non-generic basenames)
+            if a_bn == bn and bn not in GENERIC_HF:
+                return True
+            # HF folder-form match: available file's parent equals the
+            # target's basename-without-ext
+            a_parent = (a_norm.rsplit("/", 2)[-2].lower()
+                        if "/" in a_norm else "")
+            if (a_bn in GENERIC_HF
+                    and a_parent == target_parent.rsplit("/", 1)[-1].lower()):
+                return True
+        return False
+
+    missing: list[tuple[str, str, int, str]] = []
+    installed: list[str] = []
+    for target, (url, size, label) in CN_URL_MAP.items():
+        if _is_installed(target):
+            installed.append(label)
+        else:
+            missing.append((target, url, size, label))
+
+    if installed:
+        print(f"  {C_GREEN}Already installed ({len(installed)}):{C_RESET}")
+        for lbl in installed:
+            print(f"    {C_GREEN}✓{C_RESET} {lbl}")
+    if not missing:
+        print(f"\n  {C_GREEN}All canonical ControlNets are on the server. "
+              f"No gaps.{C_RESET}")
+        return
+
+    total_mb = sum(sz for _, _, sz, _ in missing) / (1024 * 1024)
+    print(f"\n  {C_YELLOW}Missing ({len(missing)}, "
+          f"~{total_mb:.0f} MB total):{C_RESET}")
+    for target, url, size, label in missing:
+        print(f"    {C_YELLOW}✗{C_RESET} {label}")
+        print(f"      {C_DIM}target: {target}{C_RESET}")
+        print(f"      {C_DIM}source: {url}{C_RESET}")
+        print(f"      {C_DIM}size:   {size / (1024 * 1024):.0f} MB{C_RESET}")
+
+    # Prefer the pack's /spellcaster/models/repair route when it's
+    # reachable — it streams + atomic-renames + validates size, which
+    # is exactly what we want. Fall back to inline urllib if the
+    # route isn't available.
+    repair_route = f"{server_url.rstrip('/')}/spellcaster/models/repair"
+    route_available = False
+    try:
+        req = urllib.request.Request(
+            f"{server_url.rstrip('/')}/spellcaster/models/known_urls")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            route_available = resp.status == 200
+    except Exception:
+        pass
+
+    if not route_available:
+        print(f"\n  {C_DIM}(ComfyUI-Spellcaster pack's repair route isn't "
+              f"available yet — it registers after ComfyUI restart. "
+              f"Install the node pack first, restart ComfyUI, then "
+              f"re-run the installer to auto-download the CNs.){C_RESET}")
+        print(f"\n  {C_DIM}Or download manually via ComfyUI Manager → "
+              f"Install Models → search each label above.{C_RESET}")
+        return
+
+    print()
+    if not ask_yn(f"  Auto-download {len(missing)} missing ControlNet "
+                   f"file(s) now? (~{total_mb:.0f} MB, ~{total_mb/10:.0f}–"
+                   f"{total_mb/5:.0f} min on 100 Mbps)",
+                   default="y", auto_yes=getattr(args, 'yes', False)):
+        print(f"  {C_DIM}Skipped. Users will hit gaps the first time they "
+              f"run 3D tools — they can click 'Repair on server' in the "
+              f"GIMP dialog OR re-run the installer later.{C_RESET}")
+        return
+
+    if getattr(args, 'dry_run', False):
+        print(f"  {C_DIM}[dry-run] Would POST to {repair_route} for "
+              f"{len(missing)} files.{C_RESET}")
+        return
+
+    ok_count = 0
+    for target, url, size, label in missing:
+        print(f"\n  Downloading {label}...")
+        try:
+            body = json.dumps({
+                "action":   "redownload",
+                "folder":   "controlnet",
+                "filename": target,
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                repair_route, data=body, method="POST",
+                headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=1800) as resp:
+                result = json.loads(resp.read().decode(
+                    "utf-8", errors="replace"))
+            if result.get("ok"):
+                print(f"    {C_GREEN}✓ {result.get('detail', 'done')}"
+                      f"{C_RESET}")
+                ok_count += 1
+            else:
+                print(f"    {C_RED}✗ {result.get('error') or 'failed'}"
+                      f"{C_RESET}")
+        except Exception as e:
+            print(f"    {C_RED}✗ {e}{C_RESET}")
+
+    print(f"\n  {C_GREEN if ok_count == len(missing) else C_YELLOW}"
+          f"Downloaded {ok_count}/{len(missing)} ControlNet files."
+          f"{C_RESET}")
+
+
 def step_install_plugins(paths: dict, server_url: str, dry_run: bool = False):
     """Step 6: Copy plugin files, patching the server URL."""
     print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
@@ -3982,6 +4162,18 @@ def main():
 
     step_install_models(manifest, selected, paths, args, server_info,
                         getattr(args, '_vram_mb', 0))
+    # CN coverage audit — surface any gaps in canonical ControlNet
+    # files BEFORE the plugin install step so first-time users see
+    # gaps and get the auto-download prompt right next to the node
+    # install messages (same mental context). The step no-ops when
+    # the server is unreachable OR the ComfyUI-Spellcaster pack's
+    # repair route isn't live yet (first-run chicken-and-egg — user
+    # re-runs after ComfyUI restart).
+    try:
+        step_check_cn_coverage(paths, server_info, server_url, args)
+    except Exception as _cn_err:
+        print(f"  {C_YELLOW}CN coverage check failed: "
+              f"{_cn_err} (continuing){C_RESET}")
     settings = _write_shared_settings(paths, server_url, llm_url, server_info, args.dry_run)
     step_install_plugins(paths, server_url, args.dry_run)
     step_install_tavern(paths, server_url, llm_url, selected, args.dry_run, args.yes)
