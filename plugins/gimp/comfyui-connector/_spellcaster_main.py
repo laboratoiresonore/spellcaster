@@ -671,7 +671,7 @@ _apply_spellcaster_theme()
 # ═══════════════════════════════════════════════════════════════════════════
 #  PRIVACY-STRICT MODE
 # ═══════════════════════════════════════════════════════════════════════════
-# Hard-privacy posture for the Spellcaster Studio bundle. When strict
+# Hard-privacy posture for the Spellcaster bundle. When strict
 # mode is on (default in bundle, opt-in for regular installs):
 #
 #   * Every dispatch verifies that post-run server cleanup succeeded
@@ -989,15 +989,15 @@ def _offer_empty_canvas_pivot(image, source_tool: str) -> str:
 # ═══════════════════════════════════════════════════════════════════════════
 #  BUNDLE-MODE WELCOME + AI-FORWARD SURFACES
 # ═══════════════════════════════════════════════════════════════════════════
-# When the plugin runs inside the Spellcaster Studio portable bundle
+# When the plugin runs inside the Spellcaster portable bundle
 # (SPELLCASTER_BUNDLE=1 env set by the launcher), we want to surface
 # AI tools aggressively:
 #
 #   * First GIMP open → welcome dialog with big "Start generating"
 #     buttons pointing at the top 5 AI flows, so users don't have to
 #     hunt through menus.
-#   * Every dialog's header banner shows "Spellcaster Studio" vs plain
-#     "Spellcaster" so the AI brand is omnipresent.
+#   * Distribution-specific branding on the welcome dialog (SFW =
+#     generic "Spellcaster"; downstream NSFW build patches the name).
 #   * Default favourite_model + theme + apply_theme → ON, so the
 #     branded look is live out of the box.
 #
@@ -1006,7 +1006,7 @@ def _offer_empty_canvas_pivot(image, source_tool: str) -> str:
 # bundle-mode env var is set.
 
 def _is_bundle_mode() -> bool:
-    """True when running inside the Spellcaster Studio portable
+    """True when running inside a Spellcaster portable
     bundle. Gate for the aggressive AI-forward surfaces so a regular
     plug-in install doesn't surprise existing users with popups."""
     return bool(os.environ.get("SPELLCASTER_BUNDLE"))
@@ -1051,7 +1051,7 @@ def _maybe_show_bundle_welcome():
     except Exception:
         pass
     try:
-        dlg = Gtk.Dialog(title="Welcome to Spellcaster Studio")
+        dlg = Gtk.Dialog(title="Welcome")
         dlg.set_default_size(640, -1)
         dlg.add_button("_Skip tour", Gtk.ResponseType.CLOSE)
         dlg.add_button("_Start generating", Gtk.ResponseType.OK)
@@ -1067,7 +1067,7 @@ def _maybe_show_bundle_welcome():
         title = Gtk.Label()
         title.set_markup(
             '<span size="18000" weight="bold" color="#ffd700">'
-            'Spellcaster Studio</span>')
+            'Spellcaster</span>')
         title.set_xalign(0.0)
         bx.pack_start(title, False, False, 0)
 
