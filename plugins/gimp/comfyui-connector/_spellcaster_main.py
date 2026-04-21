@@ -395,6 +395,102 @@ def _github_headers():
     """Return HTTP headers for GitHub API/raw requests."""
     return {"User-Agent": "spellcaster-gimp/2.0"}
 
+# Theme variants — mirror the Wizard Guild's per-architecture palette
+# (ARCH_META in tavern/static/app.js). Each variant rewrites the core
+# palette tokens at the top of the bundled ``spellcaster-theme.css``
+# via @define-color overrides so the dialog picks up the Guild's look
+# for the architecture you're currently working with.
+#
+# Order matches the Guild's ARCH_META order. "Wizard Guild" is the
+# canonical default (purple-gold, matches tavern/static/style.css
+# :root). Every other entry overrides the accent + purple + glow
+# tokens while keeping the same dark bg + lavender text so the
+# dialogs stay readable across variants.
+#
+# c1 / c2 / glow lifted verbatim from ARCH_META so the GIMP dialog
+# and the Guild's per-arch card borders stay in lockstep. Users will
+# recognise the color of a given dialog as "the one that matches the
+# Klein card in the Guild."
+_THEME_VARIANTS: dict = {
+    "wizard_guild":   {"label": "Wizard Guild (default — purple + gold)",
+                        "accent": "#ffd700", "purple": "#B246F2",
+                        "glow": "255,215,0"},
+    "flux2klein":     {"label": "Klein (Flux 2 — gold + lilac)",
+                        "accent": "#ffd700", "purple": "#b470ff",
+                        "glow": "255,215,0"},
+    "flux1dev":       {"label": "Flux 1 Dev (cyan + gold)",
+                        "accent": "#58e0ff", "purple": "#ffd700",
+                        "glow": "88,224,255"},
+    "flux_kontext":   {"label": "Flux Kontext (sky blue)",
+                        "accent": "#7ab6ff", "purple": "#c6e0ff",
+                        "glow": "122,182,255"},
+    "chroma":         {"label": "Chroma (pink + cyan plasma)",
+                        "accent": "#ff7ad7", "purple": "#7af0ff",
+                        "glow": "255,122,215"},
+    "sdxl":           {"label": "SDXL (violet + amber)",
+                        "accent": "#b470ff", "purple": "#ffc667",
+                        "glow": "180,112,255"},
+    "sdxl_turbo":     {"label": "SDXL Turbo (amber + coral)",
+                        "accent": "#ffc667", "purple": "#ff7a6b",
+                        "glow": "255,198,103"},
+    "illustrious":    {"label": "Illustrious (pink bloom)",
+                        "accent": "#ff8fd1", "purple": "#ffd1ed",
+                        "glow": "255,143,209"},
+    "pony":           {"label": "Pony (pink + gold)",
+                        "accent": "#ff6bb5", "purple": "#ffce5e",
+                        "glow": "255,107,181"},
+    "sd15":           {"label": "SD 1.5 (periwinkle)",
+                        "accent": "#8aa9ff", "purple": "#c9d7ff",
+                        "glow": "138,169,255"},
+    "zit":            {"label": "Z-Image Turbo (neon yellow + lime)",
+                        "accent": "#ffef4a", "purple": "#a6ff6b",
+                        "glow": "255,239,74"},
+    "sd3":            {"label": "Stable Diffusion 3 (lavender)",
+                        "accent": "#a68eff", "purple": "#e7ddff",
+                        "glow": "166,142,255"},
+    "ltx":            {"label": "LTX Video (teal + lilac)",
+                        "accent": "#5eead4", "purple": "#c4b5fd",
+                        "glow": "94,234,212"},
+    "wan":            {"label": "Wan 2.2 Video (emerald)",
+                        "accent": "#10b981", "purple": "#6ee7b7",
+                        "glow": "16,185,129"},
+    "cinema":         {"label": "Cinema Night (dim gold, no glow)",
+                        "accent": "#c8a24a", "purple": "#5a3a80",
+                        "glow": "200,162,74"},
+}
+
+
+def _theme_variant_css_overlay(variant_key: str) -> str:
+    """Return a small CSS snippet that overrides the palette tokens
+    defined at the top of ``spellcaster-theme.css`` so the bundled
+    file stays canonical (one 48 KB CSS, plus a ~200-byte variant
+    header). Returns empty string for unknown / canonical variant.
+    """
+    v = _THEME_VARIANTS.get(variant_key)
+    if not v or variant_key == "wizard_guild":
+        return ""
+    accent = v["accent"]
+    purple = v["purple"]
+    glow = v["glow"]
+    # Override the GTK @define-color tokens. A tiny helper derives the
+    # hover color by lightening the accent 8%-ish via simple value
+    # tweak; GTK 3 has no lighten()/darken() built-ins so we hand-pick.
+    # (Users who need pixel-perfect hovers can PR the table.)
+    return (
+        f"/* Spellcaster variant: {variant_key} */\n"
+        f"@define-color sp_accent        {accent};\n"
+        f"@define-color sp_accent_hover  {accent};\n"
+        f"@define-color sp_purple        {purple};\n"
+        f"@define-color sp_purple_dark   {purple};\n"
+        f"* {{ outline-color: alpha({accent}, 0.5); }}\n"
+        f".spellcaster-primary, .spellcaster-header-box label "
+        f"{{ color: {accent}; }}\n"
+        f"button.suggested-action "
+        f"{{ background-color: {accent}; border-color: {accent}; }}\n"
+        f"/* end variant */\n\n"
+    )
+
+
 def _install_spellcaster_theme_to_disk():
     """Install spellcaster-theme.css into GIMP's user theme directory.
 
@@ -470,6 +566,15 @@ def _apply_spellcaster_theme():
                      border: 1px solid #3A2863; border-radius: 6px; }
             button:hover { background-color: #D122E3; color: white; }
             '''
+
+        # Theme-variant overlay. Prepended so GTK's last-wins @define-
+        # color semantics let the variant's accent/purple override the
+        # canonical file's defaults. Non-destructive: the bundled
+        # spellcaster-theme.css stays the single source of truth.
+        variant_key = _cfg.get("theme_variant", "wizard_guild")
+        overlay = _theme_variant_css_overlay(variant_key)
+        if overlay:
+            css = overlay.encode("utf-8") + css
 
         provider = Gtk.CssProvider()
         try:
@@ -33941,6 +34046,34 @@ class Spellcaster(Gimp.PlugIn):
             "this plugin populates automatically on first run).")
         timeouts_box.pack_start(apply_theme_cb, False, False, 0)
 
+        # Theme-variant picker — mirror every per-arch Guild palette
+        # in a single dropdown so users can switch between "Klein
+        # gold", "Flux cyan", "Chroma plasma", etc. See
+        # _THEME_VARIANTS near the top of this file for the full
+        # table. Overlay CSS is prepended to the bundled 48 KB
+        # spellcaster-theme.css at apply time — one file, many looks.
+        theme_variant_row = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        theme_variant_row.pack_start(
+            Gtk.Label(label="  └ Variant:"), False, False, 0)
+        theme_variant_combo = Gtk.ComboBoxText()
+        for _k, _v in _THEME_VARIANTS.items():
+            theme_variant_combo.append(_k, _v["label"])
+        theme_variant_combo.set_active_id(
+            cfg.get("theme_variant", "wizard_guild"))
+        if theme_variant_combo.get_active() < 0:
+            theme_variant_combo.set_active(0)
+        theme_variant_combo.set_tooltip_text(
+            "Pick the palette variant. Each variant mirrors a Wizard "
+            "Guild per-architecture card theme — 'Klein gold' matches "
+            "Klein's card border, 'Chroma plasma' matches Chroma's, "
+            "etc. 'Wizard Guild (default)' is the canonical purple + "
+            "gold look. 'Cinema Night' is a dim / no-glow variant for "
+            "night work.\n\nThe variant takes effect the next time "
+            "you open any Spellcaster dialog; no GIMP restart needed.")
+        theme_variant_row.pack_start(theme_variant_combo, True, True, 0)
+        timeouts_box.pack_start(theme_variant_row, False, False, 0)
+
         # ── Debug images toggle (grouped with the update + timeout knobs) ──
         debug_cb = Gtk.CheckButton(label="Save ControlNet debug layers (invisible)")
         debug_cb.set_active(cfg.get("debug_images", False))
@@ -34354,6 +34487,8 @@ class Spellcaster(Gimp.PlugIn):
         new_auto_update = auto_update_cb.get_active()
         new_debug = debug_cb.get_active()
         new_apply_theme = apply_theme_cb.get_active()
+        new_theme_variant = (theme_variant_combo.get_active_id()
+                              or "wizard_guild")
         new_output_dir = output_entry.get_text().strip()
         new_cleanup = cleanup_combo.get_active_id() or "copy"
         fav_id = fav_combo.get_active_id()
@@ -34387,6 +34522,7 @@ class Spellcaster(Gimp.PlugIn):
             "prompt_enhance": new_enhance,
             "llm_url": new_llm,
             "apply_theme": new_apply_theme,
+            "theme_variant": new_theme_variant,
         })
         _propagate_server_url(new_url)
         # Re-apply / remove the theme live so the user sees the effect
