@@ -532,7 +532,8 @@ def sample_klein_img2img(nf, model_ref, pos_ref, neg_ref, latent_ref, seed,
 
 def inject_controlnet(nf, controlnet_config, guide_modes, arch_key,
                       image_ref, pos_ref, neg_ref,
-                      cn_base_id=20, debug_images=False):
+                      cn_base_id=20, debug_images=False,
+                      vae_ref=None):
     """Inject a single ControlNet into the workflow (with optional preprocessing).
 
     ControlNets add spatial constraints to the diffusion process. For example,
@@ -615,12 +616,18 @@ def inject_controlnet(nf, controlnet_config, guide_modes, arch_key,
     # updated versions of both. This is why we return two refs, not one.
     # start/end_percent control when during the diffusion process the CN is active
     # (e.g. 0.0-0.5 = apply only in early steps for composition guidance).
+    # Flux ControlNets (``FLUX.1-dev-ControlNet-Union-Pro*``) require a
+    # VAE input on ControlNetApplyAdvanced. Wire the VAE through
+    # unconditionally when the arch is Flux-family — SDXL / SD1.5 /
+    # Union CNs ignore the slot, so it's always safe to pass.
+    cn_vae_ref = vae_ref if arch_key in ("flux1dev", "flux2klein", "flux_kontext") else None
     cn_apply_id = nf.controlnet_apply_advanced(
         pos_ref, neg_ref,
         [cn_loader_id, 0], cn_image_ref,
         controlnet_config["strength"],
         controlnet_config.get("start_percent", 0.0),
         controlnet_config.get("end_percent", 1.0),
+        vae_ref=cn_vae_ref,
         node_id=str(cn_base_id + 2),
     )
 
@@ -635,7 +642,8 @@ def inject_controlnet(nf, controlnet_config, guide_modes, arch_key,
 
 
 def inject_controlnet_pair(nf, cn1_config, cn2_config, guide_modes, arch_key,
-                            image_ref, pos_ref, neg_ref, debug_images=False):
+                            image_ref, pos_ref, neg_ref, debug_images=False,
+                            vae_ref=None):
     """Inject two ControlNets in sequence (one feeds into the next).
 
     Multiple ControlNets can be chained: the conditioning output of the first
@@ -670,10 +678,12 @@ def inject_controlnet_pair(nf, cn1_config, cn2_config, guide_modes, arch_key,
     pos, neg = inject_controlnet(
         nf, cn1_config, guide_modes, arch_key, image_ref,
         pos_ref, neg_ref, cn_base_id=20, debug_images=debug_images,
+        vae_ref=vae_ref,
     )
     pos, neg = inject_controlnet(
         nf, cn2_config, guide_modes, arch_key, image_ref,
         pos, neg, cn_base_id=30, debug_images=debug_images,
+        vae_ref=vae_ref,
     )
     return pos, neg
 
