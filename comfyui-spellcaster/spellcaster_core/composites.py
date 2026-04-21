@@ -49,7 +49,7 @@ from .architectures import ARCHITECTURES, get_arch
 # This function abstracts that logic so callers never think about loader
 # strategy; they just pass a preset and get back (model_ref, clip_ref, vae_ref).
 
-def load_model_stack(nf, preset, node_id="1"):
+def load_model_stack(nf, preset, node_id="1") -> tuple[list, list, list]:
     """Load model + CLIP + VAE stack, respecting architecture loader strategy.
 
     The architecture detection (ARCHITECTURES dict) determines whether to use:
@@ -168,7 +168,8 @@ def load_model_stack(nf, preset, node_id="1"):
 # the model_ref and clip_ref after each LoRA to feed into the next one.
 
 def inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100,
-                      use_triggers=False, arch_key=None):
+                      use_triggers=False, arch_key=None
+                      ) -> tuple[list, list, list]:
     """Apply a sequence of LoRAs to model and CLIP (or skip if empty list).
 
     LoRAs are applied in order, each one receiving the previous LoRA's output.
@@ -274,7 +275,7 @@ def inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100,
     return prev_model, prev_clip, trigger_refs
 
 
-def collect_lora_trigger_tags(nf, lora_names, base_id=150):
+def collect_lora_trigger_tags(nf, lora_names, base_id=150) -> list:
     """Extract trigger words from LoRAs WITHOUT loading them (metadata only).
 
     Uses the LoraTagsOnly node from ComfyUI-Lora-Auto-Trigger-Words.
@@ -304,7 +305,7 @@ def collect_lora_trigger_tags(nf, lora_names, base_id=150):
 # but Flux/Klein use ConditioningZeroOut (empty/null conditioning) instead.
 
 def encode_prompts(nf, arch_key, clip_ref, positive, negative,
-                   pos_id=None, neg_id=None):
+                   pos_id=None, neg_id=None) -> tuple[list, list]:
     """Encode positive and negative prompts per architecture.
 
     Different architectures handle negatives differently:
@@ -375,7 +376,7 @@ def encode_prompts(nf, arch_key, clip_ref, positive, negative,
 # Each builds the full sampling pipeline and returns the sampler node ID.
 
 def sample_standard(nf, model_ref, pos_ref, neg_ref, latent_ref,
-                    seed, preset, denoise_override=None, node_id=None):
+                    seed, preset, denoise_override=None, node_id=None) -> list:
     """Standard KSampler path for most architectures.
 
     Applies to: SD1.5, SDXL, Illustrious, ZIT, Flux1Dev, Flux Kontext.
@@ -427,7 +428,7 @@ def sample_standard(nf, model_ref, pos_ref, neg_ref, latent_ref,
 
 def sample_klein(nf, model_ref, pos_ref, neg_ref, latent_ref, seed,
                  steps, guidance=1.0, width_ref=None, height_ref=None,
-                 node_id=None):
+                 node_id=None) -> list:
     """Flux2Klein sampling pipeline (SamplerCustomAdvanced + CFGGuider).
 
     Klein uses a different sampling architecture than standard KSampler:
@@ -483,7 +484,7 @@ def sample_klein(nf, model_ref, pos_ref, neg_ref, latent_ref, seed,
 
 def sample_klein_img2img(nf, model_ref, pos_ref, neg_ref, latent_ref, seed,
                          steps, guidance=1.0, width_ref=None, height_ref=None,
-                         node_id=None):
+                         node_id=None) -> list:
     """Klein img2img with ReferenceLatent.
 
     Same as sample_klein but wraps pos/neg conditioning with ReferenceLatent
@@ -533,7 +534,7 @@ def sample_klein_img2img(nf, model_ref, pos_ref, neg_ref, latent_ref, seed,
 def inject_controlnet(nf, controlnet_config, guide_modes, arch_key,
                       image_ref, pos_ref, neg_ref,
                       cn_base_id=20, debug_images=False,
-                      vae_ref=None):
+                      vae_ref=None) -> tuple[list, list]:
     """Inject a single ControlNet into the workflow (with optional preprocessing).
 
     ControlNets add spatial constraints to the diffusion process. For example,
@@ -655,7 +656,7 @@ def inject_controlnet(nf, controlnet_config, guide_modes, arch_key,
 
 def inject_controlnet_pair(nf, cn1_config, cn2_config, guide_modes, arch_key,
                             image_ref, pos_ref, neg_ref, debug_images=False,
-                            vae_ref=None):
+                            vae_ref=None) -> tuple[list, list]:
     """Inject two ControlNets in sequence (one feeds into the next).
 
     Multiple ControlNets can be chained: the conditioning output of the first

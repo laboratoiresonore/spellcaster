@@ -473,8 +473,15 @@ async function cmdImg2Img() {
     }
 }
 
-// ─── Preset bundles (mirrors spellcaster_core/plugin_presets.py) ──
-const PHOTOSHOP_PRESETS = [
+// ─── Preset bundles ──────────────────────────────────────────────
+// Canonical source is spellcaster_core/plugin_presets.py; the Guild
+// exposes it at /api/presets/photoshop. `loadPresets()` fetches the
+// live list on panel show and swaps _FALLBACK_PHOTOSHOP_PRESETS out
+// when the Guild answers, so the only time this embedded copy is
+// read is when the user is running pure ComfyUI-direct without a
+// Guild. Keep in sync with the Python canon for that offline case.
+let PHOTOSHOP_PRESETS = null;  // populated by loadPresets()
+const _FALLBACK_PHOTOSHOP_PRESETS = [
     {
         label: "Product shot — studio",
         op: "txt2img",
@@ -527,7 +534,8 @@ async function cmdPreset() {
     /** Let the user pick a preset from the bundled list. */
     const label = await showPresetPicker();
     if (!label) return;
-    const preset = PHOTOSHOP_PRESETS.find(p => p.label === label);
+    const presets = PHOTOSHOP_PRESETS || _FALLBACK_PHOTOSHOP_PRESETS;
+    const preset = presets.find(p => p.label === label);
     if (!preset) {
         showError(`Preset '${label}' not found.`);
         return;
@@ -601,7 +609,8 @@ async function cmdPreset() {
 async function showPresetPicker() {
     return new Promise((resolve) => {
         const dlg = document.createElement("dialog");
-        const options = PHOTOSHOP_PRESETS.map(p =>
+        const presets = PHOTOSHOP_PRESETS || _FALLBACK_PHOTOSHOP_PRESETS;
+        const options = presets.map(p =>
             `<option value="${p.label}">${p.label}</option>`).join("");
         dlg.innerHTML = `
             <form method="dialog" style="padding:16px;min-width:320px;">
@@ -706,6 +715,21 @@ function setupPanel() {
 //  Entry points
 // ═══════════════════════════════════════════════════════════════════
 
+async function loadPresets() {
+    /**
+     * Fetch the Photoshop preset bundle from the Guild so the embedded
+     * _FALLBACK list stays a fallback. Silent on failure — we just keep
+     * using _FALLBACK_PHOTOSHOP_PRESETS. Runs once per panel show.
+     */
+    try {
+        const rec = await guildAPI("/api/presets/photoshop");
+        const list = rec && Array.isArray(rec.presets) ? rec.presets : null;
+        if (list && list.length) {
+            PHOTOSHOP_PRESETS = list;
+        }
+    } catch (_) { /* guild unreachable — keep fallback */ }
+}
+
 entrypoints.setup({
     panels: {
         "spellcaster-panel": {
@@ -714,6 +738,9 @@ entrypoints.setup({
                 // Fire the Guild heartbeat loop on every panel show —
                 // the module-level flag keeps it single-instance.
                 try { startHeartbeat(20); } catch (_) { /* silent */ }
+                // Best-effort preset refresh; falls back to embedded
+                // _FALLBACK_PHOTOSHOP_PRESETS when the Guild is down.
+                loadPresets().catch(() => { /* silent */ });
             },
         },
     },
