@@ -2953,41 +2953,79 @@ def step_check_cn_coverage(paths: dict, server_info: dict,
     ``models/controlnet/`` folder, so first-time users never hit the
     headache.
 
-    The URL map mirrors ``comfyui-spellcaster/model_repair.py``
-    (CN_URL_MAP) — one source of truth for both the server-side
-    repair route and the installer-time provisioning. Adding / moving
-    a CN file means updating just that file.
+    Source of truth: ``comfyui-spellcaster/model_repair.py::CN_REPO_MAP``
+    (HF repo tuples). The installer's per-file size + label metadata
+    is the only installer-specific addition; repo_id / filename come
+    from the pack.
+
+    Adding a new CN: (1) add to CN_REPO_MAP in model_repair.py, (2)
+    add matching size/label below. Both files must be touched.
     """
     print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
     print(f"{C_BOLD}  STEP 5b: ControlNet Coverage{C_RESET}")
     print(f"{C_BOLD}{_BOX_LINE}{C_RESET}\n")
 
-    # Canonical URL map (mirrors CN_URL_MAP in model_repair.py).
-    CN_URL_MAP = {
+    # Installer-specific size + human label metadata. Pairs with
+    # CN_REPO_MAP in comfyui-spellcaster/model_repair.py — the repo
+    # / filename / revision come from there, we only carry display
+    # strings + byte sizes here.
+    CN_LABELS_AND_SIZES = {
         "SDXL/controlnet-union-sdxl-1.0.safetensors":
-            ("https://huggingface.co/xinsir/controlnet-union-sdxl-1.0/"
-             "resolve/main/diffusion_pytorch_model_promax.safetensors",
-             2_500_000_000, "SDXL Union (Xinsir promax)"),
+            (2_500_000_000, "SDXL Union (Xinsir promax)"),
         "control_v11p_sd15_normalbae.pth":
-            ("https://huggingface.co/lllyasviel/ControlNet-v1-1/"
-             "resolve/main/control_v11p_sd15_normalbae.pth",
-             1_450_000_000, "SD 1.5 normalbae (v1.1)"),
+            (1_450_000_000, "SD 1.5 normalbae (v1.1)"),
         "control_v11f1p_sd15_depth_fp16.safetensors":
-            ("https://huggingface.co/comfyanonymous/"
-             "ControlNet-v1-1_fp16_safetensors/"
-             "resolve/main/control_v11f1p_sd15_depth_fp16.safetensors",
-             720_000_000, "SD 1.5 depth fp16 (v1.1)"),
+            (720_000_000, "SD 1.5 depth fp16 (v1.1)"),
         "control_v11p_sd15_lineart_fp16.safetensors":
-            ("https://huggingface.co/comfyanonymous/"
-             "ControlNet-v1-1_fp16_safetensors/"
-             "resolve/main/control_v11p_sd15_lineart_fp16.safetensors",
-             720_000_000, "SD 1.5 lineart fp16 (v1.1)"),
+            (720_000_000, "SD 1.5 lineart fp16 (v1.1)"),
         "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors":
-            ("https://huggingface.co/Shakker-Labs/"
-             "FLUX.1-dev-ControlNet-Union-Pro-2.0/"
-             "resolve/main/diffusion_pytorch_model.safetensors",
-             2_500_000_000, "Flux.1-dev Union Pro 2.0 (Shakker Labs)"),
+            (2_500_000_000, "Flux.1-dev Union Pro 2.0 (Shakker Labs)"),
     }
+
+    # Resolve URLs from the pack's CN_REPO_MAP — single source of
+    # truth, deriving URL from repo tuple.
+    CN_URL_MAP = {}
+    try:
+        # Prefer the pack if reachable via HTTP — gets the LATEST map
+        # including any post-release additions.
+        import json as _json
+        req = urllib.request.Request(
+            f"{server_url.rstrip('/')}/spellcaster/models/known_urls")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            known = _json.loads(resp.read().decode("utf-8"))
+        for filename, url in (known.get("cn_urls") or {}).items():
+            size, label = CN_LABELS_AND_SIZES.get(
+                filename, (1_000_000_000, filename))
+            CN_URL_MAP[filename] = (url, size, label)
+    except Exception:
+        pass
+    if not CN_URL_MAP:
+        # Pack not reachable — fall back to baked-in URLs derived from
+        # the same HF repo layout as CN_REPO_MAP.
+        _FALLBACK_REPOS = {
+            "SDXL/controlnet-union-sdxl-1.0.safetensors": (
+                "xinsir/controlnet-union-sdxl-1.0",
+                "diffusion_pytorch_model_promax.safetensors"),
+            "control_v11p_sd15_normalbae.pth": (
+                "lllyasviel/ControlNet-v1-1",
+                "control_v11p_sd15_normalbae.pth"),
+            "control_v11f1p_sd15_depth_fp16.safetensors": (
+                "comfyanonymous/ControlNet-v1-1_fp16_safetensors",
+                "control_v11f1p_sd15_depth_fp16.safetensors"),
+            "control_v11p_sd15_lineart_fp16.safetensors": (
+                "comfyanonymous/ControlNet-v1-1_fp16_safetensors",
+                "control_v11p_sd15_lineart_fp16.safetensors"),
+            "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors": (
+                "Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0",
+                "diffusion_pytorch_model.safetensors"),
+        }
+        for fn, (repo, rf) in _FALLBACK_REPOS.items():
+            size, label = CN_LABELS_AND_SIZES.get(
+                fn, (1_000_000_000, fn))
+            CN_URL_MAP[fn] = (
+                f"https://huggingface.co/{repo}/resolve/main/{rf}",
+                size, label,
+            )
 
     available = server_info.get('controlnets') or []
     if not available:
