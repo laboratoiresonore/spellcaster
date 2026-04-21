@@ -335,6 +335,21 @@ Spellcaster's [SillyTavern plugin](plugins/sillytavern/) turns the roleplay surf
 
 </details>
 
+<details>
+<summary><strong>⚗️ Experimental plugins</strong> — Photoshop, Krita, Blender</summary>
+
+Three additional plugins live in the repo but are **not yet tested by the maintainer**. They share the same `plugin_base.SpellcasterPlugin` as the main four and route through the Wizard Guild, so presence, telemetry, and cross-interface asset sharing work out of the box. Expect rough edges — **please file issues / PRs** if you run them.
+
+| Plugin | Location | Status |
+|---|---|---|
+| 🎨 **Photoshop (UXP panel)** | [`plugins/photoshop/`](plugins/photoshop/) | Smart Generate, AI Upscale, Remove Background wire through the Guild's `/api/run_builder`. Selection-aware inpaint and outpaint are not yet wired (UXP `batchPlay` selection→bitmap needs its own dance). |
+| 🎨 **Krita** | [`plugins/krita/`](plugins/krita/) | Full menu: txt2img, img2img, inpaint (uses the Krita selection as the mask), outpaint, IC-Light relight, 3D normal map, upscale, rembg, face restore, face swap from file. Python-based; installs via pykrita. |
+| 🧊 **Blender** | [`plugins/blender/`](plugins/blender/) | Sidebar panel in the 3D view. Generate textures / references with txt2img, img2img, outpaint, IC-Light, normal-map, upscale, rembg. Results land as Blender images (drop-in for material slots). |
+
+All three feed the same SpeedCoach telemetry pipeline as the GIMP / Darktable / Resolve / SillyTavern plugins — dispatch rows land in `dispatch_log.jsonl` alongside every other frontend — so if you run them, you're helping tune the suggestion model for everyone.
+
+</details>
+
 ---
 
 ## For people who can't computer
