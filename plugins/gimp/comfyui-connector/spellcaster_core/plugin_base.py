@@ -99,8 +99,9 @@ class SpellcasterPlugin:
       - show_error(message) -> None: show error to user (optional)
     """
 
-    def __init__(self, server_url="http://127.0.0.1:8188",
-                 guild_url=None, origin=None):
+    def __init__(self, server_url: str = "http://127.0.0.1:8188",
+                 guild_url: str | None = None,
+                 origin: str | None = None) -> None:
         self.server = server_url
         self._last_upload = None  # filename on ComfyUI
         self._last_result = None  # (filename, subfolder, type)
@@ -132,25 +133,26 @@ class SpellcasterPlugin:
 
     # ── Abstract methods (override in subclass) ──────────────────
 
-    def get_canvas_png(self):
+    def get_canvas_png(self) -> bytes:
         """Export current canvas/selection as PNG bytes. Override this."""
         raise NotImplementedError
 
-    def insert_layer(self, png_bytes, name="Spellcaster"):
+    def insert_layer(self, png_bytes: bytes,
+                      name: str = "Spellcaster") -> None:
         """Import PNG bytes as a new layer in the editor. Override this."""
         raise NotImplementedError
 
-    def show_progress(self, message):
+    def show_progress(self, message: str) -> None:
         """Update progress status. Override for editor-specific UI."""
         print(f"[Spellcaster] {message}")
 
-    def show_error(self, message):
+    def show_error(self, message: str) -> None:
         """Show error to user. Override for editor-specific UI."""
         print(f"[Spellcaster ERROR] {message}")
 
     # ── Core operations (shared by all plugins) ──────────────────
 
-    def upload_canvas(self):
+    def upload_canvas(self) -> str:
         """Export canvas and upload to ComfyUI input folder."""
         self.show_progress("Exporting canvas...")
         png = self.get_canvas_png()
@@ -159,9 +161,13 @@ class SpellcasterPlugin:
         self._last_upload = name
         return name
 
-    def txt2img(self, prompt, negative="", arch="", model="",
-                width=0, height=0, steps=0, cfg=None, seed=-1, loras=None,
-                quality="balanced", fast_mode=False):
+    def txt2img(self, prompt: str, negative: str = "",
+                arch: str = "", model: str = "",
+                width: int = 0, height: int = 0, steps: int = 0,
+                cfg: float | None = None, seed: int = -1,
+                loras: list | None = None,
+                quality: str = "balanced",
+                fast_mode: bool = False) -> bytes | None:
         """Generate an image from text and insert as layer.
 
         quality: "fast" | "balanced" (default) | "max". Controls the
@@ -193,8 +199,11 @@ class SpellcasterPlugin:
                            quality=quality, fast_mode=fast_mode)
         return self._run_workflow(wf, "txt2img")
 
-    def img2img(self, prompt, negative="", denoise=0.55, arch="sdxl", model="",
-                 quality="balanced", fast_mode=False):
+    def img2img(self, prompt: str, negative: str = "",
+                 denoise: float = 0.55, arch: str = "sdxl",
+                 model: str = "",
+                 quality: str = "balanced",
+                 fast_mode: bool = False) -> bytes | None:
         """Transform the canvas with a prompt and insert result as layer.
 
         See :meth:`txt2img` for quality/fast_mode semantics.
@@ -209,19 +218,19 @@ class SpellcasterPlugin:
                             quality=quality, fast_mode=fast_mode)
         return self._run_workflow(wf, "img2img")
 
-    def upscale(self, upscale_model="4x-UltraSharp.pth"):
+    def upscale(self, upscale_model: str = "4x-UltraSharp.pth") -> bytes | None:
         """Upscale the canvas and insert result as layer."""
         name = self._last_upload or self.upload_canvas()
         wf = build_upscale(name, upscale_model)
         return self._run_workflow(wf, "upscale")
 
-    def rembg(self):
+    def rembg(self) -> bytes | None:
         """Remove background from canvas and insert result as layer."""
         name = self._last_upload or self.upload_canvas()
         wf = build_rembg(name)
         return self._run_workflow(wf, "rembg")
 
-    def faceswap(self, source_png_bytes):
+    def faceswap(self, source_png_bytes: bytes) -> bytes | None:
         """Swap face from source onto canvas."""
         target = self._last_upload or self.upload_canvas()
         source_name = f"spellcaster_src_{uuid.uuid4().hex[:8]}.png"
@@ -229,25 +238,28 @@ class SpellcasterPlugin:
         wf = build_faceswap(target, source_name)
         return self._run_workflow(wf, "faceswap")
 
-    def face_restore(self, model="codeformer-v0.1.0.pth", weight=0.7):
+    def face_restore(self, model: str = "codeformer-v0.1.0.pth",
+                      weight: float = 0.7) -> bytes | None:
         """Restore/enhance faces in canvas."""
         name = self._last_upload or self.upload_canvas()
         wf = build_face_restore(name, model, "retinaface_resnet50", 1.0, weight)
         return self._run_workflow(wf, "face_restore")
 
-    def style_transfer(self, style_png_bytes, prompt="apply style", arch="sdxl"):
+    def style_transfer(self, style_png_bytes: bytes,
+                        prompt: str = "apply style",
+                        arch: str = "sdxl") -> bytes | None:
         """Transfer style from reference image onto canvas."""
         content = self._last_upload or self.upload_canvas()
         style_name = f"spellcaster_style_{uuid.uuid4().hex[:8]}.png"
         self._upload_raw(style_name, style_png_bytes)
         preset = self._make_preset(arch)
         if not preset:
-            return
+            return None
         import random
         wf = build_style_transfer(content, style_name, preset, prompt, "", random.randint(1, 2**32 - 1))
         return self._run_workflow(wf, "style_transfer")
 
-    def auto(self, prompt):
+    def auto(self, prompt: str) -> bytes | None:
         """Smart generation — auto-pick model, arch, resolution from prompt."""
         rec = recommend(prompt, server=self.server)
         self.show_progress(f"Intent: {rec['intent']} -> {rec['arch']}")
@@ -431,11 +443,14 @@ class SpellcasterPlugin:
     # op needing a canvas is gated on the subclass implementing
     # ``get_canvas_png``. Video / text-only ops work on any plugin.
 
-    def detail_hallucinate(self, prompt, negative="",
-                            upscale_model="4x-UltraSharp.pth",
-                            upscale_factor=1.0, denoise=0.35, cfg=None,
-                            steps=None, arch="sdxl", model="",
-                            quality="balanced"):
+    def detail_hallucinate(self, prompt: str, negative: str = "",
+                            upscale_model: str = "4x-UltraSharp.pth",
+                            upscale_factor: float = 1.0,
+                            denoise: float = 0.35,
+                            cfg: float | None = None,
+                            steps: int | None = None,
+                            arch: str = "sdxl", model: str = "",
+                            quality: str = "balanced") -> bytes | None:
         """Super-resolve + add photographic detail via img2img diffusion.
 
         GIMP's most-used upscale path. Runs an ESRGAN pass then a low-
@@ -460,9 +475,11 @@ class SpellcasterPlugin:
             quality=quality)
         return self._run_workflow(wf, "detail_hallucinate")
 
-    def colorize(self, prompt="", negative="", controlnet_strength=0.7,
-                  denoise=0.85, arch="sdxl", model="",
-                  quality="balanced"):
+    def colorize(self, prompt: str = "", negative: str = "",
+                  controlnet_strength: float = 0.7,
+                  denoise: float = 0.85, arch: str = "sdxl",
+                  model: str = "",
+                  quality: str = "balanced") -> bytes | None:
         """Colorize a B&W image. Uses lineart ControlNet + low-denoise
         diffusion, so the line structure stays locked while the diffuser
         fills in hues. ``prompt`` is optional — hints help
@@ -482,8 +499,9 @@ class SpellcasterPlugin:
             quality=quality)
         return self._run_workflow(wf, "colorize")
 
-    def magic_eraser(self, prompt, confidence=0.6, mask_expand=8,
-                      mask_blur=4):
+    def magic_eraser(self, prompt: str, confidence: float = 0.6,
+                      mask_expand: int = 8,
+                      mask_blur: int = 4) -> bytes | None:
         """Remove an unwanted object by describing it.
 
         SAM3 segments the described object, LaMa inpaints over the
@@ -498,10 +516,15 @@ class SpellcasterPlugin:
             mask_blur=int(mask_blur))
         return self._run_workflow(wf, "magic_eraser")
 
-    def style_transfer_from_bytes(self, style_bytes, prompt="",
-                                    negative="", weight=0.8,
-                                    denoise=0.55, arch="sdxl",
-                                    model="", quality="balanced"):
+    def style_transfer_from_bytes(self, style_bytes: bytes,
+                                    prompt: str = "",
+                                    negative: str = "",
+                                    weight: float = 0.8,
+                                    denoise: float = 0.55,
+                                    arch: str = "sdxl",
+                                    model: str = "",
+                                    quality: str = "balanced"
+                                    ) -> bytes | None:
         """IPAdapter-based style transfer from a reference image.
 
         ``style_bytes`` is the style reference PNG (from file picker,
@@ -527,8 +550,10 @@ class SpellcasterPlugin:
             quality=quality)
         return self._run_workflow(wf, "style_transfer")
 
-    def ltx_t2v(self, prompt, negative=None, seconds=3.0, fps=25,
-                 width=1280, height=720, mode="distilled"):
+    def ltx_t2v(self, prompt: str, negative: str | None = None,
+                 seconds: float = 3.0, fps: int = 25,
+                 width: int = 1280, height: int = 720,
+                 mode: str = "distilled") -> bytes | None:
         """Text-to-video via LTX 2.3. No canvas needed.
 
         ``mode`` is ``"distilled"`` (8-step fast, default),
@@ -561,8 +586,10 @@ class SpellcasterPlugin:
             **kwargs)
         return self._run_workflow(wf, "ltx_t2v")
 
-    def ltx_i2v(self, prompt, negative=None, seconds=3.0, fps=25,
-                 width=1280, height=720, i2v_strength=0.9):
+    def ltx_i2v(self, prompt: str, negative: str | None = None,
+                 seconds: float = 3.0, fps: int = 25,
+                 width: int = 1280, height: int = 720,
+                 i2v_strength: float = 0.9) -> bytes | None:
         """Image-to-video via LTX 2.3 distilled I2V. Uses the current
         canvas as the seed frame.
         """
@@ -587,8 +614,10 @@ class SpellcasterPlugin:
             **kwargs)
         return self._run_workflow(wf, "ltx_i2v")
 
-    def wan_i2v(self, prompt, negative="", seconds=5.0, fps=16,
-                 width=832, height=480, turbo=True):
+    def wan_i2v(self, prompt: str, negative: str = "",
+                 seconds: float = 5.0, fps: int = 16,
+                 width: int = 832, height: int = 480,
+                 turbo: bool = True) -> bytes | None:
         """Image-to-video via WAN 2.2. Uses the current canvas as the
         seed frame. Auto-detects an I2V-safe preset on the server
         (14B I2V or 5B TI2V); raises if neither is present.

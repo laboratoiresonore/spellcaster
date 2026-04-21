@@ -312,7 +312,7 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
                   # SAM3Segment on the server (preflight at the caller side).
                   sam3_prompt=None, sam3_invert=False, sam3_confidence=0.6,
                   sam3_expand=4, sam3_blur=4, enhance=True,
-                  quality="balanced", fast_mode=False):
+                  quality="balanced", fast_mode=False) -> dict:
     """Image-to-image generation (standard diffusion variant).
 
     Loads an input image, encodes it to latent space, diffuses it with a prompt,
@@ -492,7 +492,7 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_txt2img(preset, prompt_text, negative_text, seed, loras=None,
-                   enhance=True, quality="balanced", fast_mode=False):
+                   enhance=True, quality="balanced", fast_mode=False) -> dict:
     """Text-to-image generation (from scratch).
 
     Generates an image entirely from a text prompt by starting with an empty
@@ -586,7 +586,7 @@ def build_txt2img(preset, prompt_text, negative_text, seed, loras=None,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_generate_anything(prompt_text, negative_text, seed, preset,
-                             loras=None, scene_filename=None):
+                             loras=None, scene_filename=None) -> dict:
     """Generate any object/person as a transparent layer using ANY model.
 
     Architecture-universal version of Klein Generate Object. Works with
@@ -713,7 +713,7 @@ def build_generate_anything(prompt_text, negative_text, seed, preset,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_rembg(image_filename, alpha_matting=False,
-                model="isnet-general-use"):
+                model="isnet-general-use") -> dict:
     """Background removal (transparent cutout).
 
     Uses rembg (remove background) to extract subject from background, creating
@@ -748,7 +748,7 @@ def build_rembg(image_filename, alpha_matting=False,
     return nf.build()
 
 
-def build_rembg_birefnet(image_filename, model="BiRefNet-general"):
+def build_rembg_birefnet(image_filename, model="BiRefNet-general") -> dict:
     """Background removal using BiRefNet (higher quality than rembg).
 
     BiRefNet produces significantly better results for hair, fur, and
@@ -773,7 +773,7 @@ def build_rembg_birefnet(image_filename, model="BiRefNet-general"):
 
 
 def build_ddcolor(image_filename, checkpoint="ddcolor_artistic.pth",
-                  model_input_size=512):
+                  model_input_size=512) -> dict:
     """Colorize B&W photo using DDColor (fast, no diffusion).
 
     DDColor uses dual decoders for state-of-the-art automatic
@@ -804,7 +804,7 @@ def build_ddcolor(image_filename, checkpoint="ddcolor_artistic.pth",
 #  upscale — Model-based super-resolution
 # ═══════════════════════════════════════════════════════════════════════════
 
-def build_upscale(image_filename, model_name, upscale_factor=1.0):
+def build_upscale(image_filename, model_name, upscale_factor=1.0) -> dict:
     """Super-resolution upscaling using a trained upscaler model.
 
     Uses pre-trained models (e.g., RealESRGAN, SRVGGNet) to enhance resolution
@@ -841,7 +841,7 @@ def build_upscale(image_filename, model_name, upscale_factor=1.0):
     return nf.build()
 
 
-def build_wavespeed_upscale(image_filename, model="SeedVR2", target="2K"):
+def build_wavespeed_upscale(image_filename, model="SeedVR2", target="2K") -> dict:
     """WaveSpeed AI upscale — fast one-node upscale to 2K/4K/8K.
 
     Uses WaveSpeed's optimized SeedVR2 or Ultimate model for fast,
@@ -862,7 +862,7 @@ def build_wavespeed_upscale(image_filename, model="SeedVR2", target="2K"):
 
 def build_normal_map(image_filename, seed=42, max_res=1024,
                       sam3_prompt=None, sam3_invert=False, sam3_confidence=0.6,
-                      sam3_expand=4, sam3_blur=4):
+                      sam3_expand=4, sam3_blur=4) -> dict:
     """Generate 3D surface normal map using NormalCrafter.
 
     Produces a normal map image useful for relighting, 3D reconstruction,
@@ -903,7 +903,7 @@ def build_normal_map(image_filename, seed=42, max_res=1024,
 
 def build_lama_remove(image_filename, mask_filename=None,
                        sam3_prompt=None, sam3_invert=False,
-                       sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
+                       sam3_confidence=0.6, sam3_expand=4, sam3_blur=4) -> dict:
     """Object removal via LaMa inpainting (no diffusion).
 
     LaMa (Large Mask Inpainting) removes unwanted objects by inpainting masked
@@ -963,7 +963,7 @@ def build_lama_remove(image_filename, mask_filename=None,
 
 def build_lut(image_filename, lut_name, strength,
                sam3_prompt=None, sam3_invert=False, sam3_confidence=0.6,
-               sam3_expand=4, sam3_blur=4):
+               sam3_expand=4, sam3_blur=4) -> dict:
     """Color grading via LUT (Look-Up Table) application.
 
     When sam3_prompt is set, the transform is composited back onto the original
@@ -1013,7 +1013,7 @@ def build_lut(image_filename, lut_name, strength,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_color_match(source_filename, reference_filename, strength=1.0,
-                      method="mkl"):
+                      method="mkl") -> dict:
     """AI Color Match — transfer color palette from a reference image.
 
     Uses histogram-based color transfer to match the source image's color
@@ -1451,7 +1451,7 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
                          lora_name=None, lora_strength=1.0,
                          klein_models=None, enhance=True,
                          sam3_prompt=None, sam3_invert=False,
-                         sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
+                         sam3_confidence=0.6, sam3_expand=4, sam3_blur=4) -> dict:
     """Image-to-image with Flux 2 Klein (distilled fast model).
 
     When sam3_prompt is set, the transform is composited back onto the original
@@ -1691,7 +1691,7 @@ def build_faceswap(target_filename, source_filename, swap_model="inswapper_128.o
                    face_restore_vis=1.0, codeformer_weight=0.7,
                    detect_gender_input="no", detect_gender_source="no",
                    input_face_idx="0", source_face_idx="0",
-                   quality_preset=None, quality_presets=None):
+                   quality_preset=None, quality_presets=None) -> dict:
     _faceswap_guard("faceswap")
     """Face swap using ReActor with optional quality presets and restoration.
 
@@ -1832,7 +1832,7 @@ def build_faceswap_model(target_filename, face_model_name,
                           face_restore_vis=1.0, codeformer_weight=0.5,
                           detect_gender_input="no", detect_gender_source="no",
                           input_face_idx="0", source_face_idx="0",
-                          quality_preset=None, quality_presets=None):
+                          quality_preset=None, quality_presets=None) -> dict:
     """ReActor face swap using a saved face model. Drop-in for _build_faceswap_model()."""
     _faceswap_guard("faceswap_model")
     if quality_presets and quality_preset and quality_preset in quality_presets:
@@ -1905,7 +1905,7 @@ def build_faceswap_model(target_filename, face_model_name,
     return nf.build()
 
 
-def build_save_face_model(source_filename, model_name, overwrite=True):
+def build_save_face_model(source_filename, model_name, overwrite=True) -> dict:
     """Build and save a ReActor face model. Drop-in for _build_save_face_model()."""
     nf = NodeFactory()
     img_id = nf.load_image(source_filename, node_id="1")
@@ -1924,7 +1924,7 @@ def build_save_face_model(source_filename, model_name, overwrite=True):
 def build_faceswap_mtb(target_filename, source_filename,
                         analysis_model="buffalo_l",
                         swap_model="inswapper_128.onnx",
-                        faces_index="0"):
+                        faces_index="0") -> dict:
     """Face swap using mtb facetools. Drop-in for _build_faceswap_mtb()."""
     _faceswap_guard("faceswap_mtb")
     nf = NodeFactory()
@@ -1948,7 +1948,7 @@ def build_faceswap_mtb(target_filename, source_filename,
 def build_face_restore(image_filename, model_name, facedetection,
                         visibility, codeformer_weight,
                         sam3_prompt=None, sam3_invert=False,
-                        sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
+                        sam3_confidence=0.6, sam3_expand=4, sam3_blur=4) -> dict:
     """Restore faces. Drop-in for _build_face_restore().
 
     When sam3_prompt is set, the transform is composited back onto the original
@@ -1982,7 +1982,7 @@ def build_face_restore(image_filename, model_name, facedetection,
 
 def build_photo_restore(image_filename, upscale_model, face_model,
                          facedetection, visibility, codeformer_weight,
-                         sharpen_radius, sigma, alpha):
+                         sharpen_radius, sigma, alpha) -> dict:
     """Complete old photo restoration: upscale + face enhance + sharpen.
 
     Comprehensive restoration pipeline for old/damaged photos:
@@ -2074,7 +2074,7 @@ def build_detail_hallucinate(image_filename, upscale_model, preset,
                               guide_modes=None,
                               sam3_prompt=None, sam3_invert=False,
                               sam3_confidence=0.6, sam3_expand=4, sam3_blur=4,
-                              enhance=True, quality="balanced"):
+                              enhance=True, quality="balanced") -> dict:
     """Super-resolution with detail hallucination via img2img diffusion.
 
     When sam3_prompt is set, the transform is composited back onto the original
@@ -2260,7 +2260,7 @@ def build_colorize(image_filename, preset, prompt_text, negative_text, seed,
                     lineart_models=None,
                     sam3_prompt=None, sam3_invert=False,
                     sam3_confidence=0.6, sam3_expand=4, sam3_blur=4,
-                    enhance=True, quality="balanced"):
+                    enhance=True, quality="balanced") -> dict:
     """Colorize B&W photo. Drop-in for _build_colorize().
 
     lineart_models: CONTROLNET_LINEART_MODELS dict from main plugin.
@@ -2382,7 +2382,7 @@ def build_colorize(image_filename, preset, prompt_text, negative_text, seed,
 def build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
                           preset, prompt, negative, seed, width, height,
                           steps, cfg, sampler, scheduler, cn_strength=0.8,
-                          loras=None, enhance=True, quality="balanced"):
+                          loras=None, enhance=True, quality="balanced") -> dict:
     """Text-to-image generation with ControlNet spatial constraint.
 
     Generates an image from scratch (empty latent) with spatial guidance from
@@ -2518,7 +2518,7 @@ def build_iclight(image_filename, ckpt_name, prompt, negative, seed,
                    normal_map_cn_name="control_v11p_sd15_normalbae.pth",
                    normal_map_cn_strength=0.85,
                    sam3_prompt=None, sam3_invert=False,
-                   sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
+                   sam3_confidence=0.6, sam3_expand=4, sam3_blur=4) -> dict:
     """IC-Light relighting: adjust light sources and illumination.
 
     When sam3_prompt is set, the transform is composited back onto the original
@@ -2707,7 +2707,7 @@ def build_iclight(image_filename, ckpt_name, prompt, negative, seed,
 
 def build_supir(image_filename, supir_model, sdxl_model, prompt, seed,
                  denoise=0.3, steps=45, scale_by=1.0,
-                 controlnet=None, controlnet_2=None, guide_modes=None):
+                 controlnet=None, controlnet_2=None, guide_modes=None) -> dict:
     """SUPIR AI restoration - specialized 5-stage restoration pipeline.
 
     SUPIR (Super Image Restoration) is a specialized diffusion model for photo
@@ -2915,7 +2915,7 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
                    controlnet=None, controlnet_2=None, guide_modes=None,
                    sam3_prompt=None, sam3_invert=False,
                    sam3_confidence=0.6, sam3_expand=4, sam3_blur=4,
-                   enhance=True, quality="balanced", fast_mode=False):
+                   enhance=True, quality="balanced", fast_mode=False) -> dict:
     """Inpainting: regenerate masked region using diffusion.
 
     Selectively regenerates only the masked area of an image while preserving
@@ -3130,7 +3130,7 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
 def build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
                     left, top, right, bottom, feathering, loras=None,
                     controlnet=None, guide_modes=None, quality="balanced",
-                    fast_mode=False):
+                    fast_mode=False) -> dict:
     """Canvas extension via outpainting.
 
     Extends an image beyond its original boundaries by generating new content
@@ -3305,7 +3305,7 @@ def build_faceid_img2img(target_filename, face_ref_filename, preset,
                           faceid_preset="FACEID PLUS V2",
                           lora_strength=0.6, weight=0.85, weight_v2=1.0,
                           denoise=None, steps=None, cfg=None,
-                          loras=None, enhance=True, quality="balanced"):
+                          loras=None, enhance=True, quality="balanced") -> dict:
     """IPAdapter FaceID img2img. Drop-in for _build_faceid_img2img().
 
     preset: dict with ckpt, arch, width, height, steps, cfg, denoise, sampler, scheduler.
@@ -3394,7 +3394,7 @@ def build_pulid_flux(target_filename, face_ref_filename,
                       pulid_model="pulid_flux_v0.9.1.safetensors",
                       strength=0.9, steps=20, guidance=3.5,
                       denoise=0.65, width=1024, height=1024,
-                      loras=None, enhance=True):
+                      loras=None, enhance=True) -> dict:
     """PuLID Flux — auto-detects Flux1 vs Flux2 (Klein). Drop-in for _build_pulid_flux().
 
     Flux.1-dev → PulidFlux* nodes
@@ -3489,7 +3489,7 @@ def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
                              guidance=1.0, enhancer_mag=1.0, enhancer_contrast=0.0,
                              ref_strength=1.0, text_ref_balance=0.5,
                              loras=None, lora_name=None, lora_strength=1.0,
-                             klein_models=None, enhance=True):
+                             klein_models=None, enhance=True) -> dict:
     """Klein img2img with separate reference image.
 
     Same pipeline as build_klein_img2img but uses the reference image
@@ -3571,7 +3571,7 @@ def build_klein_headswap(target_filename, source_filename, klein_model_key,
                           prompt, seed, denoise=0.35, steps=20,
                           face_model=None, face_restore_vis=0.7,
                           codeformer_weight=0.8, loras=None, klein_models=None,
-                          enhance=True):
+                          enhance=True) -> dict:
     """Head swap with Klein Flux2 refinement.
 
     Two-stage head swap: first uses ReActor for fast face swap, then refines
@@ -3759,7 +3759,7 @@ def build_klein_headswap(target_filename, source_filename, klein_model_key,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_video_upscale(video_name, upscale_model="4x-UltraSharp.pth",
-                         upscale_factor=1.0, rtx_scale=2.0, fps=16):
+                         upscale_factor=1.0, rtx_scale=2.0, fps=16) -> dict:
     """Upscale video. Drop-in for _build_video_upscale().
 
     Uses nf.update() for exotic node types not in NodeFactory (VHS, TS, CreateVideo).
@@ -3809,7 +3809,7 @@ def build_video_upscale(video_name, upscale_model="4x-UltraSharp.pth",
 
 def build_video_reactor(video_name, face_models, upscale_model="4x-UltraSharp.pth",
                          upscale_factor=1.0, rtx_scale=2.0, fps=16,
-                         face_restore_visibility=1.0, codeformer_weight=0.7):
+                         face_restore_visibility=1.0, codeformer_weight=0.7) -> dict:
     """Upscale + face swap a video. Drop-in for _build_video_reactor()."""
     nf = NodeFactory()
 
@@ -3920,7 +3920,7 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
                      enable_nag=False,
                      nag_scale=11.0, nag_alpha=0.25, nag_tau=2.5,
                      enable_sage=False,
-                     enable_cfg_zero=False):
+                     enable_cfg_zero=False) -> dict:
     # ═══════════════════════════════════════════════════════════════════
     #  CANONICAL WAN 2.2 BUILDER — DO NOT DIVERGE
     # ═══════════════════════════════════════════════════════════════════
@@ -4430,7 +4430,7 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
 
 
 def build_wan_flf(start_filename, end_filename, preset, prompt_text, negative_text,
-                   seed, **kwargs):
+                   seed, **kwargs) -> dict:
     """Thin wrapper: delegates to build_wan_video with end_image_filename."""
     return build_wan_video(
         start_filename, preset, prompt_text, negative_text, seed,
@@ -4594,7 +4594,7 @@ def _wan22_samplers(nf, preset, pos_ref, neg_ref, latent_ref,
 
 def build_wan22_t2v(preset, prompt_text, negative_text, seed, *,
                      width=832, height=480, length=81, fps=16,
-                     turbo=False, filename_prefix="spellcaster_wan22_t2v"):
+                     turbo=False, filename_prefix="spellcaster_wan22_t2v") -> dict:
     """Wan 2.2 text-to-video — the T2V sibling of `build_wan_video`.
 
     Canonical position (CLAUDE.md §16.2):
@@ -4670,7 +4670,7 @@ def build_seedvr2_video_upscale(video_name, seed=-1,
                                  input_noise_scale=0.0, latent_noise_scale=0.0,
                                  dit_model="seedvr2_ema_3b_fp8_e4m3fn.safetensors",
                                  vae_model="ema_vae_fp16.safetensors",
-                                 vae_tiled=True, fps=16):
+                                 vae_tiled=True, fps=16) -> dict:
     """SeedVR2 AI video upscaler. Drop-in for _build_seedvr2_video_upscale()."""
     import random as _random
     if seed < 0:
@@ -4732,7 +4732,7 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
                           guide_modes=None,
                           sam3_prompt=None, sam3_invert=False,
                           sam3_confidence=0.6, sam3_expand=4, sam3_blur=4,
-                          enhance=True, quality="balanced"):
+                          enhance=True, quality="balanced") -> dict:
     """Style transfer via IPAdapter. Drop-in for _build_style_transfer().
 
     Pipeline: model stack → IPAdapterUnifiedLoader → IPAdapterAdvanced(style transfer)
@@ -4860,7 +4860,7 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
 def build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_text,
                    seed, denoise, cfg, steps, scale_factor, orig_width, orig_height,
                    controlnet=None, controlnet_2=None, guide_modes=None,
-                   loras=None, enhance=True, quality="balanced"):
+                   loras=None, enhance=True, quality="balanced") -> dict:
     """SeedV2R: upscale + img2img. Drop-in for _build_seedv2r().
 
     For scale > 1x: upscale with model to target factor, then img2img.
@@ -4981,7 +4981,7 @@ def build_photobooth(ref_filename, prompt_text, seed,
                      # since that's Klein-specific.
                      sampler_name="euler",
                      transparent=False,
-                     klein_models=None):
+                     klein_models=None) -> dict:
     """Photobooth: generate passport-style headshots with extreme character fidelity.
 
     Four-stage single-workflow pipeline:
@@ -5112,7 +5112,7 @@ def build_photobooth(ref_filename, prompt_text, seed,
 
 def build_klein_repose(image_filename, klein_model_key, prompt_text, seed,
                        steps=20, denoise=0.65, guidance=1.0, loras=None,
-                       klein_models=None, enhance=True):
+                       klein_models=None, enhance=True) -> dict:
     """Klein Re-poser: change character pose using ReferenceLatent + BasicScheduler.
 
     Same as build_klein_img2img but uses BasicScheduler with denoise instead of
@@ -5187,7 +5187,7 @@ def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
                       scale=None, position_x=0.5, position_y=0.5,
                       klein_model_key="Klein 9B", steps=20, denoise=0.25,
                       guidance=1.0, loras=None, klein_models=None,
-                      enhance=True, sampler_name="euler"):
+                      enhance=True, sampler_name="euler") -> dict:
     """Klein Blend: composite foreground onto background, then harmonize with Klein.
 
     Pipeline: LoadImage(FG) + LoadImage(BG) → AILab_ImageCombiner → Klein
@@ -5275,7 +5275,7 @@ def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
 def build_klein_batch_variations(image_filename, klein_model_key, prompt_text,
                                  seed, count=4, grid=True,
                                  steps=20, denoise=0.7, guidance=1.0,
-                                 loras=None, klein_models=None, enhance=False):
+                                 loras=None, klein_models=None, enhance=False) -> dict:
     """Klein batch variations — N Klein renders from one reference in a single pass.
 
     Adapted from xb1n0ry/Comfy-Workflows (FKlein9B_referenceLatent_4ImagesGrid).
@@ -5417,7 +5417,7 @@ def build_klein_inpaint(image_filename, mask_filename=None, prompt_text="", seed
                         klein_models=None, enhance=True,
                         sam3_prompt=None, sam3_invert=False,
                         sam3_confidence=0.6, sam3_expand=4, sam3_blur=4,
-                        sampler_name="euler"):
+                        sampler_name="euler") -> dict:
     """Klein Inpaint: regenerate masked area using FluxGuidance + SetLatentNoiseMask.
 
     Supports three mask sources (precedence top → bottom):
@@ -5530,7 +5530,7 @@ def build_klein_virtual_tryon(face_filename, outfit_filename, prompt_text, seed,
                                klein_model_key="Klein 9B", steps=4,
                                denoise=1.0, guidance=1.0,
                                loras=None, lora_name=None, lora_strength=1.0,
-                               klein_models=None, enhance=False):
+                               klein_models=None, enhance=False) -> dict:
     """Klein Virtual Try-On — 4-reference photoshoot composition.
 
     Combines up to 4 reference images in a single Klein pass using
@@ -5671,7 +5671,7 @@ def build_klein_scene_img2img(image_filename, prompt_text, seed,
                                denoise=0.30, guidance=1.0,
                                klein_models=None,
                                loras=None, enhance=True,
-                               sampler_name="euler"):
+                               sampler_name="euler") -> dict:
     """Klein scene img2img: harmonize a composited scene.
 
     Unlike build_klein_img2img which uses ReferenceLatent (generates from noise
@@ -5746,7 +5746,7 @@ def build_klein_refine(image_filename, klein_model_key, prompt_text, seed,
                        steps=4, guidance=1.0,
                        preprocessors=None,
                        loras=None, lora_name=None, lora_strength=1.0,
-                       klein_models=None, enhance=False):
+                       klein_models=None, enhance=False) -> dict:
     """Klein Multi-Reference Refiner — enhance detail using structural references.
 
     Runs the input image through multiple preprocessors (LineArt, HED, Tile,
@@ -5896,7 +5896,7 @@ def build_klein_auto_inpaint(image_filename, mask_prompt, inpaint_prompt, seed,
                               steps=4, denoise=1.0, guidance=1.0,
                               florence_model="microsoft/Florence-2-base",
                               loras=None, lora_name=None, lora_strength=1.0,
-                              klein_models=None, enhance=True):
+                              klein_models=None, enhance=True) -> dict:
     """Klein Auto-Inpaint — describe what to mask, then inpaint it.
 
     Uses Florence2's referring_expression_segmentation to automatically
@@ -6032,7 +6032,7 @@ def build_klein_auto_inpaint(image_filename, mask_prompt, inpaint_prompt, seed,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_klein_color_match(target_filename, reference_filename,
-                            method="mkl", strength=0.95):
+                            method="mkl", strength=0.95) -> dict:
     """Color-match a generated image to a reference photo.
 
     Useful when Klein's output drifts in color temperature compared to
@@ -6087,7 +6087,7 @@ def build_klein_color_match(target_filename, reference_filename,
 
 def build_sam3_segment(image_filename, prompt, confidence=0.6,
                        output_mode="Merged", mask_expand=0, mask_blur=0,
-                       invert=False):
+                       invert=False) -> dict:
     """SAM3 Segment — detect a subject by text and return its mask.
 
     Uses SAM3's text-prompted segmentation to find any subject in the
@@ -6166,7 +6166,7 @@ def build_sam3_segment(image_filename, prompt, confidence=0.6,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_sam3_extract(image_filename, prompt="person", confidence=0.6,
-                       auto_crop=False):
+                       auto_crop=False) -> dict:
     """SAM3 Extract — detect a subject, remove background.
 
     Combines SAM3 segmentation with BiRefNet background removal.
@@ -6224,7 +6224,7 @@ def build_sam3_extract(image_filename, prompt="person", confidence=0.6,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_magic_eraser(image_filename, prompt, confidence=0.6,
-                       mask_expand=8, mask_blur=4, gaussblur_radius=8):
+                       mask_expand=8, mask_blur=4, gaussblur_radius=8) -> dict:
     """Magic Eraser — SAM3 detect + LaMa inpaint.
 
     User describes an unwanted object ("power line", "tourist in the background",
@@ -6324,7 +6324,7 @@ def build_klein_sam3_inpaint(image_filename, segment_prompt, inpaint_prompt, see
                               mask_expand=120, mask_blur=15,
                               confidence=0.6,
                               loras=None, lora_name=None, lora_strength=1.0,
-                              klein_models=None, enhance=False):
+                              klein_models=None, enhance=False) -> dict:
     """Klein SAM3 Inpaint — detect a region by text and inpaint it.
 
     Uses SAM3's text-prompted segmentation to automatically detect a
@@ -6578,7 +6578,7 @@ def build_klein_face_detail(image_filename, prompt_text, seed,
                              guide_size=512, max_size=1024,
                              detector_model="bbox/face_yolov8m.pt",
                              loras=None, lora_name=None, lora_strength=1.0,
-                             klein_models=None, enhance=False):
+                             klein_models=None, enhance=False) -> dict:
     """Klein Face Detailer — detect faces and re-generate them at high detail.
 
     Post-processing step: takes an already-generated image, runs YOLO face
@@ -6708,7 +6708,7 @@ def build_klein_generate_object(scene_filename, prompt_text, seed,
                                  steps=6, guidance=1.0,
                                  loras=None, lora_name=None, lora_strength=1.0,
                                  klein_models=None, enhance=True,
-                                 nsfw_unlock_loras=None):
+                                 nsfw_unlock_loras=None) -> dict:
     """Klein Object Generator — generate any object/person as a transparent layer.
 
     State-of-the-art pipeline for generating objects that integrate
@@ -6937,7 +6937,7 @@ def build_klein_detail(image_filename, preset_key, prompt_text, seed,
                        klein_model_key="Klein 9B", steps=None, denoise=None,
                        guidance=1.0, guide_size=None, max_size=1024,
                        sam3_prompt=None, loras=None, lora_name=None,
-                       lora_strength=1.0, klein_models=None, enhance=True):
+                       lora_strength=1.0, klein_models=None, enhance=True) -> dict:
     """Klein Detail Enhancer — detect ANY region and re-generate at high detail.
 
     Universal detailer: works with YOLO bbox detection (face, hands, person)
@@ -7120,7 +7120,7 @@ def build_klein_detail(image_filename, preset_key, prompt_text, seed,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_layer_blend(image_a_filename, image_b_filename, blend_factor=0.5,
-                      blend_mode="normal"):
+                      blend_mode="normal") -> dict:
     """Blend two images with adjustable opacity and blend mode.
 
     Creates a composite by overlaying image B on image A with opacity and
@@ -7168,7 +7168,7 @@ def build_layer_blend(image_a_filename, image_b_filename, blend_factor=0.5,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_upscale_blend(image_filename, model_a_name, model_b_name,
-                        blend_factor=0.6, scale_by=1.0):
+                        blend_factor=0.6, scale_by=1.0) -> dict:
     """Upscale using two models and blend the results.
 
     Upscales an image with two different models in parallel, then blends
@@ -7239,7 +7239,7 @@ def build_upscale_blend(image_filename, model_a_name, model_b_name,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_frame_assembly(frame_filenames, fps=16.0, filename_prefix="gimp_assembled",
-                         crf=19, pingpong=False):
+                         crf=19, pingpong=False) -> dict:
     """Assemble a list of uploaded frame images into a single MP4 video.
 
     Loads each frame via LoadImage, chains them pairwise through ImageBatch
@@ -7313,7 +7313,7 @@ def build_wan_video_blockswap(image_filename, wan_model, t5_model, vae_model,
                               attention_mode="sdpa",
                               enable_vae_tiling=True,
                               fps=16, crf=19,
-                              clip_vision_name="clip_vision_h.safetensors"):
+                              clip_vision_name="clip_vision_h.safetensors") -> dict:
     """WAN 2.2 I2V via Kijai's WanVideoWrapper with block-swap (low-VRAM path).
 
     Sibling to `build_wan_video`. Uses Kijai's wrapper nodes end-to-end so
@@ -7511,7 +7511,7 @@ def build_qwen_edit(image_filename, unet_name, clip_name, vae_name,
                     denoise=1.0, shift=1.73, cfg_norm=0.5,
                     image2_filename=None, image3_filename=None,
                     sam3_prompt=None, sam3_invert=False,
-                    sam3_confidence=0.6, sam3_expand=4, sam3_blur=4):
+                    sam3_confidence=0.6, sam3_expand=4, sam3_blur=4) -> dict:
     """Qwen Image Edit 2509 — instruction-driven edits via TextEncodeQwenImageEditPlus.
 
     Sibling to Flux Kontext. The user supplies an instruction prompt
@@ -7690,7 +7690,7 @@ def build_ltx_video(preset, prompt_text, seed,
                      # working_dtype="bf16" to avoid end-frame
                      # artifacts.
                      vae_spatial_tiles=None, vae_temporal_tile_length=None,
-                     vae_last_frame_fix=False, vae_working_dtype=None):
+                     vae_last_frame_fix=False, vae_working_dtype=None) -> dict:
     # ═══════════════════════════════════════════════════════════════════
     #  CANONICAL LTX 2.3 BUILDER — DO NOT DIVERGE
     # ═══════════════════════════════════════════════════════════════════
