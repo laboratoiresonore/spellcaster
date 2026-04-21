@@ -92,7 +92,6 @@ def _heartbeat_local_interface(key: str, meta: dict | None = None) -> None:
         _iface_registry.heartbeat(key, m)
     except Exception:  # noqa: BLE001
         pass
-    _start_signal_notifier = None
 
 # R52: per-machine antenna registry (one entry per physical box).
 # Separate from interface_registry because multiple antennas can exist
@@ -8601,27 +8600,17 @@ def _privacy_cleanup(comfy_url, workflow, result):
 
 
 def _detect_best_model(comfy_url):
-    """Detect the best available model on ComfyUI, returning (ckpt_name, arch_key).
-
-    Priority order is defined by BEST_MODEL_PRIORITY in guild_common.
-    Falls back to first checkpoint as sd15 if nothing better matches.
-    Reuses _fetch_comfyui_models() to avoid duplicated object_info queries.
+    """Detect the best available model on ComfyUI, returning
+    ``(ckpt_name, arch_key)``. Thin wrapper around the canonical
+    ``spellcaster_core.model_detect.detect_best_model`` — the Guild
+    fetches the model pools and hands them to the shared picker so
+    the priority order never drifts between here and any other caller.
     """
+    from spellcaster_core.model_detect import detect_best_model as _pick
     all_models = _fetch_comfyui_models(comfy_url)
     unet_models = [m["name"] for m in all_models if m["type"] == "unet"]
     ckpt_models = [m["name"] for m in all_models if m["type"] == "checkpoint"]
-
-    pools = {"unet": unet_models, "ckpt": ckpt_models}
-    for pool_key, test_fn, arch_key in BEST_MODEL_PRIORITY:
-        for m in pools.get(pool_key, []):
-            if test_fn(m.lower()):
-                return m, arch_key
-
-    # Fallback: first checkpoint → sd15
-    if ckpt_models:
-        return ckpt_models[0], "sd15"
-
-    return None, None
+    return _pick(unet_models, ckpt_models)
 
 
 def _build_optimized_preset(ckpt, arch_key, width, height, model_type=None):

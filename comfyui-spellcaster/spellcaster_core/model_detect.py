@@ -124,6 +124,39 @@ BEST_MODEL_PRIORITY = [
     ("ckpt",  lambda ml: "xl" in ml,                    "sdxl"),
 ]
 
+
+def detect_best_model(unet_names, ckpt_names):
+    """Pick the best available (ckpt_name, arch_key) from the pools.
+
+    Canonical selection loop over ``BEST_MODEL_PRIORITY`` — the single
+    source of truth for "which model should auto-summon pick". Guild
+    (``tavern/server.py::_detect_best_model``) and future callers pass
+    pre-fetched UNET + checkpoint name lists; this function owns the
+    iteration + fallback so the priority order can never drift across
+    consumers.
+
+    Args:
+        unet_names: list[str] — UNET filenames from ComfyUI's
+            ``/object_info/UNETLoader``.
+        ckpt_names: list[str] — checkpoint filenames from
+            ``/object_info/CheckpointLoaderSimple``.
+
+    Returns:
+        (name, arch_key) matching the highest-priority rule, or
+        ``(first_ckpt, "sd15")`` if no rule matched but checkpoints
+        exist, or ``(None, None)`` when the server has neither UNETs
+        nor checkpoints.
+    """
+    pools = {"unet": list(unet_names or []),
+             "ckpt": list(ckpt_names or [])}
+    for pool_key, test_fn, arch_key in BEST_MODEL_PRIORITY:
+        for m in pools.get(pool_key, []):
+            if test_fn(m.lower()):
+                return m, arch_key
+    if pools["ckpt"]:
+        return pools["ckpt"][0], "sd15"
+    return None, None
+
 # ── Model-family → keyword map for wizard-gating ──
 # If at least one installed model name contains any of these substrings,
 # the corresponding model_wizard family is shown.
