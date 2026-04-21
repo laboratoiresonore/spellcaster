@@ -472,16 +472,34 @@ def _apply_spellcaster_theme():
             '''
 
         provider = Gtk.CssProvider()
-        provider.load_from_data(css)
+        try:
+            provider.load_from_data(css)
+        except Exception as load_err:
+            # GTK is picky about comments / at-rules it doesn't
+            # understand. Surface the exact parse error so the user
+            # knows WHERE in their CSS the problem is — prior code
+            # swallowed this behind a generic warning.
+            print(f"[Spellcaster] CSS parse error: {load_err}")
+            return
+        # PRIORITY_USER (800) is higher than PRIORITY_APPLICATION (600)
+        # and PRIORITY_THEME (200); without this bump, GIMP's current
+        # theme (Compact-Gray / System) wins every specificity match
+        # and the user sees no visible change — that was the "same
+        # shitty themes" report. PRIORITY_USER is safe to use: it's
+        # what GtkInspector uses for live CSS edits.
         Gtk.StyleContext.add_provider_for_screen(
             Gdk.Screen.get_default(),
             provider,
-            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+            Gtk.STYLE_PROVIDER_PRIORITY_USER,
         )
+        print("[Spellcaster] Premium theme CSS applied at USER priority "
+              f"({len(css)} bytes).")
     except Exception as e:
         print(f"Warning: Failed to load premium UI theme: {e}")
 
-    # Also install to GIMP's theme directory for persistence
+    # Also install to GIMP's theme directory for persistence — this
+    # is what makes the 'Spellcaster' theme appear in Edit →
+    # Preferences → Interface → Theme.
     _install_spellcaster_theme_to_disk()
 
 
@@ -33896,6 +33914,33 @@ class Spellcaster(Gimp.PlugIn):
             "to preserve, or if you have no internet connection.")
         timeouts_box.pack_start(auto_update_cb, False, False, 0)
 
+        # Spellcaster premium theme toggle — was previously a hidden
+        # config.json key (user had to edit the file by hand), so
+        # users reported "theming failed completely" when they
+        # couldn't find a way to enable it. Surfaced here as a first-
+        # class checkbox that (a) persists to config.json, (b) writes
+        # the CSS into GIMP's user themes dir immediately so the
+        # theme picker can find it, and (c) re-applies to the LIVE
+        # GTK screen at USER priority (higher than GIMP's default
+        # application-priority theme) so the change is visible the
+        # instant the Settings dialog closes — no restart needed to
+        # see SOME effect, though a full restart is still the cleanest
+        # way to re-skin existing widgets.
+        apply_theme_cb = Gtk.CheckButton(
+            label="Apply Spellcaster premium dark theme to GIMP dialogs")
+        apply_theme_cb.set_active(cfg.get("apply_theme", False))
+        apply_theme_cb.set_tooltip_text(
+            "Dark-purple reskin of the Spellcaster dialogs.\n\n"
+            "When ON, plugin dialogs get the premium look (purple "
+            "background, gold accents, branded buttons). When OFF, "
+            "dialogs inherit GIMP's default theme.\n\n"
+            "Applies immediately when you click OK here. For a full "
+            "reskin of the ENTIRE GIMP UI, also switch GIMP's theme "
+            "to 'Spellcaster' in Edit → Preferences → Interface → "
+            "Theme (that picker reads from GIMP's themes dir, which "
+            "this plugin populates automatically on first run).")
+        timeouts_box.pack_start(apply_theme_cb, False, False, 0)
+
         # ── Debug images toggle (grouped with the update + timeout knobs) ──
         debug_cb = Gtk.CheckButton(label="Save ControlNet debug layers (invisible)")
         debug_cb.set_active(cfg.get("debug_images", False))
@@ -34308,6 +34353,7 @@ class Spellcaster(Gimp.PlugIn):
         new_timeout = int(timeout_spin.get_value()) if timeout_check.get_active() else 0
         new_auto_update = auto_update_cb.get_active()
         new_debug = debug_cb.get_active()
+        new_apply_theme = apply_theme_cb.get_active()
         new_output_dir = output_entry.get_text().strip()
         new_cleanup = cleanup_combo.get_active_id() or "copy"
         fav_id = fav_combo.get_active_id()
@@ -34340,10 +34386,32 @@ class Spellcaster(Gimp.PlugIn):
             "extra_workflow_dirs": _extra_dirs,
             "prompt_enhance": new_enhance,
             "llm_url": new_llm,
+            "apply_theme": new_apply_theme,
         })
         _propagate_server_url(new_url)
+        # Re-apply / remove the theme live so the user sees the effect
+        # of their toggle immediately. _apply_spellcaster_theme is
+        # idempotent and cheap; the "remove" branch just re-runs with
+        # apply_theme=False which is a no-op (the CSS provider stays
+        # attached to the current screen but a GIMP restart drops it
+        # — the tooltip tells users to restart for a full reskin).
+        if new_apply_theme:
+            try:
+                _install_spellcaster_theme_to_disk()
+                _apply_spellcaster_theme()
+            except Exception as _th_err:
+                print(f"[Spellcaster] theme re-apply failed: {_th_err}")
         enhance_msg = " | AI Enhance: ON" if new_enhance else ""
-        Gimp.message(f"Settings saved. Server: {new_url}{enhance_msg}")
+        theme_msg = " | Theme: ON" if new_apply_theme else ""
+        Gimp.message(
+            f"Settings saved. Server: {new_url}{enhance_msg}{theme_msg}\n\n"
+            + ("Theme applied live — some widgets only re-skin fully "
+               "after GIMP restart. For a full reskin, go to Edit → "
+               "Preferences → Interface → Theme and pick "
+               "'Spellcaster'."
+               if new_apply_theme else
+               "Theme disabled — restart GIMP to drop the CSS that's "
+               "already been loaded into this session."))
         return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
 
