@@ -19118,6 +19118,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-arch-speed-chart":    None,
             "spellcaster-review-drift":        None,
             "spellcaster-show-minihud":        None,
+            "spellcaster-open-dashboard":      None,
             "spellcaster-faceswap-reset":      None,
             "spellcaster-last-warnings":       None,
             "spellcaster-toggle-speedcoach":   None,
@@ -19442,6 +19443,9 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-show-minihud": ("Show Mini-HUD",
                                           self._run_show_minihud,
                                           "Open a floating always-on-top HUD with step progress, VRAM%, and queue depth — keeps progress visible when GIMP isn't focused."),
+            "spellcaster-open-dashboard": ("Open Dashboard (web)",
+                                            self._run_open_dashboard,
+                                            "Open the telemetry dashboard in the default browser. Shows live node progress, VRAM, CPU+RAM, privacy-gate status, queue, peer list, recent dispatches. Runs on 127.0.0.1:18888 when the the private downstream distribution bundle is active; probes the URL first and surfaces a hint if it's not reachable."),
             "spellcaster-faceswap-reset": ("Reset Faceswap Crash State",
                                             self._run_faceswap_reset,
                                             "Clear the face-swap auto-disable counter + escalation flag. Use after fixing a TensorRT / onnxruntime install."),
@@ -19606,6 +19610,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-last-warnings":      f"{_S}/Diagnostics",
             # View — toggles + floating overlays.
             "spellcaster-show-minihud":       f"{_S}/View",
+            "spellcaster-open-dashboard":     f"{_S}/View",
             "spellcaster-toggle-speedcoach":  f"{_S}/View",
             # /3D submenu — mandatory 3D normal map variants. These
             # are dedicated procedures distinct from their regular
@@ -33200,6 +33205,54 @@ class Spellcaster(Gimp.PlugIn):
         except Exception:
             pass
         _speedcoach_show_minihud()
+        return procedure.new_return_values(
+            Gimp.PDBStatusType.SUCCESS, GLib.Error())
+
+    def _run_open_dashboard(self, procedure, run_mode, image, drawables, config, data):
+        """Open the the private downstream distribution telemetry dashboard in the default
+        browser. Probes 127.0.0.1:18888 first — when it's not
+        reachable, surfaces a friendly hint that the dashboard only
+        ships with the the private downstream distribution bundle (the launcher starts it
+        automatically). Users who want it outside the bundle can run
+        ``python nsfw/bundle/dashboard/server.py`` manually.
+        """
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        port = int(os.environ.get("DASHBOARD_PORT", "18888"))
+        url = f"http://127.0.0.1:{port}/"
+        reachable = False
+        try:
+            req = urllib.request.Request(f"{url}api/state")
+            with urllib.request.urlopen(req, timeout=1.0) as resp:
+                reachable = (resp.status == 200)
+        except Exception:
+            reachable = False
+        if not reachable:
+            try:
+                Gimp.message(
+                    f"Dashboard not reachable at {url}.\n\n"
+                    f"The telemetry dashboard ships with the "
+                    f"the private downstream distribution portable bundle — its launcher "
+                    f"starts the dashboard automatically after "
+                    f"ComfyUI becomes ready.\n\n"
+                    f"To run the dashboard outside the bundle, "
+                    f"execute:\n"
+                    f"  python nsfw/bundle/dashboard/server.py\n"
+                    f"and re-open this menu entry.")
+            except Exception:
+                pass
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
+        try:
+            import webbrowser
+            webbrowser.open(url, new=2)
+        except Exception as e:
+            try:
+                Gimp.message(
+                    f"Could not open browser: {e}\n\nManually open: {url}")
+            except Exception:
+                pass
         return procedure.new_return_values(
             Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
