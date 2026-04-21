@@ -748,16 +748,39 @@ def build_rembg(image_filename, alpha_matting=False,
     return nf.build()
 
 
-def build_rembg_birefnet(image_filename, model="BiRefNet-general") -> dict:
+def build_rembg_birefnet(image_filename, model="BiRefNet-general",
+                            mask_blur=0, mask_offset=0,
+                            invert_output=False,
+                            refine_foreground=False,
+                            background="Alpha",
+                            background_color="#222222") -> dict:
     """Background removal using BiRefNet (higher quality than rembg).
 
     BiRefNet produces significantly better results for hair, fur, and
-    transparent/semi-transparent objects. Uses the ComfyUI-RMBG node pack.
+    transparent/semi-transparent objects. Uses the ComfyUI-RMBG node
+    pack (ltdrdata / 1038lab).
 
-    Models:
-      - BiRefNet-general: best all-around (default)
-      - BiRefNet-portrait: optimized for people
-      - BiRefNet-HR: highest detail but may over-correct
+    Models available: BiRefNet-general, BiRefNet-portrait,
+    BiRefNet-HR, BiRefNet-matting, BiRefNet-ViT_B, BiRefNet-COD, …
+    (11 total; depends on what the user has installed).
+
+    Optional parameters (all defaults per node schema) — exposed so
+    callers can tune per-image. Pre-2026-04-20 we only sent `image`
+    + `model` and relied on ComfyUI to fill optional defaults, but
+    the pack's ``process_image`` reads ``params["mask_blur"]``
+    directly (no ``.get()`` fallback) and raises ``KeyError:
+    'mask_blur'`` when any of these aren't explicitly passed —
+    silent for BiRefNet-general but crashes on BiRefNet-portrait +
+    BiRefNet-HR (and all "slower" variants). Explicit passthrough
+    + documented defaults is the durable fix.
+
+    Args:
+        mask_blur: edge softening, 0-64 (0 = sharp)
+        mask_offset: expand (+) or shrink (-) the mask, -20..20
+        invert_output: invert image + mask
+        refine_foreground: Fast Foreground Colour Estimation
+        background: "Alpha" (transparent) or "Color"
+        background_color: hex string, used when background="Color"
 
     Returns:
         dict: ComfyUI workflow (load -> BiRefNetRMBG -> save)
@@ -765,8 +788,14 @@ def build_rembg_birefnet(image_filename, model="BiRefNet-general") -> dict:
     nf = NodeFactory()
     img_id = nf.load_image(image_filename, node_id="1")
     biref_id = nf._add("BiRefNetRMBG", {
-        "image": [img_id, 0],
-        "model": model,
+        "image":             [img_id, 0],
+        "model":             model,
+        "mask_blur":         int(mask_blur),
+        "mask_offset":       int(mask_offset),
+        "invert_output":     bool(invert_output),
+        "refine_foreground": bool(refine_foreground),
+        "background":        str(background),
+        "background_color":  str(background_color),
     }, node_id="2")
     nf.save_image([biref_id, 0], "spellcaster_rembg", node_id="3")
     return nf.build()
