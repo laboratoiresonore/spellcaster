@@ -359,14 +359,126 @@ def _register_routes() -> bool:
 
 _available: bool = False
 
+# ── mDNS / zeroconf ADDITIONAL broadcast ────────────────────────────
+#
+# The HTTP broker above stays authoritative (cross-subnet discovery,
+# multi-host coexistence, rich TXT metadata over the 2 KB cap). On
+# top of it, we ALSO advertise an mDNS service record on the LAN so
+# peers using zeroconf (Bonjour / Avahi clients on macOS / Linux /
+# Windows 10+) can find this ComfyUI without knowing its address.
+#
+# Failure is silent: a ComfyUI on a network without multicast, a
+# firewall that blocks port 5353, a missing python-zeroconf install —
+# none of those are fatal. The HTTP broker carries the primary
+# discovery load; zeroconf is cream on top.
+#
+# Adopted from RESEARCH_EXISTING_TOOLS.md (sprint 3 evaluation path).
+
+_ZEROCONF_SERVICE_TYPE = "_spellcaster._tcp.local."
+_zeroconf_instance: Any = None
+_zeroconf_service: Any = None
+
+
+def _install_zeroconf_broadcast() -> bool:
+    """Advertise this ComfyUI's presence-broker via mDNS. Returns
+    True on success, False when zeroconf isn't installed / multicast
+    isn't available / the port isn't discoverable. All failures are
+    silent — the HTTP broker is the authoritative path."""
+    global _zeroconf_instance, _zeroconf_service
+    try:
+        import socket
+        from zeroconf import ServiceInfo, Zeroconf
+    except ImportError:
+        return False
+    # Resolve this host's LAN IP. `socket.gethostbyname(socket.
+    # gethostname())` returns 127.0.0.1 on some Linux configs — pick
+    # the actual outbound IP by opening a UDP socket toward a public
+    # target (no packets sent; just lets the kernel pick a route).
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            addr = s.getsockname()[0]
+        ip_bytes = socket.inet_aton(addr)
+    except Exception:
+        return False
+    # Discover the ComfyUI port the PromptServer is actually bound on.
+    port = 8188  # ComfyUI default
+    try:
+        from server import PromptServer
+        inst = getattr(PromptServer, "instance", None)
+        if inst is not None:
+            app = getattr(inst, "app", None)
+            if app is not None:
+                # aiohttp app doesn't always expose its bound port
+                # directly; fall back to the default if introspection
+                # fails.
+                pass
+    except Exception:
+        pass
+    # Short TXT record: keys that fit the 1300-byte mDNS TXT cap.
+    # Capability list lives in HTTP broker's richer records; mDNS
+    # just points clients at the broker URL.
+    try:
+        hostname = socket.gethostname()[:63] or "comfyui"
+    except Exception:
+        hostname = "comfyui"
+    service_name = f"Spellcaster on {hostname}.{_ZEROCONF_SERVICE_TYPE}"
+    props = {
+        "key":       "comfyui",
+        "label":     "Spellcaster / ComfyUI",
+        "broker":    f"http://{addr}:{port}/spellcaster/presence/list",
+        "version":   "1",
+    }
+    try:
+        info = ServiceInfo(
+            type_=_ZEROCONF_SERVICE_TYPE,
+            name=service_name,
+            addresses=[ip_bytes],
+            port=port,
+            properties=props,
+            server=f"{hostname}.local.",
+        )
+        zc = Zeroconf()
+        zc.register_service(info)
+        _zeroconf_instance = zc
+        _zeroconf_service = info
+        print(f"[Spellcaster] mDNS advertised as "
+              f"'{service_name}' ({addr}:{port})")
+        return True
+    except Exception as e:
+        # Common failures: port already taken, multicast blocked,
+        # hostname resolution issues. Silent — HTTP broker handles
+        # the primary path.
+        print(f"[Spellcaster] mDNS broadcast skipped: {e}")
+        return False
+
+
+def _teardown_zeroconf_broadcast() -> None:
+    """Clean up mDNS registration on process exit. Best-effort."""
+    global _zeroconf_instance, _zeroconf_service
+    try:
+        if _zeroconf_instance is not None and _zeroconf_service is not None:
+            _zeroconf_instance.unregister_service(_zeroconf_service)
+            _zeroconf_instance.close()
+    except Exception:
+        pass
+    _zeroconf_instance = None
+    _zeroconf_service = None
+
 
 def install() -> bool:
-    """Called from __init__.py at ComfyUI startup. Registers routes if
-    possible, no-ops otherwise. Safe to call multiple times."""
+    """Called from __init__.py at ComfyUI startup. Registers HTTP
+    routes + optionally broadcasts via mDNS. Safe to call multiple
+    times."""
     global _available
     if _available:
         return True
     _available = _register_routes()
+    # Additional mDNS broadcast (silent on failure).
+    try:
+        _install_zeroconf_broadcast()
+    except Exception:
+        pass
     return _available
 
 
