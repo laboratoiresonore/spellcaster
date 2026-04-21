@@ -4515,7 +4515,7 @@ def _add_mask_mode_checkbox(dialog, box):
 
 
 def _apply_mask_mode(server, image, img_data, layer_name, mask_enabled,
-                      keep_size=False):
+                      keep_size=False, force_layer=False):
     """Import image data as a layer, optionally with background removed.
 
     Args:
@@ -4584,13 +4584,14 @@ def _apply_mask_mode(server, image, img_data, layer_name, mask_enabled,
             pass  # rembg failed — import as-is
 
     _import_result_as_layer(image, img_data, layer_name,
-                              keep_size=keep_size)
+                              keep_size=keep_size,
+                              force_layer=force_layer)
     return True
 
 
 def _download_and_insert_batch(server, image, results, label_method,
                                  mask_enabled=False, keep_size=False,
-                                 png_only=True):
+                                 png_only=True, force_layer=False):
     """Download + import a batch of ComfyUI results through the
     canonical ``_apply_mask_mode`` path.
 
@@ -4649,7 +4650,8 @@ def _download_and_insert_batch(server, image, results, label_method,
         try:
             ok = _apply_mask_mode(server, image, data, label,
                                     bool(mask_enabled),
-                                    keep_size=bool(keep_size))
+                                    keep_size=bool(keep_size),
+                                    force_layer=bool(force_layer))
             if ok:
                 imported += 1
             else:
@@ -10568,7 +10570,7 @@ def _export_selection_to_tmp(image):
 
 
 def _import_result_as_layer(image, image_data, layer_name="ComfyUI Result",
-                            keep_size=False):
+                            keep_size=False, force_layer=False):
     """Import raw PNG bytes on top of *image*.
 
     This is the single chokepoint every ComfyUI result flows through
@@ -10657,7 +10659,9 @@ def _import_result_as_layer(image, image_data, layer_name="ComfyUI Result",
     # inpaint etc. still overlay on the original canvas).
     rw = layers[0].get_width()
     rh = layers[0].get_height()
-    if not keep_size and (rw > image.get_width() or rh > image.get_height()):
+    if (not keep_size and not force_layer
+            and (rw > image.get_width()
+                  or rh > image.get_height())):
         try:
             layers[0].set_name(layer_name)
         except Exception:
@@ -20153,7 +20157,7 @@ class Spellcaster(Gimp.PlugIn):
                         continue
                     lbl = _layer_label("Img2Img", preset=v.get("preset"),
                                         run_i=run_i, runs=runs, i=i)
-                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, mask_mode, False)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, mask_mode, False, force_layer=True)
                 Gimp.displays_flush()  # show each run immediately
             _LAST_PROCEDURE["name"] = "spellcaster-img2img"
             _LAST_PROCEDURE["session_key"] = "img2img"
@@ -22509,7 +22513,7 @@ class Spellcaster(Gimp.PlugIn):
                         "Klein Headswap",
                         preset_key=v.get("klein_model"),
                         run_i=run_i, runs=runs, i=i)
-                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False, force_layer=True)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -22621,7 +22625,7 @@ class Spellcaster(Gimp.PlugIn):
                     lbl = _layer_label(
                         "Klein + Ref", preset_key=v.get("klein_model"),
                         run_i=run_i, runs=runs, i=i)
-                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False, force_layer=True)
             Gimp.displays_flush()
             Gimp.progress_end()
             _LAST_PROCEDURE["name"] = "spellcaster-klein-img2img-ref"
@@ -23145,7 +23149,7 @@ class Spellcaster(Gimp.PlugIn):
                         "Klein Blend",
                         preset_key=v.get("klein_model"),
                         run_i=run_i, runs=runs, i=i)
-                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False, force_layer=True)
             Gimp.displays_flush()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
@@ -23584,7 +23588,7 @@ class Spellcaster(Gimp.PlugIn):
                         "Klein Repose",
                         preset_key=v.get("klein_model"),
                         run_i=run_i, runs=runs, i=i)
-                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False, force_layer=True)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -24010,7 +24014,7 @@ class Spellcaster(Gimp.PlugIn):
                         "Klein Inpaint",
                         preset_key=v.get("klein_model"),
                         run_i=run_i, runs=runs, i=i)
-                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False, force_layer=True)
                 Gimp.displays_flush()  # show each run immediately
             Gimp.displays_flush()
             Gimp.progress_end()
@@ -24151,7 +24155,7 @@ class Spellcaster(Gimp.PlugIn):
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
             for i, (fn, sf, ft) in enumerate(results):
                 _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft),
-                                 f"Detail: {preset_key} #{i+1}", False)
+                                 f"Detail: {preset_key} #{i+1}", False, force_layer=True)
             _LAST_PROCEDURE["name"] = "spellcaster-klein-detail"
             _LAST_PROCEDURE["session_key"] = "klein_detail"
             Gimp.displays_flush()
@@ -24471,7 +24475,7 @@ class Spellcaster(Gimp.PlugIn):
                                              lambda: list(_run_comfyui_workflow(srv, _wf, timeout=300)))
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"{label} #{i+1}"
-                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False, force_layer=True)
             _LAST_PROCEDURE["name"] = "spellcaster-klein-auto-inpaint"
             _LAST_PROCEDURE["session_key"] = "klein_auto_inpaint"
             Gimp.displays_flush()
@@ -24659,7 +24663,7 @@ class Spellcaster(Gimp.PlugIn):
                                              lambda: list(_run_comfyui_workflow(srv, _wf, timeout=600)))
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"{label} #{i+1}"
-                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False, force_layer=True)
             _LAST_PROCEDURE["name"] = "spellcaster-klein-sam3-inpaint"
             _LAST_PROCEDURE["session_key"] = "klein_sam3_inpaint"
             Gimp.displays_flush()
@@ -24799,7 +24803,7 @@ class Spellcaster(Gimp.PlugIn):
                                              lambda: list(_run_comfyui_workflow(srv, _wf, timeout=600)))
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"{label} #{i+1}"
-                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False, force_layer=True)
             _LAST_PROCEDURE["name"] = "spellcaster-klein-refine"
             _LAST_PROCEDURE["session_key"] = "klein_refine"
             Gimp.displays_flush()
@@ -24956,7 +24960,7 @@ class Spellcaster(Gimp.PlugIn):
                                              lambda: list(_run_comfyui_workflow(srv, _wf, timeout=600)))
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"{label} #{i+1}"
-                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False, force_layer=True)
             _LAST_PROCEDURE["name"] = "spellcaster-klein-face-detail"
             _LAST_PROCEDURE["session_key"] = "klein_face_detail"
             Gimp.displays_flush()
@@ -25262,7 +25266,7 @@ class Spellcaster(Gimp.PlugIn):
                                              lambda: list(_run_comfyui_workflow(srv, _wf, timeout=600)))
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = f"{label} #{i+1}"
-                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False, force_layer=True)
             _LAST_PROCEDURE["name"] = "spellcaster-klein-virtual-tryon"
             _LAST_PROCEDURE["session_key"] = "klein_virtual_tryon"
             Gimp.displays_flush()
@@ -27808,7 +27812,7 @@ class Spellcaster(Gimp.PlugIn):
                     lbl = _layer_label(
                         "Style Transfer", preset=v.get("preset"),
                         run_i=run_i, runs=runs, i=i)
-                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False, force_layer=True)
             Gimp.displays_flush()
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -29146,7 +29150,7 @@ class Spellcaster(Gimp.PlugIn):
                     lbl = _layer_label(
                         "Batch Variation", preset=v.get("preset"),
                         run_i=run_i, runs=runs, i=i)
-                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
+                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False, force_layer=True)
             Gimp.displays_flush()
             Gimp.progress_end()
             _LAST_PROCEDURE["name"] = "spellcaster-batch-variations"
