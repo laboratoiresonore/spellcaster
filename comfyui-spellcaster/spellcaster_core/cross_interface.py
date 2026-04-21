@@ -67,20 +67,39 @@ def resolve_guild_url() -> str:
 
 def _http_json(method: str, url: str, payload: Optional[dict] = None,
                timeout: float = 5.0) -> Optional[dict]:
-    try:
-        body = None
-        headers = {"Accept": "application/json"}
-        if payload is not None:
-            body = json.dumps(payload).encode("utf-8")
-            headers["Content-Type"] = "application/json"
-        req = urllib.request.Request(url, data=body, method=method, headers=headers)
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read()
-            if not raw:
-                return {}
-            return json.loads(raw.decode("utf-8"))
-    except Exception:
-        return None
+    """POST/GET JSON with a single-retry-on-transient-failure pattern.
+
+    Preserves the None-on-failure contract every caller already relies
+    on (silent fallback to alternate transport), but retries once after
+    a 1 s pause on ``URLError`` / ``OSError`` so a LAN blip or a
+    momentary Guild restart doesn't surface as a permanent ``None``.
+    HTTPError (server answered 4xx/5xx) fails fast — no point retrying
+    a real server error. Matches the GIMP sender-side upload retry
+    policy (``_upload_image_sync`` / ``_flush_pending_uploads``).
+    """
+    body = None
+    headers = {"Accept": "application/json"}
+    if payload is not None:
+        body = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, data=body, method=method, headers=headers)
+    for attempt in range(2):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                raw = resp.read()
+                if not raw:
+                    return {}
+                return json.loads(raw.decode("utf-8"))
+        except urllib.error.HTTPError:
+            return None  # real server error — don't retry
+        except (urllib.error.URLError, OSError):
+            if attempt == 0:
+                time.sleep(1.0)
+                continue
+            return None
+        except Exception:
+            return None
+    return None
 
 
 # ── Client ───────────────────────────────────────────────────────────
@@ -351,25 +370,47 @@ class CrossInterfaceClient:
                 "Content-Type": f"multipart/form-data; boundary={boundary}",
                 "Content-Length": str(len(body)),
             })
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-        except Exception:
-            return None
+        # Single-retry pattern on transient network blips (matches
+        # _http_json + GIMP sender-side uploads). HTTPError fails fast
+        # because a real 4xx/5xx won't fix itself on a retry.
+        for attempt in range(2):
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError:
+                return None
+            except (urllib.error.URLError, OSError):
+                if attempt == 0:
+                    time.sleep(1.0)
+                    continue
+                return None
+            except Exception:
+                return None
+        return None
 
     def blob_get(self, url: str,
                  timeout: float = 30.0) -> Optional[bytes]:
         """GET raw bytes from a blob bus URL. The URL is typically
         returned by blob_put and points at a ComfyUI instance (not the
-        Guild). Returns None on failure."""
+        Guild). Returns None on failure. Single-retry-on-transient
+        pattern matches ``_http_json`` and the sender-side uploaders."""
         if not url:
             return None
-        try:
-            req = urllib.request.Request(url)
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return resp.read()
-        except Exception:
-            return None
+        req = urllib.request.Request(url)
+        for attempt in range(2):
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return resp.read()
+            except urllib.error.HTTPError:
+                return None
+            except (urllib.error.URLError, OSError):
+                if attempt == 0:
+                    time.sleep(1.0)
+                    continue
+                return None
+            except Exception:
+                return None
+        return None
 
     def blob_list(self, comfy_url: str,
                   timeout: float = 3.0) -> list[dict]:
