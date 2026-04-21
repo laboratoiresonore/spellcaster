@@ -39,24 +39,36 @@ try:
         build_faceswap, build_face_restore, build_style_transfer,
         build_iclight, build_lut, build_inpaint,
         build_outpaint, build_normal_map,
+        build_detail_hallucinate, build_colorize, build_magic_eraser,
+        build_ltx_video, build_wan_video,
     )
     from .architectures import get_arch
     from .model_detect import classify_unet_model, classify_ckpt_model
     from .preflight import preflight_workflow
     from .optimizer import optimize_workflow
     from .recommend import recommend
+    from .video_presets import (
+        detect_ltx_preset, detect_wan_preset, ltx_mode_kwargs,
+        wan_turbo_kwargs,
+    )
 except ImportError:
     from spellcaster_core.workflows import (
         build_txt2img, build_img2img, build_upscale, build_rembg,
         build_faceswap, build_face_restore, build_style_transfer,
         build_iclight, build_lut, build_inpaint,
         build_outpaint, build_normal_map,
+        build_detail_hallucinate, build_colorize, build_magic_eraser,
+        build_ltx_video, build_wan_video,
     )
     from spellcaster_core.architectures import get_arch
     from spellcaster_core.model_detect import classify_unet_model, classify_ckpt_model
     from spellcaster_core.preflight import preflight_workflow
     from spellcaster_core.optimizer import optimize_workflow
     from spellcaster_core.recommend import recommend
+    from spellcaster_core.video_presets import (
+        detect_ltx_preset, detect_wan_preset, ltx_mode_kwargs,
+        wan_turbo_kwargs,
+    )
 
 
 # Module-level single-start guards for the background loops.
@@ -413,6 +425,198 @@ class SpellcasterPlugin:
                                 seed=random.randint(1, 2 ** 31),
                                 max_res=int(max_res))
         return self._run_workflow(wf, "normal_map")
+
+    # ── Extended operations (2026-04-20 capability parity) ────────
+    # These match the GIMP plugin's capability set within reason: any
+    # op needing a canvas is gated on the subclass implementing
+    # ``get_canvas_png``. Video / text-only ops work on any plugin.
+
+    def detail_hallucinate(self, prompt, negative="",
+                            upscale_model="4x-UltraSharp.pth",
+                            upscale_factor=1.0, denoise=0.35, cfg=None,
+                            steps=None, arch="sdxl", model="",
+                            quality="balanced"):
+        """Super-resolve + add photographic detail via img2img diffusion.
+
+        GIMP's most-used upscale path. Runs an ESRGAN pass then a low-
+        denoise diffusion pass so the upscaler can hallucinate pores,
+        fabric weave, stone texture. ``denoise`` 0.25-0.45 is the
+        sweet spot — higher drifts from the source, lower barely adds
+        detail.
+        """
+        name = self._last_upload or self.upload_canvas()
+        preset = self._make_preset(arch, model, steps=steps or 0,
+                                    cfg=cfg)
+        if not preset:
+            return None
+        import random
+        wf = build_detail_hallucinate(
+            name, upscale_model, preset, prompt, negative,
+            random.randint(1, 2 ** 32 - 1),
+            denoise=float(denoise),
+            cfg=float(preset["cfg"]),
+            steps=int(preset["steps"]),
+            upscale_factor=float(upscale_factor),
+            quality=quality)
+        return self._run_workflow(wf, "detail_hallucinate")
+
+    def colorize(self, prompt="", negative="", controlnet_strength=0.7,
+                  denoise=0.85, arch="sdxl", model="",
+                  quality="balanced"):
+        """Colorize a B&W image. Uses lineart ControlNet + low-denoise
+        diffusion, so the line structure stays locked while the diffuser
+        fills in hues. ``prompt`` is optional — hints help
+        ("warm sunset", "1970s kodachrome") but the default colour
+        preset works for most photos.
+        """
+        name = self._last_upload or self.upload_canvas()
+        preset = self._make_preset(arch, model)
+        if not preset:
+            return None
+        import random
+        wf = build_colorize(
+            name, preset, prompt, negative,
+            random.randint(1, 2 ** 32 - 1),
+            controlnet_strength=float(controlnet_strength),
+            denoise=float(denoise),
+            quality=quality)
+        return self._run_workflow(wf, "colorize")
+
+    def magic_eraser(self, prompt, confidence=0.6, mask_expand=8,
+                      mask_blur=4):
+        """Remove an unwanted object by describing it.
+
+        SAM3 segments the described object, LaMa inpaints over the
+        mask. No selection needed — just a prompt ("power line",
+        "watermark", "tourist in background").
+        """
+        name = self._last_upload or self.upload_canvas()
+        wf = build_magic_eraser(
+            name, prompt,
+            confidence=float(confidence),
+            mask_expand=int(mask_expand),
+            mask_blur=int(mask_blur))
+        return self._run_workflow(wf, "magic_eraser")
+
+    def style_transfer_from_bytes(self, style_bytes, prompt="",
+                                    negative="", weight=0.8,
+                                    denoise=0.55, arch="sdxl",
+                                    model="", quality="balanced"):
+        """IPAdapter-based style transfer from a reference image.
+
+        ``style_bytes`` is the style reference PNG (from file picker,
+        clipboard, or a second layer). The canvas is the target.
+        Alias distinct from :meth:`style_transfer` so UIs can offer
+        both an IPAdapter path and a dispatch-style path.
+        """
+        if not style_bytes:
+            self.show_error("Style transfer needs a reference image.")
+            return None
+        target = self._last_upload or self.upload_canvas()
+        style_name = f"spellcaster_style_{uuid.uuid4().hex[:8]}.png"
+        self._upload_raw(style_name, style_bytes)
+        preset = self._make_preset(arch, model)
+        if not preset:
+            return None
+        import random
+        wf = build_style_transfer(
+            target, style_name, preset, prompt, negative,
+            random.randint(1, 2 ** 32 - 1),
+            weight=float(weight),
+            denoise=float(denoise),
+            quality=quality)
+        return self._run_workflow(wf, "style_transfer")
+
+    def ltx_t2v(self, prompt, negative=None, seconds=3.0, fps=25,
+                 width=1280, height=720, mode="distilled"):
+        """Text-to-video via LTX 2.3. No canvas needed.
+
+        ``mode`` is ``"distilled"`` (8-step fast, default),
+        ``"full"`` (30-step quality), or ``"two_stage"`` (half-res
+        + latent upscale — slowest, best detail).
+
+        Resolution is clamped to mod-32; frame count derives from
+        ``seconds * fps`` clamped to [17, 161] (LTX's safe range).
+        """
+        preset = detect_ltx_preset(self.server)
+        if not preset:
+            self.show_error(
+                "No LTX 2.3 models found on the server. Install the "
+                "LTX model family to use text-to-video.")
+            return None
+        # Snap WxH to mod-32 (LTX hard requirement).
+        def _snap32(v):
+            v = int(v) // 32 * 32
+            return max(256, v)
+        w, h = _snap32(width), _snap32(height)
+        # LTX is safest between 17 and 161 frames.
+        nframes = max(17, min(161, int(float(seconds) * float(fps))))
+        import random
+        kwargs = ltx_mode_kwargs(mode)
+        wf = build_ltx_video(
+            preset, prompt,
+            random.randint(1, 2 ** 32 - 1),
+            width=w, height=h, num_frames=nframes, fps=int(fps),
+            negative_text=negative,
+            **kwargs)
+        return self._run_workflow(wf, "ltx_t2v")
+
+    def ltx_i2v(self, prompt, negative=None, seconds=3.0, fps=25,
+                 width=1280, height=720, i2v_strength=0.9):
+        """Image-to-video via LTX 2.3 distilled I2V. Uses the current
+        canvas as the seed frame.
+        """
+        preset = detect_ltx_preset(self.server)
+        if not preset:
+            self.show_error("No LTX 2.3 models found on the server.")
+            return None
+        name = self._last_upload or self.upload_canvas()
+        def _snap32(v):
+            v = int(v) // 32 * 32
+            return max(256, v)
+        w, h = _snap32(width), _snap32(height)
+        nframes = max(17, min(161, int(float(seconds) * float(fps))))
+        import random
+        kwargs = ltx_mode_kwargs("i2v")
+        wf = build_ltx_video(
+            preset, prompt,
+            random.randint(1, 2 ** 32 - 1),
+            width=w, height=h, num_frames=nframes, fps=int(fps),
+            image_filename=name, i2v_strength=float(i2v_strength),
+            negative_text=negative,
+            **kwargs)
+        return self._run_workflow(wf, "ltx_i2v")
+
+    def wan_i2v(self, prompt, negative="", seconds=5.0, fps=16,
+                 width=832, height=480, turbo=True):
+        """Image-to-video via WAN 2.2. Uses the current canvas as the
+        seed frame. Auto-detects an I2V-safe preset on the server
+        (14B I2V or 5B TI2V); raises if neither is present.
+        """
+        preset = detect_wan_preset(self.server)
+        if not preset:
+            self.show_error(
+                "No WAN 2.2 I2V models found on the server. Install "
+                "the WAN 2.2 14B I2V model to use image-to-video.")
+            return None
+        name = self._last_upload or self.upload_canvas()
+        def _snap16(v):
+            v = int(v) // 16 * 16
+            return max(256, v)
+        w, h = _snap16(width), _snap16(height)
+        # WAN's safe length window.
+        length = max(33, min(121, int(float(seconds) * float(fps)) + 1))
+        # Mod-4 enforcement for length (WAN quirk).
+        length = ((length - 1) // 4) * 4 + 1
+        import random
+        kwargs = wan_turbo_kwargs(bool(turbo))
+        wf = build_wan_video(
+            name, preset, prompt, negative,
+            random.randint(1, 2 ** 32 - 1),
+            width=w, height=h, length=length, fps=int(fps),
+            turbo=bool(turbo),
+            **kwargs)
+        return self._run_workflow(wf, "wan_i2v")
 
     # ── Cross-interface backbone (optional — gated on guild_url) ──
 

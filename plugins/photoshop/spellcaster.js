@@ -359,6 +359,274 @@ async function cmdOpenGuild() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+//  Extended commands — match the GIMP capability set within reason
+// ═══════════════════════════════════════════════════════════════════
+
+async function cmdDetailHallucinate() {
+    /** Upscale the canvas + diffuse-hallucinate fine detail. */
+    const hint = await showPromptDialog("Detail hint (e.g. 'crisp pores, fine fabric'):");
+    if (hint === null) return;
+    try {
+        showStatus("Uploading canvas…");
+        const srcRef = await uploadCanvasToGuild("Detail source");
+        showStatus("Hallucinating detail…");
+        const result = await executeWorkflow("build_detail_hallucinate", {
+            image_filename: srcRef,
+            prompt_text: hint || "crisp detail, fine texture",
+            negative_text: "",
+            seed: Math.floor(Math.random() * 2 ** 31),
+            denoise: 0.35,
+            cfg: 6.5,
+            upscale_factor: 2.0,
+            upscale_model: "4x-UltraSharp.pth",
+            arch: "sdxl",
+        });
+        if (!result.ok) throw new Error(result.error || "detail failed");
+        for (const u of result.urls) {
+            const full = u.startsWith("/") ? `${GUILD_URL}${u}` : u;
+            await importLayerFromURL(full, "Spellcaster Detail");
+        }
+        showStatus("Done.");
+    } catch (e) {
+        showError(e.message);
+    }
+}
+
+async function cmdColorize() {
+    /** Colorize a B&W canvas via ControlNet + low-denoise diffusion. */
+    const hint = await showPromptDialog("Optional colour hint (e.g. 'warm sunset'):");
+    if (hint === null) return;
+    try {
+        showStatus("Uploading canvas…");
+        const srcRef = await uploadCanvasToGuild("Colorize source");
+        showStatus("Colorizing…");
+        const result = await executeWorkflow("build_colorize", {
+            image_filename: srcRef,
+            prompt_text: hint || "natural colors",
+            negative_text: "",
+            seed: Math.floor(Math.random() * 2 ** 31),
+            controlnet_strength: 0.7,
+            denoise: 0.85,
+            arch: "sdxl",
+        });
+        if (!result.ok) throw new Error(result.error || "colorize failed");
+        for (const u of result.urls) {
+            const full = u.startsWith("/") ? `${GUILD_URL}${u}` : u;
+            await importLayerFromURL(full, "Spellcaster Colorize");
+        }
+        showStatus("Done.");
+    } catch (e) {
+        showError(e.message);
+    }
+}
+
+async function cmdMagicEraser() {
+    /** Remove the described object via SAM3 + LaMa. */
+    const prompt = await showPromptDialog("What to remove (e.g. 'power line'):");
+    if (!prompt) return;
+    try {
+        showStatus("Uploading canvas…");
+        const srcRef = await uploadCanvasToGuild("Eraser source");
+        showStatus("Erasing…");
+        const result = await executeWorkflow("build_magic_eraser", {
+            image_filename: srcRef,
+            prompt: prompt,
+            confidence: 0.6,
+            mask_expand: 8,
+            mask_blur: 4,
+        });
+        if (!result.ok) throw new Error(result.error || "eraser failed");
+        for (const u of result.urls) {
+            const full = u.startsWith("/") ? `${GUILD_URL}${u}` : u;
+            await importLayerFromURL(full, "Spellcaster Eraser");
+        }
+        showStatus("Done.");
+    } catch (e) {
+        showError(e.message);
+    }
+}
+
+async function cmdImg2Img() {
+    /** Transform the canvas with a prompt via build_img2img. */
+    const prompt = await showPromptDialog("How should the canvas change?");
+    if (!prompt) return;
+    try {
+        showStatus("Uploading canvas…");
+        const srcRef = await uploadCanvasToGuild("img2img source");
+        showStatus("Transforming…");
+        const result = await executeWorkflow("build_img2img", {
+            image_filename: srcRef,
+            prompt_text: prompt,
+            negative_text: "",
+            seed: Math.floor(Math.random() * 2 ** 31),
+            denoise: 0.55,
+            arch: "sdxl",
+        });
+        if (!result.ok) throw new Error(result.error || "img2img failed");
+        for (const u of result.urls) {
+            const full = u.startsWith("/") ? `${GUILD_URL}${u}` : u;
+            await importLayerFromURL(full, `Spellcaster: ${prompt.slice(0, 40)}`);
+        }
+        showStatus("Done.");
+    } catch (e) {
+        showError(e.message);
+    }
+}
+
+// ─── Preset bundles (mirrors spellcaster_core/plugin_presets.py) ──
+const PHOTOSHOP_PRESETS = [
+    {
+        label: "Product shot — studio",
+        op: "txt2img",
+        prompt: "professional product photography, clean white backdrop, studio softbox lighting, high detail, commercial quality",
+        arch: "flux1dev",
+    },
+    {
+        label: "Portrait retouch reference",
+        op: "txt2img",
+        prompt: "professional portrait photography, natural skin texture, soft window light, shallow DoF, 85mm lens",
+        arch: "flux1dev",
+    },
+    {
+        label: "Social post — square lifestyle",
+        op: "txt2img",
+        prompt: "bright lifestyle photography, warm natural light, shallow depth of field, social-media-ready square composition",
+        arch: "sdxl",
+        width: 1024,
+        height: 1024,
+    },
+    {
+        label: "Background plate — studio gradient",
+        op: "txt2img",
+        prompt: "smooth gradient studio backdrop, clean, no subject, color-graded neutral tones",
+        arch: "sdxl",
+    },
+    {
+        label: "AI upscale 4x",
+        op: "upscale",
+    },
+    {
+        label: "Remove background",
+        op: "rembg",
+    },
+    {
+        label: "Detail hallucinate 2x",
+        op: "detail_hallucinate",
+        prompt: "crisp detail, fine texture",
+        arch: "sdxl",
+    },
+    {
+        label: "Colorize B&W",
+        op: "colorize",
+        prompt: "natural colors, warm midtones",
+        arch: "sdxl",
+    },
+];
+
+async function cmdPreset() {
+    /** Let the user pick a preset from the bundled list. */
+    const label = await showPresetPicker();
+    if (!label) return;
+    const preset = PHOTOSHOP_PRESETS.find(p => p.label === label);
+    if (!preset) {
+        showError(`Preset '${label}' not found.`);
+        return;
+    }
+    try {
+        if (preset.op === "upscale") return cmdUpscale();
+        if (preset.op === "rembg") return cmdRemoveBackground();
+        if (preset.op === "detail_hallucinate") {
+            // Use preset prompt, skip dialog.
+            showStatus("Uploading canvas…");
+            const srcRef = await uploadCanvasToGuild("Detail source");
+            showStatus("Hallucinating detail…");
+            const result = await executeWorkflow("build_detail_hallucinate", {
+                image_filename: srcRef,
+                prompt_text: preset.prompt,
+                negative_text: "",
+                seed: Math.floor(Math.random() * 2 ** 31),
+                denoise: 0.35, cfg: 6.5, upscale_factor: 2.0,
+                upscale_model: "4x-UltraSharp.pth",
+                arch: preset.arch || "sdxl",
+            });
+            if (!result.ok) throw new Error(result.error || "detail failed");
+            for (const u of result.urls) {
+                const full = u.startsWith("/") ? `${GUILD_URL}${u}` : u;
+                await importLayerFromURL(full, `Preset: ${preset.label}`);
+            }
+            showStatus("Done.");
+            return;
+        }
+        if (preset.op === "colorize") {
+            showStatus("Uploading canvas…");
+            const srcRef = await uploadCanvasToGuild("Colorize source");
+            showStatus("Colorizing…");
+            const result = await executeWorkflow("build_colorize", {
+                image_filename: srcRef,
+                prompt_text: preset.prompt,
+                negative_text: "",
+                seed: Math.floor(Math.random() * 2 ** 31),
+                controlnet_strength: 0.7, denoise: 0.85,
+                arch: preset.arch || "sdxl",
+            });
+            if (!result.ok) throw new Error(result.error || "colorize failed");
+            for (const u of result.urls) {
+                const full = u.startsWith("/") ? `${GUILD_URL}${u}` : u;
+                await importLayerFromURL(full, `Preset: ${preset.label}`);
+            }
+            showStatus("Done.");
+            return;
+        }
+        // Default: txt2img
+        showStatus(`Generating (${preset.arch || "sdxl"})…`);
+        const result = await executeWorkflow("build_txt2img", {
+            prompt_text: preset.prompt,
+            negative: "",
+            arch: preset.arch || "sdxl",
+            width: preset.width || 1024,
+            height: preset.height || 1024,
+            seed: Math.floor(Math.random() * 2 ** 31),
+        });
+        if (!result.ok) throw new Error(result.error || "generation failed");
+        for (const u of result.urls) {
+            const full = u.startsWith("/") ? `${GUILD_URL}${u}` : u;
+            await importLayerFromURL(full, `Preset: ${preset.label}`);
+        }
+        showStatus("Done.");
+    } catch (e) {
+        showError(e.message);
+    }
+}
+
+async function showPresetPicker() {
+    return new Promise((resolve) => {
+        const dlg = document.createElement("dialog");
+        const options = PHOTOSHOP_PRESETS.map(p =>
+            `<option value="${p.label}">${p.label}</option>`).join("");
+        dlg.innerHTML = `
+            <form method="dialog" style="padding:16px;min-width:320px;">
+                <h2 style="margin:0 0 12px;font-size:16px;">Pick a preset</h2>
+                <select id="sp-preset" style="width:100%;padding:8px;margin-bottom:12px;">${options}</select>
+                <div style="display:flex;gap:8px;justify-content:flex-end;">
+                    <button type="button" onclick="this.closest('dialog').close()">Cancel</button>
+                    <button type="submit" uxp-variant="cta">Run</button>
+                </div>
+            </form>
+        `;
+        dlg.addEventListener("close", () => {
+            const sel = dlg.querySelector("#sp-preset");
+            // Only resolve to a value if the CTA was clicked — Cancel
+            // path closes the dialog from the onclick so
+            // dlg.returnValue stays empty.
+            resolve(dlg.returnValue ? (sel ? sel.value : null) : null);
+            dlg.remove();
+        });
+        document.body.appendChild(dlg);
+        dlg.showModal();
+    });
+}
+
+// ═══════════════════════════════════════════════════════════════════
 //  UI helpers
 // ═══════════════════════════════════════════════════════════════════
 
@@ -408,7 +676,13 @@ function setupPanel() {
     panel.innerHTML = `
         <div style="padding:12px;font-family:system-ui;">
             <h3 style="margin:0 0 12px;color:#B246F2;">Spellcaster</h3>
+            <button id="sp-preset" style="width:100%;margin-bottom:6px;">✨ Presets…</button>
+            <hr style="border-color:#333;margin:8px 0;" />
             <button id="sp-auto" style="width:100%;margin-bottom:6px;">Smart Generate</button>
+            <button id="sp-img2img" style="width:100%;margin-bottom:6px;">Transform (img2img)</button>
+            <button id="sp-detail" style="width:100%;margin-bottom:6px;">Detail Hallucinate</button>
+            <button id="sp-colorize" style="width:100%;margin-bottom:6px;">Colorize B&W</button>
+            <button id="sp-eraser" style="width:100%;margin-bottom:6px;">Magic Eraser</button>
             <button id="sp-upscale" style="width:100%;margin-bottom:6px;">AI Upscale (4x)</button>
             <button id="sp-rembg" style="width:100%;margin-bottom:6px;">Remove Background</button>
             <hr style="border-color:#333;margin:12px 0;" />
@@ -417,7 +691,12 @@ function setupPanel() {
         </div>
     `;
 
+    document.getElementById("sp-preset")?.addEventListener("click", cmdPreset);
     document.getElementById("sp-auto")?.addEventListener("click", cmdSmartGenerate);
+    document.getElementById("sp-img2img")?.addEventListener("click", cmdImg2Img);
+    document.getElementById("sp-detail")?.addEventListener("click", cmdDetailHallucinate);
+    document.getElementById("sp-colorize")?.addEventListener("click", cmdColorize);
+    document.getElementById("sp-eraser")?.addEventListener("click", cmdMagicEraser);
     document.getElementById("sp-upscale")?.addEventListener("click", cmdUpscale);
     document.getElementById("sp-rembg")?.addEventListener("click", cmdRemoveBackground);
     document.getElementById("sp-guild")?.addEventListener("click", cmdOpenGuild);
@@ -440,8 +719,13 @@ entrypoints.setup({
     },
     commands: {
         "spellcasterGenerate": cmdSmartGenerate,
+        "spellcasterImg2Img": cmdImg2Img,
+        "spellcasterDetail": cmdDetailHallucinate,
+        "spellcasterColorize": cmdColorize,
+        "spellcasterEraser": cmdMagicEraser,
         "spellcasterUpscale": cmdUpscale,
         "spellcasterRembg": cmdRemoveBackground,
+        "spellcasterPreset": cmdPreset,
         "spellcasterGuild": cmdOpenGuild,
     },
 });
