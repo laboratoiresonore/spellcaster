@@ -151,7 +151,7 @@ Parallel research dump (2026-04-20) on libraries / node packs / tooling Spellcas
 
 **Sprint 3 (next quarter):**
 6. Evaluate `ComfyScript` migration — timed for the next "new ComfyUI node family" need.
-7. Evaluate `zeroconf` as a single-subnet optimisation layer on top of the HTTP presence broker.
+7. ✅ **DONE 2026-04-20** — `zeroconf` as additional mDNS broadcast in [`presence.py::_install_zeroconf_broadcast`](../comfyui-spellcaster/presence.py). Advertises `_spellcaster._tcp.local.` alongside the existing HTTP broker; TXT record points at the HTTP broker URL so rich capability metadata stays on the HTTP path. Silent on failure (zeroconf not installed / multicast blocked / port undiscoverable) — HTTP broker remains authoritative. Additive, zero behaviour change for existing clients.
 8. Evaluate Manager API offload for ControlNet installs.
 
 **Never:**
