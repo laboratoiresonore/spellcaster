@@ -3042,6 +3042,119 @@ _NORMAL_MAP_FALLBACK_CHAIN: dict[str, tuple[str, ...]] = {
 }
 
 
+# Session-scoped blacklist of ControlNet files that the server
+# reported as unloadable. Populated by _note_bad_cn_file() whenever a
+# dispatch fails with "incomplete metadata" (corrupt / partial
+# safetensors download) OR "controlnet file is invalid" (wrong format
+# for the built-in loader — e.g. Z-Image-Turbo-Fun-Controlnet-Union
+# needs the ZIT-Fun dedicated loader, not ComfyUI's built-in). The
+# resolver consults this set before offering any CN file, so after
+# one failure the next dispatch automatically skips to the fallback
+# cascade instead of re-hitting the same broken file.
+_CN_SESSION_BLACKLIST: set[str] = set()
+
+
+def _note_bad_cn_file(filename: str, reason: str = "") -> None:
+    """Add a ControlNet file to the session blacklist + surface a
+    visible Gimp.message with actionable guidance.
+
+    Called from dispatch error handlers (see _maybe_handle_cn_error)
+    when the server reports the file is corrupt / invalid.
+    """
+    if not filename:
+        return
+    bn = filename.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    _CN_SESSION_BLACKLIST.add(filename)
+    _CN_SESSION_BLACKLIST.add(bn)
+    print(f"[Spellcaster] Blacklisted CN file for session: "
+          f"{filename} ({reason or 'unloadable'})")
+
+
+def _cn_is_blacklisted(filename: str) -> bool:
+    """True when a CN filename is in the session blacklist (exact or
+    basename match)."""
+    if not filename:
+        return False
+    if filename in _CN_SESSION_BLACKLIST:
+        return True
+    bn = filename.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    return bn in _CN_SESSION_BLACKLIST
+
+
+_CORRUPT_CN_ERROR_TOKENS = (
+    "incomplete metadata",
+    "file not fully covered",
+    "controlnet file is invalid",
+    "could not detect control model type",
+    "does not contain a valid controlnet model",
+    "does not contain controlnet or t2i adapter data",
+)
+
+
+def _maybe_handle_cn_error(err_text: str, workflow: dict | None) -> str | None:
+    """Scan a ComfyUI execution error for CN-loader failure tokens and,
+    when one matches, walk the workflow for the ControlNetLoader node
+    to blacklist the offending filename. Returns the filename that got
+    blacklisted (or ``None`` when the error isn't CN-related).
+
+    The caller decides whether to retry the dispatch — this function
+    just records the bad file so the next _resolve_normal_map_cn()
+    call skips it automatically.
+    """
+    if not err_text:
+        return None
+    low = str(err_text).lower()
+    if not any(tok in low for tok in _CORRUPT_CN_ERROR_TOKENS):
+        return None
+    # Find the CN filename inside the workflow (built-in
+    # ControlNetLoader OR common ZIT-Fun loader class names).
+    if not isinstance(workflow, dict):
+        return None
+    cn_classes = {"ControlNetLoader", "ControlNetLoaderSimple",
+                   "LoadZITFunControlnetUnion",
+                   "ZIT_Fun_ControlnetLoader"}
+    for nid, node in workflow.items():
+        if not isinstance(node, dict):
+            continue
+        if node.get("class_type") not in cn_classes:
+            continue
+        fname = (node.get("inputs", {}) or {}).get("control_net_name")
+        if isinstance(fname, str) and fname:
+            _note_bad_cn_file(fname, reason=err_text.splitlines()[0]
+                                       if err_text else "load failed")
+            try:
+                bn = fname.replace("\\", "/").rsplit("/", 1)[-1]
+                first_err = (err_text.splitlines()[0].strip()
+                             if err_text else '')
+                Gimp.message(
+                    f"ControlNet file '{bn}' failed to load on the "
+                    f"server.\n\n{first_err}\n\n"
+                    f"About 3D mode: the Normal Map image you "
+                    f"selected is the *input*; ComfyUI still needs a "
+                    f"ControlNet MODEL file (the .safetensors on the "
+                    f"server) that knows how to interpret normal-map "
+                    f"pixels as surface geometry. Without that model "
+                    f"file, 3D guidance isn't possible.\n\n"
+                    f"Cause: either the file is corrupt (partial "
+                    f"download — size < expected), OR it's a custom "
+                    f"format that needs a dedicated loader node "
+                    f"(e.g. Z-Image-Turbo-Fun CNs need the ZIT-Fun "
+                    f"node pack, not the built-in ControlNetLoader).\n\n"
+                    f"Spellcaster can't fix the file on your ComfyUI "
+                    f"server (no write API). What you can do:\n"
+                    f"  1. SSH / file manager into the server and "
+                    f"delete {bn} from models/controlnet/\n"
+                    f"  2. Reinstall via ComfyUI Manager (Install "
+                    f"Models → search 'ControlNet Union')\n"
+                    f"  3. Retry — Spellcaster blacklisted this file "
+                    f"for the session, so the dispatch will now walk "
+                    f"the fallback cascade (Depth → Canny → …).")
+            except Exception:
+                pass
+            return fname
+    return None
+
+
 def _resolve_normal_map_cn(server: str, arch_key: str) -> dict:
     """Resolve the best Normal Map CN filename for ``arch_key`` on
     ``server``.
@@ -3064,6 +3177,12 @@ def _resolve_normal_map_cn(server: str, arch_key: str) -> dict:
                       should abort / skip 3D guidance.
       * ``unknown`` — probe failed; caller should proceed blindly
                       (ComfyUI will surface its own error).
+
+    Honours ``_CN_SESSION_BLACKLIST``: any file that failed to load
+    earlier in this session is skipped as if it weren't installed,
+    so the cascade walks to the next fallback automatically. Fixes
+    the "user keeps hitting the same corrupt Union file on every
+    retry" symptom reported 2026-04-20.
     """
     preferred = None
     try:
@@ -3082,22 +3201,22 @@ def _resolve_normal_map_cn(server: str, arch_key: str) -> dict:
             "resolved":  preferred,
             "tried":     [],
         }
-    avail_basenames = {a.replace("\\", "/").rsplit("/", 1)[-1].lower()
-                       for a in available}
-    avail_full_lower = {a.lower() for a in available}
 
     def _server_has(name: str) -> str | None:
         """Return the exact on-server filename if ``name`` is
-        installed (exact match OR basename match); None otherwise."""
+        installed (exact match OR basename match) AND not in the
+        session blacklist; None otherwise."""
         if not name:
             return None
+        if _cn_is_blacklisted(name):
+            return None
         for a in available:
-            if a == name:
+            if a == name and not _cn_is_blacklisted(a):
                 return a
         bn = name.replace("\\", "/").rsplit("/", 1)[-1].lower()
         for a in available:
             a_bn = a.replace("\\", "/").rsplit("/", 1)[-1].lower()
-            if a_bn == bn:
+            if a_bn == bn and not _cn_is_blacklisted(a):
                 return a
         return None
 
@@ -11037,11 +11156,25 @@ def _run_comfyui_workflow(server, workflow, timeout=300):
             # GIMP passes privacy=False to dispatch because it needs to
             # download outputs to local temp files BEFORE they get wiped.
             # Privacy cleanup runs after _precache_results below.
-            result = dispatch_workflow(
-                server, workflow, timeout=timeout,
-                free_vram=True,
-                privacy=False,  # GIMP handles privacy after precache
-            )
+            try:
+                result = dispatch_workflow(
+                    server, workflow, timeout=timeout,
+                    free_vram=True,
+                    privacy=False,  # GIMP handles privacy after precache
+                )
+            except RuntimeError as _dispatch_err:
+                # Intercept CN-loader failures (corrupt safetensors /
+                # invalid ControlNet file) and blacklist the offending
+                # file for the session so subsequent dispatches walk
+                # the fallback cascade automatically. Error is still
+                # raised — we don't silently retry because the builder
+                # already committed to one CN filename; the user has
+                # to re-trigger the action.
+                try:
+                    _maybe_handle_cn_error(str(_dispatch_err), workflow)
+                except Exception:
+                    pass
+                raise
             images = result.outputs
             _tel_warnings = list(result.warnings or [])
             for w in result.warnings:
