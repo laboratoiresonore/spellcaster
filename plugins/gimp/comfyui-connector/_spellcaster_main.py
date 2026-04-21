@@ -11489,7 +11489,17 @@ def _auto_configure(dialog, mode="img2img"):
     # Determine architecture from the dialog's model/preset combo
     arch = "sdxl"  # fallback
     if hasattr(dialog, 'preset_combo'):
-        idx = dialog.preset_combo.get_active()
+        # Prefer the stable active-id (MODEL_PRESETS index), fall back
+        # to visual index. Matches the PresetDialog._preset_idx helper.
+        idx = -1
+        try:
+            aid = dialog.preset_combo.get_active_id()
+            if aid is not None:
+                idx = int(aid)
+        except (TypeError, ValueError):
+            idx = -1
+        if idx < 0:
+            idx = dialog.preset_combo.get_active()
         if 0 <= idx < len(MODEL_PRESETS):
             arch = MODEL_PRESETS[idx].get("arch", "sdxl")
     elif hasattr(dialog, '_model_combo_ref'):
@@ -11679,17 +11689,27 @@ class PresetDialog(Gtk.Dialog):
         # Model preset
         box.pack_start(Gtk.Label(label="Model Preset:", xalign=0), False, False, 0)
         self.preset_combo = Gtk.ComboBoxText()
-        # Incompatible archs are kept in the combo (index-stable so
-        # every ``self.preset_combo.get_active()`` caller keeps
-        # working) but flagged with a leading "\u229d" sigil. The
-        # ``changed``-signal gate below auto-reverts any selection
-        # whose arch is in ``_exclude_archs``, so they can't be
-        # committed. Users see the option exists but clearly can't
-        # pick it when 3D is enabled.
+        # Homogeneity with IC-Light (user ask, 2026-04-20): when the
+        # dialog is opened for a 3D-aware flow, don't append the
+        # incompatible entries at all — the previous sigil-marking
+        # approach mixed supported + unsupported rows in the combo and
+        # relied on click-then-revert, which users described as "the
+        # app let me pick this, then silently disabled 3D." IC Relight
+        # already filters its SD1.5-only combo; the 3D img2img /
+        # inpaint / outpaint dialogs now do the same (CN-compatible
+        # archs only).
+        #
+        # Index-stability caveat: the combo's VISUAL index no longer
+        # matches MODEL_PRESETS index when entries are skipped. Every
+        # ``self.preset_combo.get_active()`` caller inside PresetDialog
+        # has been switched to ``self._preset_idx()`` below, which uses
+        # ``get_active_id()`` (the stable str(i) ID we append). External
+        # callers using ``set_active(i)`` also go through
+        # ``set_active_id(str(i))``.
         for i, p in enumerate(MODEL_PRESETS):
-            label_txt = _model_label(p, mode)
             if p.get("arch", "") in self._exclude_archs:
-                label_txt = "\u229d " + label_txt + "  (3D \u2014 pick another)"
+                continue
+            label_txt = _model_label(p, mode)
             self.preset_combo.append(str(i), label_txt)
         # Default to favourite model from settings, or first compatible
         # preset. A favourite whose arch is in ``_exclude_archs`` is
@@ -11698,7 +11718,7 @@ class PresetDialog(Gtk.Dialog):
         fav_ok = (0 <= fav < len(MODEL_PRESETS)
                   and MODEL_PRESETS[fav].get("arch", "") not in self._exclude_archs)
         if fav_ok:
-            self.preset_combo.set_active(fav)
+            self.preset_combo.set_active_id(str(fav))
         else:
             # First compatible preset — falls back to 0 if nothing
             # matches (shouldn't happen: exclude_archs is a small set).
@@ -11707,9 +11727,11 @@ class PresetDialog(Gtk.Dialog):
                  if p.get("arch", "") not in self._exclude_archs),
                 0,
             )
-            self.preset_combo.set_active(first_ok)
+            self.preset_combo.set_active_id(str(first_ok))
+        if self.preset_combo.get_active() < 0:
+            self.preset_combo.set_active(0)
         # Remember the last valid pick so the gate can revert.
-        self._last_valid_preset_idx = self.preset_combo.get_active()
+        self._last_valid_preset_idx = self._preset_idx()
         self.preset_combo.connect("changed", self._on_preset_changed)
         self.preset_combo.set_tooltip_text("Select the AI Architecture. FLUX is state-of-the-art, SDXL balances speed/quality.")
         box.pack_start(self.preset_combo, False, False, 0)
@@ -12106,10 +12128,27 @@ class PresetDialog(Gtk.Dialog):
             self._check_style_preset_availability()
         _async_fetch(lambda: _fetch_loras(server), on_done, on_err)
 
+    def _preset_idx(self) -> int:
+        """Stable MODEL_PRESETS index for the current combo pick.
+
+        Uses ``get_active_id()`` (we append the MODEL_PRESETS index as
+        the stable item ID) rather than ``get_active()`` (the VISUAL
+        index, which no longer lines up with MODEL_PRESETS when
+        ``_exclude_archs`` skips entries). Returns -1 when nothing is
+        selected or the ID isn't an int.
+        """
+        try:
+            aid = self.preset_combo.get_active_id()
+            if aid is None:
+                return -1
+            return int(aid)
+        except (TypeError, ValueError):
+            return -1
+
     def _refresh_lora_combos(self):
         """Filter cached LoRAs for the currently selected model's architecture."""
-        idx = self.preset_combo.get_active()
-        arch = MODEL_PRESETS[idx]["arch"] if idx >= 0 else "sdxl"
+        idx = self._preset_idx()
+        arch = MODEL_PRESETS[idx]["arch"] if 0 <= idx < len(MODEL_PRESETS) else "sdxl"
         self._lora_names = _filter_loras_for_arch(self._all_lora_names, arch)
         for combo, _ms, _cs in self.lora_rows:
             combo.remove_all()
@@ -12129,7 +12168,7 @@ class PresetDialog(Gtk.Dialog):
         loaded model (LoRAs, ControlNets, scene presets). Centralising
         the lookup means the fallback rule lives in exactly one place.
         """
-        idx = self.preset_combo.get_active() if hasattr(self, 'preset_combo') else -1
+        idx = self._preset_idx() if hasattr(self, 'preset_combo') else -1
         if 0 <= idx < len(MODEL_PRESETS):
             return MODEL_PRESETS[idx].get("arch", "sdxl")
         return "sdxl"
@@ -12165,46 +12204,29 @@ class PresetDialog(Gtk.Dialog):
                 combo.set_active(0)
 
     def _on_preset_changed(self, combo):
-        idx = combo.get_active()
+        idx = self._preset_idx()
         if idx < 0:
             return
-        # Arch-gate: when the dialog was opened with ``exclude_archs``
-        # (3D-aware flows \u2014 img2img / inpaint / outpaint), reject
-        # any selection whose arch is in the excluded set. Revert to
-        # the last valid pick and flash the banner so the user knows
-        # why. Incompatible rows are marked with a "\u229d" prefix in
-        # their label at construction time, so the visual cue is
-        # already there before they click.
+        # Arch-gate revert path: with 3D dialogs now filtering
+        # incompatible archs OUT of the combo entirely (matches IC
+        # Relight's allowlist approach — 2026-04-20), this defensive
+        # revert only fires if a programmatic set_active_id manages to
+        # land on an excluded arch. Kept as a safety net.
         excluded = getattr(self, "_exclude_archs", frozenset())
         if excluded:
             arch = MODEL_PRESETS[idx].get("arch", "") if 0 <= idx < len(MODEL_PRESETS) else ""
             if arch in excluded:
                 last = getattr(self, "_last_valid_preset_idx", -1)
                 if 0 <= last < len(MODEL_PRESETS) and last != idx:
-                    # Temporarily detach so the revert doesn't recurse
-                    # into this same handler.
                     try:
                         combo.handler_block_by_func(self._on_preset_changed)
                     except Exception:
                         pass
-                    combo.set_active(last)
+                    combo.set_active_id(str(last))
                     try:
                         combo.handler_unblock_by_func(self._on_preset_changed)
                     except Exception:
                         pass
-                # Surface the reason. One-shot Gimp.message is
-                # noisy, but the banner is the only surface that
-                # survives the revert \u2014 without it the user just
-                # sees their pick bounce back with no explanation.
-                try:
-                    Gimp.message(
-                        f"{MODEL_PRESETS[idx].get('label', arch)} doesn't "
-                        f"support 3D normal maps (its architecture "
-                        f"disables ControlNet). Either pick a different "
-                        f"model or disable 3D normal map in the dialog "
-                        f"to use this one.")
-                except Exception:
-                    pass
                 return
         # Remember the last valid pick for future reverts.
         self._last_valid_preset_idx = idx
@@ -12379,7 +12401,7 @@ class PresetDialog(Gtk.Dialog):
 
     def _current_arch(self):
         """Return the architecture string for the currently selected preset."""
-        idx = self.preset_combo.get_active()
+        idx = self._preset_idx()
         if idx < 0:
             return "sdxl"
         return MODEL_PRESETS[idx]["arch"]
@@ -12428,7 +12450,7 @@ class PresetDialog(Gtk.Dialog):
 
     def _current_scene_arch(self):
         """Return the scene architecture group for the currently selected model."""
-        idx = self.preset_combo.get_active()
+        idx = self._preset_idx()
         if idx < 0:
             return "sdxl"
         p = MODEL_PRESETS[idx]
@@ -12504,12 +12526,12 @@ class PresetDialog(Gtk.Dialog):
 
         # Apply CFG boost (add to model's base CFG)
         if ref["cfg_boost"]:
-            midx = self.preset_combo.get_active()
+            midx = self._preset_idx()
             base_cfg = MODEL_PRESETS[midx]["cfg"] if midx >= 0 else 7.0
             self.cfg_spin.set_value(base_cfg + ref["cfg_boost"])
 
         # Auto-select matching LoRAs for current model architecture
-        midx = self.preset_combo.get_active()
+        midx = self._preset_idx()
         arch = MODEL_PRESETS[midx]["arch"] if midx >= 0 else "sdxl"
         rec_loras = ref["loras"].get(arch, [])
 
@@ -12653,7 +12675,7 @@ class PresetDialog(Gtk.Dialog):
         sp = IMG2IMG_STYLE_PRESETS[sidx]
 
         # Auto-select matching LoRAs for current model architecture
-        midx = self.preset_combo.get_active()
+        midx = self._preset_idx()
         arch = MODEL_PRESETS[midx]["arch"] if midx >= 0 else "sdxl"
         rec_loras = sp["loras"].get(arch, [])
 
@@ -12690,7 +12712,7 @@ class PresetDialog(Gtk.Dialog):
         """
         if not self._style_combo:
             return
-        midx = self.preset_combo.get_active()
+        midx = self._preset_idx()
         arch = MODEL_PRESETS[midx]["arch"] if midx >= 0 else "sdxl"
         active = self._style_combo.get_active()
         self._style_combo.remove_all()
@@ -12724,7 +12746,7 @@ class PresetDialog(Gtk.Dialog):
         if idx < 0 or idx >= len(self._user_presets):
             return
         p = self._user_presets[idx]
-        self.preset_combo.set_active(p.get("model_preset_idx", 0))
+        self.preset_combo.set_active_id(str(p.get("model_preset_idx", 0)))
         self.prompt_tv.get_buffer().set_text(p.get("prompt", ""))
         self.neg_tv.get_buffer().set_text(p.get("negative", ""))
         self.steps_spin.set_value(p.get("steps", 20))
@@ -12781,7 +12803,7 @@ class PresetDialog(Gtk.Dialog):
                 loras.append({"name": lora_id,
                               "strength_model": ms.get_value(),
                               "strength_clip": cs.get_value()})
-        midx = self.preset_combo.get_active()
+        midx = self._preset_idx()
         data = {
             "name": name,
             "model_preset_idx": midx if midx >= 0 else 0,
@@ -12832,7 +12854,7 @@ class PresetDialog(Gtk.Dialog):
     def _collect_session(self):
         """Collect all widget values for session recall."""
         data = {
-            "model_preset_idx": self.preset_combo.get_active(),
+            "model_preset_idx": self._preset_idx(),
             "prompt": self._buf_text(self.prompt_tv),
             "negative": self._buf_text(self.neg_tv),
             "steps": int(self.steps_spin.get_value()),
@@ -12877,7 +12899,11 @@ class PresetDialog(Gtk.Dialog):
         if "model_preset_idx" in p:
             idx = p["model_preset_idx"]
             if 0 <= idx < len(MODEL_PRESETS):
-                self.preset_combo.set_active(idx)
+                # set_active_id honours excluded archs — trying to
+                # restore a session that saved an incompatible arch
+                # won't match any appended ID and the combo stays on
+                # the first valid pick (safer than silently reverting).
+                self.preset_combo.set_active_id(str(idx))
         # Apply prompt/negative AFTER preset (since preset change may reset them)
         if "prompt" in p:
             self.prompt_tv.get_buffer().set_text(p["prompt"])
@@ -12946,7 +12972,7 @@ class PresetDialog(Gtk.Dialog):
         Returns a dict with: server, preset (dict copy with overrides applied),
         prompt, negative, seed (randomized if -1), loras, custom_workflow.
         """
-        idx = self.preset_combo.get_active()
+        idx = self._preset_idx()
         preset = dict(MODEL_PRESETS[idx] if idx >= 0 else MODEL_PRESETS[0])
         seed = int(self.seed_spin.get_value())
         if seed < 0:
@@ -13030,7 +13056,7 @@ class PresetDialog(Gtk.Dialog):
             if style_preset["negative"]:
                 negative_text = (negative_text + ", " + style_preset["negative"]) if negative_text else style_preset["negative"]
             # Merge style LoRAs with manually selected LoRAs
-            midx = self.preset_combo.get_active()
+            midx = self._preset_idx()
             arch = MODEL_PRESETS[midx]["arch"] if midx >= 0 else "sdxl"
             style_loras = style_preset["loras"].get(arch, [])
             existing_names = {l["name"] for l in loras}
@@ -27680,11 +27706,39 @@ class Spellcaster(Gimp.PlugIn):
             # only (direction / colour / intensity / mood), NOT the
             # subject which stays unchanged. IC-Light ships on SD 1.5.
             prompt, _ = _auto_enhance(prompt, "sd15", method="iclight")
+            # Resolve the SD1.5 normal-map CN — preferred
+            # control_v11p_sd15_normalbae.pth may not be installed;
+            # walk the sd15 fallback cascade (depth/lineart) to find
+            # anything usable. When nothing is installed, drop the
+            # normal-map CN entirely so IC-Light still runs (falls back
+            # to text-prompt-only lighting guidance).
+            resolved_iclight_cn = "control_v11p_sd15_normalbae.pth"
+            if normal_uname:
+                try:
+                    _res = _resolve_normal_map_cn(srv, "sd15")
+                    status = (_res or {}).get("status")
+                    if status in ("ok", "fallback") and _res.get("resolved"):
+                        resolved_iclight_cn = _res["resolved"]
+                    elif status == "missing":
+                        try:
+                            Gimp.message(
+                                "IC-Light: no SD1.5 normal-map ControlNet "
+                                "installed. Proceeding WITHOUT 3D surface "
+                                "guidance — install "
+                                "control_v11p_sd15_normalbae.pth (or a "
+                                "depth/lineart SD1.5 CN) for full 3D "
+                                "relight.")
+                        except Exception:
+                            pass
+                        normal_uname = None
+                except Exception:
+                    pass
             for run_i in range(runs):
                 seed = base_seed if runs == 1 else random.randint(0, 2**32 - 1)
                 wf = build_iclight(uname, ckpt_name, prompt, "", seed,
                                      multiplier, steps, loras=loras,
-                                     normal_map_filename=normal_uname)
+                                     normal_map_filename=normal_uname,
+                                     normal_map_cn_name=resolved_iclight_cn)
                 label = f"IC-Light run {run_i+1}/{runs}" if runs > 1 else "IC-Light"
                 _wf = wf
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",

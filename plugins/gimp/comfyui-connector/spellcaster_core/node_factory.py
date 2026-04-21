@@ -1251,11 +1251,20 @@ class NodeFactory:
     def controlnet_apply_advanced(self, positive_ref, negative_ref,
                                    control_net_ref, image_ref, strength,
                                    start_percent=0.0, end_percent=1.0,
-                                   node_id=None):
+                                   vae_ref=None, node_id=None):
         """ControlNetApplyAdvanced — apply ControlNet to conditioning.
+
         Outputs: [0]=CONDITIONING (positive), [1]=CONDITIONING (negative)
+
+        ``vae_ref`` is REQUIRED for Flux ControlNets (ControlNetFlux) —
+        without it ComfyUI raises: "This Controlnet needs a VAE but
+        none was provided, please use a ControlNetApply node with a
+        VAE input and connect it." For SDXL / SD1.5 / Union CNs the
+        VAE input is ignored, so passing it is always safe — callers
+        that don't know which CN family they're feeding should supply
+        the VAE unconditionally.
         """
-        return self._add("ControlNetApplyAdvanced", {
+        inputs = {
             "positive": positive_ref,
             "negative": negative_ref,
             "control_net": control_net_ref,
@@ -1263,7 +1272,10 @@ class NodeFactory:
             "strength": strength,
             "start_percent": start_percent,
             "end_percent": end_percent,
-        }, node_id)
+        }
+        if vae_ref is not None:
+            inputs["vae"] = vae_ref
+        return self._add("ControlNetApplyAdvanced", inputs, node_id)
 
     def preprocessor(self, class_type, image_ref, node_id=None, **kwargs):
         """Generic preprocessor (LineArtPreprocessor, CannyEdgePreprocessor, etc).

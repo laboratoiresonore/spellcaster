@@ -463,7 +463,7 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
         # Inject first ControlNet: preprocesses img_ref and creates CN-augmented conditioning
         cn_pos, cn_neg = inject_controlnet(
             nf, controlnet, guide_modes, arch_key, img_ref,
-            [pos_id, 0], [neg_id, 0], cn_base_id=20,
+            [pos_id, 0], [neg_id, 0], cn_base_id=20, vae_ref=vae_ref,
         )
         # Patch the KSampler node (node "6") to use CN-augmented conditioning instead of raw CLIP
         nf.patch_input("6", "positive", cn_pos)
@@ -478,7 +478,7 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
         prev_neg = [str(22), 1] if nf.has_node("22") else [neg_id, 0]
         cn2_pos, cn2_neg = inject_controlnet(
             nf, controlnet_2, guide_modes, arch_key, [img_id, 0],
-            prev_pos, prev_neg, cn_base_id=30,
+            prev_pos, prev_neg, cn_base_id=30, vae_ref=vae_ref,
         )
         # Update KSampler to use CN2 output (which already includes CN1 if both present)
         nf.patch_input("6", "positive", cn2_pos)
@@ -2232,7 +2232,7 @@ def build_detail_hallucinate(image_filename, upscale_model, preset,
     if guide_modes and controlnet and controlnet.get("mode", "Off") != "Off":
         cn_pos, cn_neg = inject_controlnet(
             nf, controlnet, guide_modes, arch_key, img_ref,
-            [pos_id, 0], [neg_id, 0], cn_base_id=20,
+            [pos_id, 0], [neg_id, 0], cn_base_id=20, vae_ref=vae_ref,
         )
         nf.patch_input("8", "positive", cn_pos)
         nf.patch_input("8", "negative", cn_neg)
@@ -2242,7 +2242,7 @@ def build_detail_hallucinate(image_filename, upscale_model, preset,
         prev_neg = [str(22), 1] if nf.has_node("22") else [neg_id, 0]
         cn2_pos, cn2_neg = inject_controlnet(
             nf, controlnet_2, guide_modes, arch_key, img_ref,
-            prev_pos, prev_neg, cn_base_id=30,
+            prev_pos, prev_neg, cn_base_id=30, vae_ref=vae_ref,
         )
         nf.patch_input("8", "positive", cn2_pos)
         nf.patch_input("8", "negative", cn2_neg)
@@ -2367,7 +2367,7 @@ def build_colorize(image_filename, preset, prompt_text, negative_text, seed,
     if guide_modes and controlnet_2 and controlnet_2.get("mode", "Off") != "Off":
         cn2_pos, cn2_neg = inject_controlnet(
             nf, controlnet_2, guide_modes, arch_key, img_ref,
-            [cn_apply_id, 0], [cn_apply_id, 1], cn_base_id=20,
+            [cn_apply_id, 0], [cn_apply_id, 1], cn_base_id=20, vae_ref=vae_ref,
         )
         nf.patch_input("9", "positive", cn2_pos)
         nf.patch_input("9", "negative", cn2_neg)
@@ -3068,19 +3068,44 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
             arch_key=arch_key, quality=quality, ays_node_base=680,
         )
 
-    # Decode → restore to original size → save
+    # Decode → restore to original size → composite with original → save
+    #
+    # The composite step is CRITICAL for 3D Normal Map + strong-CN
+    # runs: without it, outside-mask pixels are the VAE-reconstructed
+    # original (not the pristine original), so any CN guidance that
+    # leaks through the unet during sampling shows up as tinted /
+    # blended regions OUTSIDE the selection. User-visible symptom:
+    # "the 3d map is blending outside the selection with the final
+    # render instead of being a guide." Compositing the decoded output
+    # with the original input using the full-res mask keeps unmasked
+    # pixels byte-identical to the source.
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="9")
     restored_id = nf.image_scale(
         [dec_id, 0], [size_id, 0], [size_id, 1],
         upscale_method="lanczos", crop="disabled", node_id="95",
     )
-    nf.save_image([restored_id, 0], "gimp_inpaint", node_id="10")
+    # Pick a full-resolution MASK for the composite. When the caller
+    # supplied mask_filename, the image_to_mask at node 51 gave us a
+    # full-res MASK. In the SAM3 branch, only a working-res mask
+    # exists; skip the composite there (SAM3 inpaint is less sensitive
+    # to the bleed since SAM3 masks are tight by design).
+    final_img_ref = [restored_id, 0]
+    if mask_filename and nf.has_node("51"):
+        composite_id = nf._add("ImageCompositeMasked", {
+            "destination": img_ref,
+            "source": [restored_id, 0],
+            "mask": ["51", 0],
+            "x": 0, "y": 0,
+            "resize_source": False,
+        }, node_id="96")
+        final_img_ref = [composite_id, 0]
+    nf.save_image(final_img_ref, "gimp_inpaint", node_id="10")
 
     # ControlNet injection (optional)
     if guide_modes and controlnet and controlnet.get("mode", "Off") != "Off":
         cn_pos, cn_neg = inject_controlnet(
             nf, controlnet, guide_modes, arch_key, img_ref,
-            [pos_id, 0], [neg_id, 0], cn_base_id=20,
+            [pos_id, 0], [neg_id, 0], cn_base_id=20, vae_ref=vae_ref,
         )
         nf.patch_input("8", "positive", cn_pos)
         nf.patch_input("8", "negative", cn_neg)
@@ -3090,7 +3115,7 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
         prev_neg = [str(22), 1] if nf.has_node("22") else [neg_id, 0]
         cn2_pos, cn2_neg = inject_controlnet(
             nf, controlnet_2, guide_modes, arch_key, img_ref,
-            prev_pos, prev_neg, cn_base_id=30,
+            prev_pos, prev_neg, cn_base_id=30, vae_ref=vae_ref,
         )
         nf.patch_input("8", "positive", cn2_pos)
         nf.patch_input("8", "negative", cn2_neg)
@@ -3263,7 +3288,7 @@ def build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
             nf, controlnet, guide_modes, arch_key, padded_ref,
             [pos_id, 0] if isinstance(pos_id, str) else pos_id,
             [neg_id, 0] if isinstance(neg_id, str) else neg_id,
-            cn_base_id=40,
+            cn_base_id=40, vae_ref=vae_ref,
         )
         nf.patch_input("8", "positive", cn_pos)
         nf.patch_input("8", "negative", cn_neg)
@@ -4809,7 +4834,7 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
     if guide_modes and controlnet and controlnet.get("mode", "Off") != "Off":
         cn_pos, cn_neg = inject_controlnet(
             nf, controlnet, guide_modes, arch_key, target_ref,
-            [pos_id, 0], [neg_id, 0], cn_base_id=20,
+            [pos_id, 0], [neg_id, 0], cn_base_id=20, vae_ref=vae_ref,
         )
         nf.patch_input("9", "positive", cn_pos)
         nf.patch_input("9", "negative", cn_neg)
@@ -4819,7 +4844,7 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
         prev_neg = ["22", 1] if nf.has_node("22") else [neg_id, 0]
         cn2_pos, cn2_neg = inject_controlnet(
             nf, controlnet_2, guide_modes, arch_key, target_ref,
-            prev_pos, prev_neg, cn_base_id=30,
+            prev_pos, prev_neg, cn_base_id=30, vae_ref=vae_ref,
         )
         nf.patch_input("9", "positive", cn2_pos)
         nf.patch_input("9", "negative", cn2_neg)
@@ -4915,7 +4940,7 @@ def build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_t
     if guide_modes and controlnet and controlnet.get("mode", "Off") != "Off":
         cn_pos, cn_neg = inject_controlnet(
             nf, controlnet, guide_modes, arch_key, img_ref,
-            [pos_id, 0], [neg_id, 0], cn_base_id=20,
+            [pos_id, 0], [neg_id, 0], cn_base_id=20, vae_ref=vae_ref,
         )
         nf.patch_input("8", "positive", cn_pos)
         nf.patch_input("8", "negative", cn_neg)
@@ -4925,7 +4950,7 @@ def build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_t
         prev_neg = ["22", 1] if nf.has_node("22") else [neg_id, 0]
         cn2_pos, cn2_neg = inject_controlnet(
             nf, controlnet_2, guide_modes, arch_key, img_ref,
-            prev_pos, prev_neg, cn_base_id=30,
+            prev_pos, prev_neg, cn_base_id=30, vae_ref=vae_ref,
         )
         nf.patch_input("8", "positive", cn2_pos)
         nf.patch_input("8", "negative", cn2_neg)
