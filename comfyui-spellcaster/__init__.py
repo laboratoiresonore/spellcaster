@@ -36,6 +36,17 @@ from . import presence as _presence
 # TTL-based eviction; 256 MB/blob, 2 GB aggregate.
 from . import blob_bus as _blob_bus
 
+# Privacy-cleanup HTTP route — real os.remove() against ComfyUI's
+# input / output / temp directories (NOT the old "overwrite with a
+# 1x1 PNG via /upload/image" path, which silently failed for
+# outputs because /upload/image ALWAYS writes to input/). Callers
+# POST to /spellcaster/privacy/delete with a filename list + folder
+# hint; the module whitelists Spellcaster-owned prefixes + refuses
+# path traversal before any unlink fires. See privacy_cleanup.py
+# for the safety guarantees.
+from . import privacy_cleanup as _privacy_cleanup
+_privacy_cleanup.is_available()
+
 
 NODE_CLASS_MAPPINGS = {
     "SpellcasterLoader": SpellcasterLoader,
