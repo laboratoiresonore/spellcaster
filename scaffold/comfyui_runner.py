@@ -255,31 +255,148 @@ class ComfyUIRunner:
         return result
 
     def run_raw(self, workflow: dict,
-                input_filenames: Optional[List[str]] = None) -> dict:
+                input_filenames: Optional[List[str]] = None,
+                *, telemetry_handler: str = "scaffold_runner",
+                telemetry_build_fn: str = "") -> dict:
         """Submit an already-built ComfyUI workflow and wait for results.
 
         Same privacy cleanup behaviour as run().
+
+        Telemetry: every submission emits a ``dispatch_log.jsonl`` row
+        via ``spellcaster_core.speedcoach.append_dispatch_record`` so
+        SpeedCoach sees scaffold / video-bridge dispatches alongside
+        GIMP-side and Guild-side ones. Video outputs also produce
+        per-filename ``videoshot_log.jsonl`` rows so the per-frame
+        aggregator has data to work with.
         """
-        prompt_id = self._queue_prompt(workflow)
-        if not prompt_id:
-            return {"status": "error", "message": "Failed to queue prompt"}
+        import time as _time
+        _t0 = _time.time()
+        _tel_status = "error"
+        _tel_error = ""
+        _tel_result: "dict | None" = None
+        try:
+            prompt_id = self._queue_prompt(workflow)
+            if not prompt_id:
+                _tel_error = "Failed to queue prompt"
+                return {"status": "error", "message": _tel_error}
 
-        result = self._poll_result(prompt_id)
+            result = self._poll_result(prompt_id)
 
-        if result.get("status") == "ok":
+            if result.get("status") == "ok":
+                _tel_status = "ok"
+                try:
+                    cleanup = self.cleanup_after_run(
+                        result.get("outputs", []),
+                        input_filenames=input_filenames,
+                    )
+                    result["cleanup"] = cleanup
+                except Exception:
+                    result["cleanup"] = {
+                        "error": "cleanup failed",
+                        "privacy_message":
+                            "Privacy cleanup failed — your images "
+                            "may still be on the server."}
+            else:
+                _tel_error = str(result.get("message") or "")[:400]
+            _tel_result = result
+            return result
+        except Exception as _exc:
+            _tel_error = f"{type(_exc).__name__}: {_exc}"
+            raise
+        finally:
             try:
-                cleanup = self.cleanup_after_run(
-                    result.get("outputs", []),
-                    input_filenames=input_filenames,
+                self._emit_run_telemetry(
+                    workflow, _tel_status, _t0,
+                    result=_tel_result,
+                    handler=telemetry_handler,
+                    build_fn=telemetry_build_fn,
+                    error=_tel_error,
                 )
-                result["cleanup"] = cleanup
             except Exception:
-                result["cleanup"] = {"error": "cleanup failed",
-                                     "privacy_message":
-                                     "Privacy cleanup failed — your images "
-                                     "may still be on the server."}
+                # Telemetry failures must never break a successful run.
+                pass
 
-        return result
+    def _emit_run_telemetry(self, workflow, status, t_start, *,
+                             result=None, handler="", build_fn="",
+                             error=""):
+        """Fire a dispatch_log row + per-video-output videoshot rows.
+
+        Runs off the scaffold process so it hits the Guild's state_dir
+        when they share a process (common case: Guild + scaffold in
+        the same Python process). When they don't share a process,
+        ``speedcoach.append_dispatch_record`` falls back to whatever
+        state_dir was configured via ``set_state_dir``.
+        """
+        import time as _time
+        import os as _os
+        import json as _json
+
+        elapsed = _time.time() - t_start
+        # Best-effort arch detection.
+        arch = "unknown"
+        try:
+            for node in (workflow or {}).values():
+                if not isinstance(node, dict):
+                    continue
+                ct = node.get("class_type", "")
+                if ct.startswith("Flux2Klein"):
+                    arch = "flux2klein"
+                    break
+        except Exception:
+            pass
+        outputs = (result or {}).get("outputs") or []
+        n_outputs = len(outputs)
+        record = {
+            "ts": _time.time(),
+            "origin": "scaffold",
+            "handler": handler,
+            "build_fn": build_fn,
+            "arch": arch,
+            "elapsed": elapsed,
+            "failed": status != "ok",
+            "n_outputs": n_outputs,
+        }
+        if error:
+            record["error"] = str(error)[:400]
+        try:
+            from spellcaster_core import speedcoach as _sc
+            _sc.append_dispatch_record(record)
+        except Exception:
+            pass
+        # Per-output video rows.
+        try:
+            VIDEO_EXTS = (".mp4", ".gif", ".webm", ".mkv", ".mov", ".avi")
+            for o in outputs:
+                fn = (o.get("filename") if isinstance(o, dict)
+                      else str(o))
+                if not fn:
+                    continue
+                if not any(str(fn).lower().endswith(ext)
+                            for ext in VIDEO_EXTS):
+                    continue
+                vrec = {
+                    "ts": _time.time(),
+                    "origin": "scaffold",
+                    "handler": handler,
+                    "build_fn": build_fn,
+                    "arch": arch,
+                    "filename": fn,
+                    "elapsed": elapsed,
+                    "failed": status != "ok",
+                }
+                try:
+                    from spellcaster_core import speedcoach as _sc
+                    state_dir = getattr(_sc, "_STATE_DIR", None)
+                    if state_dir:
+                        path = _os.path.join(state_dir,
+                                              "videoshot_log.jsonl")
+                        with open(path, "a", encoding="utf-8") as f:
+                            f.write(_json.dumps(vrec, default=str)
+                                    + "\n")
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Download result images
