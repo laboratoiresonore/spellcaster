@@ -2,10 +2,20 @@
 
 Everything the [README](README.md) intentionally left out. Architecture, subsystems, every tool enumerated, cross-app flows, all 9 model families, the scaffold state machines, the antenna, the prompt enhancement chain. If you read ingredient lists on cereal boxes, this is for you.
 
+> ### 🤖 Working on this codebase with an LLM?
+>
+> An ultra-dense, LLM-optimised orientation file lives at **[ForYourLLMwithLove.md](ForYourLLMwithLove.md)** ([raw download](https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main/ForYourLLMwithLove.md)). Feed it to your model at session start — 24 KB / ~7 K tokens covering the 5-copy sync rule, every `build_*` function, the 3-layer ControlNet resolution system, the GIMP-subprocess quirks, every NSFW / personalisation injection point with file:line refs, the dispatch pipeline, and 10 invariants future contributors must not break. It's deliberately terse — not meant for humans, but makes an LLM productive in one pass.
+>
+> Humans get CLAUDE.md (unpublished by design, kept local) for long-form project notes, and this file (DEEP_DIVE.md) for the guided tour below.
+
 ---
 
 ## Contents
 
+- [System Architecture](#system-architecture) 🆕
+- [Dispatch Pipeline](#dispatch-pipeline) 🆕
+- [ControlNet Resolution — 3-Layer System](#controlnet-resolution--3-layer-system) 🆕
+- [Cross-Repo Sync Topology](#cross-repo-sync-topology) 🆕
 - [All 69 Tools](#all-69-tools)
 - [Under the Hood](#under-the-hood)
 - [Calibration Wizard](#calibration-wizard)
@@ -30,6 +40,262 @@ Everything the [README](README.md) intentionally left out. Architecture, subsyst
 - [🎬 Resolve Bridge](#-resolve-bridge--timeline-aware-shot-generation)
 - [🖼️ Everything else worth mentioning](#%EF%B8%8F-everything-else-worth-mentioning)
 - [For developers](#for-developers)
+- [Extending the App — NSFW + personalisation](#extending-the-app--nsfw--personalisation) 🆕
+
+---
+
+## System Architecture
+
+Spellcaster is **middleware** — it doesn't generate images itself. Every surface (GIMP, Darktable, Wizard Guild, SillyTavern, DaVinci Resolve) dispatches through the canonical `spellcaster_core` library to a ComfyUI instance. One backend, many front doors.
+
+```mermaid
+graph TB
+    subgraph Apps["User-Facing Apps"]
+        GIMP[🖌 GIMP 3<br/>69 tools<br/>~34K Python lines]
+        DT[📸 Darktable<br/>Lua plugin]
+        GUILD[🏰 Wizard Guild<br/>Chat UI + API]
+        ST[💬 SillyTavern<br/>Extension]
+        RESOLVE[🎬 DaVinci Resolve<br/>Timeline bridge]
+        BLENDER[🎨 Blender / Krita<br/>Photoshop / OBS]
+    end
+
+    subgraph Backbone["spellcaster_core — single source of truth"]
+        WF[workflows.py<br/>70+ build_* fns]
+        NF[node_factory.py<br/>typed ComfyUI DSL]
+        COMP[composites.py<br/>inject_controlnet<br/>load_model_stack<br/>inject_lora_chain]
+        ARCH[architectures.py<br/>22 arch registry<br/>supported_methods]
+        DISP[dispatch.py<br/>preflight → optimize → submit]
+    end
+
+    subgraph Pack["ComfyUI-Spellcaster node pack"]
+        NODES[4 custom nodes<br/>SpellcasterLoader etc.]
+        PRESENCE[/spellcaster/presence/*]
+        BLOB[/spellcaster/blob/*]
+        PRIV[/spellcaster/privacy/delete]
+        REPAIR[/spellcaster/models/repair]
+    end
+
+    subgraph Compute["ComfyUI Server"]
+        COMFY[ComfyUI<br/>PromptServer<br/>models/checkpoints/<br/>models/controlnet/<br/>models/loras/]
+    end
+
+    GIMP -->|python import| Backbone
+    DT -->|POST /api/run_builder| GUILD
+    ST -->|POST /api/run_builder| GUILD
+    RESOLVE -->|POST /api/video/shots| GUILD
+    BLENDER -->|POST /api/run_builder| GUILD
+    GUILD -->|python import| Backbone
+
+    Backbone -->|POST /prompt<br/>GET /view| COMFY
+    GIMP -.->|HTTP routes| Pack
+    DT -.->|HTTP routes| Pack
+    GUILD -.->|HTTP routes| Pack
+
+    Pack -.->|registered on| COMFY
+
+    style Backbone fill:#2a1a4a,color:#fff
+    style Pack fill:#1a3a4a,color:#fff
+    style COMFY fill:#3a2a1a,color:#fff
+```
+
+**The rule:** no parallel implementations. If the GIMP plugin and Wizard Guild both need a workflow, the builder lives in `spellcaster_core/workflows.py` and both import it. Lua / JS plugins that can't import Python call `POST /api/run_builder` on the Guild, which dispatches the exact same canonical builder.
+
+**Peer discovery works without the Guild.** The ComfyUI pack's `/spellcaster/presence/*` routes let every plugin see every other plugin through the compute server — so if the Guild is offline, GIMP and Darktable still find each other via their shared ComfyUI. Blob bus (`/spellcaster/blob/*`) is a second Guild-less transport for moving bytes between peers on the LAN.
+
+### Cross-Interface Event Flow
+
+When a generation completes anywhere, an `<origin>.asset.created` event fans out to every subscriber:
+
+```mermaid
+sequenceDiagram
+    participant GIMP as 🖌 GIMP
+    participant Core as spellcaster_core
+    participant Comfy as ComfyUI
+    participant Bus as EventBus
+    participant Gallery as AssetGallery
+    participant Resolve as 🎬 Resolve
+    participant Sidebar as 🏰 Guild Sidebar
+
+    GIMP->>Core: build_img2img(preset, prompt, ...)
+    Core->>Comfy: POST /prompt (wf JSON)
+    Comfy-->>Core: prompt_id
+    Core->>Comfy: poll /history/{prompt_id}
+    Comfy-->>Core: outputs = [(filename, sf, ft), ...]
+    Core->>Comfy: GET /view?filename=...
+    Comfy-->>Core: PNG bytes
+
+    Note over Core: _resolve_cn_paths_in_workflow<br/>pre-rewrites CN paths
+
+    Core->>Gallery: put(bytes, origin="gimp", ...)
+    Gallery-->>Core: hash = "abc123..."
+    Core->>Bus: publish("gimp.asset.created", {hash, ...})
+
+    Bus->>Resolve: event received
+    Resolve->>Gallery: GET /api/assets/abc123
+    Gallery-->>Resolve: PNG bytes
+    Resolve->>Resolve: drop into Media Pool at playhead
+
+    Bus->>Sidebar: event received
+    Sidebar->>Sidebar: prepend thumbnail to Recent-across-apps strip
+```
+
+Same canonical hash, single storage path (`tavern/creations/gallery/`), every UI sees the asset in under 50 ms. The compat shim `/api/cached_asset/<name>` still resolves legacy flat-cache URLs but new writers only emit `/api/assets/<hash>`.
+
+---
+
+## Dispatch Pipeline
+
+Every ComfyUI submission from the GIMP plugin flows through `_run_comfyui_workflow` ([_spellcaster_main.py](plugins/gimp/comfyui-connector/_spellcaster_main.py)). The pipeline has 9 steps, all defensive:
+
+```mermaid
+flowchart TD
+    START[GIMP handler]
+    START --> BUILD[build_* workflow<br/>spellcaster_core/workflows.py]
+    BUILD --> Q[_wait_for_comfy_queue_empty<br/>don't stack prompts]
+    Q --> LOCK[_flush_pending_uploads<br/>with _workflow_lock]
+    LOCK --> CN[_resolve_cn_paths_in_workflow<br/>rewrite ControlNetLoader targets<br/>to what's actually installed]
+    CN --> DISP[dispatch_workflow<br/>spellcaster_core/dispatch.py]
+
+    DISP --> PREF[preflight_workflow<br/>validate nodes + files]
+    PREF --> OPT[optimize_workflow<br/>VRAM cap + auto-tune]
+    OPT --> FREE[POST /free<br/>evict cached models if heavy]
+    FREE --> SUBMIT[POST /prompt]
+    SUBMIT --> POLL[poll /history/&#123;prompt_id&#125;]
+    POLL --> OUTS[collect outputs<br/>images + gifs + videos]
+
+    OUTS --> CNERR{CN load error?<br/>incomplete metadata<br/>controlnet file invalid}
+    CNERR -->|yes| BLACK[_maybe_handle_cn_error<br/>extract loader filename<br/>add to _CN_SESSION_BLACKLIST<br/>raise with actionable msg]
+    CNERR -->|no| PRE
+
+    PRE[_precache_results<br/>download ALL outputs<br/>to _download_cache<br/>BEFORE privacy cleanup]
+    PRE --> REPAT[_repatriate_outputs<br/>copy to cfg.output_dir<br/>cleanup server temps]
+
+    REPAT --> CLEAN{output_cleanup<br/>in move/delete?}
+    CLEAN -->|yes| PRIVROUTE[POST /spellcaster/privacy/delete<br/>real os.remove<br/>inputs + outputs]
+    CLEAN -->|no| TEL
+
+    PRIVROUTE --> TEL[_record_dispatch_telemetry<br/>logs/dispatch_log.jsonl<br/>SpeedCoach ingest]
+    TEL --> RETURN[return outputs]
+
+    RETURN --> IMPORT[caller loops<br/>_apply_mask_mode<br/>with empty-bytes guard]
+    IMPORT --> END[layer inserted<br/>or new image opened]
+
+    style CN fill:#4a3a1a,color:#fff
+    style CNERR fill:#4a1a1a,color:#fff
+    style PRIVROUTE fill:#1a4a3a,color:#fff
+```
+
+**Why step 3 (CN resolver) matters:** real ComfyUI installs put CN files under HF folder paths (`SDXL/controlnet-union-sdxl-1.0/diffusion_pytorch_model.safetensors`) or versioned subdirs (`1.5/control_v11p_sd15_normalbae_fp16.safetensors`), but the hardcoded `CONTROLNET_GUIDE_MODES` table has the flat-form name. Without the resolver, dispatch fails on every workflow using a CN that's "installed but not at the canonical path."
+
+**Why `_precache_results` runs BEFORE cleanup:** the cleanup route does real `os.remove`. If we cleaned first we'd be downloading from an empty server.
+
+---
+
+## ControlNet Resolution — 3-Layer System
+
+CN resolution is defensive at three layers so a CN on any supported filesystem path Just Works:
+
+```mermaid
+flowchart LR
+    subgraph L1["Layer 1 — Hardcoded"]
+        GM[CONTROLNET_GUIDE_MODES<br/>_spellcaster_main.py:4188<br/>flat-form path per mode × arch<br/>drives UI combo]
+    end
+
+    subgraph L2["Layer 2 — Cascade (normal-map only)"]
+        RES[_resolve_normal_map_cn<br/>walks _NORMAL_MAP_FALLBACK_CHAIN<br/>Union → Depth → Canny → lineart<br/>includes flat + HF folder paths]
+        OVR[stash controlnet&#91;cn_model_override&#93;]
+        INJ[composites.inject_controlnet<br/>reads cn_model_override FIRST<br/>fallback to guide&#91;cn_models&#93;&#91;arch&#93;]
+    end
+
+    subgraph L3["Layer 3 — Universal (pre-dispatch)"]
+        RCN[_resolve_cn_paths_in_workflow<br/>walks every ControlNetLoader node<br/>rewrites control_net_name<br/>exact → basename → stem match]
+    end
+
+    subgraph Err["Error Recovery"]
+        ERR[_maybe_handle_cn_error<br/>scans dispatch errors for<br/>incomplete metadata<br/>controlnet file invalid]
+        BL[_CN_SESSION_BLACKLIST<br/>in-memory set]
+        REP[_offer_cn_repair<br/>Gtk dialog on next /3D entry<br/>POST /spellcaster/models/repair]
+    end
+
+    GM --> L2
+    GM --> L3
+    L2 --> L3
+    L3 --> DISPATCH[→ ComfyUI /prompt]
+    DISPATCH --> ERR
+    ERR --> BL
+    ERR --> REP
+    BL -.->|skipped in| L2
+    BL -.->|skipped in| L3
+    REP -->|success clears| BL
+
+    style L1 fill:#2a2a1a,color:#fff
+    style L2 fill:#1a2a3a,color:#fff
+    style L3 fill:#1a3a2a,color:#fff
+    style Err fill:#3a1a1a,color:#fff
+```
+
+**Adding a new CN:** extend (1) `CONTROLNET_GUIDE_MODES` in the plugin, (2) `_NORMAL_MAP_FALLBACK_CHAIN` if normal-map-capable, (3) `CN_URL_MAP` in both `comfyui-spellcaster/model_repair.py` AND `installer/install.py::step_check_cn_coverage` (they mirror on purpose — single edit per file per release).
+
+**Auto-repair on corrupt files:** users hitting `safetensors_rust.SafetensorError: incomplete metadata, file not fully covered` get a "Repair on server" dialog next time they open a /3D tool. The pack's repair route deletes + streams from the curated Hugging Face URL, atomic-renames in, and the session blacklist clears so the fresh file is picked.
+
+---
+
+## Cross-Repo Sync Topology
+
+`spellcaster_core/*.py` is mirrored across **5 locations**. Getting this wrong means the auto-updater overwrites your changes on next GIMP launch.
+
+```mermaid
+flowchart TD
+    CANON[comfyui-spellcaster/spellcaster_core/<br/>in spellcaster main repo<br/><b>★ CANONICAL ★</b><br/>auto-updater reads here]
+
+    CANON -->|cp| GIMP_DEV[plugins/gimp/comfyui-connector/<br/>spellcaster_core/<br/>dev copy]
+
+    CANON -->|cp + git push| NODE_PUB[../ComfyUI-Spellcaster/<br/>spellcaster_core/<br/>public node repo]
+
+    CANON -->|cp + git push| NODE_PRIV[../ComfyUI-Spellcaster-NSFW/<br/>spellcaster_core/<br/>PRIVATE node repo]
+
+    CANON -->|cp| GIMP_INST[%APPDATA%/GIMP/3.2/<br/>plug-ins/comfyui-connector/<br/>spellcaster_core/<br/>installed plugin]
+
+    CANON -->|nsfw/build_nsfw.py<br/>--patch-only --push| NSFW_REPO[spellcaster_NSFW<br/>PRIVATE main repo<br/>staging patched + pushed]
+
+    NODE_PUB -.->|published on| COMFY_MGR[ComfyUI Manager<br/>end-users install from here]
+    NODE_PRIV -.->|installer pulls| NSFW_USERS[NSFW variant users]
+
+    style CANON fill:#4a1a4a,color:#fff
+    style NSFW_REPO fill:#4a1a1a,color:#fff
+    style NODE_PRIV fill:#4a1a1a,color:#fff
+```
+
+**After editing a `spellcaster_core` file:**
+
+```bash
+# 1. Edit canonical:
+vim comfyui-spellcaster/spellcaster_core/CHANGED.py
+
+# 2. Mirror to 4 other surfaces:
+for D in \
+  plugins/gimp/comfyui-connector/spellcaster_core \
+  ../ComfyUI-Spellcaster/spellcaster_core \
+  ../ComfyUI-Spellcaster-NSFW/spellcaster_core \
+  "$APPDATA/GIMP/3.2/plug-ins/comfyui-connector/spellcaster_core"; do
+    cp comfyui-spellcaster/spellcaster_core/CHANGED.py "$D/"
+done
+
+# 3. Verify (all 5 md5sums identical):
+md5sum comfyui-spellcaster/spellcaster_core/CHANGED.py \
+  plugins/gimp/comfyui-connector/spellcaster_core/CHANGED.py \
+  ../ComfyUI-Spellcaster/spellcaster_core/CHANGED.py \
+  ../ComfyUI-Spellcaster-NSFW/spellcaster_core/CHANGED.py \
+  "$APPDATA/GIMP/3.2/plug-ins/comfyui-connector/spellcaster_core/CHANGED.py"
+
+# 4. Commit + push in 3 git repos, then patch NSFW:
+(cd . && git add ... && git commit && git push)
+(cd ../ComfyUI-Spellcaster && git add ... && git commit && git push)
+(cd ../ComfyUI-Spellcaster-NSFW && git add ... && git commit && git push)
+python nsfw/build_nsfw.py --patch-only --push
+```
+
+**Pack-root modules** (`presence.py`, `blob_bus.py`, `privacy_cleanup.py`, `model_repair.py`) also mirror to `../ComfyUI-Spellcaster{,-NSFW}/` but the GIMP dev copy doesn't carry them — plugins hit these routes over HTTP.
 
 ---
 
@@ -681,6 +947,80 @@ If you're reading this section voluntarily, you're either evaluating this for a 
 - **`spellcaster_core/`** — single source of truth, shared across 4 repos. Auto-updater downloads from canonical source.
 - **Cross-interface backbone** — event bus, mailbox, asset gallery, and dynamic presence. Every surface (GIMP / Resolve / Darktable / SillyTavern / Guild) can publish and consume events: a shot rendered in the Guild auto-imports into Resolve's Media Pool; an image saved from GIMP auto-appears in the Guild gallery. The **Antenna** (remote HTTPS agent) extends the same presence/auth model across machines.
 - **7 plugin surfaces** in `plugins/`: `gimp` (mature, 61 files), `resolve`, `darktable`, `sillytavern` (real integrations), `blender`, `krita`, `photoshop` (minimal / experimental).
+
+---
+
+## Extending the App — NSFW + personalisation
+
+The SFW codebase ships with named injection points so you can layer custom content on top without editing core logic. The NSFW build system (`nsfw/build_nsfw.py`, gitignored from the public repo) uses these markers to patch + publish to a separate private repo; you can use the same pattern for any personalisation overlay.
+
+### Injection-point markers in `_spellcaster_main.py`
+
+| Marker | Line | Patches |
+|--------|------|---------|
+| `NSFW_OUTPAINT_INJECTION_POINT`       | ~4465 | `OUTPAINT_PURPOSE_PRESETS` dict |
+| `NSFW_HALLUCINATE_INJECTION_POINT`    | ~4935 | `HALLUCINATE_PRESETS` dict |
+| `NSFW_ICLIGHT_INJECTION_POINT`        | ~4967 | `ICLIGHT_PRESETS` dict |
+| `NSFW_KONTEXT_INJECTION_POINT`        | ~5021 | `KONTEXT_TASKS` dict |
+| `NSFW_PHOTOBOOTH_STYLES_INJECTION_POINT` | ~6688 | photobooth style dict |
+| `NSFW_LTX_INJECTION_POINT`            | ~9393 | `LTX_VIDEO_PRESETS` scene templates |
+| `NSFW_BODY_FACTORY_INJECTION_POINT`   | ~29896 | body-factory `BODY_PRESETS` |
+| `NSFW_CLOTHING_STORE_INJECTION_POINT` | ~30199 | clothing-store `OUTFIT_PRESETS` |
+| `NSFW_STUDIO_SET_SCENES_INJECTION_POINT` | ~30437 | studio-set scene list |
+| `NSFW_STUDIO_SET_PLACEMENTS_INJECTION_POINT` | ~30466 | studio-set actor placements |
+
+### Injection-point markers in `tavern/server.py`
+
+| Marker | Line | Patches |
+|--------|------|---------|
+| `NSFW_PERSONALITY_INJECT_ANCHOR`     | ~200   | character personality overlay |
+| `NSFW_APPEARANCE_INJECT_ANCHOR`      | ~7798  | avatar appearance LoRA injection |
+| `NSFW_BG_STYLES_INJECT_ANCHOR`       | ~15575 | background-style list |
+
+Additional markers exist for WAN scenes (`NSFW_WAN_INJECTION_POINT`, `NSFW_WAN_SCENES_INJECTION_POINT`), LTX scenes (`NSFW_LTX_SCENES_INJECTION_POINT`), and director workflows (`NSFW_DIRECTOR_INJECTION_POINT`). Grep `NSFW_.*_INJECTION\|NSFW_.*_ANCHOR` to find every one.
+
+### How the NSFW patcher works
+
+```mermaid
+flowchart LR
+    SFW[SFW main repo<br/>canonical] -->|cp| STAGE[nsfw/staging/<br/>gitignored]
+    DATA[nsfw/*.json<br/>NSFW-specific content<br/>lora_calibrations_nsfw.json<br/>nsfw_klein_presets.json<br/>nsfw_presets_extras.json<br/>nsfw_loras.json<br/>nsfw_presets_video.json] -->|read| PATCHER[nsfw/build_nsfw.py]
+    STAGE --> PATCHER
+    PATCHER -->|finds # ── NSFW_*_INJECTION_POINT ──<br/>injects entries above it| PATCHED[nsfw/staging/ patched]
+    PATCHED -->|git push| NSFW_REPO[spellcaster_NSFW<br/>PRIVATE]
+
+    style DATA fill:#4a1a1a,color:#fff
+    style NSFW_REPO fill:#4a1a1a,color:#fff
+```
+
+`build_nsfw.py` finds each `# ── NSFW_<CATEGORY>_INJECTION_POINT ──` comment in the staged SFW code, reads the matching JSON file in `nsfw/`, and injects entries above the marker. The pattern is idempotent — re-running produces the same output.
+
+### Making your own personalisation overlay
+
+1. **Add a marker** where you want patchable content. Pick a namespace that isn't `NSFW_`:
+   ```python
+   # ── MYMOD_SCENES_INJECTION_POINT ── (do not remove)
+   ```
+2. **Write a patcher** modelled on `build_nsfw.py::patch_nsfw_*`:
+   ```python
+   marker = "# ── MYMOD_SCENES_INJECTION_POINT ──"
+   src = Path("plugins/gimp/comfyui-connector/_spellcaster_main.py").read_text()
+   extras = json.loads(Path("mymod/scenes.json").read_text())
+   injection = "\n".join(f'    "{k}": {json.dumps(v)},' for k, v in extras.items())
+   src = src.replace(marker, f"{marker}\n{injection}")
+   ```
+3. **Keep your data out of git** via your own `.gitignore` overlay dir (e.g. `mymod/`).
+4. **For calibration recipes** (LoRA preferred weights / samplers / trigger words), write JSON in the `lora_calibrations_sfw.json` schema and ship via your patcher OR drop it into `comfyui-spellcaster/spellcaster_core/lora_calibrations_sfw.json` directly.
+5. **For new architectures**, add an `ArchConfig` entry to `architectures.py`, populate `supported_methods`, and add a `build_*` function that calls `_assert_method_for_preset(preset, "<method>")` at line 1 — the canon rule enforced everywhere else.
+
+No injection-point marker is gospel — add new ones freely. The rule is: any data struct that a patcher might want to extend deserves a marker with a namespace prefix.
+
+### Safety invariants (don't break these)
+
+- **NSFW content never reaches the public repo.** The `nsfw/` dir is gitignored; `git add -f` on anything inside is forbidden. NSFW code only reaches the private repo via `python nsfw/build_nsfw.py --patch --push`.
+- **Personal data never leaks.** Before every commit, scan staged diffs for `192\.168`, home-directory paths, emails, GitHub tokens. See CLAUDE.md §11.
+- **Arch support is honest.** If you add an arch but don't build its workflow chain, mark `registered=False` + empty `supported_methods=()` so `_assert_method_for_preset` raises a clear "detected but not yet scaffolded" error instead of crashing mid-sampler.
+- **Every new CN file** goes in both `CN_URL_MAP`s (pack + installer) so the auto-repair path works on fresh installs.
 
 ---
 
