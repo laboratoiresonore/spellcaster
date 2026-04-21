@@ -611,6 +611,71 @@ def _reapply_appearance_assets() -> dict:
             else:
                 roots = [Path("/usr/share/gimp/3.0"),
                          Path("/usr/local/share/gimp/3.0")]
+            # Auto-heal the ``gimp-splash.orig.orig.orig....png`` chain
+            # that prior Spellcaster versions silently accumulated on
+            # every repair-update. Keep exactly ONE pristine backup
+            # (``gimp-splash.orig.png``); delete everything with two
+            # or more ``.orig.`` segments in the name. Pull the last-
+            # chain entry's pixels into ``gimp-splash.orig.png`` FIRST
+            # so the pristine-original pixels survive even when the
+            # single-level backup has already been overwritten by
+            # earlier Spellcaster banners.
+            for pf in roots:
+                if not pf.is_dir():
+                    continue
+                # Discover chain survivors, sorted deepest-first (more
+                # ``.orig.`` segments = older backup that has the real
+                # pristine pixels). Covers gimp-splash + gimp-logo +
+                # wilber all at once.
+                for stem in ("gimp-splash", "gimp-logo", "wilber"):
+                    chain = []
+                    for f in pf.rglob(f"{stem}.orig.*.png"):
+                        # f.name looks like e.g. gimp-splash.orig.orig.png
+                        # or gimp-splash.orig.orig.orig.orig.png. Count
+                        # the ``.orig.`` segments to rank them.
+                        n_orig = f.name.count(".orig.")
+                        if n_orig >= 1:
+                            chain.append((n_orig, f))
+                    if not chain:
+                        continue
+                    chain.sort(key=lambda t: -t[0])
+                    deepest_n, deepest_path = chain[0]
+                    canonical_backup = pf.rglob(f"{stem}.orig.png")
+                    canonical_backup = next(canonical_backup, None)
+                    # Promote the deepest chain entry to the single
+                    # canonical backup if we don't have one yet (or
+                    # the current one is definitely a Spellcaster
+                    # banner — we can't easily tell, so preserve
+                    # deeper always wins).
+                    try:
+                        if canonical_backup is None:
+                            # Rename the deepest entry into the
+                            # canonical position, then delete the
+                            # rest of the chain below.
+                            target = deepest_path.with_name(f"{stem}.orig.png")
+                            shutil.move(str(deepest_path), str(target))
+                            print(f"[Spellcaster] promoted backup chain "
+                                  f"tip {deepest_path.name} -> "
+                                  f"{target.name}", file=_sys.stderr)
+                            chain = chain[1:]  # skip the promoted one
+                    except Exception as _e:
+                        print(f"[Spellcaster] backup-chain promotion "
+                              f"failed for {deepest_path}: {_e}",
+                              file=_sys.stderr)
+                    # Delete every remaining chain entry (anything with
+                    # n_orig >= 2 is a Spellcaster-over-Spellcaster
+                    # backup copy; n_orig == 1 is the canonical one
+                    # we want to keep).
+                    for n_orig, f in chain:
+                        if n_orig < 2:
+                            continue  # keep gimp-splash.orig.png
+                        try:
+                            f.unlink()
+                            print(f"[Spellcaster] removed legacy "
+                                  f"backup {f.name}", file=_sys.stderr)
+                        except Exception as _e:
+                            print(f"[Spellcaster] could not remove "
+                                  f"{f}: {_e}", file=_sys.stderr)
             for pf in roots:
                 # Windows layout: <root>/share/gimp/3.0/images.
                 # macOS / Linux layout depends on the packaging; glob
@@ -10432,7 +10497,7 @@ def _wait_for_comfy_queue_empty(server, poll_interval=2.0, max_wait=600):
         time.sleep(poll_interval)
 
 
-def _repatriate_outputs(server, results):
+def _repatriate_outputs(server, results, workflow=None):
     """Copy/move output files from ComfyUI to the user's directory, or delete them.
 
     Behaviour is controlled by config settings:
@@ -10440,8 +10505,11 @@ def _repatriate_outputs(server, results):
       output_cleanup: "copy" (default), "move" (delete from ComfyUI after copy),
                       or "delete" (delete from ComfyUI, don't copy)
 
-    Also cleans up uploaded input files (gimp_*.png/jpg) from ComfyUI's
-    input folder to avoid accumulating stale temp files.
+    When ``workflow`` is supplied, the privacy cleanup gets the exact
+    set of filenames the workflow uploaded (LoadImage + VHS_LoadVideo
+    node inputs) so it can target those specifically — important for
+    normal-map / reference-image uploads that don't show up as
+    ``gimp_*`` prefixed files via the full-server scan alone.
     """
     cfg = _load_config()
     output_dir = cfg.get("output_dir", "").strip()
@@ -10464,10 +10532,13 @@ def _repatriate_outputs(server, results):
             except Exception:
                 pass
 
-    # Clean up uploaded temp input images from ComfyUI's input folder.
-    # Upload a 1x1 transparent PNG over each gimp_* file to reclaim space,
-    # then delete output files from server if cleanup mode is "move" or "delete".
-    _cleanup_server_temps(server, results, cleanup_mode)
+    # Clean up temp INPUT uploads + generated OUTPUT files on the
+    # ComfyUI server. Pre-2026-04-20 the output path was broken (see
+    # privacy.py::cleanup_outputs docstring) — this call now reaches
+    # the ComfyUI-Spellcaster pack's /spellcaster/privacy/delete
+    # route for a real os.remove, with the tiny-PNG fallback only
+    # when the pack isn't installed.
+    _cleanup_server_temps(server, results, cleanup_mode, workflow=workflow)
 
 
 # 1x1 transparent pixel PNG (89 bytes) — used to overwrite temp uploads
@@ -10479,16 +10550,19 @@ _TINY_PNG = (
 )
 
 
-def _cleanup_server_temps(server, results, cleanup_mode):
+def _cleanup_server_temps(server, results, cleanup_mode, workflow=None):
     """Clean up temp files from the ComfyUI server after generation.
 
     Delegates to spellcaster_core.privacy (single source of truth).
+    Passing ``workflow`` enables Strategy 1 (workflow-aware input
+    cleanup) inside cleanup_inputs so nm_auto / ref / mask uploads
+    get picked up by name, not just by ``gimp_*`` prefix scan.
     """
     if cleanup_mode not in ("move", "delete"):
         return
     try:
         from spellcaster_core.privacy import cleanup_server_files
-        cleanup_server_files(server, results=results)
+        cleanup_server_files(server, workflow=workflow, results=results)
     except ImportError:
         pass  # privacy module not available — skip cleanup
 
@@ -10780,9 +10854,11 @@ def _run_comfyui_workflow(server, workflow, timeout=300):
         # GIMP-specific: pre-download outputs to local temp files BEFORE
         # privacy cleanup wipes them from the server
         _precache_results(server, images)
-        # Now safe to clean up server files
+        # Now safe to clean up server files. Pass the workflow so the
+        # input-cleanup path can target nm_auto / ref / mask uploads
+        # by name (not just by OWNED_PREFIXES scan).
         try:
-            _repatriate_outputs(server, images)
+            _repatriate_outputs(server, images, workflow=workflow)
         except Exception:
             pass
         _tel_outcome = "ok"
