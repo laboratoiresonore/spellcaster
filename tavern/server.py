@@ -11292,6 +11292,19 @@ class GuildHandler(SimpleHTTPRequestHandler):
                 "prompt_enhance": PROMPT_ENHANCE,
                 "nsfw_mode": NSFW_MODE,  # frontend uses this to gate the NSFW avatar dropdown
             })
+        elif self.path.startswith('/api/presets/'):
+            # Experimental-plugin preset bundles (§plugin_presets). The
+            # Photoshop UXP panel can't `import` Python — it fetches
+            # `/api/presets/photoshop` at panel-load time and falls
+            # back to its embedded list when the Guild is unreachable.
+            # Keeps the JS copy from drifting from the Python canon.
+            origin = self.path[len('/api/presets/'):].strip('/').lower()
+            try:
+                from spellcaster_core.plugin_presets import presets_for
+                items = presets_for(origin)
+            except Exception:
+                items = []
+            return self.end_json(200, {"origin": origin, "presets": items})
         elif self.path == '/api/has_video_model':
             # Check if WAN, LTX, or other video-capable models are available
             has_video = False
