@@ -2748,7 +2748,8 @@ def _export_normal_map_layer(image, layer_ref):
 
 
 def _collect_normal_map_from_dialog(dlg, image, server_url,
-                                      current_cn_mode=None):
+                                      current_cn_mode=None,
+                                      arch_key=None):
     """If the dialog's normal-map picker is enabled, return the name
     of a normal-map PNG that's been uploaded to ComfyUI's input dir.
 
@@ -2772,6 +2773,15 @@ def _collect_normal_map_from_dialog(dlg, image, server_url,
     surfaced a confusing "no controlnet-1.0 installed" popup even
     though the user hadn't asked for CN.)
 
+    ``arch_key`` enables the fail-FAST CN availability preflight: if
+    the arch's Normal Map CN file isn't installed on the server AND
+    there's no usable fallback CN either, we abort BEFORE spending
+    5 minutes hanging on NormalCrafter auto-gen only to drop the
+    result because no CN can accept it. (Bug reported 2026-04-20:
+    /3D Inpaint with SDXL sat on NormalCrafter for minutes, then
+    popped the "Union CN not installed" dialog, then returned ONLY
+    the normal-map layer with no inpainted output.)
+
     Silently no-ops when the dialog hasn't had
     `_add_normal_map_selector` called on it — every caller passes
     any dlg, and we check for the attributes before reading.
@@ -2791,10 +2801,66 @@ def _collect_normal_map_from_dialog(dlg, image, server_url,
     # /3D submenu), 3D normal map is the whole point — ignore the
     # CN=Off pick and run the full flow. _maybe_override_cn_with_normal_map
     # then forces the CN override regardless of the current dict's mode.
+    force_3d = bool(globals().get("_FORCE_3D_MODE"))
     if (isinstance(current_cn_mode, str)
             and current_cn_mode.strip().lower() in ("off", "none", "")
-            and not globals().get("_FORCE_3D_MODE")):
+            and not force_3d):
         return None
+
+    # Fail-fast CN preflight: if we know the target arch AND we know
+    # the server has NO installable CN that can accept a normal map
+    # (preferred + fallback cascade both missing), abort here. This
+    # saves the user from a 5-minute NormalCrafter wait that ends
+    # with "your CN isn't installed" and no useful output. See
+    # _resolve_normal_map_cn for the fallback cascade.
+    if arch_key:
+        try:
+            resolution = _resolve_normal_map_cn(server_url, arch_key)
+            if resolution and resolution.get("status") == "missing":
+                pref = resolution.get("preferred") or "<unknown>"
+                pref_bn = pref.replace("\\", "/").rsplit("/", 1)[-1]
+                msg = (f"3D Normal Map needs a ControlNet installed "
+                       f"on the ComfyUI server for {arch_key!r}.\n\n"
+                       f"Preferred file: {pref_bn}\n"
+                       f"Fallback CNs tried: "
+                       f"{', '.join(resolution.get('tried') or []) or 'none'}\n"
+                       f"None are installed.\n\n")
+                if force_3d:
+                    msg += ("The /3D submenu is MANDATORY 3D — the "
+                            "dispatch would produce no useful output. "
+                            "Install the CN file in ComfyUI, OR use "
+                            "the non-3D version in the Generate / "
+                            "Enhance submenu.")
+                else:
+                    msg += ("Proceeding WITHOUT 3D guidance for this "
+                            "run. Install the CN file in ComfyUI to "
+                            "enable 3D Normal Map on this arch.")
+                try:
+                    Gimp.message(msg)
+                except Exception:
+                    print(f"[Spellcaster] Normal Map CN missing: "
+                          f"{msg}")
+                return None
+            if resolution and resolution.get("status") == "fallback":
+                pref = resolution.get("preferred") or ""
+                got = resolution.get("resolved") or ""
+                pref_bn = pref.replace("\\", "/").rsplit("/", 1)[-1]
+                got_bn = got.replace("\\", "/").rsplit("/", 1)[-1]
+                try:
+                    Gimp.message(
+                        f"3D Normal Map on {arch_key!r}: preferred "
+                        f"CN {pref_bn} isn't installed. Falling back "
+                        f"to {got_bn} (best available on your server). "
+                        f"Output will be 3D-aware but may deviate from "
+                        f"the canonical normal-map look — install the "
+                        f"preferred file for a cleaner result.")
+                except Exception:
+                    pass
+        except Exception as _e:
+            # Preflight must never block — if the probe crashes, let
+            # the main dispatch proceed and surface whatever error
+            # ComfyUI returns.
+            print(f"[Spellcaster] CN preflight probe failed: {_e}")
 
     idx_id = cmb.get_active_id()
 
@@ -2929,6 +2995,146 @@ def _collect_normal_map_from_dialog(dlg, image, server_url,
 #: "chroma")`). Exposed here so the dialog layer can warn the user
 #: BEFORE they submit, instead of silently dropping their normal map.
 _CN_INCOMPATIBLE_ARCHS = frozenset({"flux2klein", "flux_kontext", "chroma"})
+
+
+#: Fallback cascade per arch — when the preferred Normal Map CN
+#: isn't installed on the server, try these in order. Depth CN is
+#: the best approximation of 3D surface guidance (normal = depth-
+#: derivative essentially); Canny / lineart CNs provide structural
+#: guidance but miss the 3D component; the Union CNs accept any of
+#: these as input modes so they're strictly the best choice when
+#: present.
+_NORMAL_MAP_FALLBACK_CHAIN: dict[str, tuple[str, ...]] = {
+    "sdxl": (
+        "SDXL\\controlnet-union-sdxl-1.0.safetensors",
+        "SDXL/controlnet-union-sdxl-1.0.safetensors",
+        "controlnet-union-sdxl-1.0.safetensors",
+        "SDXL\\control-lora-depth-rank128.safetensors",
+        "SDXL/control-lora-depth-rank128.safetensors",
+        "control-lora-depth-rank128.safetensors",
+        "SDXL\\controlnet-canny-sdxl-1.0.safetensors",
+        "SDXL/controlnet-canny-sdxl-1.0.safetensors",
+        "controlnet-canny-sdxl-1.0.safetensors",
+    ),
+    "illustrious": (
+        "SDXL\\controlnet-union-sdxl-1.0.safetensors",
+        "SDXL/controlnet-union-sdxl-1.0.safetensors",
+        "controlnet-union-sdxl-1.0.safetensors",
+        "SDXL\\control-lora-depth-rank128.safetensors",
+        "SDXL/control-lora-depth-rank128.safetensors",
+        "control-lora-depth-rank128.safetensors",
+        "noobaiXLControlnet_openposeModel.safetensors",
+    ),
+    "sd15": (
+        "control_v11p_sd15_normalbae.pth",
+        "control_v11p_sd15_normalbae.safetensors",
+        "control_v11f1p_sd15_depth_fp16.safetensors",
+        "control_v11p_sd15_lineart_fp16.safetensors",
+    ),
+    "flux1dev": (
+        "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors",
+        "FLUX.1-dev-Controlnet-Union-Pro.safetensors",
+        "FLUX.1-dev-ControlNet-Union-Pro-2.0.fp8.safetensors",
+    ),
+    "zit": (
+        "Z-Image-Turbo-Fun-Controlnet-Union.safetensors",
+    ),
+}
+
+
+def _resolve_normal_map_cn(server: str, arch_key: str) -> dict:
+    """Resolve the best Normal Map CN filename for ``arch_key`` on
+    ``server``.
+
+    Returns a dict::
+
+        {
+          "status":    "ok" | "fallback" | "missing" | "unknown",
+          "preferred": "<preferred filename>",
+          "resolved":  "<installed filename>",  # same as preferred
+                                                 # when status="ok"
+          "tried":     ["<candidate1>", ...],
+        }
+
+      * ``ok`` — preferred file is installed, use it.
+      * ``fallback`` — preferred missing but a fallback CN IS
+                       installed; caller should use ``resolved`` +
+                       warn the user we're substituting.
+      * ``missing`` — nothing in the cascade is installed; caller
+                      should abort / skip 3D guidance.
+      * ``unknown`` — probe failed; caller should proceed blindly
+                      (ComfyUI will surface its own error).
+    """
+    preferred = None
+    try:
+        mode_entry = CONTROLNET_GUIDE_MODES.get(
+            "Normal Map (use existing layer) — all archs", {})
+        cn_models = (mode_entry or {}).get("cn_models") or {}
+        preferred = cn_models.get(arch_key)
+    except Exception:
+        preferred = None
+    available = _fetch_available_cn_files(server)
+    if not available:
+        # Server unreachable / empty /object_info — proceed blindly.
+        return {
+            "status":    "unknown",
+            "preferred": preferred,
+            "resolved":  preferred,
+            "tried":     [],
+        }
+    avail_basenames = {a.replace("\\", "/").rsplit("/", 1)[-1].lower()
+                       for a in available}
+    avail_full_lower = {a.lower() for a in available}
+
+    def _server_has(name: str) -> str | None:
+        """Return the exact on-server filename if ``name`` is
+        installed (exact match OR basename match); None otherwise."""
+        if not name:
+            return None
+        for a in available:
+            if a == name:
+                return a
+        bn = name.replace("\\", "/").rsplit("/", 1)[-1].lower()
+        for a in available:
+            a_bn = a.replace("\\", "/").rsplit("/", 1)[-1].lower()
+            if a_bn == bn:
+                return a
+        return None
+
+    # Step 1: is the preferred file installed?
+    pref_hit = _server_has(preferred) if preferred else None
+    if pref_hit:
+        return {
+            "status":    "ok",
+            "preferred": preferred,
+            "resolved":  pref_hit,
+            "tried":     [preferred],
+        }
+
+    # Step 2: walk the fallback chain.
+    tried: list[str] = [preferred] if preferred else []
+    chain = _NORMAL_MAP_FALLBACK_CHAIN.get(arch_key, ())
+    for cand in chain:
+        if cand == preferred:
+            continue
+        tried.append(cand)
+        hit = _server_has(cand)
+        if hit:
+            return {
+                "status":    "fallback",
+                "preferred": preferred,
+                "resolved":  hit,
+                "tried":     tried,
+            }
+
+    # Step 3: nothing in the cascade. Return "missing" so the caller
+    # can pop a clear error message (or, for /3D submenu, abort).
+    return {
+        "status":    "missing",
+        "preferred": preferred,
+        "resolved":  None,
+        "tried":     tried,
+    }
 
 
 # Cache the ControlNetLoader file list per (server, ttl) so repeated
@@ -3139,70 +3345,65 @@ def _maybe_override_cn_with_normal_map(controlnet, normal_map_filename,
             print(f"[Spellcaster] Normal Map skipped: "
                   f"arch {arch_key} does not support ControlNet.")
         return controlnet
-    # CN file preflight — before we lock the workflow into the
-    # "Normal Map (use existing layer)" mode, confirm the arch-specific
-    # CN file is actually on the ComfyUI server. When it's missing the
-    # user was previously getting a cryptic "MISSING <cn_filename>"
-    # from the server mid-dispatch (or, worse, "MISSING union net tile"
-    # when a secondary CN slot defaulted to SDXL tile without the
-    # file); now we warn + drop the override instead.
+    # CN file resolution — delegates to _resolve_normal_map_cn which
+    # (a) checks whether the arch's preferred CN file is installed, (b)
+    # walks the fallback cascade (Depth → Canny → Union → ...), and
+    # (c) tells us whether to use the exact preferred file, a
+    # substitute, or abort because nothing usable is installed.
+    resolved_cn_filename = None
     try:
-        mode = "Normal Map (use existing layer) — all archs"
-        entry = CONTROLNET_GUIDE_MODES.get(mode, {})
-        cn_models = (entry or {}).get("cn_models") or {}
-        resolved = cn_models.get(arch_key) if arch_key else None
         cfg = _load_config()
         server_url = cfg.get("server_url", COMFYUI_DEFAULT_URL)
-        if resolved:
-            available = _cn_model_available(server_url, resolved)
-            if available is False:
-                # Respect the user's explicit "no ControlNet" pick.
-                # When the current CN dict has mode == "Off" (or is
-                # None / empty), the user didn't ask for CN — 3D
-                # Normal Map is default-on in the dialog as a
-                # convenience but does nothing useful without a CN
-                # slot. Silently skip instead of popping a "CN model
-                # missing" dialog at someone who explicitly turned
-                # CN off. Users who DID pick a CN mode still get the
-                # visible warning so they know why 3D guidance was
-                # dropped.
+        resolution = (_resolve_normal_map_cn(server_url, arch_key)
+                      if arch_key else None)
+        if resolution:
+            status = resolution.get("status")
+            if status == "ok":
+                resolved_cn_filename = resolution.get("resolved")
+            elif status == "fallback":
+                resolved_cn_filename = resolution.get("resolved")
+                # User was already told about the substitution by the
+                # earlier _collect_normal_map_from_dialog preflight
+                # (one popup per dispatch). No second notice here.
+            elif status == "missing":
+                # Nothing in the cascade is installed. Same branching
+                # the preflight used: silent skip in opt-in mode,
+                # visible popup in mandatory /3D mode.
                 cur_mode = ((controlnet or {}).get("mode")
                             if isinstance(controlnet, dict) else None)
                 user_picked_off = (not cur_mode
                                     or str(cur_mode).strip().lower()
                                        in ("off", "none", ""))
-                # Force-3D mode (/3D submenu) still needs to tell the
-                # user the CN is missing — skipping silently would
-                # make the dispatch proceed WITHOUT 3D guidance, which
-                # defeats the whole point of the /3D entry. Fall
-                # through to the loud Gimp.message path below so the
-                # user knows to install the CN file.
                 if user_picked_off and not globals().get("_FORCE_3D_MODE"):
-                    print(f"[Spellcaster] Normal Map skipped "
-                          f"(CN={cur_mode!r}, server missing "
-                          f"{resolved!r}).", file=__import__('sys').stderr)
+                    print(f"[Spellcaster] Normal Map skipped — no "
+                          f"CN installed for {arch_key!r}, CN=Off so "
+                          f"silent skip.",
+                          file=__import__('sys').stderr)
                     return controlnet
-                try:
-                    bn = resolved.replace("\\", "/").rsplit("/", 1)[-1]
-                    Gimp.message(
-                        f"3D Normal Map needs ControlNet model\n"
-                        f"    {bn}\n"
-                        f"but it isn't installed on ComfyUI "
-                        f"({server_url}).\n\n"
-                        f"Install it through ComfyUI Manager, or untick "
-                        f"'3D Normal Map' in the dialog. Proceeding "
-                        f"without 3D guidance for this run.")
-                except Exception:
-                    print(f"[Spellcaster] Normal Map CN missing: "
-                          f"{resolved!r} (proceeding without it)")
+                # Force-3D: preflight already popped the error dialog.
+                # Return unchanged controlnet so the dispatch still
+                # fires (a degraded result is better than a crash).
+                print(f"[Spellcaster] Normal Map Force-3D: no CN "
+                      f"installed for {arch_key!r}, proceeding "
+                      f"without 3D guidance.",
+                      file=__import__('sys').stderr)
                 return controlnet
-    except Exception:
-        # Preflight failure must never block dispatch — the server
-        # will still emit its own error if the file really is missing.
-        pass
+            # status == "unknown" → proceed blindly; ComfyUI will
+            # surface its own error if the file really isn't there.
+    except Exception as _e:
+        print(f"[Spellcaster] Normal Map CN resolution failed: {_e}",
+              file=__import__('sys').stderr)
+
     merged = dict(controlnet or {})
     merged["mode"] = "Normal Map (use existing layer) — all archs"
     merged["ref_image_filename"] = normal_map_filename
+    # If we resolved to a non-preferred CN file (fallback), stash the
+    # exact on-server filename on the override so the workflow
+    # builder can pick it up via an optional key. Builders that don't
+    # read this key still load the preferred file via the existing
+    # CONTROLNET_GUIDE_MODES lookup (blind-pass compat).
+    if resolved_cn_filename:
+        merged["cn_model_override"] = resolved_cn_filename
     merged.setdefault("strength", 0.8)
     merged.setdefault("start_percent", 0.0)
     merged.setdefault("end_percent", 1.0)
@@ -18190,7 +18391,8 @@ class Spellcaster(Gimp.PlugIn):
             # widgets for the checkbox / combo state.
             _nm_filename = _collect_normal_map_from_dialog(
                 dlg, image, v["server"],
-                current_cn_mode=(v.get("controlnet") or {}).get("mode"))
+                current_cn_mode=(v.get("controlnet") or {}).get("mode"),
+                arch_key=(v.get("preset") or {}).get("arch"))
             _SESSION["img2img"] = dlg._collect_session()
             _save_session()
             dlg.destroy()
@@ -18327,7 +18529,8 @@ class Spellcaster(Gimp.PlugIn):
             v = dlg.get_values()
             _nm_filename = _collect_normal_map_from_dialog(
                 dlg, image, v["server"],
-                current_cn_mode=(v.get("controlnet") or {}).get("mode"))
+                current_cn_mode=(v.get("controlnet") or {}).get("mode"),
+                arch_key=(v.get("preset") or {}).get("arch"))
             _SESSION["inpaint"] = dlg._collect_session()
             _save_session()
             dlg.destroy()
@@ -25513,7 +25716,8 @@ class Spellcaster(Gimp.PlugIn):
         # widget state + exports GIMP layer). Overrides CN1 when set.
         _nm_filename = _collect_normal_map_from_dialog(
                 dlg, image, v["server"],
-                current_cn_mode=(v.get("controlnet") or {}).get("mode"))
+                current_cn_mode=(v.get("controlnet") or {}).get("mode"),
+                arch_key=(v.get("preset") or {}).get("arch"))
         dlg.destroy()
         out_cn1 = _maybe_override_cn_with_normal_map(
             out_cn1, _nm_filename,
