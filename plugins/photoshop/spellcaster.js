@@ -30,14 +30,109 @@ async function guildAPI(path, body = null) {
 
 async function executeWorkflow(buildFn, params) {
     /**
-     * Send a workflow execution request to the Guild.
-     * The Guild builds the workflow, runs preflight + optimizer,
-     * submits to ComfyUI, and returns the result.
+     * Send a workflow build+dispatch request to the Guild.
+     *
+     * The Guild's ``/api/run_builder`` endpoint takes a builder name
+     * (any ``build_*`` function in ``spellcaster_core.workflows``)
+     * and a params dict. It runs the Python builder, submits to
+     * ComfyUI, caches the result in the AssetGallery, and returns
+     * ``/api/assets/<hash>`` URLs. Same surface Darktable uses —
+     * CLAUDE.md §24 "The /api/run_builder Bridge" is the canon.
+     *
+     * Returns ``{ok: bool, urls: string[], error?: string}``.
      */
-    return guildAPI("/api/execute", {
-        build_fn: buildFn,
-        params: params,
-    });
+    const t0 = Date.now();
+    let ok = false;
+    let err = "";
+    try {
+        const resp = await fetch(`${GUILD_URL}/api/run_builder`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                builder: buildFn,
+                params: params || {},
+            }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || data.ok === false) {
+            err = data.error || `HTTP ${resp.status}`;
+            throw new Error(err);
+        }
+        ok = true;
+        return { ok: true, urls: data.urls || [], ...data };
+    } catch (e) {
+        err = e.message || String(e);
+        return { ok: false, urls: [], error: err };
+    } finally {
+        // Fire-and-forget dispatch telemetry so SpeedCoach sees
+        // Photoshop renders alongside every other frontend.
+        try {
+            logDispatchTelemetry({
+                handler: "photoshop_" + buildFn.replace(/^build_/, ""),
+                buildFn: buildFn,
+                elapsed: (Date.now() - t0) / 1000,
+                failed: !ok,
+                error: err,
+            });
+        } catch (_e) { /* silent */ }
+    }
+}
+
+// ─── Canvas upload via AssetGallery ─────────────────────────────────
+
+async function uploadCanvasToGuild(title) {
+    /**
+     * Export active document → POST bytes to the Guild's
+     * AssetGallery → return ``/api/assets/<hash>`` URL. The Guild's
+     * ``_translate_params`` resolves that URL to an uploaded ComfyUI
+     * filename at dispatch time, so we don't have to touch ComfyUI
+     * directly.
+     */
+    const doc = app.activeDocument;
+    if (!doc) throw new Error("No active document");
+    const tempFolder = await fs.getTemporaryFolder();
+    const file = await tempFolder.createFile(
+        "spellcaster_upload.png", { overwrite: true });
+    await doc.saveAs.png(file, { compression: 6 });
+    const buffer = await file.read({ format: require("uxp").storage.formats.binary });
+    const hash = await stashInGallery(buffer, title || "Photoshop source");
+    if (!hash) {
+        throw new Error(
+            "Guild AssetGallery rejected the upload. Is the Wizard "
+            + "Guild running at " + GUILD_URL + " ?");
+    }
+    return `/api/assets/${hash}`;
+}
+
+// ─── Dispatch telemetry to the Guild ────────────────────────────────
+
+async function logDispatchTelemetry({ handler, buildFn, arch, elapsed,
+                                      failed, error }) {
+    /**
+     * Fire-and-forget POST to the Guild's ``/api/telemetry/dispatch_ok``
+     * so every Photoshop render shows up in ``dispatch_log.jsonl``
+     * alongside GIMP / Darktable / SillyTavern / Resolve / Guild-
+     * internal ones. Never raises — telemetry failure must not break
+     * the render.
+     */
+    try {
+        await fetch(`${GUILD_URL}/api/telemetry/dispatch_ok`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                origin: "photoshop",
+                handler: handler || "",
+                build_fn: buildFn || "",
+                arch: arch || "unknown",
+                elapsed: Number(elapsed) || 0,
+                failed: !!failed,
+                error: error ? String(error).slice(0, 400) : "",
+                ts: Date.now() / 1000,
+            }),
+        });
+    } catch (_e) {
+        /* Guild down — swallow */
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -160,36 +255,99 @@ function startHeartbeat(intervalS) {
 // ═══════════════════════════════════════════════════════════════════
 
 async function cmdSmartGenerate() {
+    /**
+     * Generate a new image from a text prompt. Asks the Guild's
+     * ``/api/recommend`` which architecture best fits the prompt
+     * (keyword classifier over the user's installed models), then
+     * dispatches the matching ``build_txt2img`` via
+     * ``/api/run_builder``. Result imports as a new layer at the
+     * top of the active document.
+     */
     const prompt = await showPromptDialog("What do you want to create?");
     if (!prompt) return;
-    showStatus("Generating...");
+    showStatus("Classifying prompt…");
     try {
-        const rec = await guildAPI("/api/recommend", { prompt });
-        showStatus(`Using ${rec.arch}...`);
-        // TODO: wire to Guild execute endpoint
-        showStatus("Done!");
+        let archHint = "sdxl";
+        let modelHint = "";
+        try {
+            const rec = await guildAPI("/api/recommend", { prompt });
+            if (rec && rec.arch) archHint = rec.arch;
+            if (rec && rec.model) modelHint = rec.model;
+        } catch (_e) {
+            // Recommend is optional; fall back to sdxl.
+        }
+        showStatus(`Generating with ${archHint}\u2026`);
+        const result = await executeWorkflow("build_txt2img", {
+            prompt_text: prompt,
+            negative: "",
+            arch: archHint,
+            model: modelHint || undefined,
+            width: 1024,
+            height: 1024,
+            seed: Math.floor(Math.random() * 2 ** 31),
+        });
+        if (!result.ok) throw new Error(result.error || "generation failed");
+        showStatus(`Importing ${result.urls.length} result(s)\u2026`);
+        for (let i = 0; i < result.urls.length; i++) {
+            const url = result.urls[i].startsWith("/")
+                ? `${GUILD_URL}${result.urls[i]}`
+                : result.urls[i];
+            await importLayerFromURL(
+                url, `Spellcaster: ${prompt.slice(0, 40)}`);
+        }
+        showStatus("Done.");
     } catch (e) {
         showError(e.message);
     }
 }
 
 async function cmdUpscale() {
-    showStatus("Exporting canvas...");
+    /**
+     * 4\u00d7 upscale the active document via
+     * ``build_upscale``. Uploads the canvas through the Guild's
+     * AssetGallery (survives ComfyUI privacy cleanup, shared across
+     * every Spellcaster surface). Result imports as a new layer.
+     */
+    showStatus("Uploading canvas to Guild\u2026");
     try {
-        // Export + upload + execute via Guild
-        showStatus("Upscaling...");
-        // TODO: implement upload to Guild
-        showStatus("Done!");
+        const srcRef = await uploadCanvasToGuild("Upscale source");
+        showStatus("AI upscaling (4\u00d7)\u2026");
+        const result = await executeWorkflow("build_upscale", {
+            image_filename: srcRef,
+            upscale_model: "4x-UltraSharp.pth",
+        });
+        if (!result.ok) throw new Error(result.error || "upscale failed");
+        for (const u of result.urls) {
+            const full = u.startsWith("/") ? `${GUILD_URL}${u}` : u;
+            await importLayerFromURL(full, "Spellcaster Upscale 4x");
+        }
+        showStatus("Done.");
     } catch (e) {
         showError(e.message);
     }
 }
 
 async function cmdRemoveBackground() {
-    showStatus("Removing background...");
+    /**
+     * Remove the background of the active document via
+     * ``build_rembg`` (isnet-general-use). Result is a transparent
+     * PNG imported as a new layer; users can toggle the original
+     * layer off to see the cutout.
+     */
+    showStatus("Uploading canvas to Guild\u2026");
     try {
-        // TODO: implement
-        showStatus("Done!");
+        const srcRef = await uploadCanvasToGuild("Rembg source");
+        showStatus("Removing background\u2026");
+        const result = await executeWorkflow("build_rembg", {
+            image_filename: srcRef,
+            alpha_matting: false,
+        });
+        if (!result.ok) throw new Error(result.error || "rembg failed");
+        for (const u of result.urls) {
+            const full = u.startsWith("/") ? `${GUILD_URL}${u}` : u;
+            await importLayerFromURL(full, "Spellcaster Background Removed");
+        }
+        showStatus("Done.");
     } catch (e) {
         showError(e.message);
     }
