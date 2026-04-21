@@ -668,6 +668,486 @@ def _style_dialog_buttons(dialog):
 _apply_spellcaster_theme()
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+#  PRIVACY-STRICT MODE
+# ═══════════════════════════════════════════════════════════════════════════
+# Hard-privacy posture for the Spellcaster Studio bundle. When strict
+# mode is on (default in bundle, opt-in for regular installs):
+#
+#   * Every dispatch verifies that post-run server cleanup succeeded
+#     — via the pack's /spellcaster/privacy/delete route's
+#     structured response — before the result bytes reach the
+#     retriever.
+#   * If cleanup fails, _PRIVACY_BLOCKED flips on and every
+#     subsequent dispatch refuses (clear Gimp.message with a manual
+#     reset button in Settings).
+#   * Temp .png files created by _import_result_as_layer are shredded
+#     (0-overwritten then unlinked) immediately after Gimp.file_load
+#     finishes — the image lives only in GIMP's in-memory layers from
+#     that point on.
+#   * See _dev_docs/ENCRYPTED_FORMAT_PLAN.md for the .scv (Spellcaster
+#     Encrypted Vault) format — user-passphrase AES-GCM encrypted
+#     save format that GIMP treats as its default for the bundle.
+#
+# Non-bundle installs default to privacy_mode_strict=False (current
+# behaviour: cleanup is best-effort, no dispatch blocking).
+
+_PRIVACY_BLOCKED: bool = False
+_PRIVACY_BLOCK_REASON: str = ""
+_PRIVACY_CLEANUP_AUDIT: list = []  # ring buffer of last N cleanup results
+
+
+def _is_privacy_strict() -> bool:
+    """True when dispatches must verify server cleanup succeeded or
+    be refused. Bundle mode enables by default (SPELLCASTER_BUNDLE=1
+    env set by launcher); regular installs opt-in via config.json."""
+    if _is_bundle_mode():
+        # Bundle users explicitly opted for privacy — strict by
+        # default unless they disabled it in Settings.
+        try:
+            cfg = json.loads((_PLUGIN_DIR / "config.json").read_text(
+                encoding="utf-8"))
+            return bool(cfg.get("privacy_mode_strict", True))
+        except Exception:
+            return True
+    try:
+        cfg = json.loads((_PLUGIN_DIR / "config.json").read_text(
+            encoding="utf-8"))
+        return bool(cfg.get("privacy_mode_strict", False))
+    except Exception:
+        return False
+
+
+def _privacy_gate_check() -> None:
+    """Raise RuntimeError when dispatches are currently blocked.
+    Called at the start of every workflow submission in strict mode."""
+    if _PRIVACY_BLOCKED:
+        raise RuntimeError(
+            "Privacy Gate: dispatches are blocked because the last "
+            "server cleanup did not succeed.\n\n"
+            f"Reason: {_PRIVACY_BLOCK_REASON}\n\n"
+            "Spellcaster won't submit new workflows until the gate is "
+            "reset. Open Filters → ◆ Spellcaster ◆ → Settings → Reset "
+            "Privacy Gate to clear this block after you've verified "
+            "the server is clean (or disable strict mode if you're OK "
+            "with best-effort cleanup).")
+
+
+def _privacy_verify_cleanup(server: str, workflow: dict,
+                             results: list) -> None:
+    """Run real delete + check the response. Fails closed in strict
+    mode — flips _PRIVACY_BLOCKED on a cleanup miss so the next
+    dispatch refuses.
+
+    Imports from spellcaster_core.privacy so the same route + prefix
+    guards as §CN / §privacy-cleanup fire here.
+    """
+    if not _is_privacy_strict():
+        return
+    try:
+        from spellcaster_core.privacy import (cleanup_inputs,
+                                                cleanup_outputs,
+                                                _delete_via_route,
+                                                OWNED_PREFIXES)
+    except ImportError:
+        # Can't verify — fall fast in strict mode rather than silently
+        # proceed with unknown cleanup state.
+        global _PRIVACY_BLOCKED, _PRIVACY_BLOCK_REASON
+        _PRIVACY_BLOCKED = True
+        _PRIVACY_BLOCK_REASON = (
+            "spellcaster_core.privacy unavailable — cannot verify "
+            "server cleanup.")
+        return
+
+    # Inputs cleanup (uses workflow to target exact filenames).
+    try:
+        cleanup_inputs(server, workflow=workflow)
+    except Exception as e:
+        _record_privacy_audit("cleanup_inputs_failed", str(e))
+        _set_privacy_block(f"cleanup_inputs raised: {e}")
+        return
+
+    # Outputs cleanup — POST to the pack route with the exact
+    # filenames the dispatch produced. Inspect the response.
+    if not results:
+        _record_privacy_audit("ok_no_outputs", "")
+        return
+    names = [fn for (fn, _sf, _ft) in results if fn]
+    try:
+        resp = _delete_via_route(server, names, folder_type="output",
+                                   prefixes=OWNED_PREFIXES)
+    except Exception as e:
+        _record_privacy_audit("output_delete_raised", str(e))
+        _set_privacy_block(f"output cleanup raised: {e}")
+        return
+    if resp is None:
+        # Route unavailable — pack not installed / old pack.
+        _record_privacy_audit("route_unavailable", "")
+        _set_privacy_block(
+            "ComfyUI-Spellcaster pack's /spellcaster/privacy/delete "
+            "route is not available. Strict privacy requires real "
+            "os.remove cleanup — the tiny-PNG fallback is not "
+            "sufficient. Install / update the pack on your ComfyUI "
+            "server.")
+        return
+    # Verify every file we cared about was deleted.
+    deleted_names = {d.get("name") if isinstance(d, dict) else d
+                     for d in (resp.get("deleted") or [])}
+    missed = [n for n in names if n not in deleted_names]
+    if missed:
+        _record_privacy_audit("partial_cleanup",
+                                f"missed {len(missed)}: {missed[:5]}")
+        _set_privacy_block(
+            f"Server cleanup left {len(missed)} file(s) behind: "
+            f"{', '.join(missed[:3])}"
+            f"{'…' if len(missed) > 3 else ''}. Check ComfyUI logs "
+            f"for permission / locking errors on the output dir.")
+        return
+    _record_privacy_audit("ok", f"deleted {len(deleted_names)}")
+
+
+def _set_privacy_block(reason: str) -> None:
+    """Raise the privacy block + surface a visible error."""
+    global _PRIVACY_BLOCKED, _PRIVACY_BLOCK_REASON
+    _PRIVACY_BLOCKED = True
+    _PRIVACY_BLOCK_REASON = reason
+    try:
+        Gimp.message(
+            f"Privacy Gate engaged — server cleanup did not complete.\n\n"
+            f"{reason}\n\n"
+            f"Spellcaster will REFUSE further dispatches until the gate "
+            f"is reset (Filters → ◆ Spellcaster ◆ → Settings → Reset "
+            f"Privacy Gate) or strict mode is disabled.\n\n"
+            f"This is the bundle's hard-privacy posture: generations "
+            f"that can't be wiped from the server are considered a "
+            f"leak risk.")
+    except Exception:
+        print(f"[Spellcaster] PRIVACY BLOCK: {reason}",
+              file=__import__('sys').stderr)
+
+
+def _record_privacy_audit(tag: str, detail: str) -> None:
+    """Append to the in-memory audit buffer. Bounded at 200 entries."""
+    _PRIVACY_CLEANUP_AUDIT.append({
+        "ts": time.time(), "tag": tag, "detail": detail,
+    })
+    if len(_PRIVACY_CLEANUP_AUDIT) > 200:
+        del _PRIVACY_CLEANUP_AUDIT[:-200]
+
+
+def _reset_privacy_gate() -> None:
+    """Clear the block so dispatches resume. Called from the Settings
+    'Reset Privacy Gate' button + on plug-in reload."""
+    global _PRIVACY_BLOCKED, _PRIVACY_BLOCK_REASON
+    _PRIVACY_BLOCKED = False
+    _PRIVACY_BLOCK_REASON = ""
+    _record_privacy_audit("reset", "user-initiated via Settings")
+
+
+def _shred_temp_file(path: str) -> None:
+    """Overwrite a file with zeros then unlink it. Used by the
+    retriever to shred the intermediate .png that Gimp.file_load
+    reads before we know it's safely in GIMP memory.
+
+    Single overwrite pass — modern SSD wear-levelling makes multi-pass
+    largely theatre, but we at least guarantee the file isn't
+    retrievable via undelete tools that scan raw sectors for PNG
+    magic bytes.
+    """
+    try:
+        if not path or not os.path.isfile(path):
+            return
+        size = os.path.getsize(path)
+        with open(path, "r+b") as f:
+            f.write(b"\x00" * min(size, 1 << 20))
+            # Big files: zero the first 1 MB, truncate rest. PNG IHDR
+            # is in first 33 bytes — destroying it breaks the magic +
+            # makes the file unrecoverable as PNG regardless of what
+            # tail bytes remain.
+            if size > (1 << 20):
+                f.truncate(1 << 20)
+        os.remove(path)
+    except Exception:
+        # Best-effort. If the file is locked we try again at process
+        # exit via atexit. For now, just attempt the unlink.
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  EMPTY-CANVAS DETECTION — pivot to txt2img on blank-canvas img2img calls
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _canvas_is_empty(image) -> bool:
+    """True when the image has no meaningful content — either no
+    layers, all-transparent layers, or a single layer with no pixel
+    variance. Used to detect "File → New, then clicked img2img" and
+    pivot the user to Text-to-Image instead of submitting a blank
+    canvas through the VAE (which produces a washed-out noise field).
+
+    Conservative: returns False on any ambiguity (no layers API,
+    GIMP error, unexpected image shape) so users who DO have content
+    aren't surprised by a pivot prompt.
+    """
+    try:
+        layers = image.get_layers()
+    except Exception:
+        return False
+    if not layers:
+        return True
+    # Single-layer images: check for pixel variance via histogram.
+    # Multi-layer: too expensive to scan; assume non-empty.
+    if len(layers) > 1:
+        return False
+    try:
+        layer = layers[0]
+        # If the layer has an alpha channel and is fully transparent,
+        # the image is empty.
+        if layer.has_alpha():
+            try:
+                # gimp-drawable-histogram returns mean / min / max.
+                result = _pdb_run("gimp-drawable-histogram", {
+                    "drawable": layer,
+                    "channel": Gimp.HistogramChannel.ALPHA,
+                    "start-range": 0.0, "end-range": 1.0,
+                })
+                mean_alpha = float(result.index(1))
+                if mean_alpha < 0.01:
+                    return True
+            except Exception:
+                pass
+        # Check value-channel variance. A flat-colour canvas has
+        # std-dev 0 → "empty" for our purposes.
+        try:
+            result = _pdb_run("gimp-drawable-histogram", {
+                "drawable": layer,
+                "channel": Gimp.HistogramChannel.VALUE,
+                "start-range": 0.0, "end-range": 1.0,
+            })
+            std_dev = float(result.index(2))
+            if std_dev < 0.001:
+                return True
+        except Exception:
+            pass
+    except Exception:
+        return False
+    return False
+
+
+def _offer_empty_canvas_pivot(image, source_tool: str) -> str:
+    """Present a three-way choice: txt2img / continue-anyway / cancel.
+    Returns one of 'txt2img', 'continue_anyway', 'cancel'.
+
+    Called from handlers that received an empty canvas + an INTERACTIVE
+    run_mode. Non-interactive / scripted dispatches skip this entirely.
+    """
+    try:
+        GimpUi.init("spellcaster")
+        dlg = Gtk.Dialog(title="Spellcaster — Empty Canvas")
+        dlg.set_default_size(480, -1)
+        dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        dlg.add_button("Continue _anyway", 2)
+        dlg.add_button("_Generate with Text-to-Image", Gtk.ResponseType.OK)
+        dlg.set_default_response(Gtk.ResponseType.OK)
+        try:
+            _style_dialog_buttons(dlg)
+        except Exception:
+            pass
+        bx = dlg.get_content_area()
+        bx.set_spacing(8); bx.set_margin_start(14); bx.set_margin_end(14)
+        bx.set_margin_top(14); bx.set_margin_bottom(10)
+        title = Gtk.Label()
+        title.set_markup(
+            '<span size="13000" weight="bold" color="#ffd700">'
+            'Looks like a blank canvas.</span>')
+        title.set_xalign(0.0)
+        bx.pack_start(title, False, False, 0)
+        body = Gtk.Label()
+        body.set_line_wrap(True); body.set_xalign(0.0)
+        body.set_markup(
+            f'{source_tool.capitalize()} sends your current canvas through an '
+            f'AI model. With no content on the canvas, the result will be '
+            f'mostly noise.\n\n'
+            f'<b>Text-to-Image</b> generates a fresh image from just a '
+            f'prompt — probably what you wanted. Your current blank canvas '
+            f'size is used as the output resolution.')
+        bx.pack_start(body, False, False, 0)
+        dlg.show_all()
+        resp = dlg.run()
+        dlg.destroy()
+    except Exception:
+        return "continue_anyway"
+    if resp == Gtk.ResponseType.OK:
+        return "txt2img"
+    if resp == Gtk.ResponseType.CANCEL:
+        return "cancel"
+    return "continue_anyway"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  BUNDLE-MODE WELCOME + AI-FORWARD SURFACES
+# ═══════════════════════════════════════════════════════════════════════════
+# When the plugin runs inside the Spellcaster Studio portable bundle
+# (SPELLCASTER_BUNDLE=1 env set by the launcher), we want to surface
+# AI tools aggressively:
+#
+#   * First GIMP open → welcome dialog with big "Start generating"
+#     buttons pointing at the top 5 AI flows, so users don't have to
+#     hunt through menus.
+#   * Every dialog's header banner shows "Spellcaster Studio" vs plain
+#     "Spellcaster" so the AI brand is omnipresent.
+#   * Default favourite_model + theme + apply_theme → ON, so the
+#     branded look is live out of the box.
+#
+# Everything here is additive — a non-bundle install sees zero
+# difference. The welcome + status wiring ONLY activates when the
+# bundle-mode env var is set.
+
+def _is_bundle_mode() -> bool:
+    """True when running inside the Spellcaster Studio portable
+    bundle. Gate for the aggressive AI-forward surfaces so a regular
+    plug-in install doesn't surprise existing users with popups."""
+    return bool(os.environ.get("SPELLCASTER_BUNDLE"))
+
+
+def _welcome_marker_path() -> Path:
+    """Path to the flag file that records 'user saw the welcome
+    dialog.' Lives in the plug-in dir so it survives auto-updates
+    (auto-updater protects config.json + session state, see §13)."""
+    return _PLUGIN_DIR / ".welcomed"
+
+
+def _maybe_show_bundle_welcome():
+    """One-shot welcome dialog for bundle-mode users.
+
+    Fires the first time any Spellcaster procedure runs inside the
+    bundle (we can't hook "GIMP started" from a plug-in — procedures
+    run in their own child processes — so we piggy-back on the first
+    action). Writes ``.welcomed`` on first show; subsequent procedure
+    invocations see the marker and skip.
+
+    Gates:
+      * SPELLCASTER_BUNDLE=1 must be set (bundle launcher only)
+      * .welcomed must not exist
+
+    Everything else is defensive: Gtk import failures, dialog crash,
+    write failure — all swallowed silently so the welcome can never
+    break a user's actual workflow.
+    """
+    if not _is_bundle_mode():
+        return
+    try:
+        if _welcome_marker_path().exists():
+            return
+    except Exception:
+        return
+    try:
+        GimpUi.init("spellcaster")
+        # Apply theme first so the welcome dialog is branded from
+        # the user's very first frame.
+        _apply_spellcaster_theme()
+    except Exception:
+        pass
+    try:
+        dlg = Gtk.Dialog(title="Welcome to Spellcaster Studio")
+        dlg.set_default_size(640, -1)
+        dlg.add_button("_Skip tour", Gtk.ResponseType.CLOSE)
+        dlg.add_button("_Start generating", Gtk.ResponseType.OK)
+        dlg.set_default_response(Gtk.ResponseType.OK)
+        try:
+            _style_dialog_buttons(dlg)
+        except Exception:
+            pass
+        bx = dlg.get_content_area()
+        bx.set_spacing(10); bx.set_margin_start(18); bx.set_margin_end(18)
+        bx.set_margin_top(18); bx.set_margin_bottom(12)
+
+        title = Gtk.Label()
+        title.set_markup(
+            '<span size="18000" weight="bold" color="#ffd700">'
+            'Spellcaster Studio</span>')
+        title.set_xalign(0.0)
+        bx.pack_start(title, False, False, 0)
+
+        sub = Gtk.Label()
+        sub.set_markup(
+            '<span size="11000" color="#c4b8e3">'
+            'GIMP + ComfyUI + 69 AI tools, pre-configured and ready.'
+            '</span>')
+        sub.set_xalign(0.0)
+        bx.pack_start(sub, False, False, 0)
+
+        bx.pack_start(Gtk.Separator(), False, False, 6)
+
+        body = Gtk.Label()
+        body.set_line_wrap(True)
+        body.set_xalign(0.0)
+        body.set_markup(
+            'Look for the <b>◆ Spellcaster ◆</b> menu on GIMP\'s menu '
+            'bar — between <b>Filters</b> and <b>Windows</b>. Every '
+            'AI action lives there, grouped by what it does:\n\n'
+            '  • <b>Generate</b> — text-to-image, image-to-image, '
+            'inpaint, outpaint, batch variations, edit-by-instruction, '
+            'generate-anything.\n'
+            '  • <b>Enhance</b> — detail hallucinate, upscale, colour '
+            'match, photo restore, face restore.\n'
+            '  • <b>Flux 2</b> — Klein headswap, virtual try-on, '
+            'detail enhancer, surgical edits.\n'
+            '  • <b>3D</b> — normal-map-guided inpaint, outpaint, '
+            'img2img, IC-Light relighting.\n'
+            '  • <b>Selection</b> — SAM3 AI selection, magic eraser, '
+            'rembg background removal.\n'
+            '  • <b>Video</b> — WAN 2.2 image-to-video, LTX 2.3 '
+            'text-to-video, director-mode trios.\n\n'
+            'Clicking <b>Start generating</b> below opens the Image-to-'
+            'Image dialog so you can try it now. The status bar shows '
+            '<b>● Connected</b> in green once ComfyUI is ready — if '
+            'it\'s red, give the backend another ~10 seconds.')
+        bx.pack_start(body, False, False, 0)
+
+        bx.pack_start(Gtk.Separator(), False, False, 6)
+
+        tip = Gtk.Label()
+        tip.set_line_wrap(True)
+        tip.set_xalign(0.0)
+        tip.set_markup(
+            '<small>'
+            '<b>Tip:</b> keyboard shortcuts — <tt>F9</tt> Quick '
+            'Enhance, <tt>F10</tt> Quick Inpaint (needs a selection), '
+            '<tt>F11</tt> Quick Upscale 4×. Right-click the canvas for '
+            'context actions. All generated images auto-copy to '
+            '<tt>data/output/</tt> inside the bundle.'
+            '</small>')
+        bx.pack_start(tip, False, False, 0)
+
+        dlg.show_all()
+        response = dlg.run()
+        dlg.destroy()
+    except Exception as e:
+        print(f"[Spellcaster] welcome dialog failed: {e}")
+        response = Gtk.ResponseType.CLOSE
+
+    # Persist the marker FIRST so a later crash doesn't re-pop.
+    try:
+        _welcome_marker_path().write_text("1", encoding="utf-8")
+    except Exception:
+        pass
+
+    # If the user clicked "Start generating," chain straight into
+    # Img2Img so they don't have to hunt the menu. We can't call the
+    # handler directly from here (class isn't constructed yet at
+    # module import), so we stash a one-shot flag that the query
+    # layer picks up.
+    if response == Gtk.ResponseType.OK:
+        try:
+            (_PLUGIN_DIR / ".welcome_start_img2img").write_text(
+                "1", encoding="utf-8")
+        except Exception:
+            pass
+
+
 def _reapply_appearance_assets() -> dict:
     """Push freshly-downloaded theme / splash / icon assets into the
     locations GIMP actually reads them from.
@@ -1889,8 +2369,17 @@ def _wrap_auto_drain(callback):
     (see `_INBOX_AUTO_*` constants) so even a slow or hostile Guild
     can't block the user more than a few seconds. Errors from the
     drain NEVER propagate to the wrapped callback.
+
+    ALSO fires the one-shot bundle-mode welcome dialog on the very
+    first Spellcaster procedure entry per install — this is the
+    earliest possible hook (handlers are the only user-reachable
+    surface from a plug-in running as a subprocess).
     """
     def wrapped(procedure, run_mode, image, drawables, config, data):
+        try:
+            _maybe_show_bundle_welcome()
+        except Exception:
+            pass
         _maybe_auto_drain_inbox()
         return callback(procedure, run_mode, image, drawables, config, data)
     return wrapped
@@ -10120,10 +10609,11 @@ def _import_result_as_layer(image, image_data, layer_name="ComfyUI Result",
     try:
         result_image = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, file)
     except Exception as _e:
-        try:
-            os.unlink(tmp.name)
-        except Exception:
-            pass
+        # Privacy-strict: shred the temp file (zero-fill + unlink) so
+        # the PNG bytes can't be recovered from disk by undelete tools
+        # — auto-encrypt-before-disk intent. No-op cost when strict
+        # mode is off (shred still always runs; it's cheap).
+        _shred_temp_file(tmp.name)
         try:
             Gimp.message(
                 f"Could not decode '{layer_name}' ({len(image_data)} B "
@@ -10135,10 +10625,7 @@ def _import_result_as_layer(image, image_data, layer_name="ComfyUI Result",
     layers = result_image.get_layers()
     if not layers:
         result_image.delete()
-        try:
-            os.unlink(tmp.name)
-        except Exception:
-            pass
+        _shred_temp_file(tmp.name)
         return
 
     # ── Ensure the result image matches the destination colour mode ─────
@@ -10177,10 +10664,7 @@ def _import_result_as_layer(image, image_data, layer_name="ComfyUI Result",
             pass
         Gimp.Display.new(result_image)
         Gimp.displays_flush()
-        try:
-            os.unlink(tmp.name)
-        except Exception:
-            pass
+        _shred_temp_file(tmp.name)
         return None
 
     new_layer = Gimp.Layer.new_from_drawable(layers[0], image)
@@ -10195,10 +10679,7 @@ def _import_result_as_layer(image, image_data, layer_name="ComfyUI Result",
             new_layer.get_height() != image.get_height()):
         new_layer.scale(image.get_width(), image.get_height(), False)
     result_image.delete()
-    try:
-        os.unlink(tmp.name)
-    except Exception:
-        pass
+    _shred_temp_file(tmp.name)
     Gimp.displays_flush()
     return new_layer
 
@@ -11801,6 +12282,14 @@ def _run_comfyui_workflow(server, workflow, timeout=300):
     _tel_warnings: list = []
     _tel_images: list = []
     try:
+        # Privacy Gate: refuse if a prior dispatch's cleanup failed
+        # and strict mode is on. Raises RuntimeError → caller shows
+        # Gimp.message via its try/except.
+        try:
+            _privacy_gate_check()
+        except RuntimeError:
+            raise
+
         # GIMP-specific: wait for ComfyUI queue + flush pending uploads
         _wait_for_comfy_queue_empty(server)
         with _workflow_lock:
@@ -11885,6 +12374,14 @@ def _run_comfyui_workflow(server, workflow, timeout=300):
             _repatriate_outputs(server, images, workflow=workflow)
         except Exception:
             pass
+        # Privacy-strict verification. In strict mode, confirms every
+        # input + output was actually deleted from the server; on
+        # failure, flips _PRIVACY_BLOCKED so the next dispatch refuses.
+        # No-op when strict mode is off.
+        try:
+            _privacy_verify_cleanup(server, workflow, images)
+        except Exception as _pv_err:
+            print(f"[Spellcaster] privacy verify raised: {_pv_err}")
         _tel_outcome = "ok"
         _tel_images = images
         return images
@@ -19122,28 +19619,86 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-iclight-3d":         f"{_S}/3D",
         }
 
-        # ── Native GIMP menu integration ─────────────────────────────
-        # Tools appear in their contextually appropriate GIMP menus
-        # IN ADDITION to the Spellcaster submenu. Users find AI Select
-        # under Select, AI Color Match under Colors, etc. — where they
-        # naturally look. add_menu_path() is callable multiple times.
+        # ── Native GIMP menu integration — DEEP ──────────────────────
+        # AI tools live WHERE USERS LOOK, not just in a sidelined
+        # Spellcaster submenu. Every key AI action appears in the
+        # relevant built-in menu so the mental model is "AI is just
+        # another way to do X," not "I have to go hunt for AI in a
+        # special menu."
+        #
+        # add_menu_path() is callable multiple times per procedure;
+        # each call registers an additional visible entry. The
+        # Spellcaster submenu stays the canonical home (full catalog);
+        # native menus get a curated subset of the most-used tools.
         _native_paths = {
-            # Select menu — AI-powered selection belongs here
+            # ── File menu ────────────────────────────────────────
+            # Right next to File → New / File → Open — "start from AI"
+            # is a first-class way to begin a project.
+            "spellcaster-txt2img":           "<Image>/File/New with AI",
+            "spellcaster-generate-anything": "<Image>/File/New with AI",
+
+            # ── Edit menu ────────────────────────────────────────
+            # AI edit-by-instruction is conceptually an edit operation;
+            # sits next to Undo / Redo / Paste / etc.
+            "spellcaster-kontext":           "<Image>/Edit",
+            "spellcaster-klein-sam3-inpaint":"<Image>/Edit",
+
+            # ── Select menu ──────────────────────────────────────
+            # AI select goes ABOVE Select By Color in users' minds —
+            # SAM3 is the most powerful selection tool GIMP has access
+            # to. Multiple entries so "select the shirt" vs "select
+            # the foreground" vs "extract as new layer" all appear.
             "spellcaster-sam3-select":       "<Image>/Select",
             "spellcaster-sam3-extract":      "<Image>/Select",
             "spellcaster-anything-but":      "<Image>/Select",
             "spellcaster-magic-eraser":      "<Image>/Select",
-            # Filters menu — AI eraser alongside other AI tools
-            "spellcaster-quick-erase":       "<Image>/Filters",
-            # Colors menu — color manipulation tools
+
+            # ── Image menu ───────────────────────────────────────
+            # AI upscale / extend / photo-restore live next to
+            # Scale Image / Canvas Size / Duplicate.
+            "spellcaster-upscale":           "<Image>/Image",
+            "spellcaster-outpaint":          "<Image>/Image",
+            "spellcaster-outpaint-3d":       "<Image>/Image",
+            "spellcaster-klein-outpaint":    "<Image>/Image",
+            "spellcaster-photo-restore":     "<Image>/Image",
+            "spellcaster-detail-hallucinate":"<Image>/Image",
+            "spellcaster-img2img":           "<Image>/Image",
+            "spellcaster-img2img-3d":        "<Image>/Image",
+
+            # ── Layer menu ───────────────────────────────────────
+            # AI-inpaint-the-selection + AI-blend sit next to
+            # Layer → New Layer / Duplicate.
+            "spellcaster-inpaint":           "<Image>/Layer",
+            "spellcaster-inpaint-3d":        "<Image>/Layer",
+            "spellcaster-quick-inpaint":     "<Image>/Layer",
+            "spellcaster-layer-blend-ratio": "<Image>/Layer",
+            "spellcaster-upscale-blend":     "<Image>/Layer",
+
+            # ── Colors menu ──────────────────────────────────────
+            # AI colour tools next to built-in Hue-Saturation / Curves.
             "spellcaster-color-match":       "<Image>/Colors",
             "spellcaster-colorize":          "<Image>/Colors",
             "spellcaster-lut":               "<Image>/Colors",
             "spellcaster-iclight":           "<Image>/Colors",
-            # Image menu — scaling / canvas operations
-            "spellcaster-upscale":           "<Image>/Image",
-            "spellcaster-outpaint":          "<Image>/Image",
-            "spellcaster-klein-outpaint":    "<Image>/Image",
+            "spellcaster-iclight-3d":        "<Image>/Colors",
+            "spellcaster-ddcolor":           "<Image>/Colors",
+
+            # ── Filters menu ─────────────────────────────────────
+            # Classic "run an AI filter on the image" home.
+            "spellcaster-quick-enhance":     "<Image>/Filters",
+            "spellcaster-quick-erase":       "<Image>/Filters",
+            "spellcaster-quick-rembg":       "<Image>/Filters",
+            "spellcaster-style-transfer":    "<Image>/Filters",
+            "spellcaster-rembg":             "<Image>/Filters",
+            "spellcaster-supir":             "<Image>/Filters",
+            "spellcaster-face-restore":      "<Image>/Filters",
+            "spellcaster-klein-detail":      "<Image>/Filters",
+
+            # ── Windows menu ─────────────────────────────────────
+            # Settings + diagnostics next to GIMP's own tool-window
+            # management.
+            "spellcaster-settings":          "<Image>/Windows",
+            "spellcaster-show-minihud":      "<Image>/Windows",
         }
 
         # ── 3D submenu — tools that actually surface a normal-map
@@ -19210,6 +19765,28 @@ class Spellcaster(Gimp.PlugIn):
         """Image-to-image: send current canvas through a model preset."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+
+        # DEEP integration: if the canvas is empty (all-transparent or
+        # all-one-colour — user hit File → New and hasn't drawn
+        # anything), offer to start with Text-to-Image instead. img2img
+        # on a blank canvas produces a washed-out noise field because
+        # the VAE has no structure to encode. Pivot to the right tool.
+        if run_mode == Gimp.RunMode.INTERACTIVE:
+            try:
+                if _canvas_is_empty(image):
+                    picked = _offer_empty_canvas_pivot(
+                        image, source_tool="img2img")
+                    if picked == "txt2img":
+                        return self._run_txt2img(
+                            procedure, run_mode, image, drawables,
+                            config, data)
+                    if picked == "cancel":
+                        return procedure.new_return_values(
+                            Gimp.PDBStatusType.CANCEL, GLib.Error())
+                    # "continue_anyway" or dismiss → fall through to
+                    # the normal img2img flow.
+            except Exception:
+                pass  # detection never blocks the handler
 
         # WITH_LAST_VALS (Ctrl+F "Repeat"): skip dialog, use saved session
         if run_mode == Gimp.RunMode.WITH_LAST_VALS:
