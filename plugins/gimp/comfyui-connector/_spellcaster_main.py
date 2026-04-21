@@ -19521,7 +19521,7 @@ class Spellcaster(Gimp.PlugIn):
         _M_ALCHEMY = "<Image>/⚗ Alchemy"
         _M_SCRYING = "<Image>/🔮 Scrying"
         _M_BRIDGES = "<Image>/🔗 Bridges"
-        _M_QUICK   = "<Image>/⚡ Quick Spells"
+        _M_QUICK   = "<Image>/⚡ Quick"
         _M_CRYPT   = "<Image>/🗝 Crypt"
         # _S kept as alias pointing at the Crypt so legacy references
         # (my-presets, 3D submenu, bridges-panel top-level) still land
