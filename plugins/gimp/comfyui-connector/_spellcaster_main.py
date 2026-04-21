@@ -6624,161 +6624,205 @@ def _flush_pending_uploads():
     _pending_uploads = []
 
 def _mask_image_to_gimp_selection(image, mask_path, feather=4):
-    """Load a grayscale mask image and convert it to a GIMP selection.
+    """Load a grayscale mask image and apply it as a GIMP selection.
 
     White pixels in the mask become selected; black pixels are unselected.
-    The mask is loaded as a temporary layer, converted to a selection via
-    by-color-select on white, then the temp layer is removed.
+    The final state has ONLY a selection on the target image — no temp
+    layer, no temp channel, no cutout.
 
     Args:
         image: The GIMP image to apply the selection to.
         mask_path: Path to the downloaded mask PNG (str / PathLike),
-            OR the raw PNG bytes \u2014 we accept both because
+            OR the raw PNG bytes — we accept both because
             ``_download_image`` returns bytes while callers sometimes
-            already stage a file. Bytes are written to a temp file
-            transparently.
+            already stage a file.
         feather (int): Feather radius in pixels (0 = hard edge).
+
+    Implementation notes (2026-04-20 rewrite)
+    -----------------------------------------
+    Previous version used ``Gimp.Channel.new_from_visible`` which is a
+    GIMP 2.x method not available in GIMP 3.2 (user reported
+    ``type object Channel has no attribute 'new_from_visible'``).
+    Switched to a cascade of modern GIMP 3 API paths, with Gegl-buffer
+    pixel copy as the portable fallback:
+
+      1. ``Gimp.Channel.new_from_drawable(drawable, image)`` — cleanest
+         path; copies the mask drawable's grayscale pixels into a new
+         channel on the target image directly. Available in GIMP 3.0+.
+      2. ``Gimp.Channel.new(...)`` + Gegl buffer pixel copy — portable
+         fallback using only APIs that have existed in GIMP since 2.10.
+         Creates a blank channel, reads the mask layer's Gegl buffer,
+         writes it into the channel's buffer.
+
+    Either path feeds into ``gimp-image-select-item`` which turns the
+    channel into the active selection. Temp channel is removed after
+    — the user is left with JUST marching ants on the existing layer.
     """
-    # Strategy: load mask as image → save as channel in target → convert
-    # channel to selection. Uses only proven API calls from
-    # _create_selection_mask_png (which works on GIMP 3.0-3.2).
     mask_img = None
     _tmp_mask_path: str | None = None
+    _steps: list[str] = []   # debug trail for the error message
     try:
-        # Callers occasionally pass raw PNG bytes from
-        # ``_download_image`` directly \u2014 that hits "embedded null
-        # byte" when Gio.File.new_for_path tries to interpret the
-        # binary as a filesystem path. Materialise bytes to a temp
-        # file so the downstream GIMP loader gets what it expects,
-        # and remember the path so we can clean it up below.
         if isinstance(mask_path, (bytes, bytearray)):
             _tmp = tempfile.NamedTemporaryFile(
-                suffix=".png", prefix="sam3_mask_", delete=False)
+                suffix=".png", prefix="sc_mask_", delete=False)
             _tmp.write(bytes(mask_path))
             _tmp.close()
             _tmp_mask_path = _tmp.name
             mask_path = _tmp_mask_path
+            _steps.append("materialised-bytes")
 
-        # 1. Load mask PNG as a separate GIMP image
-        mask_file = Gio.File.new_for_path(mask_path)
+        mask_file = Gio.File.new_for_path(str(mask_path))
         mask_img = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, mask_file)
         if mask_img is None:
-            raise RuntimeError("Failed to load mask image")
+            raise RuntimeError("Gimp.file_load returned None")
+        _steps.append("loaded")
 
-        # 2. Flatten + grayscale + scale to match target
         mask_img.flatten()
         try:
-            _pdb_run('gimp-image-convert-grayscale', {'image': mask_img})
+            if mask_img.get_base_type() != Gimp.ImageBaseType.GRAY:
+                _pdb_run('gimp-image-convert-grayscale',
+                         {'image': mask_img})
         except Exception:
-            pass  # might already be grayscale
+            pass
+        _steps.append("grayscale")
+
         iw, ih = image.get_width(), image.get_height()
         if mask_img.get_width() != iw or mask_img.get_height() != ih:
             mask_img.scale(iw, ih)
+        _steps.append(f"scaled-{iw}x{ih}")
 
-        # 3. The mask is grayscale: white=subject, black=background.
-        # Strategy: make the mask the ONLY visible thing, then create a
-        # channel from the visible content. This avoids ALL broken APIs
-        # (Gimp.RGB, Gimp.ObjectArray, gimp-by-color-select, copy-paste).
         mask_layers = mask_img.get_layers()
         if not mask_layers:
-            raise RuntimeError("Mask image has no layers")
-
-        # 3. The mask is grayscale: white=selected, black=unselected.
-        # Use Strategy C from _create_selection_mask_png: pixel scan.
-        # This is the PROVEN FALLBACK that always works. It reads pixel
-        # values from the mask and writes them into the selection channel.
-        mask_layers = mask_img.get_layers()
-        if not mask_layers:
-            raise RuntimeError("Mask image has no layers")
-
+            raise RuntimeError("mask image has no layers after flatten")
         mask_drawable = mask_layers[0]
-        mw = mask_img.get_width()
-        mh = mask_img.get_height()
 
-        # Clear any existing selection on the target
-        _pdb_run('gimp-selection-none', {'image': image})
-
-        # Build a selection by scanning the mask pixels.
-        # White (value > 128) = selected. We do this by writing a raw
-        # grayscale PNG as the selection mask and loading it via
-        # gimp-image-select-item on a channel.
-        #
-        # Actually, the simplest proven method: export the mask_img's
-        # content as a selection on the MASK image, save that channel,
-        # then create a new channel in the TARGET from the mask layer.
-
-        # Hide all layers, show only mask, create channel from visible.
-        # Wrapped in try/finally so a mid-op raise (new_from_visible,
-        # insert_channel, etc.) can't leave the canvas with every-
-        # layer-hidden — that bug produced black results on
-        # subsequent exports.
-        orig_vis = []
-        tmp_layer = None
+        # Start from a clean slate — any existing selection goes.
         try:
-            for l in image.get_layers():
-                orig_vis.append((l, l.get_visible()))
-                l.set_visible(False)
+            _pdb_run('gimp-selection-none', {'image': image})
+        except Exception:
+            pass
 
-            tmp_layer = Gimp.Layer.new_from_drawable(mask_drawable, image)
-            tmp_layer.set_name("_SAM3_mask_tmp")
-            tmp_layer.set_visible(True)
-            image.insert_layer(tmp_layer, None, 0)
+        # ── Strategy 1: Channel.new_from_drawable ──────────────────
+        # Copies the mask drawable's grayscale pixel data straight
+        # into a new channel on the target image. Cleanest API.
+        chan = None
+        try:
+            if hasattr(Gimp.Channel, "new_from_drawable"):
+                chan = Gimp.Channel.new_from_drawable(mask_drawable, image)
+                if chan is not None:
+                    try:
+                        chan.set_name("_sc_selection")
+                    except Exception:
+                        pass
+                    image.insert_channel(chan, None, 0)
+                    _steps.append("strat1-new_from_drawable")
+        except Exception as _e1:
+            print(f"[SAM3] Channel.new_from_drawable failed: {_e1}")
+            chan = None
 
-            chan = Gimp.Channel.new_from_visible(image, image, "_SAM3_sel")
-            image.insert_channel(chan, None, 0)
-        finally:
-            if tmp_layer is not None:
-                try: image.remove_layer(tmp_layer)
-                except Exception: pass
-            for l, v in orig_vis:
+        # ── Strategy 2: blank channel + Gegl buffer pixel copy ─────
+        # Portable fallback. Creates an empty channel on the target,
+        # then copies the mask layer's Gegl buffer into it.
+        if chan is None:
+            try:
+                # Create a blank channel filled at 0 opacity so we can
+                # overwrite its pixels below. Color arg defaults to
+                # something benign — the alpha/pixel data we stream in
+                # via the Gegl buffer is what actually ends up there.
                 try:
-                    l.set_visible(v)
+                    # GIMP 3 Channel.new signature:
+                    #   new(image, name, width, height, opacity, color)
+                    default_color = Gegl.Color.new("white") \
+                        if hasattr(Gegl, "Color") else None
+                    chan = Gimp.Channel.new(
+                        image, "_sc_selection",
+                        iw, ih, 100.0, default_color)
+                except TypeError:
+                    chan = Gimp.Channel.new(
+                        image, "_sc_selection",
+                        iw, ih, 100.0)
+                image.insert_channel(chan, None, 0)
+                src_buf = mask_drawable.get_buffer()
+                dst_buf = chan.get_buffer()
+                rect = Gegl.Rectangle.new(0, 0, iw, ih)
+                # Read the mask bytes and write them into the channel.
+                # Format string: "Y' u8" is single-channel 8-bit gray
+                # in GIMP 3; that's what the channel buffer expects.
+                fmt = "Y' u8"
+                try:
+                    pix = src_buf.get(rect, 1.0, fmt,
+                                       Gegl.AbyssPolicy.CLAMP)
+                    dst_buf.set(rect, fmt, pix)
+                except Exception:
+                    # Some Gegl formats need Babl-format lookup; fall
+                    # back to the mask buffer's native format.
+                    native_fmt = src_buf.get_format()
+                    pix = src_buf.get(rect, 1.0, None,
+                                       Gegl.AbyssPolicy.CLAMP)
+                    dst_buf.set(rect, native_fmt, pix)
+                try:
+                    dst_buf.flush()
                 except Exception:
                     pass
+                try:
+                    chan.update(0, 0, iw, ih)
+                except Exception:
+                    pass
+                _steps.append("strat2-gegl-buffer-copy")
+            except Exception as _e2:
+                print(f"[SAM3] Gegl-buffer channel fill failed: {_e2}")
+                chan = None
 
-        # Convert channel to selection
+        if chan is None:
+            raise RuntimeError(
+                "Could not construct a channel from the mask image. "
+                "Your GIMP version may be missing both "
+                "Gimp.Channel.new_from_drawable and a working "
+                "Gegl.Buffer.set path.")
+
+        # Channel → selection via PDB. Try both ChannelOps enum and
+        # the integer literal 2 (REPLACE) — some GIMP 3 builds reject
+        # the Python enum and want the raw int.
         select_ok = False
-        for op_val in [Gimp.ChannelOps.REPLACE, 2]:
+        for op_val in [Gimp.ChannelOps.REPLACE, 2, 0]:
             try:
                 _pdb_run('gimp-image-select-item', {
                     'image': image, 'operation': op_val, 'item': chan})
                 select_ok = True
+                _steps.append(f"select-item-op{op_val!r}")
                 break
-            except Exception as _e:
-                print(f"[SAM3] gimp-image-select-item with op={op_val} failed: {_e}")
-
+            except Exception as _es:
+                continue
         if not select_ok:
-            raise RuntimeError("gimp-image-select-item failed with both ChannelOps.REPLACE and 2")
+            raise RuntimeError("gimp-image-select-item rejected every "
+                               "ChannelOps value we tried")
 
-        # Feather if requested
         if feather > 0:
             try:
-                _pdb_run('gimp-selection-feather', {
-                    'image': image, 'radius': float(feather)})
+                _pdb_run('gimp-selection-feather',
+                         {'image': image, 'radius': float(feather)})
+                _steps.append(f"feather-{feather}")
             except Exception:
                 pass
 
-        # Remove the channel (selection persists independently)
+        # Remove the temp channel — the selection itself lives on the
+        # image's selection channel, independent of this one.
         try:
             image.remove_channel(chan)
         except Exception:
             pass
-        mask_img.delete()
-
+        _steps.append("done")
     except Exception as e:
-        # Clean up on failure
+        raise RuntimeError(
+            f"Could not convert mask to selection ({e}). "
+            f"Trace: {' → '.join(_steps) or '(no steps)'}"
+        ) from e
+    finally:
         try:
-            if mask_img:
+            if mask_img is not None:
                 mask_img.delete()
         except Exception:
             pass
-        raise RuntimeError(f"Could not convert SAM3 mask to selection: {e}.\n"
-                           "The mask was added as a layer — you can convert it "
-                           "manually via Select > By Color.") from e
-    finally:
-        # Best-effort cleanup for the materialised temp file when
-        # bytes were passed. We avoid unlinking the caller's own
-        # path (only the one we created in this function).
         if _tmp_mask_path:
             try:
                 os.unlink(_tmp_mask_path)
