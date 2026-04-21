@@ -614,15 +614,32 @@ def _reapply_appearance_assets() -> dict:
             for pf in roots:
                 # Windows layout: <root>/share/gimp/3.0/images.
                 # macOS / Linux layout depends on the packaging; glob
-                # defensively for the gimp-splash*.png pattern anywhere
-                # under the root.
+                # for the EXACT gimp-splash.png anywhere under the
+                # root. Pre-2026-04-20 this matched "gimp-splash*.png"
+                # (with the wildcard) which pulled in the
+                # ``gimp-splash.orig.png`` backup we created last
+                # time, and every subsequent run overwrote that too —
+                # accumulating a 16-level ``.orig.orig.orig....png``
+                # chain on the user's filesystem.
                 if pf.is_dir():
-                    for f in pf.rglob("gimp-splash*.png"):
+                    for f in pf.rglob("gimp-splash.png"):
+                        # Defensive: skip anything with `.orig.` in
+                        # the middle of the filename — those are prior
+                        # Spellcaster backups we don't want to
+                        # overwrite. (A glob for the EXACT name above
+                        # already filters these, but belt + braces.)
+                        if ".orig." in f.name:
+                            continue
                         splash_candidates.append(f)
             landed = False
             for splash in splash_candidates:
                 try:
                     backup = splash.with_suffix(".orig" + splash.suffix)
+                    # Only create the backup ONCE, when no .orig.png
+                    # exists yet. On subsequent runs the Spellcaster
+                    # banner replaces the Spellcaster banner — the
+                    # pristine GIMP original stays safely in
+                    # gimp-splash.orig.png.
                     if not backup.exists():
                         shutil.copy2(splash, backup)
                     shutil.copy2(banner_png, splash)
@@ -657,8 +674,13 @@ def _reapply_appearance_assets() -> dict:
                 for icon_name in ("gimp-logo.png", "wilber.png"):
                     # Walk the tree so we catch the icon regardless of
                     # whether it lives in share/gimp/3.0/images/ or
-                    # another packaging-specific subdir.
+                    # another packaging-specific subdir. Skip .orig
+                    # backups (same reason as the splash path above —
+                    # we don't want to accumulate an ``.orig.orig...``
+                    # chain).
                     for icon_path in pf.rglob(icon_name):
+                        if ".orig." in icon_path.name:
+                            continue
                         try:
                             backup = icon_path.with_suffix(
                                 ".orig" + icon_path.suffix)
