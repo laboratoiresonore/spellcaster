@@ -27482,11 +27482,29 @@ class Spellcaster(Gimp.PlugIn):
                 _wf = wf
                 results = _run_with_spinner(f"{label}: processing on ComfyUI...",
                                             lambda: list(_run_comfyui_workflow(srv, _wf)))
+                n_imported = 0
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = _layer_label(
                         "Outpaint", preset=v.get("preset"),
                         run_i=run_i, runs=runs, i=i)
-                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
+                    if _apply_mask_mode(
+                            srv, image,
+                            _download_image(srv, fn, sf, ft), lbl, False):
+                        n_imported += 1
+                # Outpaint extends canvas → result dims exceed the
+                # original canvas → §18 auto-routes to Gimp.Display.new
+                # (a NEW GIMP image window). Surface that explicitly
+                # so users don't think the outpaint silently failed
+                # when they only see their original canvas unchanged.
+                if n_imported > 0:
+                    try:
+                        Gimp.message(
+                            f"Outpaint done — result opened in a NEW "
+                            f"image window. Switch via Windows menu "
+                            f"or taskbar. Your original canvas is "
+                            f"unchanged.")
+                    except Exception:
+                        pass
             Gimp.displays_flush()
             Gimp.progress_end()
             _LAST_PROCEDURE["name"] = "spellcaster-outpaint"
@@ -33932,7 +33950,18 @@ class Spellcaster(Gimp.PlugIn):
             _FORCE_3D_MODE = False
 
     def _run_outpaint_3d(self, procedure, run_mode, image, drawables, config, data):
-        """Outpaint with MANDATORY 3D normal map guidance."""
+        """Outpaint with MANDATORY 3D normal map guidance.
+
+        The underlying _run_outpaint excludes CN-incompatible arches
+        (Klein / Kontext / Chroma) from its dialog via
+        exclude_archs=_CN_INCOMPATIBLE_ARCHS — so normally a user can't
+        pick one. If the dialog somehow surfaces one (custom preset,
+        stale session), the 3D guidance is a silent no-op for ~80 s of
+        sampling. _maybe_override_cn_with_normal_map ALSO shows a
+        Gimp.message in that case, but users often miss it. This
+        wrapper is purely about surfacing the existing guards — the
+        heavy lifting stays in _run_outpaint.
+        """
         global _FORCE_3D_MODE
         try:
             GimpUi.init("spellcaster")
