@@ -29670,7 +29670,14 @@ class Spellcaster(Gimp.PlugIn):
         fe.set_tooltip_text("Feather the selection edges by this many pixels (0 = hard edge)")
         hb3.pack_start(fe, False, False, 0); bx.pack_start(hb3, False, False, 0)
         # Info
-        bx.pack_start(Gtk.Label(label="SAM3 detects the subject and creates a GIMP selection.\nRequires the SAM3 node pack on your ComfyUI server."), False, False, 4)
+        bx.pack_start(Gtk.Label(
+            label="SAM3 detects the subject and sets a GIMP selection on "
+                  "the current image.\nNo new layer, no transparency — "
+                  "just marching ants over the subject.\nFor a cutout "
+                  "version, use 'AI Select — cut out to new layer...' "
+                  "instead.\n\nRequires the SAM3 node pack on your "
+                  "ComfyUI server."),
+            False, False, 4)
         bx.show_all()
         if dlg.run() != Gtk.ResponseType.OK:
             dlg.destroy()
@@ -29686,38 +29693,55 @@ class Spellcaster(Gimp.PlugIn):
             _update_spinner_status("SAM3: segmenting on ComfyUI...")
             results = _run_with_spinner("SAM3: segmenting on ComfyUI...",
                                         lambda: list(_run_comfyui_workflow(srv, wf)))
-            # Import the SUBJECT (foreground on alpha) as a transparent layer,
-            # same as Extract Subject does. The subject output from SAM3
-            # slot 0 is the detected region on transparent background.
-            imported = False
+            # MERE SELECTION: pick the GRAYSCALE MASK (slot 1), NOT the
+            # transparent-background subject (slot 0). Apply the mask as
+            # a GIMP selection on the existing canvas. NO new layer is
+            # created — the user explicitly asked for "just a selection
+            # on the current layer". For a cut-out version, use the
+            # "AI Select — cut out to new layer..." entry instead.
+            #
+            # (Prior to 2026-04-20 this handler was picking slot 0 and
+            # calling _import_result_as_layer, which produced a
+            # transparent cutout layer identical to Extract Subject —
+            # violating the "mere selection" promise on the label.)
+            mask_bytes = None
             for fn, sf, ft in results:
-                if 'subject' in fn.lower():
-                    data = _download_image(srv, fn, sf, ft)
-                    # Empty-detection guard: when SAM3 finds nothing
-                    # matching the prompt, slot 0 comes back fully
-                    # transparent. Tell the user rather than silently
-                    # importing an invisible layer.
-                    if _looks_like_blank_rembg(data):
-                        try:
-                            Gimp.message(
-                                f"SAM3 didn't find '{prompt}' in this image.\n\n"
-                                f"Try a simpler prompt (e.g. 'person' "
-                                f"instead of 'the man in the red shirt'), "
-                                f"or check the canvas actually contains "
-                                f"what you described.")
-                        except Exception:
-                            print(f"[Spellcaster] SAM3 found nothing for '{prompt}'.")
-                        imported = True
-                        break
-                    _import_result_as_layer(image, data,
-                                            f"SAM3: {prompt}", keep_size=True)
-                    imported = True
+                if 'mask' in fn.lower():
+                    mask_bytes = _download_image(srv, fn, sf, ft)
                     break
-            if not imported and results:
-                # Fallback: import first result
-                fn, sf, ft = results[0]
-                _import_result_as_layer(image, _download_image(srv, fn, sf, ft),
-                                        f"SAM3: {prompt}", keep_size=True)
+            # Some SAM3 pack versions don't name the mask slot — fall
+            # back to the second output if exactly two came back.
+            if mask_bytes is None and len(results) >= 2:
+                fn, sf, ft = results[1]
+                mask_bytes = _download_image(srv, fn, sf, ft)
+            if not mask_bytes:
+                raise RuntimeError(
+                    "SAM3 did not return a mask image — check that "
+                    "the SAM3 node pack on your ComfyUI server is "
+                    "up to date.")
+            # Empty-detection guard: a blank (all-black) mask means
+            # SAM3 found nothing matching the prompt. Tell the user
+            # rather than silently clearing the existing selection.
+            if _looks_like_uniform_mask(mask_bytes):
+                try:
+                    Gimp.message(
+                        f"SAM3 didn't find '{prompt}' in this image.\n\n"
+                        f"Try a simpler prompt (e.g. 'person' "
+                        f"instead of 'the man in the red shirt'), "
+                        f"or check the canvas actually contains "
+                        f"what you described.")
+                except Exception:
+                    print(f"[Spellcaster] SAM3 found nothing for '{prompt}'.")
+                Gimp.progress_end()
+                _LAST_PROCEDURE["name"] = "spellcaster-sam3-select"
+                return procedure.new_return_values(
+                    Gimp.PDBStatusType.SUCCESS, GLib.Error())
+            # Apply the mask as a GIMP selection on the current image.
+            # Implementation in _mask_image_to_gimp_selection: loads
+            # the mask PNG, flattens to grayscale, scales to match,
+            # creates a temp visible-from channel on the target,
+            # runs gimp-image-select-item. Leaves no layers behind.
+            _mask_image_to_gimp_selection(image, mask_bytes, feather=feather)
             Gimp.displays_flush()
             Gimp.progress_end()
             _LAST_PROCEDURE["name"] = "spellcaster-sam3-select"
