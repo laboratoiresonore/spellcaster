@@ -358,25 +358,79 @@ class GuildClient:
 
     # ── SSE subscription (connection only; callers iterate) ──────────
 
-    def open_event_stream(self):
+    def open_event_stream(self, last_event_id: str | None = None):
         """Open a streaming connection to /api/video/events.
 
-        Returns an iterator yielding parsed event dicts, or None on failure.
-        The caller is responsible for closing the underlying response.
+        Returns an iterator yielding parsed event dicts
+        (``{"event": str, "data": dict, "id": str, "ts": float}``),
+        or None on failure. Caller responsible for closing the stream.
 
-        This is a generator-style helper — safe to use in a background
-        thread. Each yielded value is {"event": str, "data": dict}.
+        Preferred transport: ``sseclient-py`` (Apache-2.0) — provides
+        ``Last-Event-ID`` replay on reconnect, auto-handles comment
+        lines + retry: directives + multi-line data: events, and
+        normalises quirks across proxies. Falls back to the
+        hand-rolled ``_iter_sse`` generator when sseclient isn't
+        installed (air-gapped installs, legacy Resolve shipments).
+
+        Args:
+            last_event_id: Last event id seen in a prior stream. When
+                supplied, sent as ``Last-Event-ID`` header so the
+                server can replay missed events. Each yielded event's
+                ``id`` field is what the caller should save.
         """
         url = f"{self.base_url}/api/video/events"
-        req = urllib.request.Request(url, headers={"Accept": "text/event-stream"})
+        headers = {"Accept": "text/event-stream"}
+        if last_event_id:
+            headers["Last-Event-ID"] = last_event_id
+        # Prefer sseclient-py if installed.
+        try:
+            import sseclient
+            import requests
+            sess = requests.Session()
+            sess.headers.update(headers)
+            resp = sess.get(url, stream=True, timeout=30.0)
+            resp.raise_for_status()
+            return _iter_sseclient(sseclient.SSEClient(resp))
+        except ImportError:
+            pass
+        # Fallback: hand-rolled urllib stream (unchanged behavior).
+        req = urllib.request.Request(url, headers=headers)
         resp = urllib.request.urlopen(req, timeout=30.0)
         return _iter_sse(resp)
 
 
+def _iter_sseclient(client):
+    """Adapter — turns sseclient-py's Event objects into the same
+    ``{event, data, id, ts}`` shape our consumers expect. Keeps the
+    downstream code (``bridge/sse_client.py``) decoupled from which
+    transport is in use."""
+    try:
+        for evt in client.events():
+            raw = evt.data or ""
+            try:
+                parsed = json.loads(raw) if raw else {}
+            except Exception:
+                parsed = {"raw": raw}
+            yield {
+                "event": evt.event or "message",
+                "data":  parsed,
+                "id":    evt.id or "",
+                "ts":    time.time(),
+            }
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+
+
 def _iter_sse(resp):
-    """Parse an SSE response into {event, data} dicts as they arrive."""
+    """Hand-rolled SSE parser — fallback when sseclient-py isn't
+    installed. Parses an SSE response into ``{event, data, id, ts}``
+    dicts as they arrive."""
     event_name = "message"
     data_buf: list[str] = []
+    current_id = ""
     try:
         for raw in resp:
             line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
@@ -388,18 +442,20 @@ def _iter_sse(resp):
                         parsed = json.loads(raw_data)
                     except Exception:
                         parsed = {"raw": raw_data}
-                    yield {"event": event_name, "data": parsed, "ts": time.time()}
+                    yield {"event": event_name, "data": parsed,
+                           "id": current_id, "ts": time.time()}
                 event_name = "message"
                 data_buf = []
                 continue
             if line.startswith(":"):
-                # SSE comment / keepalive
                 continue
             if line.startswith("event:"):
                 event_name = line[6:].strip()
             elif line.startswith("data:"):
                 data_buf.append(line[5:].lstrip())
-            # other fields (id:, retry:) ignored
+            elif line.startswith("id:"):
+                current_id = line[3:].strip()
+            # retry: ignored (sseclient handles it when installed)
     finally:
         try:
             resp.close()

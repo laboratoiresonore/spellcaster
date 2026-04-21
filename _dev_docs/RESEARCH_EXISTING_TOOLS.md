@@ -141,9 +141,9 @@ Parallel research dump (2026-04-20) on libraries / node packs / tooling Spellcas
 ## Recommended adoption order
 
 **Sprint 1 (days):**
-1. ✅ **DONE 2026-04-20** — `huggingface_hub.hf_hub_download` in [model_repair.py](../comfyui-spellcaster/model_repair.py). `CN_REPO_MAP` is now the canonical (repo_id, filename, revision) table; `CN_URL_MAP` kept as legacy fallback for installs without the lib. Installer's `step_check_cn_coverage` pulls URLs live from the pack's `/spellcaster/models/known_urls` route. ~100 LOC of urllib streamer + size-verify + atomic-rename replaced by one `hf_hub_download()` call.
-2. **TODO** — `sseclient-py` in Resolve bridge + GIMP inbox poller.
-3. **TODO** — `python-websockets` for ComfyUI `/history` poll replacement.
+1. ✅ **DONE 2026-04-20** — `huggingface_hub.hf_hub_download` in [model_repair.py](../comfyui-spellcaster/model_repair.py). `CN_REPO_MAP` is now the canonical (repo_id, filename, revision) table; `CN_URL_MAP` kept as legacy fallback. Installer's `step_check_cn_coverage` pulls URLs live from the pack route.
+2. ✅ **DONE 2026-04-20** — `sseclient-py` in Resolve bridge via [`_iter_sseclient`](../plugins/resolve/shared/spellcaster_api.py). Gains ``Last-Event-ID`` replay across reconnects (bridge's [`sse_client.py`](../plugins/resolve/spellcaster_bridge/sse_client.py) now tracks `_last_event_id`). Hand-rolled `_iter_sse` kept as graceful fallback when the lib isn't installed (air-gapped / legacy Resolve shipments). GIMP inbox poller uses HTTP polling, not SSE — no change needed there.
+3. **DEFERRED** — `python-websockets` for ComfyUI `/history` poll replacement. Full value only comes paired with ETN_SendImageWebSocket binary frames (disk-free image return). Landing both together is a future dedicated session — needs live ComfyUI testing + config flag + gradual rollout.
 
 **Sprint 2 (weeks):**
 4. ✅ **DONE (NSFW side) 2026-04-20** — `age` / `pyrage` replaces the `.scv` custom spec entirely. [bundle_passphrase_gate.py](../nsfw/bundle/plugin_tools/bundle_passphrase_gate.py) uses `pyrage.passphrase.encrypt/decrypt` with an `age` binary fallback. [ENCRYPTED_FORMAT_PLAN.md](../nsfw/bundle/docs/ENCRYPTED_FORMAT_PLAN.md) rewritten to spec `.age` format instead of `.scv`. Legacy `.lock` JSON auto-upgrades on first unlock.
