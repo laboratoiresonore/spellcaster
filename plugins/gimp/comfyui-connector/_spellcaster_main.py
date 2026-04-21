@@ -33536,6 +33536,23 @@ class Spellcaster(Gimp.PlugIn):
         bx.set_margin_start(14); bx.set_margin_end(14)
         bx.set_margin_top(14); bx.set_margin_bottom(12)
 
+        # Animated summon sigil — LTX-generated via Spellcaster's
+        # own I2V distilled workflow (tools/animate_menu_icon.py on
+        # the menu_summon.png starburst). Plays continuously while
+        # the panel is open. Silent fallback if the asset isn't
+        # bundled (dev machines that haven't run the generator).
+        try:
+            anim_path = (_PLUGIN_DIR / "assets" / "icons" /
+                          "animated" / "menu_summon.webp")
+            if anim_path.is_file():
+                anim = GdkPixbuf.PixbufAnimation.new_from_file(
+                    str(anim_path))
+                img = Gtk.Image.new_from_animation(anim)
+                img.set_halign(Gtk.Align.CENTER)
+                bx.pack_start(img, False, False, 0)
+        except Exception:
+            pass
+
         # Branded header
         try:
             hdr = _make_branded_header()
