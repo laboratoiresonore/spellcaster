@@ -30,6 +30,11 @@ for _candidate in [_HERE, os.path.join(_HERE, "..", "..", "comfyui-spellcaster")
         break
 
 from spellcaster_core.plugin_base import SpellcasterPlugin
+try:
+    from spellcaster_core.plugin_presets import presets_for
+except Exception:
+    def presets_for(_origin):
+        return []
 
 
 class BlenderSpellcaster(SpellcasterPlugin):
@@ -271,6 +276,223 @@ class SPELLCASTER_OT_normal_map(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class SPELLCASTER_OT_detail_hallucinate(bpy.types.Operator):
+    bl_idname = "spellcaster.detail_hallucinate"
+    bl_label = "Detail Hallucinate"
+    bl_description = "Upscale the active image and hallucinate fine detail"
+
+    prompt: bpy.props.StringProperty(
+        name="Detail hint", default="crisp detail, fine texture")
+    factor: bpy.props.FloatProperty(
+        name="Upscale factor", default=2.0, min=1.0, max=4.0)
+    denoise: bpy.props.FloatProperty(
+        name="Denoise", default=0.35, min=0.1, max=0.7)
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=400)
+
+    def draw(self, context):
+        self.layout.prop(self, "prompt")
+        self.layout.prop(self, "factor")
+        self.layout.prop(self, "denoise")
+
+    def execute(self, context):
+        _get_plugin().detail_hallucinate(
+            self.prompt or "detail, texture",
+            upscale_factor=float(self.factor),
+            denoise=float(self.denoise))
+        return {'FINISHED'}
+
+
+class SPELLCASTER_OT_colorize(bpy.types.Operator):
+    bl_idname = "spellcaster.colorize"
+    bl_label = "Colorize B&W"
+    bl_description = "Colorize a black-and-white image using ControlNet guidance"
+
+    prompt: bpy.props.StringProperty(
+        name="Colour hint",
+        default="natural colors, warm midtones")
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=400)
+
+    def draw(self, context):
+        self.layout.prop(self, "prompt")
+
+    def execute(self, context):
+        _get_plugin().colorize(self.prompt or "")
+        return {'FINISHED'}
+
+
+class SPELLCASTER_OT_magic_eraser(bpy.types.Operator):
+    bl_idname = "spellcaster.magic_eraser"
+    bl_label = "Magic Eraser"
+    bl_description = "Describe an object to remove; SAM3 + LaMa handle the rest"
+
+    prompt: bpy.props.StringProperty(
+        name="What to remove", default="")
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=400)
+
+    def draw(self, context):
+        self.layout.prop(self, "prompt")
+
+    def execute(self, context):
+        if not self.prompt:
+            return {'CANCELLED'}
+        _get_plugin().magic_eraser(self.prompt)
+        return {'FINISHED'}
+
+
+class SPELLCASTER_OT_ltx_t2v(bpy.types.Operator):
+    bl_idname = "spellcaster.ltx_t2v"
+    bl_label = "LTX Text-to-Video"
+    bl_description = "Generate a short video from a prompt via LTX 2.3"
+
+    prompt: bpy.props.StringProperty(name="Scene", default="")
+    seconds: bpy.props.FloatProperty(
+        name="Seconds", default=3.0, min=0.5, max=6.0)
+    width: bpy.props.IntProperty(name="Width", default=1280, min=256, max=1920)
+    height: bpy.props.IntProperty(name="Height", default=720, min=256, max=1920)
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=400)
+
+    def draw(self, context):
+        self.layout.prop(self, "prompt")
+        self.layout.prop(self, "seconds")
+        self.layout.prop(self, "width")
+        self.layout.prop(self, "height")
+
+    def execute(self, context):
+        if not self.prompt:
+            return {'CANCELLED'}
+        _get_plugin().ltx_t2v(
+            self.prompt, seconds=float(self.seconds),
+            width=int(self.width), height=int(self.height))
+        return {'FINISHED'}
+
+
+class SPELLCASTER_OT_ltx_i2v(bpy.types.Operator):
+    bl_idname = "spellcaster.ltx_i2v"
+    bl_label = "LTX Image-to-Video"
+    bl_description = "Animate the active image via LTX 2.3 I2V"
+
+    prompt: bpy.props.StringProperty(name="Motion", default="")
+    seconds: bpy.props.FloatProperty(
+        name="Seconds", default=3.0, min=0.5, max=6.0)
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=400)
+
+    def draw(self, context):
+        self.layout.prop(self, "prompt")
+        self.layout.prop(self, "seconds")
+
+    def execute(self, context):
+        if not self.prompt:
+            return {'CANCELLED'}
+        _get_plugin().ltx_i2v(self.prompt, seconds=float(self.seconds))
+        return {'FINISHED'}
+
+
+class SPELLCASTER_OT_wan_i2v(bpy.types.Operator):
+    bl_idname = "spellcaster.wan_i2v"
+    bl_label = "WAN Image-to-Video"
+    bl_description = "Animate the active image via WAN 2.2 I2V"
+
+    prompt: bpy.props.StringProperty(name="Motion", default="")
+    seconds: bpy.props.FloatProperty(
+        name="Seconds", default=5.0, min=1.0, max=8.0)
+    turbo: bpy.props.BoolProperty(
+        name="Turbo (6 steps)", default=True,
+        description="Lightning distilled; slower + more stable when off")
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=400)
+
+    def draw(self, context):
+        self.layout.prop(self, "prompt")
+        self.layout.prop(self, "seconds")
+        self.layout.prop(self, "turbo")
+
+    def execute(self, context):
+        if not self.prompt:
+            return {'CANCELLED'}
+        _get_plugin().wan_i2v(
+            self.prompt, seconds=float(self.seconds),
+            turbo=bool(self.turbo))
+        return {'FINISHED'}
+
+
+def _preset_items_blender(self, context):
+    presets = presets_for("blender")
+    if not presets:
+        return [("_none", "(no presets available)", "")]
+    return [(str(i), p["label"], p.get("prompt") or "")
+            for i, p in enumerate(presets)]
+
+
+class SPELLCASTER_OT_preset(bpy.types.Operator):
+    bl_idname = "spellcaster.preset"
+    bl_label = "Run Preset"
+    bl_description = "Pick one of the bundled Blender-oriented presets"
+
+    preset_idx: bpy.props.EnumProperty(
+        name="Preset", items=_preset_items_blender)
+    prompt_override: bpy.props.StringProperty(
+        name="Prompt (edit)", default="")
+
+    def invoke(self, context, event):
+        # Pre-fill prompt from the default preset.
+        presets = presets_for("blender")
+        try:
+            idx = int(self.preset_idx)
+        except Exception:
+            idx = 0
+        if 0 <= idx < len(presets):
+            self.prompt_override = presets[idx].get("prompt") or ""
+        return context.window_manager.invoke_props_dialog(self, width=500)
+
+    def draw(self, context):
+        self.layout.prop(self, "preset_idx")
+        self.layout.prop(self, "prompt_override")
+
+    def execute(self, context):
+        presets = presets_for("blender")
+        try:
+            idx = int(self.preset_idx)
+        except Exception:
+            idx = 0
+        if not (0 <= idx < len(presets)):
+            return {'CANCELLED'}
+        preset = presets[idx]
+        plug = _get_plugin()
+        op = preset.get("op", "txt2img")
+        prompt = self.prompt_override or preset.get("prompt") or ""
+        kwargs = dict(preset.get("kwargs") or {})
+        if preset.get("arch") and op in (
+                "txt2img", "img2img", "colorize",
+                "detail_hallucinate", "style_transfer"):
+            kwargs["arch"] = preset["arch"]
+        fn = getattr(plug, op, None)
+        if not fn:
+            plug.show_error(f"Preset op '{op}' not available.")
+            return {'CANCELLED'}
+        try:
+            if op in ("upscale", "rembg", "normal_map"):
+                fn()
+            elif op == "magic_eraser":
+                fn(prompt)
+            else:
+                fn(prompt, **kwargs)
+        except Exception as e:
+            plug.show_error(f"Preset failed: {e}")
+            return {'CANCELLED'}
+        return {'FINISHED'}
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  Panel (Sidebar)
 # ═══════════════════════════════════════════════════════════════════════
@@ -284,15 +506,24 @@ class SPELLCASTER_PT_panel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
+        layout.operator("spellcaster.preset", icon='PRESET')
+        layout.separator()
         layout.operator("spellcaster.auto", icon='SHADERFX')
         layout.operator("spellcaster.txt2img", icon='IMAGE')
         layout.operator("spellcaster.img2img", icon='BRUSH_DATA')
         layout.operator("spellcaster.outpaint", icon='ARROW_LEFTRIGHT')
         layout.operator("spellcaster.iclight", icon='LIGHT')
         layout.separator()
+        layout.operator("spellcaster.detail_hallucinate", icon='MOD_SMOOTH')
+        layout.operator("spellcaster.colorize", icon='COLOR')
+        layout.operator("spellcaster.magic_eraser", icon='BRUSHES_ALL')
         layout.operator("spellcaster.upscale", icon='FULLSCREEN_ENTER')
         layout.operator("spellcaster.rembg", icon='MATPLANE')
         layout.operator("spellcaster.normal_map", icon='TEXTURE_DATA')
+        layout.separator()
+        layout.operator("spellcaster.ltx_t2v", icon='RENDER_ANIMATION')
+        layout.operator("spellcaster.ltx_i2v", icon='PLAY')
+        layout.operator("spellcaster.wan_i2v", icon='FILE_MOVIE')
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -334,6 +565,13 @@ classes = [
     SPELLCASTER_OT_upscale,
     SPELLCASTER_OT_rembg,
     SPELLCASTER_OT_normal_map,
+    SPELLCASTER_OT_detail_hallucinate,
+    SPELLCASTER_OT_colorize,
+    SPELLCASTER_OT_magic_eraser,
+    SPELLCASTER_OT_ltx_t2v,
+    SPELLCASTER_OT_ltx_i2v,
+    SPELLCASTER_OT_wan_i2v,
+    SPELLCASTER_OT_preset,
     SPELLCASTER_PT_panel,
 ]
 

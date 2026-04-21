@@ -69,6 +69,12 @@ except ImportError as _imp_err:
     _PB_AVAILABLE = False
     _PB_IMPORT_ERROR = str(_imp_err)
 
+try:
+    from spellcaster_core.plugin_presets import presets_for as _presets_for
+except Exception:
+    def _presets_for(_origin):
+        return []
+
 
 # ─── Output directory ─────────────────────────────────────────────────
 # Every generated PNG / MP4 lives on disk so OBS sources (which load
@@ -337,6 +343,7 @@ def script_update(settings):
         "prompt":     obs.obs_data_get_string(settings, "prompt"),
         "clip_seconds": int(
             obs.obs_data_get_int(settings, "clip_seconds") or 3),
+        "preset_label": obs.obs_data_get_string(settings, "preset_label"),
     }
     # Force re-construction so URL edits take effect next click.
     _plugin[0] = None
@@ -373,6 +380,15 @@ def script_properties():
     obs.obs_properties_add_int(
         props, "clip_seconds", "Intro clip length (s)", 1, 10, 1)
 
+    # Preset dropdown — curated OBS-oriented prompts.
+    preset_prop = obs.obs_properties_add_list(
+        props, "preset_label", "Preset",
+        obs.OBS_COMBO_TYPE_LIST, obs.OBS_COMBO_FORMAT_STRING)
+    obs.obs_property_list_add_string(preset_prop, "(none — use Prompt field)", "")
+    for _p in _presets_for("obs"):
+        obs.obs_property_list_add_string(
+            preset_prop, _p["label"], _p["label"])
+
     obs.obs_properties_add_button(
         props, "btn_bg", "\U0001F3A8  Generate Scene Background",
         _on_click_bg)
@@ -385,6 +401,9 @@ def script_properties():
     obs.obs_properties_add_button(
         props, "btn_smart", "\U0001F9D9  Smart Generate (auto)",
         _on_click_smart)
+    obs.obs_properties_add_button(
+        props, "btn_preset", "\u2728  Run Selected Preset",
+        _on_click_preset)
 
     return props
 
@@ -462,4 +481,38 @@ def _on_click_smart(props, prop):
             plugin.smart_generate(p)
         except Exception as e:
             _log(f"Smart Generate failed: {e}")
+    return False
+
+
+def _on_click_preset(props, prop):
+    """Run the preset selected in the Preset dropdown. User's Prompt
+    field (if non-empty) overrides the preset's default prompt."""
+    label = (_settings.get("preset_label") or "").strip()
+    if not label:
+        _log("ERROR: pick a preset from the dropdown first.")
+        return False
+    presets = _presets_for("obs")
+    preset = next((pp for pp in presets if pp["label"] == label), None)
+    if not preset:
+        _log(f"ERROR: preset '{label}' not found.")
+        return False
+    plugin = _get_plugin()
+    if not plugin:
+        return False
+    user_prompt = (_settings.get("prompt") or "").strip()
+    prompt = user_prompt or preset.get("prompt") or ""
+    op = preset.get("op", "txt2img")
+    kwargs = dict(preset.get("kwargs") or {})
+    try:
+        if op == "ltx_t2v":
+            seconds = kwargs.pop("seconds", 3.0)
+            plugin.generate_intro_clip(prompt, seconds=seconds)
+        elif op == "txt2img":
+            # OBS wants this as a scene background by default.
+            plugin.generate_scene_background(prompt)
+        else:
+            _log(f"ERROR: preset op '{op}' isn't applicable in OBS.")
+            return False
+    except Exception as e:
+        _log(f"Preset failed: {e}")
     return False

@@ -127,31 +127,13 @@
      into a clean grid instead of the 8+3 orphan-wrap they
      used to make.
      ───────────────────────────────────────────────────────── -->
-<p align="center"><sub><strong>POWERED BY</strong></sub></p>
+<p align="center"><sub><strong>POWERED BY</strong> — <a href="DEEP_DIVE.md#all-69-tools">full matrix →</a></sub></p>
 
-<p align="center">
-  <a href="DEEP_DIVE.md#all-69-tools" title="🎨 Image · Flux 2 Klein — 4-step, ref-aware, SOTA photoreal"><img src="https://img.shields.io/badge/Flux%202%20Klein-ffd700?style=for-the-badge&labelColor=1a1422" alt="Flux 2 Klein"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="🎨 Image · Flux 1 Dev — 12B rectified-flow"><img src="https://img.shields.io/badge/Flux%201%20Dev-58e0ff?style=for-the-badge&labelColor=1a1422" alt="Flux 1 Dev"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="🎨 Image · Flux Kontext — edit-by-instruction"><img src="https://img.shields.io/badge/Flux%20Kontext-7ad7ff?style=for-the-badge&labelColor=1a1422" alt="Flux Kontext"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="🎨 Image · Chroma — 8B open-weights DiT"><img src="https://img.shields.io/badge/Chroma-ff7ad7?style=for-the-badge&labelColor=1a1422" alt="Chroma"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="🎨 Image · SDXL — the workhorse, every ControlNet works"><img src="https://img.shields.io/badge/SDXL-b470ff?style=for-the-badge&labelColor=1a1422" alt="SDXL"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="🎨 Image · Illustrious — booru-tagged anime"><img src="https://img.shields.io/badge/Illustrious-ff8fd1?style=for-the-badge&labelColor=1a1422" alt="Illustrious"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="🎨 Image · Pony — score-cascade SDXL finetune"><img src="https://img.shields.io/badge/Pony-ffa8d4?style=for-the-badge&labelColor=1a1422" alt="Pony"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="🎨 Image · Playground — aesthetic SDXL finetune"><img src="https://img.shields.io/badge/Playground-c09bff?style=for-the-badge&labelColor=1a1422" alt="Playground"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="🎨 Image · SD 1.5 — classic, universal LoRA compatibility"><img src="https://img.shields.io/badge/SD%201.5-8aa9ff?style=for-the-badge&labelColor=1a1422" alt="SD 1.5"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="🎨 Image · SDXL Turbo — 6-step distilled"><img src="https://img.shields.io/badge/SDXL%20Turbo-ffb864?style=for-the-badge&labelColor=1a1422" alt="SDXL Turbo"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="🎨 Image · Z-Image Turbo — 6-step, 2B, sharpest distill"><img src="https://img.shields.io/badge/Z%E2%80%91Image%20Turbo-ffef4a?style=for-the-badge&labelColor=1a1422" alt="Z-Image Turbo"/></a>
-  <br/>
-  <a href="DEEP_DIVE.md#all-69-tools" title="🎬 Video · Wan 2.2 I2V"><img src="https://img.shields.io/badge/Wan%202.2%20I2V-10b981?style=for-the-badge&labelColor=1a1422" alt="Wan 2.2"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="🎬 Video · LTX 2.3 — 22B cinematic T2V + I2V"><img src="https://img.shields.io/badge/LTX%202.3-5eead4?style=for-the-badge&labelColor=1a1422" alt="LTX 2.3"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="🎬 Video · SeedVR — temporally consistent upscale"><img src="https://img.shields.io/badge/SeedVR-34d399?style=for-the-badge&labelColor=1a1422" alt="SeedVR"/></a>
-  <br/>
-  <a href="DEEP_DIVE.md#all-69-tools" title="🧠 Helper · SAM 3 — type it, select it"><img src="https://img.shields.io/badge/SAM%203-ff6b9d?style=for-the-badge&labelColor=1a1422" alt="SAM 3"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="🧠 Helper · NormalCrafter — 3D normal maps from 2D"><img src="https://img.shields.io/badge/NormalCrafter-9f7aea?style=for-the-badge&labelColor=1a1422" alt="NormalCrafter"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="🧠 Helper · IC-Light — surface-aware relighting"><img src="https://img.shields.io/badge/IC%E2%80%91Light-fbbf24?style=for-the-badge&labelColor=1a1422" alt="IC-Light"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="🧠 Helper · ReActor + InsightFace"><img src="https://img.shields.io/badge/ReActor-f472b6?style=for-the-badge&labelColor=1a1422" alt="ReActor"/></a>
-  <a href="DEEP_DIVE.md#all-69-tools" title="🧠 Helper · Ollama — local LLM for prompt enhance + scoring"><img src="https://img.shields.io/badge/Ollama-64748b?style=for-the-badge&labelColor=1a1422&logo=ollama&logoColor=white" alt="Ollama"/></a>
-</p>
+<p align="center"><sub>
+  <strong>🎨 Image</strong> &nbsp;<code>Flux 2 Klein</code> · <code>Flux 1 Dev</code> · <code>Flux Kontext</code> · <code>Chroma</code> · <code>SDXL</code> · <code>Illustrious</code> · <code>Pony</code> · <code>Playground</code> · <code>SD 1.5</code> · <code>SDXL Turbo</code> · <code>Z-Image Turbo</code><br/>
+  <strong>🎬 Video</strong> &nbsp;<code>Wan 2.2 I2V</code> · <code>LTX 2.3</code> · <code>SeedVR</code><br/>
+  <strong>🧠 Helpers</strong> &nbsp;<code>SAM 3</code> · <code>NormalCrafter</code> · <code>IC-Light</code> · <code>ReActor</code> · <code>Ollama</code>
+</sub></p>
 
 <p align="center"><sub><a href="DEEP_DIVE.md#all-69-tools"><strong>→ 69 tools across 19 models.</strong> See the full matrix in DEEP_DIVE.md</a></sub></p>
 
@@ -342,10 +324,10 @@ Four additional plugins live in the repo but are **not yet tested by the maintai
 
 | Plugin | Location | Status |
 |---|---|---|
-| 🎨 **Photoshop (UXP panel)** | [`plugins/photoshop/`](plugins/photoshop/) | Smart Generate, AI Upscale, Remove Background wire through the Guild's `/api/run_builder`. Selection-aware inpaint and outpaint are not yet wired (UXP `batchPlay` selection→bitmap needs its own dance). |
-| 🎨 **Krita** | [`plugins/krita/`](plugins/krita/) | Full menu: txt2img, img2img, inpaint (uses the Krita selection as the mask), outpaint, IC-Light relight, 3D normal map, upscale, rembg, face restore, face swap from file. Python-based; installs via pykrita. |
-| 🧊 **Blender** | [`plugins/blender/`](plugins/blender/) | Sidebar panel in the 3D view. Generate textures / references with txt2img, img2img, outpaint, IC-Light, normal-map, upscale, rembg. Results land as Blender images (drop-in for material slots). |
-| 📺 **OBS Studio** | [`plugins/obs/`](plugins/obs/) | Tools → Scripts → add `spellcaster_obs.py`. Four text-first ops: generate scene backgrounds (added as Image source), transparent overlays (rembg on gen), short intro/BRB clips (LTX 2.3 text-to-video → Media source), and Smart Generate (arch auto-pick). Canvas-input ops (img2img / inpaint / upscale-this-scene) not yet wired — OBS's Python API doesn't expose the preview pixel buffer cleanly. |
+| 🎨 **Photoshop (UXP panel)** | [`plugins/photoshop/`](plugins/photoshop/) | Smart Generate, img2img, Detail Hallucinate, Colorize B&W, Magic Eraser, AI Upscale, Remove Background, plus a ✨ **Presets** picker (product / portrait / social / background / detail / colorize) — all routed through the Guild's `/api/run_builder`. Selection-aware inpaint still requires the UXP `batchPlay` selection→bitmap dance and isn't wired yet. |
+| 🎨 **Krita** | [`plugins/krita/`](plugins/krita/) | Full menu: txt2img, img2img, inpaint (uses the Krita selection as the mask), outpaint, IC-Light relight, 3D normal map, upscale, rembg, face restore, face swap from file, Detail Hallucinate, Colorize B&W, Magic Eraser, Style Transfer from file, LTX text-to-video, LTX image-to-video, WAN 2.2 image-to-video, plus a **Presets…** picker (anime, cinematic photo, concept art, textures, watercolour, oil-paint style, colorize, eraser, detail). Python-based; installs via pykrita. |
+| 🧊 **Blender** | [`plugins/blender/`](plugins/blender/) | Sidebar panel in the 3D view with a **Run Preset** button at the top (PBR stone / wood / metal, sci-fi environment, fantasy landscape, HDRI skybox, character sheet, normal map, detail 4×). Operators: txt2img, img2img, outpaint, IC-Light, normal-map, Detail Hallucinate, Colorize, Magic Eraser, upscale, rembg, LTX T2V, LTX I2V, WAN I2V. Results land as Blender images (drop-in for material slots). |
+| 📺 **OBS Studio** | [`plugins/obs/`](plugins/obs/) | Tools → Scripts → add `spellcaster_obs.py`. Text-first ops: generate scene backgrounds (Image source), transparent overlays (rembg on gen), short intro/BRB clips (LTX 2.3 text-to-video → Media source), Smart Generate (arch auto-pick), plus a **Presets** dropdown (cyberpunk / fantasy tavern / lo-fi / BRB / starting-soon / cyberpunk-flythrough / fantasy-reveal / abstract-particles) with a **Run Selected Preset** button. Canvas-input ops (img2img / inpaint / upscale-this-scene) intentionally skipped — OBS's Python API doesn't expose the preview pixel buffer cleanly. |
 
 All four feed the same SpeedCoach telemetry pipeline as the GIMP / Darktable / Resolve / SillyTavern plugins — dispatch rows land in `dispatch_log.jsonl` alongside every other frontend — so if you run them, you're helping tune the suggestion model for everyone.
 

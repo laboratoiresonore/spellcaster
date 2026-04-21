@@ -16,6 +16,11 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 from spellcaster_core.plugin_base import SpellcasterPlugin
+try:
+    from spellcaster_core.plugin_presets import presets_for
+except Exception:
+    def presets_for(_origin):
+        return []
 
 
 class KritaSpellcaster(SpellcasterPlugin):
@@ -251,6 +256,49 @@ class SpellcasterExtension(Extension):
         a6 = window.createAction("spellcaster_face", "Restore Faces", menu)
         a6.triggered.connect(self._on_face_restore)
 
+        # Detail hallucinate (upscale + detail diffusion)
+        a_dh = window.createAction(
+            "spellcaster_detail_hallucinate",
+            "Detail Hallucinate (upscale + detail)", menu)
+        a_dh.triggered.connect(self._on_detail_hallucinate)
+
+        # Colorize B&W
+        a_col = window.createAction(
+            "spellcaster_colorize", "Colorize B&W", menu)
+        a_col.triggered.connect(self._on_colorize)
+
+        # Magic eraser (describe what to remove)
+        a_me = window.createAction(
+            "spellcaster_magic_eraser",
+            "Magic Eraser (describe object)", menu)
+        a_me.triggered.connect(self._on_magic_eraser)
+
+        # Style transfer from file
+        a_st = window.createAction(
+            "spellcaster_style_transfer",
+            "Style Transfer From File\u2026", menu)
+        a_st.triggered.connect(self._on_style_transfer)
+
+        # LTX text-to-video
+        a_lt = window.createAction(
+            "spellcaster_ltx_t2v", "Generate Video (LTX text-to-video)", menu)
+        a_lt.triggered.connect(self._on_ltx_t2v)
+
+        # LTX image-to-video (current canvas)
+        a_li = window.createAction(
+            "spellcaster_ltx_i2v", "Animate Canvas (LTX image-to-video)", menu)
+        a_li.triggered.connect(self._on_ltx_i2v)
+
+        # WAN image-to-video
+        a_wi = window.createAction(
+            "spellcaster_wan_i2v", "Animate Canvas (WAN image-to-video)", menu)
+        a_wi.triggered.connect(self._on_wan_i2v)
+
+        # Preset picker
+        a_p = window.createAction(
+            "spellcaster_presets", "Presets\u2026", menu)
+        a_p.triggered.connect(self._on_presets)
+
         # Face swap (pick a source image)
         a_fs = window.createAction(
             "spellcaster_face_swap", "Swap Face From File\u2026", menu)
@@ -333,6 +381,128 @@ class SpellcasterExtension(Extension):
 
     def _on_face_restore(self):
         self._get_plugin().face_restore()
+
+    def _on_detail_hallucinate(self):
+        from PyQt5.QtWidgets import QInputDialog
+        prompt, ok = QInputDialog.getText(
+            None, "Spellcaster",
+            "Detail hint (e.g. 'crisp pores, fine fabric'):")
+        if ok:
+            self._get_plugin().detail_hallucinate(prompt or "detail, texture")
+
+    def _on_colorize(self):
+        from PyQt5.QtWidgets import QInputDialog
+        prompt, ok = QInputDialog.getText(
+            None, "Spellcaster",
+            "Optional colour hint (e.g. 'warm sunset'):")
+        if ok:
+            self._get_plugin().colorize(prompt or "")
+
+    def _on_magic_eraser(self):
+        from PyQt5.QtWidgets import QInputDialog
+        prompt, ok = QInputDialog.getText(
+            None, "Spellcaster",
+            "What should be removed? (e.g. 'power line', 'watermark'):")
+        if ok and prompt:
+            self._get_plugin().magic_eraser(prompt)
+
+    def _on_style_transfer(self):
+        from PyQt5.QtWidgets import QFileDialog, QInputDialog
+        path, _ = QFileDialog.getOpenFileName(
+            None, "Pick a style reference", "",
+            "Images (*.png *.jpg *.jpeg *.webp)")
+        if not path:
+            return
+        try:
+            with open(path, "rb") as f:
+                style_bytes = f.read()
+        except Exception as e:
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.critical(None, "Spellcaster",
+                                 f"Could not read {path}: {e}")
+            return
+        prompt, ok = QInputDialog.getText(
+            None, "Spellcaster",
+            "Optional guiding prompt:")
+        if ok:
+            self._get_plugin().style_transfer_from_bytes(
+                style_bytes, prompt or "")
+
+    def _on_ltx_t2v(self):
+        from PyQt5.QtWidgets import QInputDialog
+        prompt, ok = QInputDialog.getText(
+            None, "Spellcaster", "Describe the video scene:")
+        if ok and prompt:
+            self._get_plugin().ltx_t2v(prompt, seconds=3.0)
+
+    def _on_ltx_i2v(self):
+        from PyQt5.QtWidgets import QInputDialog
+        prompt, ok = QInputDialog.getText(
+            None, "Spellcaster",
+            "Describe how the canvas should move:")
+        if ok and prompt:
+            self._get_plugin().ltx_i2v(prompt, seconds=3.0)
+
+    def _on_wan_i2v(self):
+        from PyQt5.QtWidgets import QInputDialog
+        prompt, ok = QInputDialog.getText(
+            None, "Spellcaster",
+            "Describe the motion for WAN I2V:")
+        if ok and prompt:
+            self._get_plugin().wan_i2v(prompt, seconds=5.0)
+
+    def _on_presets(self):
+        from PyQt5.QtWidgets import QInputDialog
+        presets = presets_for("krita")
+        if not presets:
+            return
+        labels = [p["label"] for p in presets]
+        label, ok = QInputDialog.getItem(
+            None, "Spellcaster Presets",
+            "Pick a preset:", labels, 0, False)
+        if not ok or not label:
+            return
+        preset = next((p for p in presets if p["label"] == label), None)
+        if not preset:
+            return
+        self._dispatch_preset(preset)
+
+    def _dispatch_preset(self, preset):
+        from PyQt5.QtWidgets import QInputDialog
+        op = preset.get("op", "txt2img")
+        prompt = preset.get("prompt", "")
+        # Give the user a chance to tweak the prompt.
+        if op not in ("upscale", "rembg", "normal_map") and not preset.get("placeholder"):
+            prompt, ok = QInputDialog.getMultiLineText(
+                None, preset["label"],
+                "Prompt (edit if you want):", prompt)
+            if not ok:
+                return
+        elif preset.get("placeholder"):
+            prompt, ok = QInputDialog.getText(
+                None, preset["label"],
+                preset.get("placeholder") or "Describe:")
+            if not ok or not prompt:
+                return
+        plug = self._get_plugin()
+        kwargs = dict(preset.get("kwargs") or {})
+        arch = preset.get("arch") or ""
+        if arch and op in ("txt2img", "img2img", "colorize",
+                            "detail_hallucinate", "style_transfer"):
+            kwargs["arch"] = arch
+        try:
+            fn = getattr(plug, op, None)
+            if not fn:
+                plug.show_error(f"Preset op '{op}' not available.")
+                return
+            if op in ("upscale", "rembg", "normal_map"):
+                fn()
+            elif op == "magic_eraser":
+                fn(prompt)
+            else:
+                fn(prompt, **kwargs)
+        except Exception as e:
+            plug.show_error(f"Preset failed: {e}")
 
     def _on_settings(self):
         from PyQt5.QtWidgets import QInputDialog
