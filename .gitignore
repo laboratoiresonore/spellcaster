@@ -4,6 +4,11 @@ build/
 *.spec
 *.spec.bak
 
+# Portable-bundle builder cache — tools/build_portable_bundle.py drops
+# the 1.5 GB ComfyUI-Portable .7z here. Must never reach any git
+# history (GitHub's 100 MB file limit rejects the push outright).
+.bundle_cache/
+
 # Virtual environments
 .build-venv/
 .venv/
