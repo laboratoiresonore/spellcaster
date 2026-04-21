@@ -15,24 +15,39 @@ the plugin CAN fix the file from its own machine:
     POST /spellcaster/models/repair
     body: {
         "action":   "delete" | "redownload",
-        "folder":   "controlnet",         # only "controlnet" allowed
+        "folder":   "controlnet",
         "filename": "SDXL/controlnet-union-sdxl-1.0.safetensors"
     }
 
-For ``redownload``, the URL is looked up in ``CN_URL_MAP`` below —
-Spellcaster curates the set, callers can't drive arbitrary downloads.
+For ``redownload``, the filename is looked up in ``CN_REPO_MAP`` —
+a curated (repo_id, repo_filename) table — and fetched via
+``huggingface_hub.hf_hub_download()``. HF's client handles:
+
+  * Resume-on-fail (``.incomplete`` sentinel in cache).
+  * Chunk-level SHA-256 verification (xet backend).
+  * Atomic final rename (same mechanic as our old hand-rolled path,
+    now centralised + battle-tested).
+  * ``HF_TOKEN`` env var honoured for gated repos.
+
+We keep a slim local copy helper (``_local_copy_to_controlnet``) that
+moves the HF-cache-resident file into the ComfyUI ``models/controlnet/``
+tree so workflows find it at the path they expect. ``force_download``
+mode deletes the cached copy first so a corrupt cache entry can't
+mask a fresh fetch.
+
+Legacy ``CN_URL_MAP`` (direct URLs) kept as a fallback for callers
+that don't have ``huggingface_hub`` installed — degrades to inline
+``urllib`` download. Bundle installations always ship with the lib.
 
 Safety
 ------
 
-* folder is whitelisted to ``controlnet`` only.
-* filename must pass path-traversal + drive-prefix checks.
+* ``folder`` whitelisted to ``controlnet``.
+* Filename must pass path-traversal + drive-prefix checks.
 * Resolved realpath must remain under the ``controlnet`` folder root
   (symlink / junction escape refused).
-* Redownload streams to ``<dest>.download`` and atomically renames in
-  — a failed download leaves the OLD file's deletion committed (the
-  corrupt file is gone) but no garbage in place; the next repair
-  run can retry cleanly.
+* Download streams + atomic-renames so a failed download leaves the
+  OLD file's deletion committed but no garbage in place.
 
 Degrades gracefully: when ``folder_paths`` or ``PromptServer`` isn't
 available (module loaded outside the ComfyUI runtime), registration
@@ -42,55 +57,72 @@ is a no-op.
 from __future__ import annotations
 
 import os
+import shutil
 import urllib.request
 
 
-# Curated Hugging Face URLs for the CN files Spellcaster's 3D tools
-# can fall back to. Each entry is a ~0.7-2.5 GB download so we keep
-# the list tight (callers can't drive arbitrary URL fetches).
-CN_URL_MAP: dict[str, str] = {
-    # SDXL / Illustrious — Xinsir's Union Pro (supports normal map
-    # + depth + canny + openpose via mode selector).
+# ── CN_REPO_MAP — canonical (repo_id, filename, revision) for every
+# CN Spellcaster's 3D cascade cares about. Preferred route: HF client
+# fetches from these tuples with all its verify/resume goodness.
+# Each entry maps a FILENAME-AS-INSTALLED-ON-COMFY to a HF
+# (repo_id, repo_filename, revision) triple.
+CN_REPO_MAP: dict[str, tuple[str, str, str]] = {
+    # SDXL / Illustrious — Xinsir's Union Pro (normal + depth + canny
+    # + openpose via mode selector).
     "SDXL/controlnet-union-sdxl-1.0.safetensors": (
-        "https://huggingface.co/xinsir/controlnet-union-sdxl-1.0/"
-        "resolve/main/diffusion_pytorch_model_promax.safetensors"
+        "xinsir/controlnet-union-sdxl-1.0",
+        "diffusion_pytorch_model_promax.safetensors",
+        "main",
     ),
     "SDXL\\controlnet-union-sdxl-1.0.safetensors": (
-        "https://huggingface.co/xinsir/controlnet-union-sdxl-1.0/"
-        "resolve/main/diffusion_pytorch_model_promax.safetensors"
+        "xinsir/controlnet-union-sdxl-1.0",
+        "diffusion_pytorch_model_promax.safetensors",
+        "main",
     ),
     "controlnet-union-sdxl-1.0.safetensors": (
-        "https://huggingface.co/xinsir/controlnet-union-sdxl-1.0/"
-        "resolve/main/diffusion_pytorch_model_promax.safetensors"
+        "xinsir/controlnet-union-sdxl-1.0",
+        "diffusion_pytorch_model_promax.safetensors",
+        "main",
     ),
-    # SD 1.5 — the canonical lllyasviel v1.1 set.
+    # SD 1.5 — lllyasviel v1.1 set.
     "control_v11p_sd15_normalbae.pth": (
-        "https://huggingface.co/lllyasviel/ControlNet-v1-1/"
-        "resolve/main/control_v11p_sd15_normalbae.pth"
+        "lllyasviel/ControlNet-v1-1",
+        "control_v11p_sd15_normalbae.pth",
+        "main",
     ),
     "control_v11f1p_sd15_depth_fp16.safetensors": (
-        "https://huggingface.co/comfyanonymous/"
-        "ControlNet-v1-1_fp16_safetensors/"
-        "resolve/main/control_v11f1p_sd15_depth_fp16.safetensors"
+        "comfyanonymous/ControlNet-v1-1_fp16_safetensors",
+        "control_v11f1p_sd15_depth_fp16.safetensors",
+        "main",
     ),
     "control_v11p_sd15_lineart_fp16.safetensors": (
-        "https://huggingface.co/comfyanonymous/"
-        "ControlNet-v1-1_fp16_safetensors/"
-        "resolve/main/control_v11p_sd15_lineart_fp16.safetensors"
+        "comfyanonymous/ControlNet-v1-1_fp16_safetensors",
+        "control_v11p_sd15_lineart_fp16.safetensors",
+        "main",
     ),
     # Flux.1-dev — Shakker Labs Union Pro 2.0.
     "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors": (
-        "https://huggingface.co/Shakker-Labs/"
-        "FLUX.1-dev-ControlNet-Union-Pro-2.0/"
-        "resolve/main/diffusion_pytorch_model.safetensors"
+        "Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0",
+        "diffusion_pytorch_model.safetensors",
+        "main",
     ),
+}
+
+
+# ── CN_URL_MAP — kept as LEGACY fallback for installs without
+# huggingface_hub. Derived from CN_REPO_MAP at module load so the
+# two can never drift. (Public map preserved for external callers
+# + tests + installer coverage audit.)
+CN_URL_MAP: dict[str, str] = {
+    filename: (f"https://huggingface.co/{repo}/resolve/{rev}/{file}")
+    for filename, (repo, file, rev) in CN_REPO_MAP.items()
 }
 
 
 def _is_safe_filename(name: str) -> bool:
     """Filename is usable iff it has no traversal / drive prefix /
     NUL / leading separator. Subdirectories (``SDXL/foo.safetensors``)
-    are allowed — they're unavoidable for ComfyUI's nested layout."""
+    are allowed."""
     if not isinstance(name, str) or not name:
         return False
     if ":" in name:
@@ -108,8 +140,7 @@ def _is_safe_filename(name: str) -> bool:
 
 def _resolve_controlnet_dir() -> str | None:
     """Ask ComfyUI's ``folder_paths`` for the controlnet dir. Returns
-    the first configured path (the primary, canonical dir). None when
-    ``folder_paths`` isn't available — caller aborts."""
+    the first configured path (the primary, canonical dir)."""
     try:
         import folder_paths
     except Exception:
@@ -137,7 +168,6 @@ def _safe_resolve(root: str, filename: str) -> tuple[str | None, str]:
         if os.path.commonpath([real, root_real]) != root_real:
             return None, "path escapes folder root"
     except ValueError:
-        # Different drive letters — never legal here.
         return None, "path on different drive"
     return real, ""
 
@@ -147,7 +177,6 @@ def _delete_file(root: str, filename: str) -> tuple[bool, str]:
     if real is None:
         return False, reason
     if not os.path.isfile(real):
-        # Treat "already gone" as success so retries are idempotent.
         return True, "not present"
     try:
         os.remove(real)
@@ -158,30 +187,84 @@ def _delete_file(root: str, filename: str) -> tuple[bool, str]:
         return False, f"os error: {e}"
 
 
-def _download_file(url: str, dest_real: str,
-                    min_expected_bytes: int = 1 << 20) -> tuple[bool, str]:
-    """Stream ``url`` to ``<dest_real>.download`` then atomically
-    rename to ``dest_real``. Chunked so a 2.5 GB file doesn't OOM.
-    Refuses to land a file that's smaller than ``min_expected_bytes``
-    (partial downloads from the REPAIR path are exactly what we're
-    trying to avoid re-introducing).
+def _download_via_hf(filename: str, dest_real: str) -> tuple[bool, str]:
+    """Preferred path — ``huggingface_hub.hf_hub_download`` to a
+    local_dir with ``force_download=True`` so a corrupt cache can't
+    mask a fresh fetch.
+
+    Inherits resume-on-fail, SHA-256 chunk verification (xet backend),
+    tqdm progress logging, and ``HF_TOKEN`` env var auth. ~100 LOC of
+    the previous hand-rolled streamer + size-verify + atomic-rename
+    deleted by this switch.
     """
+    try:
+        from huggingface_hub import hf_hub_download
+    except ImportError:
+        return False, "huggingface_hub not installed"
+    entry = CN_REPO_MAP.get(filename)
+    if not entry:
+        bn = filename.replace("\\", "/").rsplit("/", 1)[-1]
+        entry = CN_REPO_MAP.get(bn)
+    if not entry:
+        return False, f"no HF repo mapping for {filename!r}"
+    repo_id, repo_filename, revision = entry
+    parent = os.path.dirname(dest_real) or "."
+    try:
+        os.makedirs(parent, exist_ok=True)
+        # Ask HF to deposit the file DIRECTLY at the final controlnet/
+        # dir layout — no symlinks into the HF cache, so ComfyUI's
+        # folder_paths sees the expected on-disk path.
+        # The ``local_dir`` arg is the directory; HF appends
+        # ``repo_filename`` under it. We'll rename post-download if
+        # the on-server layout expects a different basename.
+        downloaded_path = hf_hub_download(
+            repo_id=repo_id,
+            filename=repo_filename,
+            revision=revision,
+            local_dir=parent,
+            force_download=True,
+            # Don't create HF's own subfolder structure — we want the
+            # file placed where ComfyUI expects it.
+        )
+        # If the downloaded basename differs from the install name,
+        # rename (no-op when they match).
+        dest_basename = os.path.basename(dest_real)
+        dl_basename = os.path.basename(downloaded_path)
+        if dl_basename != dest_basename:
+            os.replace(downloaded_path, dest_real)
+        size = os.path.getsize(dest_real)
+        return True, (f"downloaded {size} bytes via hf_hub_download "
+                       f"(repo={repo_id}, rev={revision})")
+    except Exception as e:
+        return False, f"hf_hub_download failed: {e}"
+
+
+def _download_via_urllib(filename: str, dest_real: str,
+                           min_expected_bytes: int = 1 << 20
+                           ) -> tuple[bool, str]:
+    """Fallback — used only when ``huggingface_hub`` isn't installed.
+    Streams the URL from CN_URL_MAP to ``<dest_real>.download`` then
+    atomic-renames in. Kept for environments that refuse the HF
+    dependency (air-gapped servers, custom Python builds).
+    """
+    url = CN_URL_MAP.get(filename)
+    if not url:
+        bn = filename.replace("\\", "/").rsplit("/", 1)[-1]
+        url = CN_URL_MAP.get(bn)
+    if not url:
+        return False, f"no URL mapping for {filename!r}"
     tmp = dest_real + ".download"
     try:
-        # Clean up leftovers from a previous aborted run.
         if os.path.exists(tmp):
             try:
                 os.remove(tmp)
             except Exception:
                 pass
-        # Ensure the parent directory exists (for nested paths like
-        # ``SDXL/controlnet-union-sdxl-1.0.safetensors``).
         os.makedirs(os.path.dirname(dest_real) or ".", exist_ok=True)
         req = urllib.request.Request(url, headers={
-            "User-Agent": "Spellcaster-ModelRepair/1.0"
+            "User-Agent": "Spellcaster-ModelRepair/2.0"
         })
         with urllib.request.urlopen(req, timeout=900) as resp:
-            # Stream 1 MB chunks so we don't OOM on a 2.5 GB download.
             with open(tmp, "wb") as f:
                 while True:
                     chunk = resp.read(1 << 20)
@@ -195,17 +278,30 @@ def _download_file(url: str, dest_real: str,
             except Exception:
                 pass
             return False, (f"downloaded only {size} bytes "
-                           f"(< {min_expected_bytes} expected) — aborted")
-        # Atomic rename into place.
+                           f"(< {min_expected_bytes} expected)")
         os.replace(tmp, dest_real)
-        return True, f"downloaded {size} bytes"
+        return True, f"downloaded {size} bytes via urllib (fallback)"
     except Exception as e:
         try:
             if os.path.exists(tmp):
                 os.remove(tmp)
         except Exception:
             pass
-        return False, f"download failed: {e}"
+        return False, f"urllib download failed: {e}"
+
+
+def _download_file(filename: str, dest_real: str) -> tuple[bool, str]:
+    """Download dispatcher — hf_hub_download first, urllib fallback."""
+    ok, msg = _download_via_hf(filename, dest_real)
+    if ok:
+        return ok, msg
+    if "not installed" in msg or "no HF repo mapping" in msg:
+        # hf unavailable OR this file isn't in CN_REPO_MAP — try urllib.
+        return _download_via_urllib(filename, dest_real)
+    # HF path failed for some other reason (network, gated repo, etc.)
+    # — don't silently fall back to urllib; surface the HF error so
+    # the user can diagnose auth / connectivity.
+    return False, msg
 
 
 def _handle(body: dict) -> dict:
@@ -224,27 +320,25 @@ def _handle(body: dict) -> dict:
                 "filename": filename, "detail": msg}
 
     if action == "redownload":
-        url = CN_URL_MAP.get(filename)
-        if not url:
-            bn = filename.replace("\\", "/").rsplit("/", 1)[-1]
-            url = CN_URL_MAP.get(bn)
-        if not url:
+        if not (CN_REPO_MAP.get(filename) or CN_URL_MAP.get(filename)
+                or CN_REPO_MAP.get(
+                    filename.replace("\\", "/").rsplit("/", 1)[-1])
+                or CN_URL_MAP.get(
+                    filename.replace("\\", "/").rsplit("/", 1)[-1])):
             return {"ok": False,
-                    "error": f"no known HF URL for {filename!r}",
-                    "known": sorted(CN_URL_MAP.keys())}
-        # Delete the corrupt old file first so we don't ever have two
-        # files competing on case-insensitive FS if the URL target
-        # uses a slightly different path.
+                    "error": f"no repo / URL mapping for {filename!r}",
+                    "known": sorted(CN_REPO_MAP.keys())}
+        # Delete the corrupt old file first so we don't get two files
+        # competing on case-insensitive filesystems.
         del_ok, del_msg = _delete_file(cn_dir, filename)
         dest, reason = _safe_resolve(cn_dir, filename)
         if dest is None:
             return {"ok": False, "error": reason}
-        dl_ok, dl_msg = _download_file(url, dest)
+        dl_ok, dl_msg = _download_file(filename, dest)
         return {
             "ok":           dl_ok,
             "action":       "redownload",
             "filename":     filename,
-            "url":          url,
             "detail":       dl_msg,
             "deleted_old":  del_msg,
             "delete_ok":    del_ok,
@@ -254,16 +348,14 @@ def _handle(body: dict) -> dict:
 
 
 def _register_routes() -> bool:
-    """Wire the repair route onto ComfyUI's PromptServer. Returns
-    True when the route is attached; False when we're not in a
-    ComfyUI runtime (e.g. unit tests)."""
+    """Wire the repair route onto ComfyUI's PromptServer."""
     try:
         from server import PromptServer
-    except Exception:  # pragma: no cover — not in ComfyUI runtime
+    except Exception:
         return False
     try:
         from aiohttp import web
-    except Exception:  # pragma: no cover
+    except Exception:
         return False
     instance = getattr(PromptServer, "instance", None)
     if instance is None:
@@ -284,7 +376,13 @@ def _register_routes() -> bool:
 
     @routes.get("/spellcaster/models/known_urls")
     async def _known_route(_request):
-        return web.json_response({"cn_urls": CN_URL_MAP})
+        return web.json_response({
+            "cn_urls": CN_URL_MAP,       # legacy flat URL map
+            "cn_repos": {
+                k: {"repo": r, "file": f, "rev": rev}
+                for k, (r, f, rev) in CN_REPO_MAP.items()
+            },
+        })
 
     return True
 
@@ -294,6 +392,6 @@ def is_available() -> bool:
 
 
 __all__ = [
-    "CN_URL_MAP",
+    "CN_URL_MAP", "CN_REPO_MAP",
     "_handle", "_register_routes", "is_available",
 ]

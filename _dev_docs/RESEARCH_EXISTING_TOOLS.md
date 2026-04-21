@@ -141,13 +141,13 @@ Parallel research dump (2026-04-20) on libraries / node packs / tooling Spellcas
 ## Recommended adoption order
 
 **Sprint 1 (days):**
-1. `huggingface_hub` in [model_repair.py](../comfyui-spellcaster/model_repair.py) — delete our urllib streamer.
-2. `sseclient-py` in Resolve bridge + GIMP inbox poller.
-3. `python-websockets` for ComfyUI `/history` poll replacement.
+1. ✅ **DONE 2026-04-20** — `huggingface_hub.hf_hub_download` in [model_repair.py](../comfyui-spellcaster/model_repair.py). `CN_REPO_MAP` is now the canonical (repo_id, filename, revision) table; `CN_URL_MAP` kept as legacy fallback for installs without the lib. Installer's `step_check_cn_coverage` pulls URLs live from the pack's `/spellcaster/models/known_urls` route. ~100 LOC of urllib streamer + size-verify + atomic-rename replaced by one `hf_hub_download()` call.
+2. **TODO** — `sseclient-py` in Resolve bridge + GIMP inbox poller.
+3. **TODO** — `python-websockets` for ComfyUI `/history` poll replacement.
 
 **Sprint 2 (weeks):**
-4. `age` / `pyrage` for the private downstream distribution — replace the `.scv` spec entirely.
-5. `comfyui-tooling-nodes` integration — `use_inline_transport=True` flag on `build_*`, ws bytes handler in dispatcher.
+4. ✅ **DONE (NSFW side) 2026-04-20** — `age` / `pyrage` replaces the `.scv` custom spec entirely. [bundle_passphrase_gate.py](../nsfw/bundle/plugin_tools/bundle_passphrase_gate.py) uses `pyrage.passphrase.encrypt/decrypt` with an `age` binary fallback. [ENCRYPTED_FORMAT_PLAN.md](../nsfw/bundle/docs/ENCRYPTED_FORMAT_PLAN.md) rewritten to spec `.age` format instead of `.scv`. Legacy `.lock` JSON auto-upgrades on first unlock.
+5. **PARTIAL** — `Acly/comfyui-tooling-nodes` git-cloned into bundle's `custom_nodes/` by [build_portable_bundle.py::_install_tooling_nodes](../nsfw/bundle/tools/build_portable_bundle.py). Bundle's `python_embedded/` also gets `huggingface_hub + pyrage + websockets + sseclient-py` pre-installed via the new `step_install_pyrequirements` step. STILL TODO: add `use_inline_transport=True` flag on `build_*` and wire ETN_LoadImageBase64 / ETN_SendImageWebSocket in the GIMP dispatcher — lands when the websockets client swap (sprint 1 #3) lands, since ETN's result path is ws-binary-frame-based.
 
 **Sprint 3 (next quarter):**
 6. Evaluate `ComfyScript` migration — timed for the next "new ComfyUI node family" need.
