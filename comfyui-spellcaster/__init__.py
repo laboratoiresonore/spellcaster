@@ -47,6 +47,14 @@ from . import blob_bus as _blob_bus
 from . import privacy_cleanup as _privacy_cleanup
 _privacy_cleanup.is_available()
 
+# Model-repair route — lets plugins delete + redownload corrupt
+# ControlNet files from models/controlnet/ on this server. Fixes the
+# "user keeps hitting 'incomplete metadata' on the same CN file and
+# has to SSH in to fix it" loop. Curated Hugging Face URL map;
+# callers can't drive arbitrary URL fetches. See model_repair.py.
+from . import model_repair as _model_repair
+_model_repair.is_available()
+
 
 NODE_CLASS_MAPPINGS = {
     "SpellcasterLoader": SpellcasterLoader,

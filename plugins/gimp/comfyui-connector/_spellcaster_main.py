@@ -3122,10 +3122,34 @@ def _maybe_handle_cn_error(err_text: str, workflow: dict | None) -> str | None:
         if isinstance(fname, str) and fname:
             _note_bad_cn_file(fname, reason=err_text.splitlines()[0]
                                        if err_text else "load failed")
+            # Stash the bad filename + the server we hit the error on
+            # so the caller can surface a confirmation dialog on the
+            # main thread (Gtk dialogs from within a worker thread
+            # crash). The dispatcher runs inside _run_with_spinner's
+            # background thread — we CAN'T put up Gtk.MessageDialog
+            # from here. The wrapper at _run_comfyui_workflow's
+            # surface catches the error and raises; callers see a
+            # Gimp.message, which is safe from any thread.
             try:
                 bn = fname.replace("\\", "/").rsplit("/", 1)[-1]
                 first_err = (err_text.splitlines()[0].strip()
                              if err_text else '')
+                # Known-URL hint — if we have an HF URL for this CN
+                # file, the user's next message surfaces the
+                # "Auto-repair" button via _offer_cn_repair below.
+                try:
+                    known = _known_cn_hf_urls()
+                except Exception:
+                    known = {}
+                has_url = (fname in known) or (bn in known)
+                repair_hint = (
+                    "\n\nSpellcaster CAN auto-repair this file from "
+                    "Hugging Face — the next time you run a 3D tool, "
+                    "you'll get a 'Repair on server' button. "
+                    if has_url else
+                    "\n\nNo curated Hugging Face URL is registered for "
+                    "this file — delete it manually and reinstall via "
+                    "ComfyUI Manager. ")
                 Gimp.message(
                     f"ControlNet file '{bn}' failed to load on the "
                     f"server.\n\n{first_err}\n\n"
@@ -3139,20 +3163,166 @@ def _maybe_handle_cn_error(err_text: str, workflow: dict | None) -> str | None:
                     f"download — size < expected), OR it's a custom "
                     f"format that needs a dedicated loader node "
                     f"(e.g. Z-Image-Turbo-Fun CNs need the ZIT-Fun "
-                    f"node pack, not the built-in ControlNetLoader).\n\n"
-                    f"Spellcaster can't fix the file on your ComfyUI "
-                    f"server (no write API). What you can do:\n"
-                    f"  1. SSH / file manager into the server and "
-                    f"delete {bn} from models/controlnet/\n"
-                    f"  2. Reinstall via ComfyUI Manager (Install "
-                    f"Models → search 'ControlNet Union')\n"
-                    f"  3. Retry — Spellcaster blacklisted this file "
-                    f"for the session, so the dispatch will now walk "
-                    f"the fallback cascade (Depth → Canny → …).")
+                    f"node pack, not the built-in ControlNetLoader)."
+                    f"{repair_hint}"
+                    f"Spellcaster blacklisted this file for the "
+                    f"session; the next dispatch will walk the "
+                    f"fallback cascade (Depth → Canny → …).")
+            except Exception:
+                pass
+            # Remember which bad file we saw so the handler can offer
+            # auto-repair on its next entry (main-thread safe).
+            try:
+                _LAST_BAD_CN["filename"] = fname
+                _LAST_BAD_CN["error"] = err_text
             except Exception:
                 pass
             return fname
     return None
+
+
+# Set by _maybe_handle_cn_error() on the worker thread; consumed on
+# the main thread by _offer_cn_repair() before each 3D dispatch so
+# the user can trigger the pack's /spellcaster/models/repair route.
+_LAST_BAD_CN: dict = {"filename": None, "error": None}
+
+
+def _known_cn_hf_urls() -> dict:
+    """Ask the ComfyUI-Spellcaster pack which CN files it has
+    curated Hugging Face URLs for. Returns an empty dict when the
+    pack isn't installed or the route isn't available (old pack).
+    """
+    try:
+        srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+    except Exception:
+        return {}
+    try:
+        import json
+        req = urllib.request.Request(
+            f"{srv.rstrip('/')}/spellcaster/models/known_urls")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            body = json.loads(resp.read().decode("utf-8", errors="replace"))
+        return (body or {}).get("cn_urls") or {}
+    except Exception:
+        return {}
+
+
+def _offer_cn_repair(parent_dialog=None) -> bool:
+    """When _maybe_handle_cn_error left a bad-CN marker, show a
+    Gtk confirmation dialog asking the user to run the server-side
+    repair route (delete + redownload from Hugging Face). Returns
+    True when a repair ran successfully, False otherwise (including
+    "nothing to repair").
+
+    Called from every 3D handler's entry point BEFORE the dialog
+    opens, so the user sees the repair prompt immediately after the
+    failure instead of at "next launch of GIMP".
+    """
+    fname = (_LAST_BAD_CN or {}).get("filename")
+    if not fname:
+        return False
+    # Clear the marker up front so a dismissed / failed repair
+    # doesn't keep popping the dialog every run.
+    _LAST_BAD_CN["filename"] = None
+    _LAST_BAD_CN["error"] = None
+
+    # Only offer when we have a curated URL for this file.
+    known = _known_cn_hf_urls()
+    bn = fname.replace("\\", "/").rsplit("/", 1)[-1]
+    if fname not in known and bn not in known:
+        return False
+
+    try:
+        dlg = Gtk.Dialog(title="Spellcaster — Repair ControlNet")
+        dlg.add_button("_Skip", Gtk.ResponseType.CANCEL)
+        dlg.add_button("_Repair on server", Gtk.ResponseType.OK)
+        dlg.set_default_response(Gtk.ResponseType.OK)
+        bx = dlg.get_content_area()
+        bx.set_spacing(8)
+        bx.set_margin_start(12); bx.set_margin_end(12)
+        bx.set_margin_top(12); bx.set_margin_bottom(12)
+        lbl = Gtk.Label()
+        lbl.set_markup(
+            f"<b>{bn}</b> failed to load on your ComfyUI server.\n\n"
+            f"Spellcaster can fix it for you:\n"
+            f"  1. Delete the corrupt file from <tt>models/controlnet/</tt>\n"
+            f"  2. Re-download a known-good copy from Hugging Face\n"
+            f"  3. Retry the dispatch\n\n"
+            f"<small>This is a 0.7–2.5 GB download; progress runs on "
+            f"the server (ComfyUI's console logs it). You'll see a "
+            f"message here when it finishes.</small>")
+        lbl.set_line_wrap(True); lbl.set_xalign(0.0)
+        bx.pack_start(lbl, False, False, 0)
+        dlg.show_all()
+        resp = dlg.run()
+        dlg.destroy()
+    except Exception:
+        return False
+    if resp != Gtk.ResponseType.OK:
+        return False
+
+    srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+    try:
+        import json
+        body = json.dumps({
+            "action": "redownload",
+            "folder": "controlnet",
+            "filename": fname,
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            f"{srv.rstrip('/')}/spellcaster/models/repair",
+            data=body, method="POST",
+            headers={"Content-Type": "application/json"})
+        # Long timeout — 2.5 GB download can take a while.
+        with urllib.request.urlopen(req, timeout=1800) as resp_stream:
+            result = json.loads(resp_stream.read().decode(
+                "utf-8", errors="replace"))
+    except Exception as e:
+        try:
+            Gimp.message(
+                f"Server-side repair failed: {e}\n\n"
+                f"The repair route may not be installed on your "
+                f"ComfyUI server. Update the ComfyUI-Spellcaster pack "
+                f"to the latest version and try again.")
+        except Exception:
+            pass
+        return False
+
+    if not result.get("ok"):
+        try:
+            err = result.get("error") or result.get("detail") or "unknown"
+            Gimp.message(
+                f"Server-side repair failed: {err}\n\n"
+                f"URL tried: {result.get('url', '(none)')}\n"
+                f"Old-file delete: {result.get('deleted_old', '(n/a)')}")
+        except Exception:
+            pass
+        return False
+
+    # Success — un-blacklist the filename so the next dispatch can
+    # try it again now that the fresh file is in place.
+    try:
+        _CN_SESSION_BLACKLIST.discard(fname)
+        _CN_SESSION_BLACKLIST.discard(bn.lower())
+    except Exception:
+        pass
+    # Also invalidate the CN-available cache so _fetch_available_cn_files
+    # re-scans (new filename should show up if it wasn't there before).
+    try:
+        _CN_AVAILABLE_CACHE.clear()
+    except Exception:
+        pass
+    try:
+        detail = result.get("detail") or ""
+        Gimp.message(
+            f"ControlNet file repaired on the server.\n\n"
+            f"File:  {bn}\n"
+            f"URL:   {result.get('url', '')}\n"
+            f"Detail: {detail}\n\n"
+            f"The file is ready — dispatch again to use it.")
+    except Exception:
+        pass
+    return True
 
 
 def _resolve_normal_map_cn(server: str, arch_key: str) -> dict:
@@ -9573,9 +9743,15 @@ def _import_video_results(image, server, results):
     """Import video generation results: GIF as layer, open MP4 in player.
 
     Scans results for:
-      - PNG (lastframe) -> import as layer
+      - PNG (lastframe) -> import as layer via _apply_mask_mode
+        (inherits the empty-bytes retriever guard + routing logic —
+        audit 2026-04-20 found this path bypassed the guard).
       - GIF -> save locally, import first frame as layer
       - MP4 -> save locally, open in system video player
+
+    Also calls ``_repatriate_outputs`` at the end to trigger privacy
+    cleanup for the video outputs — audit 2026-04-20 found the video
+    path was leaking Spellcaster-owned output files on the server.
     """
     cfg = _load_config()
     output_dir = cfg.get("output_dir", "").strip()
@@ -9586,8 +9762,12 @@ def _import_video_results(image, server, results):
 
         if fn_lower.endswith(".png") and "lastframe" in fn_lower:
             try:
-                _import_result_as_layer(image, _download_image(server, fn, sf, ft),
-                                        "Wan Video last frame")
+                # Route through _apply_mask_mode so the empty-bytes
+                # guard (retriever homogenisation, 2026-04-20) fires
+                # on video last-frames too.
+                _apply_mask_mode(server, image,
+                                  _download_image(server, fn, sf, ft),
+                                  "Wan Video last frame", False)
             except Exception:
                 pass
 
@@ -9640,6 +9820,17 @@ def _import_video_results(image, server, results):
             except Exception:
                 pass
 
+    # Homogenise privacy cleanup across image + video paths. Audit
+    # 2026-04-20 found video handlers bypassed this call, leaving
+    # Spellcaster-owned .mp4 / .gif / lastframe-.png outputs sitting
+    # on the server indefinitely. The cleanup itself respects the
+    # user's "After generation" setting (copy vs. delete) — with
+    # "copy" it's a no-op, with "delete" it hits the pack's
+    # /spellcaster/privacy/delete route.
+    try:
+        _repatriate_outputs(server, results)
+    except Exception:
+        pass
     Gimp.displays_flush()
     return saved_files
 
@@ -31998,6 +32189,14 @@ class Spellcaster(Gimp.PlugIn):
     def _run_img2img_3d(self, procedure, run_mode, image, drawables, config, data):
         """Image-to-image with MANDATORY 3D normal map guidance."""
         global _FORCE_3D_MODE
+        # If the previous run of ANY 3D tool flagged a bad CN file,
+        # offer to auto-repair it on the server BEFORE launching the
+        # dialog — saves the user another failed dispatch round-trip.
+        try:
+            GimpUi.init("spellcaster")
+            _offer_cn_repair()
+        except Exception:
+            pass
         _FORCE_3D_MODE = True
         try:
             return self._run_img2img(procedure, run_mode, image, drawables,
@@ -32008,6 +32207,11 @@ class Spellcaster(Gimp.PlugIn):
     def _run_inpaint_3d(self, procedure, run_mode, image, drawables, config, data):
         """Inpaint with MANDATORY 3D normal map guidance."""
         global _FORCE_3D_MODE
+        try:
+            GimpUi.init("spellcaster")
+            _offer_cn_repair()
+        except Exception:
+            pass
         _FORCE_3D_MODE = True
         try:
             return self._run_inpaint(procedure, run_mode, image, drawables,
@@ -32018,6 +32222,11 @@ class Spellcaster(Gimp.PlugIn):
     def _run_outpaint_3d(self, procedure, run_mode, image, drawables, config, data):
         """Outpaint with MANDATORY 3D normal map guidance."""
         global _FORCE_3D_MODE
+        try:
+            GimpUi.init("spellcaster")
+            _offer_cn_repair()
+        except Exception:
+            pass
         _FORCE_3D_MODE = True
         try:
             return self._run_outpaint(procedure, run_mode, image, drawables,
@@ -32028,6 +32237,11 @@ class Spellcaster(Gimp.PlugIn):
     def _run_iclight_3d(self, procedure, run_mode, image, drawables, config, data):
         """IC-Light relighting with MANDATORY 3D normal map guidance."""
         global _FORCE_3D_MODE
+        try:
+            GimpUi.init("spellcaster")
+            _offer_cn_repair()
+        except Exception:
+            pass
         _FORCE_3D_MODE = True
         try:
             return self._run_iclight(procedure, run_mode, image, drawables,
