@@ -38,6 +38,7 @@ try:
         build_txt2img, build_img2img, build_upscale, build_rembg,
         build_faceswap, build_face_restore, build_style_transfer,
         build_iclight, build_lut, build_inpaint,
+        build_outpaint, build_normal_map,
     )
     from .architectures import get_arch
     from .model_detect import classify_unet_model, classify_ckpt_model
@@ -49,6 +50,7 @@ except ImportError:
         build_txt2img, build_img2img, build_upscale, build_rembg,
         build_faceswap, build_face_restore, build_style_transfer,
         build_iclight, build_lut, build_inpaint,
+        build_outpaint, build_normal_map,
     )
     from spellcaster_core.architectures import get_arch
     from spellcaster_core.model_detect import classify_unet_model, classify_ckpt_model
@@ -244,6 +246,173 @@ class SpellcasterPlugin:
             steps=rec["settings"].get("steps", 0),
             cfg=rec["settings"].get("cfg"),
         )
+
+    # ── Extended operations (2026-04-20) ─────────────────────────
+    # Each method supplies an abstract hook the subclass can
+    # override. Default implementations raise `NotImplementedError`
+    # with a message pointing at the hook so editor plugins don't
+    # fail silently when they haven't wired the capability yet.
+
+    def get_mask_png(self):
+        """Export the active SELECTION / alpha-mask as a grayscale
+        PNG (white = inpaint here, black = keep). Override in the
+        subclass when the editor exposes a selection (Krita selection,
+        Photoshop quick-mask, GIMP selection channel).
+
+        Returns ``None`` when no selection is active; raises only if
+        the editor CAN'T produce a mask despite one existing.
+        """
+        return None
+
+    def get_normal_map_png(self):
+        """Export an existing 3D normal-map layer if the user has one.
+        Optional hook used by :meth:`iclight` for surface-aware
+        relighting. Default: no normal map \u2014 IC-Light falls back
+        to flat FC-mode relighting."""
+        return None
+
+    def inpaint(self, prompt, negative="", denoise=0.65, arch="sdxl",
+                 model="", quality="balanced", fast_mode=False):
+        """Regenerate a selected region while preserving the rest.
+
+        Requires the subclass to implement :meth:`get_mask_png` \u2014
+        a grayscale PNG where white marks the region to regenerate.
+        When the editor has no selection, raises a clear error so
+        users know to make one first.
+        """
+        mask_bytes = None
+        try:
+            mask_bytes = self.get_mask_png()
+        except Exception as e:
+            self.show_error(f"Mask export failed: {e}")
+            return None
+        if not mask_bytes:
+            self.show_error(
+                "Inpaint requires a selection. Make one first (the "
+                "selected region is what will be regenerated) and "
+                "run inpaint again.")
+            return None
+        # Upload image + mask to ComfyUI. We intentionally use
+        # ``_upload_raw`` not ``upload_canvas`` so the two uploads
+        # share a single UUID root (easier to grep in privacy logs).
+        import uuid as _u
+        stem = _u.uuid4().hex[:8]
+        image_name = f"spellcaster_inp_{stem}.png"
+        mask_name = f"spellcaster_mask_{stem}.png"
+        self.show_progress("Uploading canvas + mask...")
+        self._upload_raw(image_name, self.get_canvas_png())
+        self._upload_raw(mask_name, mask_bytes)
+        self._last_upload = image_name
+        preset = self._make_preset(arch, model)
+        if not preset:
+            return None
+        preset["denoise"] = float(denoise)
+        import random
+        wf = build_inpaint(
+            image_name, mask_name, preset, prompt, negative,
+            random.randint(1, 2 ** 32 - 1),
+            quality=quality, fast_mode=fast_mode)
+        return self._run_workflow(wf, "inpaint")
+
+    def outpaint(self, prompt, negative="",
+                  left=0, top=0, right=256, bottom=0, feathering=40,
+                  arch="sdxl", model="",
+                  quality="balanced", fast_mode=False):
+        """Extend the canvas on any combination of edges.
+
+        ``left / top / right / bottom`` are pixel amounts to grow on
+        each edge. Default extends 256 px to the right; pass the edge
+        set that matches the user's intent. ``feathering`` smooths
+        the seam between original + generated pixels.
+        """
+        name = self.upload_canvas()
+        preset = self._make_preset(arch, model)
+        if not preset:
+            return None
+        import random
+        wf = build_outpaint(
+            name, preset, prompt, negative,
+            random.randint(1, 2 ** 32 - 1),
+            int(left), int(top), int(right), int(bottom),
+            int(feathering),
+            quality=quality, fast_mode=fast_mode)
+        return self._run_workflow(wf, "outpaint")
+
+    def iclight(self, prompt, negative="", multiplier=0.18,
+                 steps=20, cfg=2.0, arch="sd15", model=""):
+        """IC-Light relighting \u2014 change lighting direction + colour.
+
+        Uses SD 1.5's IC-Light FC model by default. When the subclass
+        provides a normal map via :meth:`get_normal_map_png`, the
+        workflow routes it through a proper normal-map ControlNet for
+        surface-aware relighting (Bug B fix from 2026-04-20). Without
+        a normal map, relight is flat but still useful.
+        """
+        name = self.upload_canvas()
+        # Pick an SD-1.5 checkpoint: caller's ``model`` wins if given,
+        # else the first SD-1.5 preset on the server.
+        preset = self._make_preset(arch, model)
+        if not preset:
+            return None
+        ckpt_name = preset.get("ckpt") or model or ""
+        if not ckpt_name:
+            self.show_error(
+                "IC-Light needs an SD-1.5 checkpoint. Set one in your "
+                "Spellcaster settings or install a SD-1.5 model.")
+            return None
+        # Optional normal map: upload if the subclass exposes one.
+        normal_name = None
+        try:
+            nm_bytes = self.get_normal_map_png()
+        except Exception:
+            nm_bytes = None
+        if nm_bytes:
+            import uuid as _u
+            normal_name = f"spellcaster_iclight_nm_{_u.uuid4().hex[:8]}.png"
+            self._upload_raw(normal_name, nm_bytes)
+        import random
+        wf = build_iclight(
+            name, ckpt_name, prompt, negative,
+            random.randint(1, 2 ** 32 - 1),
+            multiplier=float(multiplier),
+            steps=int(steps), cfg=float(cfg),
+            normal_map_filename=normal_name)
+        return self._run_workflow(wf, "iclight")
+
+    def face_swap(self, source_image_bytes,
+                    swap_model="inswapper_128.onnx"):
+        """Swap the face on the canvas for the one in
+        ``source_image_bytes`` (PNG / JPEG). ReActor-based; requires
+        the ComfyUI-ReActor node pack on the server."""
+        if not source_image_bytes:
+            self.show_error(
+                "Face Swap needs a source face image. Pass "
+                "``source_image_bytes`` from a file picker / "
+                "clipboard / layer selection.")
+            return None
+        target_name = self.upload_canvas()
+        import uuid as _u
+        src_name = f"spellcaster_face_src_{_u.uuid4().hex[:8]}.png"
+        self._upload_raw(src_name, source_image_bytes)
+        wf = build_faceswap(target_name, src_name,
+                             swap_model=swap_model)
+        return self._run_workflow(wf, "face_swap")
+
+    def normal_map(self, max_res=1024):
+        """Generate a 3D surface-normal map of the active canvas.
+
+        Runs NormalCrafter on the server and inserts the resulting
+        RGB normal-map as a new layer. The layer is named
+        ``"Normal Map (auto)"`` so subsequent IC-Light / inpaint /
+        img2img calls can pick it up via
+        :meth:`get_normal_map_png`-aware downstream logic.
+        """
+        name = self.upload_canvas()
+        import random
+        wf = build_normal_map(name,
+                                seed=random.randint(1, 2 ** 31),
+                                max_res=int(max_res))
+        return self._run_workflow(wf, "normal_map")
 
     # ── Cross-interface backbone (optional — gated on guild_url) ──
 

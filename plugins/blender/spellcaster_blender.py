@@ -199,6 +199,78 @@ class SPELLCASTER_OT_rembg(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class SPELLCASTER_OT_outpaint(bpy.types.Operator):
+    bl_idname = "spellcaster.outpaint"
+    bl_label = "Extend Canvas (Outpaint)"
+    bl_description = "Grow the active image by generating new pixels at its edges"
+
+    prompt: bpy.props.StringProperty(
+        name="What should appear in the extended area", default="")
+    pixels: bpy.props.IntProperty(
+        name="Pixels to extend", default=256, min=64, max=1024)
+    direction: bpy.props.EnumProperty(
+        name="Edge", default="right",
+        items=[
+            ("right",  "Right",  "Extend to the right"),
+            ("left",   "Left",   "Extend to the left"),
+            ("top",    "Top",    "Extend upward"),
+            ("bottom", "Bottom", "Extend downward"),
+        ])
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=400)
+
+    def draw(self, context):
+        self.layout.prop(self, "prompt")
+        self.layout.prop(self, "pixels")
+        self.layout.prop(self, "direction")
+
+    def execute(self, context):
+        if not self.prompt:
+            return {'CANCELLED'}
+        kwargs = {"left": 0, "top": 0, "right": 0, "bottom": 0}
+        kwargs[self.direction] = int(self.pixels)
+        _get_plugin().outpaint(self.prompt, **kwargs)
+        return {'FINISHED'}
+
+
+class SPELLCASTER_OT_iclight(bpy.types.Operator):
+    bl_idname = "spellcaster.iclight"
+    bl_label = "Relight (IC-Light)"
+    bl_description = "Re-light the current image with a text prompt (SD 1.5 IC-Light)"
+
+    prompt: bpy.props.StringProperty(
+        name="Lighting",
+        default="golden hour from upper-left",
+        description="Describe the desired light (direction + colour + intensity)")
+    multiplier: bpy.props.FloatProperty(
+        name="Strength", default=0.18, min=0.0, max=1.0,
+        description="IC-Light strength — 0.18 subtle, 0.4 strong")
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=400)
+
+    def draw(self, context):
+        self.layout.prop(self, "prompt")
+        self.layout.prop(self, "multiplier")
+
+    def execute(self, context):
+        if self.prompt:
+            _get_plugin().iclight(self.prompt,
+                                    multiplier=float(self.multiplier))
+        return {'FINISHED'}
+
+
+class SPELLCASTER_OT_normal_map(bpy.types.Operator):
+    bl_idname = "spellcaster.normal_map"
+    bl_label = "Generate 3D Normal Map"
+    bl_description = "Run NormalCrafter on the active image; result imports as a new image named 'Normal Map (auto)'"
+
+    def execute(self, context):
+        _get_plugin().normal_map()
+        return {'FINISHED'}
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  Panel (Sidebar)
 # ═══════════════════════════════════════════════════════════════════════
@@ -215,9 +287,12 @@ class SPELLCASTER_PT_panel(bpy.types.Panel):
         layout.operator("spellcaster.auto", icon='SHADERFX')
         layout.operator("spellcaster.txt2img", icon='IMAGE')
         layout.operator("spellcaster.img2img", icon='BRUSH_DATA')
+        layout.operator("spellcaster.outpaint", icon='ARROW_LEFTRIGHT')
+        layout.operator("spellcaster.iclight", icon='LIGHT')
         layout.separator()
         layout.operator("spellcaster.upscale", icon='FULLSCREEN_ENTER')
         layout.operator("spellcaster.rembg", icon='MATPLANE')
+        layout.operator("spellcaster.normal_map", icon='TEXTURE_DATA')
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -254,8 +329,11 @@ classes = [
     SPELLCASTER_OT_txt2img,
     SPELLCASTER_OT_auto,
     SPELLCASTER_OT_img2img,
+    SPELLCASTER_OT_outpaint,
+    SPELLCASTER_OT_iclight,
     SPELLCASTER_OT_upscale,
     SPELLCASTER_OT_rembg,
+    SPELLCASTER_OT_normal_map,
     SPELLCASTER_PT_panel,
 ]
 
