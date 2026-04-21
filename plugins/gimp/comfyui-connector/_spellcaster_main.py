@@ -3128,36 +3128,76 @@ _CN_INCOMPATIBLE_ARCHS = frozenset({"flux2klein", "flux_kontext", "chroma"})
 #: these as input modes so they're strictly the best choice when
 #: present.
 _NORMAL_MAP_FALLBACK_CHAIN: dict[str, tuple[str, ...]] = {
+    # Order matters — _resolve_normal_map_cn picks the FIRST installed
+    # entry. Union CNs go first (multi-purpose, handle normal maps
+    # natively), then Depth (best surface-geometry proxy), then
+    # Canny / lineart / OpenPose (structural fallbacks).
+    #
+    # HF-style folder paths ("<repo>/diffusion_pytorch_model.safetensors")
+    # are listed right next to the flat-file form so users who installed
+    # via ComfyUI Manager — which preserves the HF folder layout — get
+    # the PREFERRED Union CN matched instead of the Depth fallback.
+    # 2026-04-20 verification: the user's server only had the folder
+    # form of SDXL Union, so the cascade was picking Depth for every
+    # 3D dispatch even though a perfectly usable Union file was sitting
+    # right there.
     "sdxl": (
+        # SDXL Union — flat form and HF folder form
         "SDXL\\controlnet-union-sdxl-1.0.safetensors",
         "SDXL/controlnet-union-sdxl-1.0.safetensors",
         "controlnet-union-sdxl-1.0.safetensors",
+        "SDXL\\controlnet-union-sdxl-1.0\\diffusion_pytorch_model.safetensors",
+        "SDXL/controlnet-union-sdxl-1.0/diffusion_pytorch_model.safetensors",
+        # SDXL Depth — flat and rank256
         "SDXL\\control-lora-depth-rank128.safetensors",
         "SDXL/control-lora-depth-rank128.safetensors",
         "control-lora-depth-rank128.safetensors",
+        "control-lora-depth-rank256.safetensors",
+        "SDXL\\control-lora-depth-rank256.safetensors",
+        # SDXL Canny
         "SDXL\\controlnet-canny-sdxl-1.0.safetensors",
         "SDXL/controlnet-canny-sdxl-1.0.safetensors",
         "controlnet-canny-sdxl-1.0.safetensors",
+        "SDXL\\control-lora-canny-rank128.safetensors",
+        "SDXL\\control-lora-canny-rank256.safetensors",
+        "control-lora-canny-rank256.safetensors",
     ),
     "illustrious": (
         "SDXL\\controlnet-union-sdxl-1.0.safetensors",
         "SDXL/controlnet-union-sdxl-1.0.safetensors",
         "controlnet-union-sdxl-1.0.safetensors",
+        "SDXL\\controlnet-union-sdxl-1.0\\diffusion_pytorch_model.safetensors",
+        "SDXL/controlnet-union-sdxl-1.0/diffusion_pytorch_model.safetensors",
         "SDXL\\control-lora-depth-rank128.safetensors",
         "SDXL/control-lora-depth-rank128.safetensors",
         "control-lora-depth-rank128.safetensors",
+        "control-lora-depth-rank256.safetensors",
         "noobaiXLControlnet_openposeModel.safetensors",
     ),
     "sd15": (
+        # v1.1 normalbae — flat + versioned subdir
         "control_v11p_sd15_normalbae.pth",
         "control_v11p_sd15_normalbae.safetensors",
+        "control_v11p_sd15_normalbae_fp16.safetensors",
+        "1.5\\control_v11p_sd15_normalbae_fp16.safetensors",
+        "1.5/control_v11p_sd15_normalbae_fp16.safetensors",
+        # v1.1 depth
         "control_v11f1p_sd15_depth_fp16.safetensors",
+        "1.5\\control_v11f1p_sd15_depth_fp16.safetensors",
+        # v1.1 lineart
         "control_v11p_sd15_lineart_fp16.safetensors",
+        "1.5\\control_v11p_sd15_lineart_fp16.safetensors",
     ),
     "flux1dev": (
+        # Union Pro 2.0 — flat, fp8, and older folder-form
         "FLUX.1-dev-ControlNet-Union-Pro-2.0.safetensors",
-        "FLUX.1-dev-Controlnet-Union-Pro.safetensors",
         "FLUX.1-dev-ControlNet-Union-Pro-2.0.fp8.safetensors",
+        "FLUX.1-dev-Controlnet-Union-Pro.safetensors",
+        "FLUX.1-dev-ControlNet-Union-Pro\\diffusion_pytorch_model.safetensors",
+        "FLUX.1-dev-ControlNet-Union-Pro/diffusion_pytorch_model.safetensors",
+        # InstantX Union — alt Flux CN family
+        "FLUX.1\\InstantX-FLUX1-Dev-Union\\diffusion_pytorch_model.safetensors",
+        "FLUX.1/InstantX-FLUX1-Dev-Union/diffusion_pytorch_model.safetensors",
     ),
     "zit": (
         "Z-Image-Turbo-Fun-Controlnet-Union.safetensors",
@@ -3495,10 +3535,29 @@ def _resolve_normal_map_cn(server: str, arch_key: str) -> dict:
             "tried":     [],
         }
 
+    # Basenames that are GENERIC across every HF repo (standard
+    # diffusers file name). Matching on basename alone would cross-
+    # wire e.g. "Flux Union Pro" to "InstantX Flux Union" to
+    # "Canny SDXL", all of which ship with this filename. For these,
+    # force a parent-folder match too.
+    _GENERIC_HF_BASENAMES = {
+        "diffusion_pytorch_model.safetensors",
+        "diffusion_pytorch_model.bin",
+        "pytorch_model.safetensors",
+        "model.safetensors",
+    }
+
     def _server_has(name: str) -> str | None:
         """Return the exact on-server filename if ``name`` is
         installed (exact match OR basename match) AND not in the
-        session blacklist; None otherwise."""
+        session blacklist; None otherwise.
+
+        For HF-style generic basenames (``diffusion_pytorch_model
+        .safetensors`` and friends), the basename fallback is gated
+        on a parent-folder match — otherwise we'd wrongly bind the
+        Union CN request to the first Canny HF folder we happen to
+        see, because every HF CN repo ships with the same filename.
+        """
         if not name:
             return None
         if _cn_is_blacklisted(name):
@@ -3506,10 +3565,26 @@ def _resolve_normal_map_cn(server: str, arch_key: str) -> dict:
         for a in available:
             if a == name and not _cn_is_blacklisted(a):
                 return a
-        bn = name.replace("\\", "/").rsplit("/", 1)[-1].lower()
+        norm = name.replace("\\", "/")
+        bn = norm.rsplit("/", 1)[-1].lower()
+        wanted_parent = None
+        if bn in _GENERIC_HF_BASENAMES:
+            # Pull the PARENT folder name (the HF repo slug) so we
+            # bind, e.g., Union CN request → Union HF repo only.
+            parts = norm.rsplit("/", 2)
+            if len(parts) >= 2:
+                wanted_parent = parts[-2].lower()
         for a in available:
-            a_bn = a.replace("\\", "/").rsplit("/", 1)[-1].lower()
-            if a_bn == bn and not _cn_is_blacklisted(a):
+            a_norm = a.replace("\\", "/")
+            a_bn = a_norm.rsplit("/", 1)[-1].lower()
+            if a_bn != bn:
+                continue
+            if wanted_parent is not None:
+                a_parts = a_norm.rsplit("/", 2)
+                a_parent = a_parts[-2].lower() if len(a_parts) >= 2 else ""
+                if a_parent != wanted_parent:
+                    continue
+            if not _cn_is_blacklisted(a):
                 return a
         return None
 
