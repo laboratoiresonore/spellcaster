@@ -8075,7 +8075,106 @@ def _image_is_degenerate(image_url):
         return False
 
 
-def _dispatch_workflow(workflow, comfy_url, timeout=180):
+def _log_guild_dispatch(record: dict) -> None:
+    """Single choke-point for Guild-internal dispatch telemetry.
+
+    Mirrors ``/api/telemetry/dispatch_ok`` \u2014 writes to
+    ``dispatch_log.jsonl`` via the SpeedCoach aggregator and emits a
+    ``DispatchCompleted`` typed event. Called by the
+    ``_dispatch_workflow`` wrapper so every Guild-internal submission
+    (avatar baker, ``/api/run_builder``, shot queue, inbox handlers)
+    produces telemetry the same way GIMP-side dispatches do.
+
+    Swallows every exception. Never raises.
+    """
+    try:
+        from spellcaster_core import speedcoach as _sc
+        _sc.append_dispatch_record(record)
+    except Exception:
+        try:
+            log_path = os.path.join(_STATE_DIR, "dispatch_log.jsonl")
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, default=str) + "\n")
+        except Exception as e:
+            print(f"  [Telemetry] guild dispatch log failed: {e}")
+    try:
+        from spellcaster_core.events import (
+            DispatchCompleted, publish_event)
+        from spellcaster_core.event_bus import EventBus
+        publish_event(
+            EventBus.default(),
+            DispatchCompleted(
+                job_id=str(record.get("job_id") or record.get("prompt_id") or ""),
+                handler=record.get("handler") or record.get("build_fn") or "",
+                arch=record.get("arch") or "",
+                elapsed=float(record.get("elapsed") or 0.0),
+                predicted_elapsed=float(record.get("predicted_elapsed") or 0.0),
+                failed=bool(record.get("failed")),
+                warnings=list(record.get("warnings") or []),
+            ),
+            origin="guild",
+        )
+    except Exception:
+        pass
+
+
+_GUILD_FACESWAP_TOKENS = (
+    "ReActorFaceSwap", "ReActorFaceSwapOpt", "ReActorLoadFaceModel",
+    "Face Swap (mtb)", "Load Face Swap Model (mtb)",
+    "ApplyPulidFlux", "IPAdapterFaceID",
+)
+
+
+def _guild_workflow_is_faceswap(workflow) -> bool:
+    if not isinstance(workflow, dict):
+        return False
+    for node in workflow.values():
+        if not isinstance(node, dict):
+            continue
+        ct = node.get("class_type", "")
+        for tok in _GUILD_FACESWAP_TOKENS:
+            if tok in ct:
+                return True
+    return False
+
+
+def _guild_workflow_arch(workflow) -> str:
+    """Best-effort arch classification for Guild-side dispatches.
+    Mirrors the GIMP helper so dispatch_log rows carry the same
+    ``arch`` key regardless of origin."""
+    if not isinstance(workflow, dict):
+        return ""
+    try:
+        from spellcaster_core.model_detect import classify_ckpt_model
+    except Exception:
+        classify_ckpt_model = None
+    loaders = {"CheckpointLoaderSimple", "CheckpointLoader",
+               "CheckpointLoaderGGUF", "UNETLoader", "UnetLoaderGGUF",
+               "UNetLoader"}
+    saw_klein = False
+    for node in workflow.values():
+        if not isinstance(node, dict):
+            continue
+        ct = node.get("class_type", "")
+        if ct.startswith("Flux2Klein"):
+            saw_klein = True
+        if ct in loaders:
+            inputs = node.get("inputs", {}) or {}
+            name = (inputs.get("ckpt_name") or inputs.get("unet_name")
+                    or inputs.get("model_name") or "")
+            if name and classify_ckpt_model is not None:
+                try:
+                    arch = classify_ckpt_model(name)
+                    if arch:
+                        return arch
+                except Exception:
+                    pass
+    return "flux2klein" if saw_klein else "unknown"
+
+
+def _dispatch_workflow(workflow, comfy_url, timeout=180, *,
+                        handler: str = "", build_fn: str = "",
+                        origin: str = "guild"):
     """Submit an arbitrary workflow to ComfyUI, poll for results.
 
     Runs preflight check first — verifies all nodes exist on the server
@@ -8083,6 +8182,91 @@ def _dispatch_workflow(workflow, comfy_url, timeout=180):
 
     Returns dict with output info (image URLs, video URLs, etc.).
     Raises Exception on failure or timeout.
+
+    Telemetry: wraps the submission in try/finally so every
+    Guild-internal dispatch emits a ``dispatch_log.jsonl`` row AND a
+    ``DispatchCompleted`` event, the same way GIMP's
+    ``_run_comfyui_workflow`` does on the client side. ``handler``
+    and ``build_fn`` label the row so SpeedCoach can slice per-tool.
+    """
+    _tel_start = time.time()
+    _tel_arch = _guild_workflow_arch(workflow)
+    _tel_is_fs = _guild_workflow_is_faceswap(workflow)
+    _tel_failed = False
+    _tel_error = ""
+    _tel_result: dict = {}
+    if _tel_is_fs:
+        try:
+            from spellcaster_core import faceswap_health as _fsh
+            _fsh.record_dispatch()
+        except Exception:
+            pass
+    try:
+        return _dispatch_workflow_impl(
+            workflow, comfy_url, timeout=timeout,
+            _tel_result_out=(lambda r: _tel_result.update(r) if r else None),
+        )
+    except Exception as _exc:
+        _tel_failed = True
+        _tel_error = f"{type(_exc).__name__}: {_exc}"
+        raise
+    finally:
+        try:
+            record = {
+                "ts": time.time(),
+                "origin": origin,
+                "handler": handler,
+                "build_fn": build_fn,
+                "arch": _tel_arch,
+                "elapsed": time.time() - _tel_start,
+                "failed": _tel_failed,
+            }
+            if _tel_error:
+                record["error"] = _tel_error[:400]
+            if _tel_is_fs:
+                record["is_faceswap"] = True
+            if _tel_result.get("prompt_id"):
+                record["prompt_id"] = str(_tel_result["prompt_id"])
+            if _tel_result.get("type"):
+                record["result_type"] = _tel_result["type"]
+            urls = _tel_result.get("urls") or []
+            record["n_outputs"] = len(urls)
+            _log_guild_dispatch(record)
+            # Videoshot log: one row per video output so SpeedCoach's
+            # per-frame aggregator has data to chew on.
+            if _tel_result.get("type") == "videos":
+                for u in urls:
+                    try:
+                        fn = u
+                        if "filename=" in u:
+                            from urllib.parse import urlparse, parse_qs
+                            qs = parse_qs(urlparse(u).query)
+                            fn = (qs.get("filename") or [u])[0]
+                        vrec = {
+                            "ts": time.time(),
+                            "origin": origin,
+                            "handler": handler,
+                            "build_fn": build_fn,
+                            "arch": _tel_arch,
+                            "filename": fn,
+                            "elapsed": time.time() - _tel_start,
+                            "failed": _tel_failed,
+                        }
+                        vlog = os.path.join(_STATE_DIR, "videoshot_log.jsonl")
+                        with open(vlog, "a", encoding="utf-8") as f:
+                            f.write(json.dumps(vrec, default=str) + "\n")
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+
+def _dispatch_workflow_impl(workflow, comfy_url, timeout=180,
+                              _tel_result_out=None):
+    """Original `_dispatch_workflow` body, now invoked by the
+    telemetry wrapper above. ``_tel_result_out`` is a callback the
+    wrapper injects to capture the returned result dict for logging
+    without threading it through every return path.
     """
     # Preflight: check node availability and apply fallbacks
     try:
@@ -8209,8 +8393,11 @@ def _dispatch_workflow(workflow, comfy_url, timeout=180):
                             except Exception:
                                 pass
                             raise Exception(err)
-                        return {"type": "images", "urls": images,
-                                "prompt_id": prompt_id}
+                        _tel_ret = {"type": "images", "urls": images,
+                                     "prompt_id": prompt_id}
+                        if _tel_result_out is not None:
+                            _tel_result_out(_tel_ret)
+                        return _tel_ret
 
                     # Video output (VHS_VideoCombine → "gifs", SaveVideo → "videos")
                     for vkey in ("gifs", "videos"):
@@ -8224,8 +8411,11 @@ def _dispatch_workflow(workflow, comfy_url, timeout=180):
                                 if sub:
                                     url += f"&subfolder={sub}"
                                 urls.append(url)
-                            return {"type": "videos", "urls": urls,
-                                    "prompt_id": prompt_id}
+                            _tel_ret = {"type": "videos", "urls": urls,
+                                         "prompt_id": prompt_id}
+                            if _tel_result_out is not None:
+                                _tel_result_out(_tel_ret)
+                            return _tel_ret
         except Exception as e:
             # Propagate hard failures (execution errors, degenerate output);
             # transient polling hiccups fall through to the next iteration.
@@ -9655,7 +9845,9 @@ def _dispatch_txt2img(prompt, negative, width, height, comfy_url,
         loader_strat = getattr(_dbg_arch, "loader", "unknown")
     print(f"  [Guild] Dispatching txt2img: {arch_key} / {ckpt} / {width}x{height} / seed={seed} / loader={loader_strat}")
 
-    result = _dispatch_workflow(workflow, comfy_url, timeout=120)
+    result = _dispatch_workflow(
+        workflow, comfy_url, timeout=120,
+        handler="guild_txt2img", build_fn="build_txt2img")
 
     # Cache images locally BEFORE cleanup (so we have a copy)
     if result.get("type") == "images" and result.get("urls"):
@@ -9807,7 +9999,12 @@ def _build_and_dispatch(build_fn_name, params, comfy_url):
 
     translated = _translate_params(build_fn_name, params, comfy_url=comfy_url)
     workflow = fn(**translated)
-    result = _dispatch_workflow(workflow, comfy_url)
+    # Pass build_fn through so the telemetry wrapper can label the
+    # dispatch_log row with the builder's name (spellcaster-st,
+    # darktable-lua, any /api/run_builder consumer surfaces this).
+    result = _dispatch_workflow(
+        workflow, comfy_url,
+        handler="run_builder", build_fn=build_fn_name)
 
     # Cache generated assets locally BEFORE privacy cleanup wipes ComfyUI files
     _original_urls = list(result.get("urls", []))  # save for cleanup
@@ -15414,7 +15611,10 @@ class GuildHandler(SimpleHTTPRequestHandler):
 
                     seed = random.randint(1, 1000000000)
                     workflow = build_txt2img(preset, prompt_text, negative, seed)
-                    result = _dispatch_workflow(workflow, comfy)
+                    result = _dispatch_workflow(
+                        workflow, comfy,
+                        handler="guild_background_bake",
+                        build_fn="build_txt2img")
                     # Cache assets locally BEFORE privacy cleanup wipes ComfyUI files
                     _original_bg_urls = list(result.get("urls", []))
                     if result.get("type") == "images" and result.get("urls"):
@@ -16439,7 +16639,10 @@ class GuildHandler(SimpleHTTPRequestHandler):
                         negative = f'{negative}, {arch.quality_negative}'
 
                 workflow = build_txt2img(preset, prompt_text, negative, seed)
-                result = _dispatch_workflow(workflow, exec_comfy)
+                result = _dispatch_workflow(
+                    workflow, exec_comfy,
+                    handler="guild_chat_generate",
+                    build_fn="build_txt2img")
 
                 _original_urls = list(result.get('urls', []))
                 _dc_meta = {"char_id": char_id, "arch": arch_key,
@@ -16627,7 +16830,10 @@ class GuildHandler(SimpleHTTPRequestHandler):
                         workflow = build_func(**params)
 
                 # Dispatch workflow to ComfyUI
-                result = _dispatch_workflow(workflow, exec_comfy)
+                result = _dispatch_workflow(
+                    workflow, exec_comfy,
+                    handler="guild_chat_generate",
+                    build_fn="build_txt2img")
 
                 # Cache assets locally (canonical AssetGallery via the helper).
                 _original_urls = list(result.get('urls', []))

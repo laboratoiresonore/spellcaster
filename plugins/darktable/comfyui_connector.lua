@@ -1064,14 +1064,49 @@ end
 -- Response format: {"prompt_id":"<uuid>","number":"<int>","..."}
 -- Used by: process_image, process_wan_i2v, all AI workflows
 function curl_post_json(url, json_str)
+  -- Telemetry wrapper: stamps elapsed + outcome for every POST.
+  -- When the target URL is ComfyUI's ``/prompt`` endpoint, fires a
+  -- fire-and-forget dispatch_ok row to the Guild so SpeedCoach sees
+  -- Darktable workflows alongside GIMP/Guild ones. The handler name
+  -- comes from the nearest Lua function in the call stack (via
+  -- ``debug.getinfo``), so submissions like ``process_faceswap_mtb``
+  -- label their rows without per-site plumbing.
+  local _tel_start = os.clock()
+  local _tel_handler = ""
+  if debug and debug.getinfo then
+    for level = 3, 8 do
+      local info = debug.getinfo(level, "n")
+      if not info then break end
+      if info.name and info.name:match("^process_") then
+        _tel_handler = info.name; break
+      end
+    end
+  end
   local tb = _unique_tmp("comfyui_body",  ".json")
   local tr = _unique_tmp("comfyui_presp", ".json")
   local f = io.open(tb, "w"); f:write(json_str); f:close()
   os.execute(string.format('curl -s -X POST -H "Content-Type: application/json" -d @"%s" -o "%s" "%s"', shell_esc(tb), shell_esc(tr), shell_esc(url)))
   os.remove(tb)
   local rf = io.open(tr, "r")
-  if not rf then return nil end
-  local c = rf:read("*all"); rf:close(); os.remove(tr)
+  local c = nil
+  if rf then
+    c = rf:read("*all"); rf:close(); os.remove(tr)
+  end
+  -- Fire telemetry only for workflow submissions; upload / status /
+  -- presence endpoints are out of scope for SpeedCoach.
+  if url:find("/prompt", 1, true) then
+    local elapsed = os.clock() - _tel_start
+    local failed = (c == nil or c == "" or c:find('"error"') ~= nil)
+    local err_str = ""
+    if failed and c then err_str = c:sub(1, 200) end
+    -- ``_log_dispatch_telemetry`` is safe to call when the Guild is
+    -- down (silent no-op) \u2014 see its implementation above.
+    if _log_dispatch_telemetry then
+      _log_dispatch_telemetry(
+        _tel_handler ~= "" and _tel_handler or "darktable_prompt",
+        "", "unknown", elapsed, failed, err_str)
+    end
+  end
   return c
 end
 
@@ -1276,6 +1311,40 @@ function _comfy_presence_post(endpoint, body_str)
   os.execute(cmd)
   os.remove(tmp)
 end
+
+-- Fire-and-forget telemetry POST to the Guild's dispatch_ok endpoint.
+-- Mirrors the GIMP plugin's ``_speedcoach_post`` so SpeedCoach's
+-- per-tool aggregator sees Darktable dispatches alongside GIMP ones.
+-- Safe to call without a Guild running (swallows errors silently).
+function _log_dispatch_telemetry(handler, builder, arch, elapsed_s, failed, err_str)
+  local guild = get_guild_url()
+  if not guild or guild == "" then return end
+  local body = string.format(
+    '{"origin":"darktable","handler":"%s","build_fn":"%s","arch":"%s","elapsed":%s,"failed":%s,"error":"%s","ts":%d}',
+    json_escape(handler or ""),
+    json_escape(builder or ""),
+    json_escape(arch or "unknown"),
+    tostring(elapsed_s or 0),
+    tostring(failed and "true" or "false"),
+    json_escape((err_str or ""):sub(1, 200)),
+    os.time())
+  local tmp = _unique_tmp("dt_tel", ".json")
+  local f = io.open(tmp, "w"); if not f then return end
+  f:write(body); f:close()
+  local cmd
+  if package.config:sub(1,1) == "\\" then
+    cmd = string.format(
+      'curl -s --max-time 2 -X POST -H "Content-Type: application/json" --data-binary "@%s" "%s/api/telemetry/dispatch_ok" -o NUL 2>NUL',
+      shell_esc(tmp), shell_esc(guild))
+  else
+    cmd = string.format(
+      'curl -s --max-time 2 -X POST -H "Content-Type: application/json" --data-binary "@%s" "%s/api/telemetry/dispatch_ok" -o /dev/null 2>/dev/null',
+      shell_esc(tmp), shell_esc(guild))
+  end
+  os.execute(cmd)
+  os.remove(tmp)
+end
+
 
 function comfy_presence_register()
   -- Caps list as JSON array

@@ -254,9 +254,53 @@ async function guildStashGeneration(bytes, { kind, title, prompt, model, seed, t
  * Submit a workflow to ComfyUI and poll for the result.
  * Returns { images: [base64...], videos: [base64...] } or throws.
  */
+// Fire-and-forget telemetry POST to the Guild's dispatch_ok endpoint
+// so SpeedCoach sees SillyTavern renders alongside GIMP / Darktable /
+// Guild-internal ones. Mirrors the Guild's /api/telemetry/dispatch_ok
+// schema. Safe when the Guild is down (promise rejection swallowed).
+async function _logDispatchTelemetry({ handler, buildFn, arch, elapsed, failed, error }) {
+    try {
+        const base = (typeof GUILD_URL !== 'undefined' && GUILD_URL)
+            ? GUILD_URL.replace(/\/$/, '')
+            : 'http://127.0.0.1:7777';
+        await fetchJSON(`${base}/api/telemetry/dispatch_ok`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                origin: 'sillytavern',
+                handler: handler || '',
+                build_fn: buildFn || '',
+                arch: arch || 'unknown',
+                elapsed: Number(elapsed) || 0,
+                failed: !!failed,
+                error: error ? String(error).slice(0, 400) : '',
+                ts: Date.now() / 1000,
+            }),
+        });
+    } catch (_e) {
+        // Guild may be down; ignore. Telemetry failures must never
+        // break the user-facing render.
+    }
+}
+
 async function dispatchWorkflow(workflow, timeoutMs = 180000, {
     stashMeta = null,
+    telemetryHandler = 'sillytavern_dispatch',
 } = {}) {
+    const _telStart = Date.now();
+    let _telOutcomeFailed = false;
+    let _telError = '';
+    // Best-effort arch detection from workflow class_types (matches
+    // the Guild's _guild_workflow_arch: tag Klein when any Flux2Klein*
+    // node is present, else "unknown" — cheap + useful).
+    let _telArch = 'unknown';
+    try {
+        for (const [, node] of Object.entries(workflow || {})) {
+            const ct = (node && node.class_type) || '';
+            if (ct.startsWith('Flux2Klein')) { _telArch = 'flux2klein'; break; }
+        }
+    } catch (_e) { /* ignore */ }
+    try {
     // Submit
     const submitRes = await fetchJSON(`${COMFYUI_URL}/prompt`, {
         method: 'POST',
@@ -346,14 +390,54 @@ async function dispatchWorkflow(workflow, timeoutMs = 180000, {
             }
 
             if (result.images.length > 0 || result.videos.length > 0) {
+                // Success telemetry \u2014 one row per dispatch.
+                _logDispatchTelemetry({
+                    handler: telemetryHandler,
+                    arch: _telArch,
+                    elapsed: (Date.now() - _telStart) / 1000,
+                    failed: false,
+                });
                 return result;
             }
         } catch (e) {
-            if (e.message.includes('execution failed')) throw e;
-            // Network error — retry
+            if (e.message.includes('execution failed')) {
+                _telOutcomeFailed = true;
+                _telError = e.message || String(e);
+                _logDispatchTelemetry({
+                    handler: telemetryHandler,
+                    arch: _telArch,
+                    elapsed: (Date.now() - _telStart) / 1000,
+                    failed: true,
+                    error: _telError,
+                });
+                throw e;
+            }
+            // Network error \u2014 retry; don't log until the outer
+            // timeout fires (below) so one log row per dispatch.
         }
     }
+    _logDispatchTelemetry({
+        handler: telemetryHandler,
+        arch: _telArch,
+        elapsed: (Date.now() - _telStart) / 1000,
+        failed: true,
+        error: 'timeout',
+    });
     throw new Error('Timeout waiting for ComfyUI');
+    } catch (_err) {
+        // Catch-all for the outer try opened above. Log once then
+        // re-throw so callers still see the original error.
+        if (!_telOutcomeFailed) {
+            _logDispatchTelemetry({
+                handler: telemetryHandler,
+                arch: _telArch,
+                elapsed: (Date.now() - _telStart) / 1000,
+                failed: true,
+                error: (_err && _err.message) || String(_err),
+            });
+        }
+        throw _err;
+    }
 }
 
 // Validate image bytes by magic-header sniffing. Node doesn't ship
