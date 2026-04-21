@@ -1667,6 +1667,15 @@ def test_upload_cache(report: Report, verbose: bool = False) -> None:
                 "LoadImage": {"input": {"required": {
                     "image": [SERVER_INPUTS]}}}}).encode()
             return _FakeResp(body)
+        if "/spellcaster/privacy/delete" in url:
+            # Simulate "pack not installed" so the privacy code falls
+            # back to the legacy `_overwrite_with_tiny` path that the
+            # spy above watches. Without this, `_delete_via_route`
+            # would see a 200+empty-body from the default stub and
+            # short-circuit the fallback — the spy would never fire.
+            import urllib.error as _ue
+            raise _ue.HTTPError(url, 404, "not found",
+                                 hdrs={}, fp=None)
         # Anything else: empty body, caller will choke — desired.
         return _FakeResp(b"{}")
 
