@@ -19119,6 +19119,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-review-drift":        None,
             "spellcaster-show-minihud":        None,
             "spellcaster-open-dashboard":      None,
+            "spellcaster-bridges-panel":       None,
             "spellcaster-faceswap-reset":      None,
             "spellcaster-last-warnings":       None,
             "spellcaster-toggle-speedcoach":   None,
@@ -19446,6 +19447,9 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-open-dashboard": ("Open Dashboard (web)",
                                             self._run_open_dashboard,
                                             "Open the telemetry dashboard in the default browser. Shows live node progress, VRAM, CPU+RAM, privacy-gate status, queue, peer list, recent dispatches. Runs on 127.0.0.1:18888 when the Voodoomancer bundle is active; probes the URL first and surfaces a hint if it's not reachable."),
+            "spellcaster-bridges-panel": ("🔗 Bridges Panel...",
+                                           self._run_bridges_panel,
+                                           "One window that distills every cross-plugin bridge: live peer presence (GIMP ↔ Resolve ↔ Darktable ↔ SillyTavern ↔ Guild), Send-to-X buttons, Inbox drain, Dashboard opener, recent cross-interface events. Replaces hunting through the Cross-App submenu."),
             "spellcaster-faceswap-reset": ("Reset Faceswap Crash State",
                                             self._run_faceswap_reset,
                                             "Clear the face-swap auto-disable counter + escalation flag. Use after fixing a TensorRT / onnxruntime install."),
@@ -19611,6 +19615,11 @@ class Spellcaster(Gimp.PlugIn):
             # View — toggles + floating overlays.
             "spellcaster-show-minihud":       f"{_S}/View",
             "spellcaster-open-dashboard":     f"{_S}/View",
+            "spellcaster-bridges-panel":      f"{_S}",  # TOP-LEVEL
+            # ^ the Bridges Panel deserves top-level exposure — it's
+            # the single entry point for every cross-plugin flow.
+            # Rest of the Cross-App submenu stays as granular
+            # alternatives for users who know exactly what they want.
             "spellcaster-toggle-speedcoach":  f"{_S}/View",
             # /3D submenu — mandatory 3D normal map variants. These
             # are dedicated procedures distinct from their regular
@@ -19704,6 +19713,197 @@ class Spellcaster(Gimp.PlugIn):
             # management.
             "spellcaster-settings":          "<Image>/Windows",
             "spellcaster-show-minihud":      "<Image>/Windows",
+            "spellcaster-bridges-panel":     "<Image>/Windows",
+        }
+
+        # ── AI-EVERYWHERE: <Image>/Tools/AI <Category>/ ─────────────
+        # Every AI tool registers under the canonical GIMP Tools
+        # menu, so the AI options live SIDE BY SIDE with GIMP's
+        # built-in selection / paint / transform tools. Users who
+        # right-click a selection tool see Select → options; users
+        # who open the Tools menu see the AI alternatives grouped
+        # exactly where the native categories are.
+        #
+        # Categories mirror GIMP's native Tools submenu shape:
+        #   AI Selection    → parallels Tools / Selection Tools
+        #   AI Paint        → parallels Tools / Paint Tools
+        #   AI Transform    → parallels Tools / Transform Tools
+        #   AI Generate     → new category (no GIMP analogue)
+        #   AI Color        → parallels Tools / Color Tools
+        #   AI Video        → new category (no GIMP analogue)
+        #   AI Bridges      → cross-plugin messaging
+        _ai_tools_native_paths = {
+            # ── AI Selection (paralleling Tools/Selection) ──
+            "spellcaster-sam3-select":
+                "<Image>/Tools/AI Selection",
+            "spellcaster-sam3-extract":
+                "<Image>/Tools/AI Selection",
+            "spellcaster-anything-but":
+                "<Image>/Tools/AI Selection",
+            "spellcaster-magic-eraser":
+                "<Image>/Tools/AI Selection",
+            "spellcaster-rembg":
+                "<Image>/Tools/AI Selection",
+
+            # ── AI Paint (paralleling Tools/Paint) ──
+            # Inpaint / outpaint / detail enhance — the "brush-like"
+            # AI edits that modify pixel regions.
+            "spellcaster-inpaint":
+                "<Image>/Tools/AI Paint",
+            "spellcaster-inpaint-3d":
+                "<Image>/Tools/AI Paint",
+            "spellcaster-quick-inpaint":
+                "<Image>/Tools/AI Paint",
+            "spellcaster-klein-inpaint":
+                "<Image>/Tools/AI Paint",
+            "spellcaster-klein-auto-inpaint":
+                "<Image>/Tools/AI Paint",
+            "spellcaster-klein-sam3-inpaint":
+                "<Image>/Tools/AI Paint",
+            "spellcaster-quick-erase":
+                "<Image>/Tools/AI Paint",
+            "spellcaster-quick-rembg":
+                "<Image>/Tools/AI Paint",
+            "spellcaster-klein-detail":
+                "<Image>/Tools/AI Paint",
+
+            # ── AI Transform (paralleling Tools/Transform) ──
+            # Scale / warp / expand operations.
+            "spellcaster-upscale":
+                "<Image>/Tools/AI Transform",
+            "spellcaster-quick-upscale":
+                "<Image>/Tools/AI Transform",
+            "spellcaster-upscale-blend":
+                "<Image>/Tools/AI Transform",
+            "spellcaster-detail-hallucinate":
+                "<Image>/Tools/AI Transform",
+            "spellcaster-seedv2r":
+                "<Image>/Tools/AI Transform",
+            "spellcaster-outpaint":
+                "<Image>/Tools/AI Transform",
+            "spellcaster-outpaint-3d":
+                "<Image>/Tools/AI Transform",
+            "spellcaster-klein-outpaint":
+                "<Image>/Tools/AI Transform",
+            "spellcaster-photo-restore":
+                "<Image>/Tools/AI Transform",
+            "spellcaster-klein-repose":
+                "<Image>/Tools/AI Transform",
+            "spellcaster-klein-headswap":
+                "<Image>/Tools/AI Transform",
+            "spellcaster-face-restore":
+                "<Image>/Tools/AI Transform",
+            "spellcaster-faceswap":
+                "<Image>/Tools/AI Transform",
+            "spellcaster-faceswap-model":
+                "<Image>/Tools/AI Transform",
+
+            # ── AI Generate — new category (no native analogue) ──
+            # Content-from-scratch tools.
+            "spellcaster-txt2img":
+                "<Image>/Tools/AI Generate",
+            "spellcaster-img2img":
+                "<Image>/Tools/AI Generate",
+            "spellcaster-img2img-3d":
+                "<Image>/Tools/AI Generate",
+            "spellcaster-kontext":
+                "<Image>/Tools/AI Generate",
+            "spellcaster-generate-anything":
+                "<Image>/Tools/AI Generate",
+            "spellcaster-batch-variations":
+                "<Image>/Tools/AI Generate",
+            "spellcaster-klein-img2img":
+                "<Image>/Tools/AI Generate",
+            "spellcaster-klein-img2img-ref":
+                "<Image>/Tools/AI Generate",
+            "spellcaster-klein-batch-variations":
+                "<Image>/Tools/AI Generate",
+            "spellcaster-klein-scene-img2img":
+                "<Image>/Tools/AI Generate",
+            "spellcaster-klein-virtual-tryon":
+                "<Image>/Tools/AI Generate",
+            "spellcaster-klein-generate-object":
+                "<Image>/Tools/AI Generate",
+            "spellcaster-klein-refine":
+                "<Image>/Tools/AI Generate",
+            "spellcaster-klein-blend":
+                "<Image>/Tools/AI Generate",
+            "spellcaster-klein-color-match":
+                "<Image>/Tools/AI Generate",
+            "spellcaster-klein-face-detail":
+                "<Image>/Tools/AI Generate",
+            "spellcaster-faceid-img2img":
+                "<Image>/Tools/AI Generate",
+            "spellcaster-pulid-flux":
+                "<Image>/Tools/AI Generate",
+            "spellcaster-style-transfer":
+                "<Image>/Tools/AI Generate",
+            "spellcaster-photobooth":
+                "<Image>/Tools/AI Generate",
+            "spellcaster-body-factory":
+                "<Image>/Tools/AI Generate",
+            "spellcaster-clothing-store":
+                "<Image>/Tools/AI Generate",
+            "spellcaster-studio-set":
+                "<Image>/Tools/AI Generate",
+            "spellcaster-mtb-face-swap":
+                "<Image>/Tools/AI Generate",
+
+            # ── AI Color (paralleling Tools/Color) ──
+            "spellcaster-colorize":
+                "<Image>/Tools/AI Color",
+            "spellcaster-color-match":
+                "<Image>/Tools/AI Color",
+            "spellcaster-iclight":
+                "<Image>/Tools/AI Color",
+            "spellcaster-iclight-3d":
+                "<Image>/Tools/AI Color",
+            "spellcaster-ddcolor":
+                "<Image>/Tools/AI Color",
+            "spellcaster-lut":
+                "<Image>/Tools/AI Color",
+            "spellcaster-quick-enhance":
+                "<Image>/Tools/AI Color",
+            "spellcaster-supir":
+                "<Image>/Tools/AI Color",
+
+            # ── AI Video — new category ──
+            "spellcaster-ltx-t2v":
+                "<Image>/Tools/AI Video",
+            "spellcaster-ltx-i2v":
+                "<Image>/Tools/AI Video",
+            "spellcaster-wan-i2v":
+                "<Image>/Tools/AI Video",
+            "spellcaster-wan-flf":
+                "<Image>/Tools/AI Video",
+            "spellcaster-video-upscale":
+                "<Image>/Tools/AI Video",
+            "spellcaster-video-reactor":
+                "<Image>/Tools/AI Video",
+            "spellcaster-seedvr2-video":
+                "<Image>/Tools/AI Video",
+            "spellcaster-wan-director":
+                "<Image>/Tools/AI Video",
+            "spellcaster-wan-director-duo":
+                "<Image>/Tools/AI Video",
+            "spellcaster-wan-director-trio":
+                "<Image>/Tools/AI Video",
+
+            # ── AI Bridges — cross-plugin messaging ──
+            "spellcaster-bridges-panel":
+                "<Image>/Tools/AI Bridges",
+            "spellcaster-send-to-resolve":
+                "<Image>/Tools/AI Bridges",
+            "spellcaster-send-to-darktable":
+                "<Image>/Tools/AI Bridges",
+            "spellcaster-send-to-sillytavern":
+                "<Image>/Tools/AI Bridges",
+            "spellcaster-check-inbox":
+                "<Image>/Tools/AI Bridges",
+            "spellcaster-character-card-editor":
+                "<Image>/Tools/AI Bridges",
+            "spellcaster-open-dashboard":
+                "<Image>/Tools/AI Bridges",
         }
 
         # ── 3D submenu — tools that actually surface a normal-map
@@ -19748,6 +19948,18 @@ class Spellcaster(Gimp.PlugIn):
         if native:
             try:
                 proc.add_menu_path(native)
+            except Exception:
+                pass
+        # AI-everywhere: every AI-generative / AI-selection / AI-edit
+        # tool ALSO appears under <Image>/Tools/AI <Category>/ so AI
+        # functions sit at the same menu level as GIMP's native
+        # selection / paint / transform tools. Users no longer have
+        # to decide "do I want a Spellcaster thing or a GIMP thing"
+        # — both are in the Tools menu side by side.
+        ai_tools_path = _ai_tools_native_paths.get(name)
+        if ai_tools_path:
+            try:
+                proc.add_menu_path(ai_tools_path)
             except Exception:
                 pass
         # 3D submenu (secondary registration)
@@ -33205,6 +33417,277 @@ class Spellcaster(Gimp.PlugIn):
         except Exception:
             pass
         _speedcoach_show_minihud()
+        return procedure.new_return_values(
+            Gimp.PDBStatusType.SUCCESS, GLib.Error())
+
+    def _run_bridges_panel(self, procedure, run_mode, image, drawables, config, data):
+        """Dedicated Bridges Panel — one window that distills every
+        cross-plugin flow into a cohesive UI.
+
+        Sections:
+          1. Peer Presence — live list from /spellcaster/presence/list
+             (GIMP, Resolve, Darktable, SillyTavern, Guild heartbeats).
+          2. Send-to — one button per registered peer; each routes
+             the current image through the appropriate _run_send_to_X
+             handler.
+          3. Receive — Check Inbox button that drains pending assets
+             other apps have sent TO GIMP.
+          4. Dashboard + Guild — quick launch buttons for the
+             telemetry dashboard and the Wizard Guild web UI.
+          5. Recent events — last 5 cross-interface events (scrollable).
+
+        Live-refreshes presence every 4 s while open. Closing the
+        dialog stops the refresh timer.
+        """
+        if run_mode == Gimp.RunMode.NONINTERACTIVE:
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        try:
+            GimpUi.init("spellcaster")
+            _apply_spellcaster_theme()
+        except Exception:
+            pass
+        dlg = Gtk.Dialog(title="Spellcaster — Bridges")
+        dlg.set_default_size(720, 560)
+        dlg.add_button("_Close", Gtk.ResponseType.CLOSE)
+        try:
+            _style_dialog_buttons(dlg)
+        except Exception:
+            pass
+        bx = dlg.get_content_area()
+        bx.set_spacing(12)
+        bx.set_margin_start(14); bx.set_margin_end(14)
+        bx.set_margin_top(14); bx.set_margin_bottom(12)
+
+        # Branded header
+        try:
+            hdr = _make_branded_header()
+            if hdr:
+                bx.pack_start(hdr, False, False, 0)
+        except Exception:
+            pass
+
+        sub = Gtk.Label()
+        sub.set_markup(
+            '<span color="#c4b8e3">Every cross-plugin bridge, '
+            'one window. Peers below refresh every 4 s.</span>')
+        sub.set_xalign(0.0)
+        bx.pack_start(sub, False, False, 0)
+        bx.pack_start(Gtk.Separator(), False, False, 4)
+
+        # ── Peer presence ──
+        bx.pack_start(Gtk.Label(
+            label="PEERS", xalign=0.0), False, False, 0)
+        peers_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
+                             spacing=4)
+        peers_box.set_margin_start(8)
+        bx.pack_start(peers_box, False, False, 0)
+
+        status_label = Gtk.Label()
+        status_label.set_xalign(0.0)
+        peers_box.pack_start(status_label, False, False, 0)
+
+        def _fetch_peers():
+            """Poll /spellcaster/presence/list; silent on failure."""
+            try:
+                srv = (_load_config().get("server_url")
+                       or COMFYUI_DEFAULT_URL)
+                req = urllib.request.Request(
+                    f"{srv.rstrip('/')}/spellcaster/presence/list")
+                with urllib.request.urlopen(req, timeout=3) as resp:
+                    data = json.loads(resp.read().decode(
+                        "utf-8", errors="replace"))
+                return data.get("peers") or []
+            except Exception:
+                return None
+
+        def _refresh_peers():
+            """Wipe peers_box children + repopulate from /presence."""
+            # Keep the first child (status_label); drop the rest.
+            children = peers_box.get_children()
+            for c in children[1:]:
+                peers_box.remove(c)
+            peers = _fetch_peers()
+            if peers is None:
+                status_label.set_markup(
+                    '<span color="#ffb300">⚠ presence broker '
+                    'unreachable</span>')
+                return True  # keep the timer running
+            if not peers:
+                status_label.set_markup(
+                    '<span color="#8a80a8">no peers online — fire up '
+                    'Resolve / Darktable / SillyTavern and they\'ll '
+                    'show here</span>')
+                return True
+            status_label.set_markup(
+                f'<span color="#00e676">● {len(peers)} peer(s) '
+                f'online</span>')
+            for p in peers:
+                row = Gtk.Box(
+                    orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+                icon_lbl = Gtk.Label(label=p.get("icon") or "●")
+                icon_lbl.set_use_markup(False)
+                lbl = Gtk.Label(xalign=0.0)
+                lbl.set_markup(
+                    f'<b>{p.get("label") or p.get("key") or "?"}</b>'
+                    f'  <span color="#8a80a8">{p.get("host") or ""}'
+                    f' · {int(p.get("age_s") or 0)}s ago</span>')
+                row.pack_start(icon_lbl, False, False, 0)
+                row.pack_start(lbl, True, True, 0)
+                peers_box.pack_start(row, False, False, 0)
+            peers_box.show_all()
+            return True  # GLib.timeout_add semantics: True = keep going
+
+        _refresh_peers()
+        try:
+            refresh_id = GLib.timeout_add_seconds(4, _refresh_peers)
+        except Exception:
+            refresh_id = None
+
+        bx.pack_start(Gtk.Separator(), False, False, 4)
+
+        # ── Send-to row ──
+        bx.pack_start(Gtk.Label(
+            label="SEND CURRENT IMAGE TO…", xalign=0.0),
+                       False, False, 0)
+        send_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+                            spacing=10)
+        send_row.set_margin_start(8)
+        bx.pack_start(send_row, False, False, 0)
+
+        def _run_target(target_name, handler_fn):
+            """Thin wrapper so each button invokes the existing
+            _run_send_to_* handler without closing this dialog."""
+            try:
+                handler_fn(procedure, Gimp.RunMode.INTERACTIVE,
+                            image, drawables, config, data)
+            except Exception as e:
+                try:
+                    Gimp.message(
+                        f"Send to {target_name} failed: {e}")
+                except Exception:
+                    pass
+
+        for target, label, handler in (
+                ("Resolve",     "🎬 Resolve",     self._run_send_to_resolve),
+                ("Darktable",   "📸 Darktable",   self._run_send_to_darktable),
+                ("SillyTavern", "💬 SillyTavern", self._run_send_to_sillytavern),
+        ):
+            btn = Gtk.Button(label=label)
+            btn.set_tooltip_text(
+                f"Publish the current canvas to {target} via the "
+                f"Spellcaster event bus. Requires the target app's "
+                f"Spellcaster integration to be running — check PEERS "
+                f"above.")
+            btn.connect("clicked",
+                         lambda _b, t=target, h=handler: _run_target(t, h))
+            send_row.pack_start(btn, True, True, 0)
+
+        bx.pack_start(Gtk.Separator(), False, False, 4)
+
+        # ── Receive row ──
+        bx.pack_start(Gtk.Label(
+            label="RECEIVE ASSETS OTHER APPS SENT TO GIMP",
+            xalign=0.0), False, False, 0)
+        recv_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,
+                            spacing=10)
+        recv_row.set_margin_start(8)
+        bx.pack_start(recv_row, False, False, 0)
+        inbox_btn = Gtk.Button(label="📥 Check Inbox")
+        inbox_btn.set_tooltip_text(
+            "Drain every pending asset other Spellcaster apps have "
+            "sent toward this GIMP — frames from Resolve, refs from "
+            "SillyTavern, images from the Guild. Opens each as a new "
+            "GIMP image.")
+        inbox_btn.connect("clicked",
+                           lambda _b: self._run_check_inbox(
+                               procedure, Gimp.RunMode.INTERACTIVE,
+                               image, drawables, config, data))
+        recv_row.pack_start(inbox_btn, False, False, 0)
+
+        bx.pack_start(Gtk.Separator(), False, False, 4)
+
+        # ── Dashboard / Guild launchers ──
+        bx.pack_start(Gtk.Label(label="QUICK LAUNCH", xalign=0.0),
+                       False, False, 0)
+        launch_row = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        launch_row.set_margin_start(8)
+        bx.pack_start(launch_row, False, False, 0)
+
+        dash_btn = Gtk.Button(label="📊 Dashboard")
+        dash_btn.set_tooltip_text(
+            "Open the Voodoomancer telemetry dashboard in the default "
+            "browser (live node progress, VRAM, CPU+RAM, queue, peer "
+            "list, recent dispatches). Only available when the bundle "
+            "launcher is running — otherwise shows a friendly hint.")
+        dash_btn.connect("clicked",
+                          lambda _b: self._run_open_dashboard(
+                              procedure, Gimp.RunMode.INTERACTIVE,
+                              image, drawables, config, data))
+        launch_row.pack_start(dash_btn, True, True, 0)
+
+        guild_btn = Gtk.Button(label="🏰 Wizard Guild")
+        guild_btn.set_tooltip_text(
+            "Open the Wizard Guild web UI (chat interface, character "
+            "cards, gallery, video shotboard). Probes localhost:15001 "
+            "first — if the Guild isn't running, nothing opens.")
+        def _open_guild(_b):
+            for port in (15001, 15000):
+                url = f"http://127.0.0.1:{port}/"
+                try:
+                    req = urllib.request.Request(url + "api/comfy_status")
+                    with urllib.request.urlopen(req, timeout=1.0):
+                        pass
+                    import webbrowser
+                    webbrowser.open(url, new=2)
+                    return
+                except Exception:
+                    continue
+            try:
+                Gimp.message(
+                    "Wizard Guild not reachable on port 15001 or "
+                    "15000. Start it with 'Wizard Guild.bat' in the "
+                    "spellcaster install dir.")
+            except Exception:
+                pass
+        guild_btn.connect("clicked", _open_guild)
+        launch_row.pack_start(guild_btn, True, True, 0)
+
+        char_btn = Gtk.Button(label="🎭 Character Card Editor")
+        char_btn.set_tooltip_text(
+            "Import a SillyTavern .png character card, edit V2 "
+            "metadata, save without breaking the embedded data.")
+        char_btn.connect("clicked",
+                          lambda _b: self._run_character_card_editor(
+                              procedure, Gimp.RunMode.INTERACTIVE,
+                              image, drawables, config, data))
+        launch_row.pack_start(char_btn, True, True, 0)
+
+        bx.pack_start(Gtk.Separator(), False, False, 4)
+
+        # ── Footer hint ──
+        hint = Gtk.Label()
+        hint.set_use_markup(True)
+        hint.set_markup(
+            '<small>'
+            'Cross-app transport uses the pack\'s <tt>/spellcaster/'
+            'blob/put</tt> route (Guild-less) with <tt>AssetGallery</tt> '
+            'fallback. Every send emits an event; receivers poll their '
+            'inbox or subscribe to the SSE stream. See DEEP_DIVE §25.'
+            '</small>')
+        hint.set_xalign(0.0)
+        hint.set_line_wrap(True)
+        bx.pack_start(hint, False, False, 0)
+
+        dlg.show_all()
+        dlg.run()
+        if refresh_id is not None:
+            try:
+                GLib.source_remove(refresh_id)
+            except Exception:
+                pass
+        dlg.destroy()
         return procedure.new_return_values(
             Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
