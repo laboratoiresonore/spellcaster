@@ -76,10 +76,10 @@
   <a href="DEEP_DIVE.md#all-69-tools"><img src="assets/sam3demo.png" alt="AI Select with SAM3 — earring mask" width="100%"/></a>
 </td>
 <td width="48%" valign="top">
-  <h3>⚡ Type what to select</h3>
-  <p>Open <strong>AI Select by Description</strong>. Type <code>earring</code>, <code>hair</code>, or <code>left shoe</code>.</p>
-  <p><strong>SAM 3 gives you a perfect mask — in one second.</strong> No lasso. No quick-mask. No endless zooming. The thing graphics people said saves a day of work.</p>
-  <p><sub>🖌️ <strong>GIMP</strong> · <code>Select &gt; AI Select by Description</code></sub></p>
+  <h3>⚡ Let it make the picks</h3>
+  <p>Type what you want selected — <em>earring</em>, <em>hair</em>, <em>left shoe</em>. Perfect mask, one second. No lasso, no zooming, no quick-mask dance.</p>
+  <p>Same trick runs everywhere else. Type what you want <em>made</em>, and Spellcaster picks the right model for the job, rewrites your prompt in that model's own language, filters out incompatible add-ons, sets up the guidance. You describe the outcome; it chooses the tools.</p>
+  <p><sub>🖌️ <strong>GIMP</strong> · <code>Select &gt; AI Select by Description</code> &nbsp;·&nbsp; 🧙 <strong>Guild</strong> · smart generate &nbsp;·&nbsp; <a href="DEEP_DIVE.md#-prompt-enhancement--per-architecture-per-method-per-model">how the auto-picks work →</a></sub></p>
 </td>
 </tr>
 </table>
@@ -90,10 +90,10 @@
 <table width="100%">
 <tr>
 <td width="48%" valign="top">
-  <h3>🔮 Resurrect a blurry photo</h3>
-  <p><strong>SUPIR state-of-the-art restoration.</strong> One click.</p>
-  <p>Damaged, compressed, low-res — it reconstructs faces, skin, texture. Works on grandma's scanned photos and on the JPEGs you downloaded in 2006.</p>
-  <p><sub>🖌️ <strong>GIMP</strong> · SUPIR Upscale &nbsp;·&nbsp; 📷 <strong>Darktable</strong> · batch across shoots</sub></p>
+  <h3>🔮 Resurrect — and rewrite — any photo</h3>
+  <p><strong>SUPIR restoration, one click.</strong> Damaged, compressed, low-res — faces, skin, texture all come back. Works on grandma's scanned photos and on the JPEGs you downloaded in 2006.</p>
+  <p>Then: do whatever you want to the picture. Point at the power line and it's gone. Say <em>"add a coffee cup on the table"</em> and it lands, matching light and perspective. Change the time of day. Colour in a black-and-white. Extend the canvas past its edges. Swap the face. Re-pose the subject. Every edit most photo apps took a decade to learn — done by describing it in English.</p>
+  <p><sub>🖌️ <strong>GIMP</strong> · restore, erase, add, re-light &nbsp;·&nbsp; 📷 <strong>Darktable</strong> · batch across a whole shoot</sub></p>
 </td>
 <td width="52%" align="center" valign="top">
   <a href="DEEP_DIVE.md#all-69-tools"><img src="assets/showcase_supir.png" alt="SUPIR Restoration — before / after" width="100%"/></a>
@@ -110,10 +110,11 @@
   <a href="DEEP_DIVE.md#all-69-tools"><img src="assets/showcase_wan_breathing.gif" alt="Wan 2.2 Image-to-Video — breathing portrait" width="100%"/></a>
 </td>
 <td width="48%" valign="top">
-  <h3>🎬 Animate a still</h3>
-  <p><strong>Wan 2.2 Image-to-Video.</strong> Pick a motion preset — zoom, turntable, parallax, 26 of them. Click.</p>
-  <p>81 frames, 720p, 2–5 seconds. The image breathes. Render it overnight, post it tomorrow.</p>
-  <p><sub>🧙 <strong>Wizard Guild</strong> · Shotboard &nbsp;·&nbsp; 🎬 <strong>Resolve</strong> · Cinematographer timeline</sub></p>
+  <h3>🎬 Animate a still — and drop it on the timeline</h3>
+  <p><strong>Wan 2.2 Image-to-Video.</strong> Pick a motion preset — zoom, parallax, a breathing portrait, 26 of them. The still moves. 2–5 seconds, 720p, rendered overnight if you want.</p>
+  <p>Or skip the still. Type a paragraph and <strong>LTX 2.3</strong> gives you three seconds of cinema — fireballs, rain, a neon fly-through, a slow dolly-in. Straight from words to video.</p>
+  <p>Then the good part: <em>Send to Resolve</em>. The clip lands in your DaVinci bin, ready to cut. Or plan a whole sequence in the Guild — a Cinematographer wizard scaffolds twelve shots, renders them while you get coffee, and the full reel is waiting in Resolve's media pool when you get back.</p>
+  <p><sub>🧙 <strong>Guild</strong> · Shotboard &nbsp;·&nbsp; 🖌️ <strong>GIMP</strong> · LTX + Wan &nbsp;·&nbsp; 🎬 <strong>Resolve</strong> · <a href="plugins/resolve/">bridge plugin</a></sub></p>
 </td>
 </tr>
 </table>
