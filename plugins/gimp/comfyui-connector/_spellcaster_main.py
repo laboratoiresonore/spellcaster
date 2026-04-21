@@ -3657,6 +3657,110 @@ def _fetch_available_cn_files(server):
         return []
 
 
+def _resolve_cn_paths_in_workflow(server, workflow):
+    """Rewrite every ControlNetLoader in ``workflow`` so its
+    ``control_net_name`` points at a file that's ACTUALLY installed
+    on the server.
+
+    Context: CONTROLNET_GUIDE_MODES hardcodes flat-form paths for
+    every CN mode (e.g., ``SDXL\\controlnet-union-sdxl-1.0.safetensors``)
+    but users who installed via ComfyUI Manager get the HF folder
+    layout (``SDXL\\controlnet-union-sdxl-1.0\\diffusion_pytorch_model
+    .safetensors``). When the flat form isn't installed but the
+    folder form IS, the naive dispatch fails with "CN file not
+    found." This resolver walks every ControlNetLoader node, looks
+    up the target in the server's inventory, and rewrites to the
+    actual installed filename when it can.
+
+    Why it lives in the plugin (not spellcaster_core): resolution
+    needs the server URL to call /object_info/ControlNetLoader, and
+    pushing that dependency into the workflow builder breaks the
+    "builders produce pure JSON" contract.
+
+    Covers:
+      * Exact match (pre-2026-04-20 behaviour — fast path).
+      * Basename match (handles ``SDXL/foo`` vs ``SDXL\\foo`` drift).
+      * HF folder-form: ``control_v11p_sd15_normalbae.pth`` →
+        ``1.5/control_v11p_sd15_normalbae_fp16.safetensors`` via
+        stem-matching ("normalbae" root is in both).
+      * fp16 variants (``_fp16.safetensors`` ↔ ``.safetensors``).
+
+    Returns the number of nodes rewritten so the caller can log.
+    """
+    if not isinstance(workflow, dict):
+        return 0
+    available = _fetch_available_cn_files(server)
+    if not available:
+        # Server unreachable — can't resolve, leave workflow as-is.
+        return 0
+
+    avail_set = set(available)
+    # Build a lookup by NORMALISED stem so we can match fp16 variants
+    # and HF folder forms together. "Stem" here means:
+    #   * strip extension
+    #   * strip trailing "_fp16"
+    #   * lowercase
+    # For HF folder-form files ("<repo>/diffusion_pytorch_model.xxx"),
+    # use the PARENT FOLDER name as the stem — that's the semantic
+    # identity (the repo slug IS the CN name).
+    GENERIC_HF = {"diffusion_pytorch_model.safetensors",
+                   "pytorch_model.safetensors", "model.safetensors"}
+
+    def _stem(path: str) -> str:
+        norm = path.replace("\\", "/")
+        bn = norm.rsplit("/", 1)[-1].lower()
+        if bn in GENERIC_HF and "/" in norm:
+            # HF folder form — identity comes from parent folder.
+            parent = norm.rsplit("/", 2)[-2].lower()
+            return parent
+        # Flat form — strip extension + trailing _fp16.
+        stem = bn.rsplit(".", 1)[0]
+        if stem.endswith("_fp16"):
+            stem = stem[:-len("_fp16")]
+        return stem
+
+    by_stem: dict[str, str] = {}
+    for a in available:
+        s = _stem(a)
+        # Prefer EXACT .safetensors over .pth + prefer fp16 over full
+        # over HF folder form — whichever is installed wins, but on
+        # duplicates we keep the first (deterministic).
+        by_stem.setdefault(s, a)
+
+    rewrites = 0
+    for nid, node in list(workflow.items()):
+        if not isinstance(node, dict):
+            continue
+        if node.get("class_type") != "ControlNetLoader":
+            continue
+        inputs = node.get("inputs") or {}
+        target = inputs.get("control_net_name")
+        if not isinstance(target, str) or not target:
+            continue
+        # Fast path: exact match.
+        if target in avail_set:
+            continue
+        # Basename match (cheap): try both separators.
+        bn = target.replace("\\", "/").rsplit("/", 1)[-1].lower()
+        match = None
+        for a in available:
+            a_bn = a.replace("\\", "/").rsplit("/", 1)[-1].lower()
+            if a_bn == bn and bn not in GENERIC_HF:
+                match = a
+                break
+        # Stem match (handles fp16 variants + HF folder form).
+        if match is None:
+            s = _stem(target)
+            if s:
+                match = by_stem.get(s)
+        if match and match != target:
+            inputs["control_net_name"] = match
+            rewrites += 1
+            print(f"[Spellcaster] CN path rewrite: "
+                  f"{target!r} -> {match!r}")
+    return rewrites
+
+
 def _cn_model_available(server, filename):
     """Three-valued presence check:
 
@@ -7433,36 +7537,64 @@ def _upload_image_sync(server, filepath, filename=None, image_type="input", over
     Unlike _upload_image(), this performs the HTTP POST immediately on the
     calling thread. Only used by _run_send() where there's no subsequent
     workflow to batch with.
+
+    Shares ``_build_upload_multipart`` with the async flusher so the
+    bytes on the wire are byte-identical, and retries once on transient
+    network errors (same policy as the async path + receiver-side
+    downloads).
     """
     url = f"{server.rstrip('/')}/upload/image"
     if filename is None:
         filename = os.path.basename(filepath)
-    # Multipart form-data boundary — random hex ensures no collision with file content
-    boundary = uuid.uuid4().hex
     with open(filepath, "rb") as f:
         file_data = f.read()
-    body_parts = []
-    body_parts.append(f"--{boundary}\r\n".encode())
-    body_parts.append(
-        f'Content-Disposition: form-data; name="image"; filename="{filename}"\r\n'
-        f"Content-Type: image/png\r\n\r\n".encode())
-    body_parts.append(file_data)
-    body_parts.append(b"\r\n")
-    body_parts.append(f"--{boundary}\r\n".encode())
-    body_parts.append(f'Content-Disposition: form-data; name="type"\r\n\r\n{image_type}\r\n'.encode())
-    body_parts.append(f"--{boundary}\r\n".encode())
-    ow = "true" if overwrite else "false"
-    body_parts.append(f'Content-Disposition: form-data; name="overwrite"\r\n\r\n{ow}\r\n'.encode())
-    body_parts.append(f"--{boundary}--\r\n".encode())
-    body = b"".join(body_parts)
-    req = urllib.request.Request(url, data=body,
-                                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        detail = e.read().decode("utf-8", errors="replace")[:500]
-        raise RuntimeError(f"Upload HTTP {e.code}: {detail}") from e
+    body, boundary = _build_upload_multipart(
+        file_data, filename, image_type, overwrite)
+    req = urllib.request.Request(
+        url, data=body,
+        headers={"Content-Type":
+                   f"multipart/form-data; boundary={boundary}"})
+    last_exc = None
+    for attempt in range(2):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", errors="replace")[:500]
+            raise RuntimeError(
+                f"Upload failed: {filename}: HTTP {e.code}: {detail}") from e
+        except (urllib.error.URLError, OSError) as e:
+            last_exc = e
+            if attempt == 0:
+                time.sleep(2)
+                continue
+    raise RuntimeError(
+        f"Upload failed: {filename}: "
+        f"{type(last_exc).__name__}: {last_exc}") from last_exc
+
+def _build_upload_multipart(file_data, filename, image_type, overwrite):
+    """Build a ComfyUI /upload/image multipart body + boundary.
+
+    Factored out of the inline loop in ``_flush_pending_uploads`` so the
+    sync uploader, async flusher, and any future retrier share the
+    exact same bytes. Returns (body, boundary).
+    """
+    boundary = uuid.uuid4().hex
+    body_parts = [
+        f"--{boundary}\r\n".encode(),
+        (f'Content-Disposition: form-data; name="image"; filename="{filename}"\r\n'
+         f"Content-Type: image/png\r\n\r\n").encode(),
+        file_data,
+        b"\r\n",
+        f"--{boundary}\r\n".encode(),
+        f'Content-Disposition: form-data; name="type"\r\n\r\n{image_type}\r\n'.encode(),
+        f"--{boundary}\r\n".encode(),
+        (f'Content-Disposition: form-data; name="overwrite"\r\n\r\n'
+         f"{'true' if overwrite else 'false'}\r\n").encode(),
+        f"--{boundary}--\r\n".encode(),
+    ]
+    return b"".join(body_parts), boundary
+
 
 def _flush_pending_uploads():
     """Perform all queued HTTP uploads. Called from background thread.
@@ -7471,34 +7603,64 @@ def _flush_pending_uploads():
     _run_comfyui_workflow()'s background thread, right before submitting
     the workflow to ComfyUI. Each upload uses multipart/form-data encoding
     built manually (no external library) to POST the image to /upload/image.
+
+    Upgrades (2026-04-20):
+      - Per-upload retry: one automatic retry after a 2s pause on
+        URLError / OSError (transient network hiccup), matching the
+        receiver-side ``_download_image_raw`` retry policy.
+      - Filename in failure messages: the RuntimeError now names which
+        image failed and how many had already succeeded, so users see
+        ``"Upload failed: ref_pose.png (1/3 already uploaded): HTTP
+        500"`` instead of a bare ``"Upload HTTP 500"``.
+      - No resurrection on failure: successful uploads are removed from
+        the queue AS they complete, so a handler that catches the
+        RuntimeError and retries doesn't re-upload the bytes that
+        already landed on the server.
     """
     global _pending_uploads
-    for server, file_data, filename, image_type, overwrite in _pending_uploads:
+    total = len(_pending_uploads)
+    succeeded = 0
+    # Iterate by repeatedly popping the head so successes drain the
+    # queue even if a later entry raises. This keeps the global queue
+    # consistent for any subsequent retry by the caller.
+    while _pending_uploads:
+        server, file_data, filename, image_type, overwrite = _pending_uploads[0]
         url = f"{server.rstrip('/')}/upload/image"
-        boundary = uuid.uuid4().hex
-        body_parts = []
-        body_parts.append(f"--{boundary}\r\n".encode())
-        body_parts.append(
-            f'Content-Disposition: form-data; name="image"; filename="{filename}"\r\n'
-            f"Content-Type: image/png\r\n\r\n".encode())
-        body_parts.append(file_data)
-        body_parts.append(b"\r\n")
-        body_parts.append(f"--{boundary}\r\n".encode())
-        body_parts.append(f'Content-Disposition: form-data; name="type"\r\n\r\n{image_type}\r\n'.encode())
-        body_parts.append(f"--{boundary}\r\n".encode())
-        ow = "true" if overwrite else "false"
-        body_parts.append(f'Content-Disposition: form-data; name="overwrite"\r\n\r\n{ow}\r\n'.encode())
-        body_parts.append(f"--{boundary}--\r\n".encode())
-        body = b"".join(body_parts)
-        req = urllib.request.Request(url, data=body,
-                                    headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
-        try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                resp.read()
-        except urllib.error.HTTPError as e:
-            detail = e.read().decode("utf-8", errors="replace")[:500]
-            raise RuntimeError(f"Upload HTTP {e.code}: {detail}") from e
-    _pending_uploads = []
+        body, boundary = _build_upload_multipart(
+            file_data, filename, image_type, overwrite)
+        req = urllib.request.Request(
+            url, data=body,
+            headers={"Content-Type":
+                       f"multipart/form-data; boundary={boundary}"})
+        last_exc = None
+        for attempt in range(2):
+            try:
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    resp.read()
+                last_exc = None
+                break
+            except urllib.error.HTTPError as e:
+                # HTTP 4xx/5xx — server answered, don't retry.
+                detail = e.read().decode("utf-8", errors="replace")[:500]
+                _pending_uploads.pop(0)  # remove failed entry so a
+                # caller-level retry doesn't resurrect its bytes
+                raise RuntimeError(
+                    f"Upload failed: {filename} "
+                    f"({succeeded}/{total} already uploaded): "
+                    f"HTTP {e.code}: {detail}") from e
+            except (urllib.error.URLError, OSError) as e:
+                last_exc = e
+                if attempt == 0:
+                    time.sleep(2)
+                    continue
+        if last_exc is not None:
+            _pending_uploads.pop(0)
+            raise RuntimeError(
+                f"Upload failed: {filename} "
+                f"({succeeded}/{total} already uploaded): "
+                f"{type(last_exc).__name__}: {last_exc}") from last_exc
+        _pending_uploads.pop(0)
+        succeeded += 1
 
 def _mask_image_to_gimp_selection(image, mask_path, feather=4):
     """Load a grayscale mask image and apply it as a GIMP selection.
@@ -11643,6 +11805,16 @@ def _run_comfyui_workflow(server, workflow, timeout=300):
         _wait_for_comfy_queue_empty(server)
         with _workflow_lock:
             _flush_pending_uploads()
+
+        # Universal CN path resolver — rewrites every ControlNetLoader
+        # node's control_net_name to the file that's ACTUALLY on the
+        # server. Covers outpaint's own CN-picker path + any other
+        # caller that didn't go through _maybe_override_cn_with_normal_map.
+        # No-op when the target is already installed exactly as named.
+        try:
+            _resolve_cn_paths_in_workflow(server, workflow)
+        except Exception as _cn_err:
+            print(f"[Spellcaster] CN path resolve failed: {_cn_err}")
 
         try:
             from spellcaster_core.dispatch import dispatch_workflow
