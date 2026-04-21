@@ -3797,6 +3797,83 @@ def _apply_mask_mode(server, image, img_data, layer_name, mask_enabled,
     return True
 
 
+def _download_and_insert_batch(server, image, results, label_method,
+                                 mask_enabled=False, keep_size=False,
+                                 png_only=True):
+    """Download + import a batch of ComfyUI results through the
+    canonical ``_apply_mask_mode`` path.
+
+    Every handler that receives multiple result tuples (video frame
+    loops, multi-run txt2img, Klein director duo/trio lastframes) used
+    to hand-roll this loop. That duplication produced three separate
+    ``NameError: name 'i' is not defined`` bugs (video_upscale,
+    video_reactor, seedvr2_video) because the per-frame label
+    referenced a loop index the caller had forgotten to bind. This
+    helper owns the enumeration so callers can't mis-bind it again,
+    and wraps each per-frame download in its own try/except so a
+    single corrupted frame doesn't abort the whole batch.
+
+    Args:
+        server: ComfyUI server URL.
+        image: target GIMP image.
+        results: iterable of ``(filename, subfolder, folder_type)``
+            tuples as emitted by ``_run_comfyui_workflow``.
+        label_method: short method name for the per-frame layer label
+            (e.g. ``"Video Upscale"``, ``"Director Frame"``). Frames
+            get ``"<method> · frame N"`` automatically.
+        mask_enabled: forwarded to ``_apply_mask_mode`` — when True,
+            each frame is rembg-ed before insertion.
+        keep_size: forwarded to ``_apply_mask_mode`` — when True,
+            each frame is inserted at natural size without scale-to-fit.
+        png_only: when True (default), non-PNG results are skipped
+            silently. Video handlers set this False+ handle the mixed
+            PNG/MP4 stream themselves via ``_import_video_results``.
+
+    Returns:
+        (imported, failed) — counts. Callers use these for a summary
+        ``Gimp.message``. Never raises: any per-frame exception is
+        caught, logged, and counted as a failure.
+    """
+    imported = 0
+    failed = 0
+    for i, item in enumerate(results):
+        try:
+            fn, sf, ft = item
+        except Exception:
+            failed += 1
+            continue
+        name_lower = (fn or "").lower()
+        if png_only and not name_lower.endswith(".png"):
+            continue
+        try:
+            data = _download_image(server, fn, sf, ft)
+        except Exception as e:
+            print(f"[Spellcaster] Frame {i+1} download failed: {e}")
+            failed += 1
+            continue
+        try:
+            label = _layer_label(label_method, extra=f"frame {i+1}")
+        except Exception:
+            label = f"{label_method} frame {i+1}"
+        try:
+            ok = _apply_mask_mode(server, image, data, label,
+                                    bool(mask_enabled),
+                                    keep_size=bool(keep_size))
+            if ok:
+                imported += 1
+            else:
+                failed += 1
+        except Exception as e:
+            print(f"[Spellcaster] Frame {i+1} import failed: {e}")
+            failed += 1
+    if imported:
+        try:
+            Gimp.displays_flush()
+        except Exception:
+            pass
+    return (imported, failed)
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  MODEL PRESETS — one img2img workflow per checkpoint, tuned per arch
 # ═══════════════════════════════════════════════════════════════════════════
@@ -9675,12 +9752,33 @@ def _import_result_as_layer(image, image_data, layer_name="ComfyUI Result",
     tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
     tmp.write(image_data)
     tmp.close()
-    file = Gio.File.new_for_path(tmp.name.replace("/", "/"))
-    result_image = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, file)
+    file = Gio.File.new_for_path(tmp.name)
+    # Wrap file_load because ComfyUI occasionally streams truncated
+    # PNGs after a transport hiccup \u2014 without this guard, the
+    # GdkPixbuf load raises, the temp file leaks, and the user sees
+    # a cryptic "Unknown error" in place of the result.
+    try:
+        result_image = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, file)
+    except Exception as _e:
+        try:
+            os.unlink(tmp.name)
+        except Exception:
+            pass
+        try:
+            Gimp.message(
+                f"Could not decode '{layer_name}' ({len(image_data)} B "
+                f"PNG). The server may have returned corrupted bytes. "
+                f"Underlying error: {type(_e).__name__}: {_e}")
+        except Exception:
+            print(f"[Spellcaster] file_load failed: {_e}")
+        return
     layers = result_image.get_layers()
     if not layers:
         result_image.delete()
-        os.unlink(tmp.name)
+        try:
+            os.unlink(tmp.name)
+        except Exception:
+            pass
         return
 
     # ── Ensure the result image matches the destination colour mode ─────
@@ -9719,7 +9817,10 @@ def _import_result_as_layer(image, image_data, layer_name="ComfyUI Result",
             pass
         Gimp.Display.new(result_image)
         Gimp.displays_flush()
-        os.unlink(tmp.name)
+        try:
+            os.unlink(tmp.name)
+        except Exception:
+            pass
         return None
 
     new_layer = Gimp.Layer.new_from_drawable(layers[0], image)
@@ -9734,7 +9835,10 @@ def _import_result_as_layer(image, image_data, layer_name="ComfyUI Result",
             new_layer.get_height() != image.get_height()):
         new_layer.scale(image.get_width(), image.get_height(), False)
     result_image.delete()
-    os.unlink(tmp.name)
+    try:
+        os.unlink(tmp.name)
+    except Exception:
+        pass
     Gimp.displays_flush()
     return new_layer
 
@@ -20360,11 +20464,17 @@ class Spellcaster(Gimp.PlugIn):
                                        upscale_factor=model_factor, rtx_scale=rtx_scale, fps=fps)
             results = _run_with_spinner("Video Upscale: processing...",
                                          lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
-            for fn, sf, ft in results:
-                if fn.lower().endswith(".png"):
-                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), _layer_label("Video Upscale", extra=f"frame {i+1}", i=None), False)
-            Gimp.displays_flush()
-            Gimp.message("Video upscale complete! Check ComfyUI output folder.")
+            ok_n, fail_n = _download_and_insert_batch(
+                srv, image, results, "Video Upscale")
+            if fail_n:
+                Gimp.message(
+                    f"Video Upscale: imported {ok_n} frame(s); "
+                    f"{fail_n} failed (see console). Check ComfyUI "
+                    f"output folder for the full video file.")
+            else:
+                Gimp.message(
+                    f"Video upscale complete! {ok_n} frame(s) imported. "
+                    f"Check ComfyUI output folder for the full video.")
             _LAST_PROCEDURE["name"] = "spellcaster-video-upscale"
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -20518,11 +20628,18 @@ class Spellcaster(Gimp.PlugIn):
                                        face_restore_visibility=vis, codeformer_weight=cfw)
             results = _run_with_spinner("Video ReActor: processing...",
                                          lambda: list(_run_comfyui_workflow(srv, wf, timeout=600)))
-            for fn, sf, ft in results:
-                if fn.lower().endswith(".png"):
-                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), _layer_label("Video ReActor", extra=f"frame {i+1}", i=None), False)
-            Gimp.displays_flush()
-            Gimp.message("Video face swap + upscale complete!\nCheck ComfyUI output folder.")
+            ok_n, fail_n = _download_and_insert_batch(
+                srv, image, results, "Video ReActor")
+            if fail_n:
+                Gimp.message(
+                    f"Video ReActor: imported {ok_n} frame(s); "
+                    f"{fail_n} failed (see console). Check ComfyUI "
+                    f"output folder for the full video.")
+            else:
+                Gimp.message(
+                    f"Video face swap + upscale complete! "
+                    f"{ok_n} frame(s) imported.\n"
+                    f"Check ComfyUI output folder for the full video.")
             _LAST_PROCEDURE["name"] = "spellcaster-video-reactor"
             Gimp.progress_end()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
@@ -20728,11 +20845,18 @@ class Spellcaster(Gimp.PlugIn):
             )
             results = _run_with_spinner("SeedVR2 Video Upscale: processing...",
                                          lambda: list(_run_comfyui_workflow(srv, wf, timeout=1200)))
-            for fn, sf, ft in results:
-                if fn.lower().endswith(".png"):
-                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), _layer_label("SeedVR2 Video", extra=f"frame {i+1}", i=None), False)
-            Gimp.displays_flush()
-            Gimp.message("SeedVR2 Video Upscale complete!\nCheck ComfyUI output folder for the upscaled MP4.")
+            ok_n, fail_n = _download_and_insert_batch(
+                srv, image, results, "SeedVR2 Video")
+            if fail_n:
+                Gimp.message(
+                    f"SeedVR2 Video: imported {ok_n} frame(s); "
+                    f"{fail_n} failed (see console). Check ComfyUI "
+                    f"output folder for the full MP4.")
+            else:
+                Gimp.message(
+                    f"SeedVR2 Video Upscale complete! "
+                    f"{ok_n} frame(s) imported.\n"
+                    f"Check ComfyUI output folder for the upscaled MP4.")
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
             import traceback
