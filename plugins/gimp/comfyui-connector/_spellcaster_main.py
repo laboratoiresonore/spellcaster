@@ -34052,18 +34052,24 @@ class Spellcaster(Gimp.PlugIn):
             "aborted (your work stays safe).\n\n"
             "Equivalent to: close GIMP → relaunch manually.")
         def _on_restart(_btn):
-            # Previous implementation bugs (2026-04-20):
-            #   * Called Gimp.quit(False) while still inside dlg.run()
-            #     — GIMP can't quit while a plug-in dialog is on-screen,
-            #     so the request queued but never fired. User saw
-            #     "Relaunching GIMP..." forever with nothing happening.
-            #   * Spawned the new GIMP immediately, racing the old one
-            #     for pluginrc + config file locks.
-            # Fix: 3-second launch delay on the new GIMP (Windows
-            # `timeout` / Unix `sleep`) + close the Settings dialog
-            # programmatically so dlg.run() returns + schedule the
-            # actual quit via GLib.idle_add so it runs AFTER the
-            # dialog-close event has been processed.
+            # Restart design (2026-04-20 rewrite — prior versions still
+            # didn't reliably quit GIMP):
+            #
+            # A GIMP 3 Python plug-in is a SEPARATE process (this file
+            # runs under `gimp-script-fu-interpreter-3.0.exe` or
+            # similar). ``Gimp.quit(False)`` in this context sends a
+            # "quit" request to the main GIMP process, but the plug-in
+            # is still running inside ``dlg.run()`` — the request gets
+            # lost or deferred, and users report "Relaunching…" that
+            # never fires.
+            #
+            # Fix: spawn a DETACHED wrapper that actively KILLS the
+            # GIMP process by name (taskkill /IM on Windows, pkill on
+            # Unix) after a short wait, then launches a fresh GIMP.
+            # This doesn't depend on Gimp.quit() working at all — the
+            # wrapper is in charge. We just close our dialog so the
+            # user doesn't see a stuck window during the 1-2 s before
+            # taskkill lands.
             import sys as _sys, subprocess as _subp
             candidates = []
             try:
@@ -34073,10 +34079,6 @@ class Spellcaster(Gimp.PlugIn):
                     candidates.append(gimp_exe_env)
             except Exception:
                 pass
-            # Walk from sys.executable up a few dirs looking for the
-            # GIMP binary. On Windows the plug-in runs under
-            # `gimp-script-fu-interpreter-3.0.exe` (or similar),
-            # which lives in the same `bin/` dir as `gimp-3.0.exe`.
             try:
                 base = Path(_sys.executable).parent
                 for _depth in range(5):
@@ -34085,9 +34087,6 @@ class Spellcaster(Gimp.PlugIn):
                         p = base / cand
                         if p.exists() and str(p) not in candidates:
                             candidates.append(str(p))
-                    # Also check <base>/bin/ — GIMP 3 on Windows sometimes
-                    # has plug-in interpreters in <install>/lib/gimp/3.0/
-                    # plug-ins/ and the gimp exe in <install>/bin/.
                     bin_dir = base / "bin"
                     if bin_dir.is_dir():
                         for cand in ("gimp-3.0.exe", "gimp.exe"):
@@ -34104,14 +34103,13 @@ class Spellcaster(Gimp.PlugIn):
                     '</span>')
                 return
             chosen = candidates[0]
+            gimp_name = Path(chosen).name  # "gimp-3.0.exe" etc.
             restart_btn.set_sensitive(False)
             update_status.set_markup(
-                '<span foreground="#FFC107">Relaunching GIMP in 3 s…'
-                '</span>')
-            # Purge pluginrc + apply staged updates BEFORE the new GIMP
-            # starts loading. The 3-second timeout in the spawned
-            # wrapper gives this plug-in and GIMP proper time to exit
-            # + release any file locks first.
+                '<span foreground="#FFC107">Killing this GIMP and '
+                'launching a fresh one… (≈3 s)</span>')
+            # Purge pluginrc + apply staged updates BEFORE the kill —
+            # once we're dead, these writes aren't racing anything.
             try:
                 _delete_all_gimp_pluginrc()
             except Exception:
@@ -34120,30 +34118,52 @@ class Spellcaster(Gimp.PlugIn):
                 _apply_staged_updates()
             except Exception:
                 pass
-            # Spawn a detached wrapper that sleeps briefly then execs
-            # GIMP. The wait is CRITICAL on Windows — launching GIMP
-            # while the current instance still holds pluginrc or
-            # config.json open produces "file in use" errors and the
-            # new instance falls back to a silently-broken state.
             try:
                 if os.name == "nt":
-                    # cmd /c "timeout /t 3 /nobreak >nul & start "" "gimp.exe""
-                    # - /c runs the command then closes the cmd window
-                    # - `start "" "…"` launches detached so the cmd can exit
-                    # - the empty "" is the window title (required)
-                    cmd = (f'timeout /t 3 /nobreak >nul & '
-                           f'start "" "{chosen}"')
+                    # Build the kill+relaunch batch:
+                    #   1. ``ping -n 2 127.0.0.1 >nul``  — 1 s sleep
+                    #      without requiring ``timeout.exe`` (which is
+                    #      locale-sensitive + disabled on some
+                    #      Windows SKUs).
+                    #   2. ``taskkill /IM gimp-3.0.exe /F /T`` — force
+                    #      kill GIMP + every child plug-in process,
+                    #      including this one. After /T, the plug-in
+                    #      host dies with GIMP.
+                    #   3. ``ping -n 3 127.0.0.1 >nul``  — 2 s sleep
+                    #      so every file lock (pluginrc, config.json,
+                    #      Spellcaster cache) gets released before
+                    #      the new GIMP opens them.
+                    #   4. ``start "" "<gimp.exe>"`` — launch detached
+                    #      so cmd.exe can exit after start returns.
+                    cmd = (
+                        f'ping -n 2 127.0.0.1 >nul & '
+                        f'taskkill /IM "{gimp_name}" /F /T >nul 2>&1 & '
+                        f'ping -n 3 127.0.0.1 >nul & '
+                        f'start "" "{chosen}"'
+                    )
                     CREATE_NO_WINDOW = 0x08000000
                     DETACHED = 0x00000008
                     NEW_GROUP = 0x00000200
+                    BREAKAWAY = 0x01000000  # survive parent job
                     _subp.Popen(
                         ["cmd.exe", "/c", cmd],
-                        creationflags=DETACHED | NEW_GROUP | CREATE_NO_WINDOW,
+                        creationflags=(DETACHED | NEW_GROUP
+                                       | CREATE_NO_WINDOW | BREAKAWAY),
                         close_fds=True,
                     )
                 else:
+                    # Unix: same shape. ``pkill -f`` matches by process
+                    # name; ``|| true`` so a missing pkill doesn't abort
+                    # the launch. ``exec`` replaces the shell so the
+                    # launched GIMP doesn't carry our signal mask.
+                    cmd = (
+                        f'sleep 1; '
+                        f'pkill -f "{gimp_name}" 2>/dev/null || true; '
+                        f'sleep 2; '
+                        f'exec {_subp.list2cmdline([chosen])}'
+                    )
                     _subp.Popen(
-                        ["sh", "-c", f"sleep 3 && exec {_subp.list2cmdline([chosen])}"],
+                        ["sh", "-c", cmd],
                         start_new_session=True,
                         close_fds=True,
                         stdin=_subp.DEVNULL,
@@ -34157,28 +34177,15 @@ class Spellcaster(Gimp.PlugIn):
                 restart_btn.set_sensitive(True)
                 return
             update_status.set_markup(
-                '<span foreground="#00E676">New GIMP will start in 3 s. '
-                'Closing this one now…</span>')
-
-            # Close the Settings dialog so dlg.run() returns +
-            # schedule the actual Gimp.quit via idle_add so it fires
-            # AFTER the dialog-close event is processed. Doing it in
-            # the click handler directly would race dlg.run().
-            def _deferred_quit():
-                try:
-                    Gimp.quit(False)
-                except Exception as e:
-                    # Some plug-in contexts don't allow Gimp.quit —
-                    # the user will have to close the window manually,
-                    # but the new GIMP is already on its way.
-                    print(f"[Spellcaster] Gimp.quit failed ({e}); "
-                          f"close GIMP manually.",
-                          file=__import__('sys').stderr)
-                return False
-            try:
-                GLib.idle_add(_deferred_quit)
-            except Exception:
-                pass
+                '<span foreground="#00E676">Restart scheduled — '
+                'GIMP will be killed in 1 s and relaunched 2 s after '
+                'that. If you have unsaved work, you have ~1 s to '
+                'abort by closing this dialog.</span>')
+            # Close the Settings dialog so the user's last view is a
+            # clean closed window rather than a frozen Settings panel.
+            # We DON'T need Gimp.quit() here — the wrapper's taskkill
+            # is what actually closes GIMP, and trying to quit from a
+            # plug-in child process just races the wrapper.
             try:
                 dlg.response(Gtk.ResponseType.CLOSE)
             except Exception:
