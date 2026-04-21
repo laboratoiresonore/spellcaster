@@ -518,70 +518,183 @@ class SpellcasterPlugin:
         return None
 
     def _run_workflow(self, workflow, label="generation"):
-        """Preflight + optimize + submit + download + insert."""
-        # Preflight
-        self.show_progress(f"Checking nodes...")
-        try:
-            ok, workflow, report = preflight_workflow(workflow, self.server)
-            if report.get("substituted"):
-                for orig, desc in report["substituted"]:
-                    self.show_progress(f"Fallback: {desc}")
-            if not ok:
-                self.show_error(f"Missing nodes: {', '.join(report['missing'])}")
-                return None
-        except Exception:
-            pass
+        """Preflight + optimize + submit + download + insert.
 
-        # Optimize
-        try:
-            workflow, warnings = optimize_workflow(workflow, comfy_url=self.server)
-            for w in warnings:
-                self.show_progress(f"Optimizer: {w}")
-        except Exception:
-            pass
-
-        # Submit
-        self.show_progress(f"Submitting {label}...")
-        body = json.dumps({"prompt": workflow}).encode()
-        req = urllib.request.Request(
-            f"{self.server}/prompt", data=body,
-            headers={"Content-Type": "application/json"})
-        try:
-            r = urllib.request.urlopen(req, timeout=10)
-            pid = json.loads(r.read()).get("prompt_id")
-        except urllib.error.HTTPError as e:
-            err = json.loads(e.read().decode())
-            self.show_error(f"Rejected: {json.dumps(err.get('node_errors', {}))[:200]}")
-            return None
-
-        if not pid:
-            self.show_error("No prompt_id returned")
-            return None
-
-        # Poll
-        self.show_progress(f"Generating ({label})...")
+        Fires dispatch telemetry on every exit path so SpeedCoach
+        sees Krita / Blender / (and any future plugin-base consumer)
+        renders alongside GIMP / Darktable / SillyTavern / Guild-
+        internal ones. Emission routes through ``_post_dispatch_
+        telemetry`` \u2014 a fire-and-forget POST to the Guild's
+        ``/api/telemetry/dispatch_ok`` endpoint.
+        """
         t0 = time.time()
-        while time.time() - t0 < 300:
+        outcome = "error"
+        err_str = ""
+        arch = self._guess_workflow_arch(workflow)
+        try:
+            # Preflight
+            self.show_progress(f"Checking nodes...")
             try:
-                r = urllib.request.urlopen(f"{self.server}/history/{pid}", timeout=5)
-                d = json.loads(r.read())
-                if pid in d:
-                    st = d[pid].get("status", {})
-                    if st.get("completed"):
-                        outputs = d[pid].get("outputs", {})
-                        return self._download_and_insert(outputs, label)
-                    for msg in st.get("messages", []):
-                        if msg[0] == "execution_error":
-                            self.show_error(msg[1].get("exception_message", "?")[:200])
-                            return None
+                ok, workflow, report = preflight_workflow(
+                    workflow, self.server)
+                if report.get("substituted"):
+                    for orig, desc in report["substituted"]:
+                        self.show_progress(f"Fallback: {desc}")
+                if not ok:
+                    err_str = (
+                        f"Missing nodes: {', '.join(report['missing'])}")
+                    self.show_error(err_str)
+                    return None
             except Exception:
                 pass
-            time.sleep(2)
-            elapsed = int(time.time() - t0)
-            self.show_progress(f"Generating ({label})... {elapsed}s")
 
-        self.show_error("Timeout")
-        return None
+            # Optimize
+            try:
+                workflow, warnings = optimize_workflow(
+                    workflow, comfy_url=self.server)
+                for w in warnings:
+                    self.show_progress(f"Optimizer: {w}")
+            except Exception:
+                pass
+
+            # Submit
+            self.show_progress(f"Submitting {label}...")
+            body = json.dumps({"prompt": workflow}).encode()
+            req = urllib.request.Request(
+                f"{self.server}/prompt", data=body,
+                headers={"Content-Type": "application/json"})
+            try:
+                r = urllib.request.urlopen(req, timeout=10)
+                pid = json.loads(r.read()).get("prompt_id")
+            except urllib.error.HTTPError as e:
+                err = {}
+                try:
+                    err = json.loads(e.read().decode())
+                except Exception:
+                    pass
+                err_str = (
+                    f"Rejected: {json.dumps(err.get('node_errors', {}))[:200]}")
+                self.show_error(err_str)
+                return None
+
+            if not pid:
+                err_str = "No prompt_id returned"
+                self.show_error(err_str)
+                return None
+
+            # Poll
+            self.show_progress(f"Generating ({label})...")
+            tpoll = time.time()
+            while time.time() - tpoll < 300:
+                try:
+                    r = urllib.request.urlopen(
+                        f"{self.server}/history/{pid}", timeout=5)
+                    d = json.loads(r.read())
+                    if pid in d:
+                        st = d[pid].get("status", {})
+                        if st.get("completed"):
+                            outputs = d[pid].get("outputs", {})
+                            outcome = "ok"
+                            return self._download_and_insert(outputs, label)
+                        for msg in st.get("messages", []):
+                            if msg[0] == "execution_error":
+                                err_str = msg[1].get(
+                                    "exception_message", "?")[:200]
+                                self.show_error(err_str)
+                                return None
+                except Exception:
+                    pass
+                time.sleep(2)
+                elapsed = int(time.time() - tpoll)
+                self.show_progress(f"Generating ({label})... {elapsed}s")
+
+            err_str = "Timeout"
+            self.show_error(err_str)
+            return None
+        except Exception as _exc:
+            err_str = f"{type(_exc).__name__}: {_exc}"
+            raise
+        finally:
+            try:
+                self._post_dispatch_telemetry(
+                    handler=f"{self._origin or 'plugin'}_{label}",
+                    build_fn="",
+                    arch=arch,
+                    elapsed=time.time() - t0,
+                    failed=(outcome != "ok"),
+                    error=err_str,
+                )
+            except Exception:
+                pass
+
+    def _guess_workflow_arch(self, workflow) -> str:
+        """Best-effort arch classification from loader nodes.
+
+        Matches the Guild + GIMP helpers so telemetry rows share the
+        same ``arch`` key regardless of origin.
+        """
+        if not isinstance(workflow, dict):
+            return ""
+        saw_klein = False
+        loaders = {
+            "CheckpointLoaderSimple", "CheckpointLoader",
+            "CheckpointLoaderGGUF", "UNETLoader", "UnetLoaderGGUF",
+            "UNetLoader",
+        }
+        try:
+            from spellcaster_core.model_detect import classify_ckpt_model
+        except Exception:
+            classify_ckpt_model = None
+        for node in workflow.values():
+            if not isinstance(node, dict):
+                continue
+            ct = node.get("class_type", "")
+            if ct.startswith("Flux2Klein"):
+                saw_klein = True
+            if ct in loaders and classify_ckpt_model is not None:
+                inputs = node.get("inputs", {}) or {}
+                name = (inputs.get("ckpt_name") or inputs.get("unet_name")
+                        or inputs.get("model_name") or "")
+                if name:
+                    try:
+                        arch = classify_ckpt_model(name)
+                        if arch:
+                            return arch
+                    except Exception:
+                        pass
+        return "flux2klein" if saw_klein else "unknown"
+
+    def _post_dispatch_telemetry(self, *, handler, build_fn, arch,
+                                   elapsed, failed, error):
+        """Fire-and-forget POST to the Guild's dispatch_ok endpoint.
+
+        Only runs when ``guild_url`` was supplied at construction. A
+        Guild-less plugin (stand-alone ComfyUI-direct mode) produces
+        no telemetry \u2014 same trade-off as Darktable's helper.
+        Never raises.
+        """
+        if not self._guild_url:
+            return
+        try:
+            body = json.dumps({
+                "origin": self._origin or "plugin",
+                "handler": handler or "",
+                "build_fn": build_fn or "",
+                "arch": arch or "unknown",
+                "elapsed": float(elapsed or 0.0),
+                "failed": bool(failed),
+                "error": str(error or "")[:400],
+                "ts": time.time(),
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                f"{self._guild_url}/api/telemetry/dispatch_ok",
+                data=body,
+                headers={"Content-Type": "application/json"},
+                method="POST")
+            urllib.request.urlopen(req, timeout=2)
+        except Exception:
+            # Guild offline \u2014 swallow.
+            pass
 
     def _download_and_insert(self, outputs, label):
         """Download output images and insert as layers."""
