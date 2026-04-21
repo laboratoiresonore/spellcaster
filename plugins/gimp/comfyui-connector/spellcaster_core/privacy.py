@@ -55,7 +55,13 @@ CACHE_PREFIXES = ("sc_cache_",)
 
 
 def _overwrite_with_tiny(server, filename):
-    """Overwrite a single file on ComfyUI's input folder with a 1x1 pixel."""
+    """Overwrite a single file on ComfyUI's input folder with a 1x1 pixel.
+
+    Kept as a back-compat fallback only — the post-2026-04-20 path is
+    ``_delete_via_route`` which actually calls ``os.remove`` through
+    the ComfyUI-Spellcaster pack's ``/spellcaster/privacy/delete``
+    route. Use that when available.
+    """
     try:
         url = f"{server.rstrip('/')}/upload/image"
         boundary = uuid.uuid4().hex
@@ -72,6 +78,48 @@ def _overwrite_with_tiny(server, filename):
         pass
 
 
+def _delete_via_route(server, filenames, folder_type="all",
+                      prefixes=None):
+    """Real file delete — POSTs to ``/spellcaster/privacy/delete`` on
+    the ComfyUI-Spellcaster pack. The route does ``os.remove`` inside
+    the resolved input / output / temp directories.
+
+    Returns ``{deleted: [...], failed: [...]}`` when the route
+    responds; ``None`` when the route isn't available (old pack /
+    pack not installed). Callers should fall back to
+    ``_overwrite_with_tiny`` when this returns None, since then at
+    least INPUT files still get their bytes obfuscated.
+    """
+    if not filenames:
+        return {"deleted": [], "failed": []}
+    try:
+        import json
+        names = [str(f) for f in filenames if f]
+        body = json.dumps({
+            "filenames":   names,
+            "folder_type": folder_type,
+            "prefixes":    list(prefixes) if prefixes else None,
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            f"{server.rstrip('/')}/spellcaster/privacy/delete",
+            data=body, method="POST",
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            if resp.status == 200:
+                return json.loads(resp.read().decode("utf-8", errors="replace"))
+    except urllib.request.HTTPError as e:
+        # 404 = route not installed; any other HTTP error bubbles up as
+        # None so the fallback still runs.
+        if getattr(e, "code", None) != 404:
+            print(f"  [Privacy] delete route returned {e.code}")
+        return None
+    except Exception:
+        # Network error / JSON error — fall back to the tiny-PNG path
+        # so at least some cleanup happens.
+        return None
+    return None
+
+
 def _is_cache_protected(fname: str) -> bool:
     """Cache-protected files survive the after-every-workflow wipe.
 
@@ -85,19 +133,28 @@ def _is_cache_protected(fname: str) -> bool:
 
 
 def cleanup_inputs(server, workflow=None):
-    """Overwrite all Spellcaster temp input files on the server.
+    """Delete all Spellcaster temp input files on the server.
 
-    Two strategies:
-    1. If workflow is provided: scan LoadImage/VHS_LoadVideo nodes for
-       filenames matching our prefixes, wipe those specifically.
-    2. Always: scan the server's full input file list for our prefixes.
+    Pipeline (post-2026-04-20):
+      1. Collect the set of filenames that are ours from
+         (a) the supplied workflow's LoadImage / VHS_LoadVideo
+             nodes, and
+         (b) a ``/object_info/LoadImage`` scan for anything under
+             ``OWNED_PREFIXES`` or a content-hash pattern.
+      2. Call the ComfyUI-Spellcaster pack's
+         ``/spellcaster/privacy/delete`` route to ACTUALLY os.remove
+         every collected file from ``input/``.
+      3. If the route isn't available (older pack / pack not
+         installed), fall back to the legacy overwrite-with-1x1-PNG
+         path so at least the bytes go away.
 
     Files whose name starts with any ``CACHE_PREFIXES`` entry are NOT
-    wiped \u2014 they belong to the GIMP upload-cache and must survive
+    wiped — they belong to the GIMP upload-cache and must survive
     between workflows so repeat submits can reuse them. Use
     ``purge_cache(server)`` to blow those away on demand.
     """
-    wiped = set()
+    import re
+    targets: set[str] = set()
 
     # Strategy 1: workflow-based (knows exactly which files were uploaded)
     if workflow:
@@ -114,12 +171,9 @@ def cleanup_inputs(server, workflow=None):
             if _is_cache_protected(fname):
                 continue
             fl = fname.lower()
-            # Check if it's ours (prefix match or cached asset hash)
-            import re
             is_hash = bool(re.match(r'^[a-f0-9]{16}\.', fl))
             if is_hash or any(fl.startswith(p) for p in OWNED_PREFIXES):
-                _overwrite_with_tiny(server, fname)
-                wiped.add(fname)
+                targets.add(fname)
 
     # Strategy 2: full server scan
     try:
@@ -130,15 +184,34 @@ def cleanup_inputs(server, workflow=None):
             info = json.loads(resp.read())
         input_files = info["LoadImage"]["input"]["required"]["image"][0]
         for fname in input_files:
-            if fname in wiped:
+            if not isinstance(fname, str):
                 continue
             if _is_cache_protected(fname):
                 continue
             fl = fname.lower()
             if any(fl.startswith(p) for p in OWNED_PREFIXES):
-                _overwrite_with_tiny(server, fname)
+                targets.add(fname)
     except Exception:
         pass
+
+    if not targets:
+        return
+
+    # Primary: real delete via the pack route. Handles input/ only
+    # (workflow uploads land there); outputs go through
+    # cleanup_outputs which narrows to folder_type="output".
+    route_result = _delete_via_route(server, sorted(targets),
+                                      folder_type="input",
+                                      prefixes=OWNED_PREFIXES)
+    if route_result is not None:
+        return
+
+    # Fallback: overwrite-with-tiny so at least the bytes go away
+    # even when the pack's delete route isn't available (older
+    # ComfyUI-Spellcaster installs, or users who haven't installed
+    # the pack). The filename stays but the content is obfuscated.
+    for fname in targets:
+        _overwrite_with_tiny(server, fname)
 
 
 def purge_cache(server, *, prefixes=CACHE_PREFIXES, keep=None,
@@ -177,6 +250,7 @@ def purge_cache(server, *, prefixes=CACHE_PREFIXES, keep=None,
         input_files = info["LoadImage"]["input"]["required"]["image"][0]
     except Exception:
         return {"wiped": wiped, "error": "object_info fetch failed"}
+    candidates = []
     for fname in input_files:
         if not isinstance(fname, str):
             continue
@@ -185,19 +259,61 @@ def purge_cache(server, *, prefixes=CACHE_PREFIXES, keep=None,
             continue
         if not any(fl.startswith(p) for p in prefixes):
             continue
-        _overwrite_with_tiny(server, fname)
-        wiped.append(fname)
+        candidates.append(fname)
+    # Real delete via the pack route first, fall back to tiny-PNG.
+    route_result = _delete_via_route(server, candidates,
+                                      folder_type="input",
+                                      prefixes=prefixes)
+    if route_result is not None:
+        for d in route_result.get("deleted", []) or []:
+            name = d.get("name") if isinstance(d, dict) else d
+            if name:
+                wiped.append(name)
+    else:
+        for fname in candidates:
+            _overwrite_with_tiny(server, fname)
+            wiped.append(fname)
     return {"wiped": wiped}
 
 
 def cleanup_outputs(server, results):
-    """Overwrite generated output files on the server with 1x1 pixels.
+    """Delete generated output files on the server.
+
+    Pre-2026-04-20 this was ``_overwrite_with_tiny(server, fn)`` —
+    which POSTs to ``/upload/image``, a route that ALWAYS writes to
+    ``input/``. Result: a 1x1 PNG landed in ``input/<output_name>``
+    while the real output file in ``output/`` survived untouched.
+    Users who enabled "Delete temp uploads from ComfyUI" were seeing
+    output files persist forever — exactly the bug this fix covers.
+
+    Now: POSTs the filename list to the pack's delete route with
+    ``folder_type="output"``; falls back to the legacy (broken-for-
+    outputs) tiny-PNG path only when the route is unavailable, at
+    which point at least the user's INPUT gets bytes-obfuscated and
+    an error prints so the missing pack becomes visible.
 
     Args:
         results: list of (filename, subfolder, folder_type) tuples
     """
-    for fn, sf, ft in results:
-        _overwrite_with_tiny(server, fn)
+    if not results:
+        return
+    names = [fn for fn, _sf, _ft in results if fn]
+    if not names:
+        return
+    route_result = _delete_via_route(server, names,
+                                      folder_type="output",
+                                      prefixes=OWNED_PREFIXES)
+    if route_result is not None:
+        return
+    # Fallback: tiny-PNG path. It writes to input/ not output/, so
+    # output files survive — but make the divergence visible in the
+    # log so the user knows to update the pack.
+    print("  [Privacy] output cleanup: delete route unavailable; "
+          "falling back to legacy tiny-PNG path which CANNOT delete "
+          "output files. Update ComfyUI-Spellcaster to the latest "
+          "version to enable real output deletion.")
+    for fname in names:
+        _overwrite_with_tiny(server, fname)
 
 
 def cleanup_server_files(server, workflow=None, results=None):
