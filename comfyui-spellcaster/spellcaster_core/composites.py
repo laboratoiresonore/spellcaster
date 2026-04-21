@@ -580,7 +580,19 @@ def inject_controlnet(nf, controlnet_config, guide_modes, arch_key,
 
     # Look up the ControlNet model for this architecture, falling back to SDXL
     # variant (most CN models have SDXL versions; SD1.5/Flux may not).
-    cn_model = guide["cn_models"].get(arch_key, guide["cn_models"].get("sdxl"))
+    #
+    # ``cn_model_override`` wins over the guide's hardcoded table. The
+    # GIMP plugin's _resolve_normal_map_cn walks a per-arch fallback
+    # cascade (Union → Depth → Canny) + handles HF folder-form paths
+    # that the flat-form lookup in guide_modes misses. Prior code
+    # silently dropped the override; the resolver's work was wasted
+    # and users saw "CN file not found" errors even when a perfectly
+    # usable file was sitting on the server under a non-canonical
+    # path. Honour the override unconditionally — it's the caller's
+    # explicit assertion that this exact filename is installed.
+    cn_model = (controlnet_config.get("cn_model_override")
+                or guide["cn_models"].get(arch_key)
+                or guide["cn_models"].get("sdxl"))
     if not cn_model:
         return pos_ref, neg_ref  # no CN model available for this architecture
 
