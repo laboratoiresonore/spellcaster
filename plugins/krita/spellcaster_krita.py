@@ -57,6 +57,93 @@ class KritaSpellcaster(SpellcasterPlugin):
         os.unlink(tmp.name)
         return data
 
+    def get_mask_png(self):
+        """Export the active selection as a grayscale mask PNG.
+
+        Returns ``None`` when no selection is active, so the base
+        class can show a clear "make a selection first" error. When
+        a selection exists, the alpha channel is rendered into an
+        8-bit grayscale canvas: white (selected) = regenerate here,
+        black (unselected) = keep the original pixels. Matches the
+        ``build_inpaint`` mask contract.
+        """
+        doc = self._app.activeDocument()
+        if not doc:
+            return None
+        try:
+            sel = doc.selection()
+        except Exception:
+            sel = None
+        if sel is None:
+            return None
+        w, h = doc.width(), doc.height()
+        try:
+            # Krita.Selection.pixelData(x, y, w, h) returns a
+            # grayscale byte array \u2014 one byte per pixel. Wrap
+            # that in a minimal grayscale PNG so build_inpaint's
+            # LoadImage node can decode it.
+            raw = sel.pixelData(0, 0, w, h)
+        except Exception:
+            return None
+        if not raw:
+            return None
+        # Minimal grayscale PNG writer (no PIL dependency, which is
+        # a hit-or-miss dep in Krita's bundled Python).
+        import struct as _struct
+        import zlib as _zlib
+        import binascii as _bin
+        ihdr = _struct.pack(">IIBBBBB", w, h, 8, 0, 0, 0, 0)
+        def _chunk(tag, data):
+            crc = _bin.crc32(tag + data) & 0xFFFFFFFF
+            return (_struct.pack(">I", len(data)) + tag + data
+                    + _struct.pack(">I", crc))
+        row_len = w
+        scanlines = bytearray()
+        for y in range(h):
+            scanlines.append(0)
+            start = y * row_len
+            scanlines.extend(raw[start:start + row_len])
+        idat = _zlib.compress(bytes(scanlines))
+        png = (b"\x89PNG\r\n\x1a\n"
+                + _chunk(b"IHDR", ihdr)
+                + _chunk(b"IDAT", idat)
+                + _chunk(b"IEND", b""))
+        return png
+
+    def get_normal_map_png(self):
+        """Return the first layer whose name contains 'normal' as a
+        PNG, so IC-Light relighting can pick it up for surface-aware
+        output. Walks the active document's layers. Returns None
+        when nothing matches \u2014 IC-Light then falls back to flat
+        FC-mode relighting."""
+        doc = self._app.activeDocument()
+        if not doc:
+            return None
+        try:
+            nodes = doc.rootNode().childNodes() or []
+        except Exception:
+            return None
+        for node in nodes:
+            try:
+                name = (node.name() or "").lower()
+            except Exception:
+                continue
+            if "normal" not in name:
+                continue
+            try:
+                import tempfile as _tf
+                tmp = _tf.NamedTemporaryFile(suffix=".png", delete=False)
+                tmp.close()
+                node.save(tmp.name, 1.0, 1.0, InfoObject())
+                with open(tmp.name, "rb") as f:
+                    data = f.read()
+                import os as _os
+                _os.unlink(tmp.name)
+                return data
+            except Exception:
+                return None
+        return None
+
     def insert_layer(self, png_bytes, name="Spellcaster"):
         """Insert PNG bytes as a new paint layer in the active document."""
         doc = self._app.activeDocument()
@@ -132,6 +219,26 @@ class SpellcasterExtension(Extension):
         a3 = window.createAction("spellcaster_img2img", "Transform (img2img)", menu)
         a3.triggered.connect(self._on_img2img)
 
+        # Inpaint (needs an active selection)
+        a_inp = window.createAction(
+            "spellcaster_inpaint", "Inpaint Selection", menu)
+        a_inp.triggered.connect(self._on_inpaint)
+
+        # Outpaint (extends canvas by 256 px on the right)
+        a_out = window.createAction(
+            "spellcaster_outpaint", "Extend Canvas (Outpaint)", menu)
+        a_out.triggered.connect(self._on_outpaint)
+
+        # IC-Light relighting
+        a_icl = window.createAction(
+            "spellcaster_iclight", "Relight (IC-Light)", menu)
+        a_icl.triggered.connect(self._on_iclight)
+
+        # 3D normal-map generation
+        a_nm = window.createAction(
+            "spellcaster_normal_map", "Generate 3D Normal Map", menu)
+        a_nm.triggered.connect(self._on_normal_map)
+
         # Upscale
         a4 = window.createAction("spellcaster_upscale", "AI Upscale (4x)", menu)
         a4.triggered.connect(self._on_upscale)
@@ -143,6 +250,11 @@ class SpellcasterExtension(Extension):
         # Face restore
         a6 = window.createAction("spellcaster_face", "Restore Faces", menu)
         a6.triggered.connect(self._on_face_restore)
+
+        # Face swap (pick a source image)
+        a_fs = window.createAction(
+            "spellcaster_face_swap", "Swap Face From File\u2026", menu)
+        a_fs.triggered.connect(self._on_face_swap)
 
         # Settings
         a7 = window.createAction("spellcaster_settings", "Settings...", menu)
@@ -165,6 +277,53 @@ class SpellcasterExtension(Extension):
         prompt, ok = QInputDialog.getText(None, "Spellcaster", "How should the image change?")
         if ok and prompt:
             self._get_plugin().img2img(prompt)
+
+    def _on_inpaint(self):
+        from PyQt5.QtWidgets import QInputDialog
+        prompt, ok = QInputDialog.getText(
+            None, "Spellcaster",
+            "What should fill the selected region?")
+        if ok and prompt:
+            self._get_plugin().inpaint(prompt)
+
+    def _on_outpaint(self):
+        from PyQt5.QtWidgets import QInputDialog
+        prompt, ok = QInputDialog.getText(
+            None, "Spellcaster",
+            "Describe what should appear in the extended area:")
+        if ok and prompt:
+            # Default: extend 256 px to the right. Users who want
+            # other edges set them via a future settings dialog.
+            self._get_plugin().outpaint(prompt, right=256)
+
+    def _on_iclight(self):
+        from PyQt5.QtWidgets import QInputDialog
+        prompt, ok = QInputDialog.getText(
+            None, "Spellcaster",
+            "Describe the lighting (e.g. 'golden hour from left'):")
+        if ok and prompt:
+            self._get_plugin().iclight(prompt)
+
+    def _on_normal_map(self):
+        self._get_plugin().normal_map()
+
+    def _on_face_swap(self):
+        from PyQt5.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getOpenFileName(
+            None, "Pick a source face image", "",
+            "Images (*.png *.jpg *.jpeg *.webp)")
+        if not path:
+            return
+        try:
+            with open(path, "rb") as f:
+                source_bytes = f.read()
+        except Exception as e:
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                None, "Spellcaster",
+                f"Could not read {path}: {e}")
+            return
+        self._get_plugin().face_swap(source_bytes)
 
     def _on_upscale(self):
         self._get_plugin().upscale()
