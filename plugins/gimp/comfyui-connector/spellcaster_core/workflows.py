@@ -586,7 +586,8 @@ def build_txt2img(preset, prompt_text, negative_text, seed, loras=None,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_generate_anything(prompt_text, negative_text, seed, preset,
-                             loras=None, scene_filename=None) -> dict:
+                             loras=None, scene_filename=None,
+                             quality="balanced", fast_mode=False) -> dict:
     """Generate any object/person as a transparent layer using ANY model.
 
     Architecture-universal version of Klein Generate Object. Works with
@@ -681,12 +682,24 @@ def build_generate_anything(prompt_text, negative_text, seed, preset,
             [sched_id, 0], [empty_id, 0], node_id="5",
         )
     else:
-        samp_id = nf.ksampler(
-            model_ref, pos_ref, neg_ref, [empty_id, 0],
-            seed, preset["steps"], preset["cfg"],
-            preset.get("sampler", "euler"),
-            preset.get("scheduler", "normal"),
-            1.0, node_id="5",
+        # Non-Klein: wire the per-arch quality booster stack (§22) so
+        # generate_anything benefits from PAG / FreeU / SLG / CFGZero
+        # like build_img2img / build_txt2img. No-op when quality=="fast".
+        model_ref, pos_ref_boosted = _apply_flux1_boosters(
+            nf, model_ref, pos_ref, preset, node_base_id=640)
+        model_ref = _apply_quality_boost(
+            nf, model_ref, arch_key,
+            quality=quality, cfg=preset.get("cfg"), node_base_id=600)
+        model_ref = _apply_speedup(
+            nf, model_ref, arch_key, fast_mode=fast_mode, node_id="550")
+        samp_id = _emit_sampler(
+            nf, model_ref=model_ref, pos_ref=pos_ref_boosted,
+            neg_ref=neg_ref, latent_ref=[empty_id, 0],
+            seed=seed, steps=preset["steps"], cfg=preset["cfg"],
+            sampler=preset.get("sampler", "euler"),
+            scheduler=preset.get("scheduler", "normal"),
+            denoise=1.0, node_id="5",
+            arch_key=arch_key, quality=quality, ays_node_base=570,
         )
 
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="6")
@@ -1096,18 +1109,41 @@ KLEIN_ENHANCER_NODE_TYPES = {
     "Flux2KleinColorAnchor",
 }
 
+# Identity-lock nodes (pack v3.2.0+). These are the "better face-swap
+# system" documented in the README: sampling-loop correction +
+# attention-layer feature alignment. When both are installed AND the
+# caller provides an identity_latent_ref, Klein face-swap / head-swap
+# / reference builders can lock identity WITHOUT calling ReActor —
+# removing the TRT/inswapper native-crash risk (§20.1) from that path.
+KLEIN_IDENTITY_NODE_TYPES = {
+    "IdentityGuidance",
+    "IdentityFeatureTransfer",
+}
+
 
 def _klein_enhance_model(nf, model_ref, conditioning_ref,
                           ref_strength=500, text_ref_balance=0.5,
-                          color_anchor_strength=0.5, node_base_id=900):
+                          color_anchor_strength=0.5, node_base_id=900,
+                          identity_latent_ref=None,
+                          identity_strength=0.3,
+                          identity_mode="adaptive",
+                          identity_feature_strength=0.15,
+                          identity_feature_mode="cosine_pull"):
     """Wrap a Klein model with the Flux2Klein-Enhancer nodes.
 
-    Chains: model → RefLatentController → TextRefBalance → ColorAnchor.
-    Each node takes MODEL + CONDITIONING and outputs MODEL.
+    Chains: model → RefLatentController → TextRefBalance → ColorAnchor
+    → (optional) IdentityGuidance → (optional) IdentityFeatureTransfer.
 
-    Called from build_klein_* functions when enhance=True. If enhance is
-    False the caller skips this entirely — there's no runtime check here
-    (the preflight system handles missing-node detection).
+    The first three nodes are the classic enhancer stack that every
+    Klein builder has carried since 2026-03. The two identity-lock
+    nodes are new in pack v3.2.0 (§8 / §20.1): they replace the
+    ReActor post-process for Klein face-swap / head-swap pathways. Opt
+    in by passing ``identity_latent_ref`` — a [node_id, slot] pointing
+    at a LATENT node (typically vae_encode of the source face).
+
+    Called from build_klein_* functions when enhance=True. If enhance
+    is False the caller skips this entirely — there's no runtime check
+    here (the preflight system handles missing-node detection).
 
     Args:
         nf: NodeFactory instance.
@@ -1117,6 +1153,15 @@ def _klein_enhance_model(nf, model_ref, conditioning_ref,
         text_ref_balance: 0.0=text only, 0.999=reference only.
         color_anchor_strength: Color drift correction (0.3-0.6 rec).
         node_base_id: Starting node ID for the enhancer chain.
+        identity_latent_ref: [node_id, slot] LATENT to lock identity
+            against. When None, skips the identity-lock layer (classic
+            behavior).
+        identity_strength: 0.0-1.0. IdentityGuidance pull strength.
+        identity_mode: "adaptive" / "direct" / "channel_match".
+        identity_feature_strength: 0.0-1.0. IdentityFeatureTransfer
+            per-block blend. Cumulative.
+        identity_feature_mode: "cosine_pull" / "topk_replace" /
+            "mean_transfer".
 
     Returns:
         Enhanced model reference [node_id, 0].
@@ -1130,7 +1175,18 @@ def _klein_enhance_model(nf, model_ref, conditioning_ref,
     anchor = nf.flux2klein_color_anchor(
         [balance, 0], conditioning_ref, strength=color_anchor_strength,
         node_id=str(node_base_id + 2))
-    return [anchor, 0]
+    last = [anchor, 0]
+    if identity_latent_ref is not None:
+        ig = nf.identity_guidance(
+            last, identity_latent_ref,
+            strength=identity_strength, mode=identity_mode,
+            node_id=str(node_base_id + 3))
+        ift = nf.identity_feature_transfer(
+            [ig, 0], strength=identity_feature_strength,
+            mode=identity_feature_mode,
+            node_id=str(node_base_id + 4))
+        last = [ift, 0]
+    return last
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1658,7 +1714,7 @@ def _assert_method(arch_key: str, method: str) -> None:
     if not arch_key or not method:
         return
     try:
-        from spellcaster_core.architectures import ARCHITECTURES
+        from .architectures import ARCHITECTURES
     except ImportError:
         try:
             from architectures import ARCHITECTURES  # type: ignore
@@ -1706,7 +1762,7 @@ def _faceswap_guard(feature: str) -> None:
     the wrapper in this module avoids every builder needing its own
     try/except for the import."""
     try:
-        from spellcaster_core.faceswap_health import guard_faceswap
+        from .faceswap_health import guard_faceswap
     except ImportError:
         try:
             from faceswap_health import guard_faceswap  # type: ignore
@@ -2493,10 +2549,19 @@ def build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
                                      prompt, negative,
                                      pos_id="5", neg_id="6")
 
+    # Flux-family ControlNets require vae_ref on ControlNetApplyAdvanced
+    # (§30). SDXL / SD1.5 / ZIT ignore the slot, so threading it through
+    # unconditionally when we have a loaded VAE is safe — matches the
+    # pattern in composites.inject_controlnet.
+    cn_vae_ref = (vae_ref
+                  if arch_key in ("flux1dev", "flux2klein", "flux_kontext")
+                  else None)
     cn_apply_id = nf.controlnet_apply_advanced(
         [pos_id, 0], [neg_id, 0],
         [cn_loader_id, 0], [pre_id, 0],
-        cn_strength, 0.0, 1.0, node_id="7",
+        cn_strength, 0.0, 1.0,
+        vae_ref=cn_vae_ref,
+        node_id="7",
     )
 
     empty_id = nf.empty_latent_image(width, height, 1, node_id="8")
@@ -3518,11 +3583,21 @@ def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
                              guidance=1.0, enhancer_mag=1.0, enhancer_contrast=0.0,
                              ref_strength=1.0, text_ref_balance=0.5,
                              loras=None, lora_name=None, lora_strength=1.0,
-                             klein_models=None, enhance=True) -> dict:
+                             klein_models=None, enhance=True,
+                             identity_lock=False,
+                             identity_strength=0.25,
+                             identity_feature_strength=0.15) -> dict:
     """Klein img2img with separate reference image.
 
     Same pipeline as build_klein_img2img but uses the reference image
     as the ReferenceLatent source instead of the main input image.
+
+    identity_lock (default False): opt-in to chain IdentityGuidance +
+        IdentityFeatureTransfer onto the model so the reference image's
+        identity (face, character, style) is pulled toward during
+        sampling — stronger preservation than ReferenceLatent alone.
+        See §8 / §20.1. Requires pack v3.2.0+ (preflight catches
+        missing nodes).
     """
     if klein_models is None:
         klein_models = KLEIN_MODELS
@@ -3567,10 +3642,19 @@ def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
     ref_pos_id = nf.reference_latent([pos_id, 0], [ref_latent_id, 0], node_id="20")
     ref_neg_id = nf.reference_latent([neg_id, 0], [ref_latent_id, 0], node_id="21")
 
-    # Enhancer chain (Flux2Klein-Enhancer nodes for quality boost)
+    # Enhancer chain (Flux2Klein-Enhancer nodes for quality boost).
+    # When identity_lock is on, pass the reference latent through so
+    # the enhancer appends IdentityGuidance + IdentityFeatureTransfer
+    # (§8). Otherwise behaves exactly as before.
     model_for_guider = _ref(unet_id)
     if enhance:
-        model_for_guider = _klein_enhance_model(nf, _ref(unet_id), [ref_pos_id, 0])
+        model_for_guider = _klein_enhance_model(
+            nf, _ref(unet_id), [ref_pos_id, 0],
+            identity_latent_ref=([ref_latent_id, 0]
+                                  if identity_lock else None),
+            identity_strength=identity_strength,
+            identity_feature_strength=identity_feature_strength,
+        )
 
     # Sampler setup
     guider_id = nf.cfg_guider(model_for_guider, [ref_pos_id, 0], [ref_neg_id, 0],
@@ -3600,7 +3684,14 @@ def build_klein_headswap(target_filename, source_filename, klein_model_key,
                           prompt, seed, denoise=0.35, steps=20,
                           face_model=None, face_restore_vis=0.7,
                           codeformer_weight=0.8, loras=None, klein_models=None,
-                          enhance=True) -> dict:
+                          enhance=True,
+                          use_identity_lock=True,
+                          identity_strength=0.35,
+                          identity_feature_strength=0.20,
+                          identity_start_percent=0.0,
+                          identity_end_percent=0.8,
+                          identity_mode="adaptive",
+                          identity_feature_mode="cosine_pull") -> dict:
     """Head swap with Klein Flux2 refinement.
 
     Two-stage head swap: first uses ReActor for fast face swap, then refines
@@ -3708,7 +3799,110 @@ def build_klein_headswap(target_filename, source_filename, klein_model_key,
     target_id = nf.load_image(target_filename, node_id="1")
     source_id = nf.load_image(source_filename, node_id="2")
 
-    # Face swap via ReActor
+    # ── BRANCH A: Identity-lock path (new canonical, 2026-04-24) ─────
+    # Klein + reference-latent + IdentityGuidance + IdentityFeatureTransfer
+    # replaces the ReActor post-process entirely. No TensorRT, no
+    # inswapper_128.onnx native crash (§20.1). Higher quality because
+    # the identity lock runs IN the sampling loop instead of pixel-
+    # swapping after-the-fact at 256px.
+    #
+    # Preconditions for this branch:
+    #   * use_identity_lock=True (default)
+    #   * face_model parameter NOT set (face models only work with
+    #     ReActor — they're inswapper-specific .safetensors files)
+    use_identity = use_identity_lock and not face_model
+
+    if use_identity:
+        # Klein model + CLIP + VAE
+        unet_id = nf.unet_loader(km["unet"], "default", node_id="20")
+        clip_id = nf.clip_loader(
+            km.get("clip", "qwen_3_8b.safetensors"),
+            clip_type="flux2", device="default", node_id="21",
+        )
+        vae_id = nf.vae_loader(FLUX2_VAE, node_id="22")
+
+        # Apply LoRA chain
+        if loras:
+            unet_id, clip_id, _trig = inject_lora_chain(
+                nf, loras, _ref(unet_id), _ref(clip_id),
+                base_id=100, arch_key="flux2klein",
+            )
+
+        pos_id = nf.clip_encode(_ref(clip_id), prompt, node_id="23")
+        neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="24")
+
+        # Scale TARGET image (what we want to keep the pose/scene of)
+        # and encode to latent. Target is the "base" — we'll sample
+        # toward the source's IDENTITY while preserving target's pose.
+        tgt_scaled_id = nf.image_scale_to_total_pixels(
+            [target_id, 0], megapixels=1.0, node_id="30")
+        tgt_latent_id = nf.vae_encode(
+            [tgt_scaled_id, 0], [vae_id, 0], node_id="32")
+
+        # Encode SOURCE at the same working resolution so the identity
+        # latent aligns pixel-for-pixel with the sampler's latent grid.
+        src_scaled_id = nf.image_scale_to_total_pixels(
+            [source_id, 0], megapixels=1.0, node_id="35")
+        src_latent_id = nf.vae_encode(
+            [src_scaled_id, 0], [vae_id, 0], node_id="36")
+
+        # ReferenceLatent for context — wires the SOURCE face into the
+        # image stream so IdentityFeatureTransfer can pull attention
+        # features from it.
+        ref_pos_id = nf.reference_latent(
+            [pos_id, 0], [src_latent_id, 0], node_id="33")
+        ref_neg_id = nf.reference_latent(
+            [neg_id, 0], [src_latent_id, 0], node_id="34")
+
+        # Enhancer + Identity chain (the upgrade).
+        model_ref = _ref(unet_id)
+        if enhance:
+            model_ref = _klein_enhance_model(
+                nf, model_ref, [ref_pos_id, 0],
+                node_base_id=910,
+                identity_latent_ref=[src_latent_id, 0],
+                identity_strength=identity_strength,
+                identity_mode=identity_mode,
+                identity_feature_strength=identity_feature_strength,
+                identity_feature_mode=identity_feature_mode,
+            )
+        else:
+            # No enhancer — still add identity lock when requested.
+            ig = nf.identity_guidance(
+                model_ref, [src_latent_id, 0],
+                strength=identity_strength,
+                start_percent=identity_start_percent,
+                end_percent=identity_end_percent,
+                mode=identity_mode, node_id="913")
+            ift = nf.identity_feature_transfer(
+                [ig, 0], strength=identity_feature_strength,
+                mode=identity_feature_mode, node_id="914")
+            model_ref = [ift, 0]
+
+        # Sampling over the TARGET latent (keeps pose/scene).
+        guider_id = nf.cfg_guider(
+            model_ref, [ref_pos_id, 0], [ref_neg_id, 0], 1.0, node_id="40")
+        sampler_id = nf.ksampler_select("euler", node_id="41")
+        sched_id = nf.basic_scheduler(
+            model_ref, steps, denoise, node_id="42")
+        noise_id = nf.random_noise(seed, node_id="43")
+
+        sample_id = nf.sampler_custom_advanced(
+            [noise_id, 0], [guider_id, 0], [sampler_id, 0],
+            [sched_id, 0], [tgt_latent_id, 0], node_id="50")
+        dec_id = nf.vae_decode(
+            [sample_id, 0], [vae_id, 0], node_id="60")
+        nf.save_image(
+            [dec_id, 0], "spellcaster_headswap", node_id="70")
+        return nf.build()
+
+    # ── BRANCH B: Legacy ReActor + Klein refinement path ─────────────
+    # Retained for compatibility with face_model (.safetensors face
+    # models are ReActor-specific) and for non-Klein rigs that don't
+    # have the v3.2.0 identity nodes. The _faceswap_guard above has
+    # already blocked this path if the health tracker says TRT is dead
+    # (§20.1), so we only reach here when face-swap via inswapper is
+    # expected to work.
     opts_id = nf.reactor_options(node_id="10o")
     boost_id = nf.reactor_face_boost(
         boost_model="codeformer-v0.1.0.pth",
@@ -3729,9 +3923,6 @@ def build_klein_headswap(target_filename, source_filename, klein_model_key,
     if face_model:
         fm_id = nf.reactor_load_face_model(face_model, node_id="3")
         nf.patch_input("10", "face_model", [fm_id, 0])
-        # Remove source_image from swap node (can't have both)
-        # This is handled by the NodeFactory — the face_model_ref param
-        # but since we already created the node, we patch it directly
         if "source_image" in nf._nodes["10"]["inputs"]:
             del nf._nodes["10"]["inputs"]["source_image"]
 
@@ -3743,35 +3934,39 @@ def build_klein_headswap(target_filename, source_filename, klein_model_key,
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="22")
 
-
-    # Apply LoRA chain
     if loras:
-        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, _ref(unet_id), _ref(clip_id), base_id=100, arch_key="flux2klein")
-        # After LoRA chain, refs are [node_id, slot] lists.
-        # Leave them as-is. Use _ref() for all downstream references.
+        unet_id, clip_id, _trig = inject_lora_chain(
+            nf, loras, _ref(unet_id), _ref(clip_id),
+            base_id=100, arch_key="flux2klein",
+        )
     pos_id = nf.clip_encode(_ref(clip_id), prompt, node_id="23")
     neg_id = nf.conditioning_zero_out([pos_id, 0], node_id="24")
 
     # Scale swapped image + encode
-    scaled_id = nf.image_scale_to_total_pixels([swap_id, 0], megapixels=1.0, node_id="30")
+    scaled_id = nf.image_scale_to_total_pixels(
+        [swap_id, 0], megapixels=1.0, node_id="30")
     size_id = nf.get_image_size([scaled_id, 0], node_id="31")
-    latent_id = nf.vae_encode([scaled_id, 0], [vae_id, 0], node_id="32")
+    latent_id = nf.vae_encode(
+        [scaled_id, 0], [vae_id, 0], node_id="32")
 
     # ReferenceLatent for context
-    ref_pos_id = nf.reference_latent([pos_id, 0], [latent_id, 0], node_id="33")
-    ref_neg_id = nf.reference_latent([neg_id, 0], [latent_id, 0], node_id="34")
+    ref_pos_id = nf.reference_latent(
+        [pos_id, 0], [latent_id, 0], node_id="33")
+    ref_neg_id = nf.reference_latent(
+        [neg_id, 0], [latent_id, 0], node_id="34")
 
     # Enhancer chain (Klein quality boost)
-    _hs_model = _klein_enhance_model(nf, _ref(unet_id), [ref_pos_id, 0], node_base_id=910) if enhance else _ref(unet_id)
+    _hs_model = (_klein_enhance_model(
+        nf, _ref(unet_id), [ref_pos_id, 0], node_base_id=910)
+        if enhance else _ref(unet_id))
 
     # Sampling — uses BasicScheduler for denoise support
-    guider_id = nf.cfg_guider(_hs_model, [ref_pos_id, 0], [ref_neg_id, 0],
-                              1.0, node_id="40")
+    guider_id = nf.cfg_guider(
+        _hs_model, [ref_pos_id, 0], [ref_neg_id, 0], 1.0, node_id="40")
     sampler_id = nf.ksampler_select("euler", node_id="41")
     sched_id = nf.basic_scheduler(_hs_model, steps, denoise, node_id="42")
     noise_id = nf.random_noise(seed, node_id="43")
 
-    # Sample -- feed encoded image latent, NOT empty latent
     sample_id = nf.sampler_custom_advanced(
         [noise_id, 0], [guider_id, 0], [sampler_id, 0],
         [sched_id, 0], [latent_id, 0], node_id="50",
