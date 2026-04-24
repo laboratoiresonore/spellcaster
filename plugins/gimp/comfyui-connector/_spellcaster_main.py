@@ -11765,20 +11765,41 @@ def _upload_cache_enabled() -> bool:
 def _image_fingerprint(image, selection_bounds=None) -> str:
     """Compute a fast content fingerprint of the active GIMP image.
 
-    Strategy: hash the thumbnail bytes (GIMP-rendered flattened RGBA,
-    fast \u2014 no PDB export pass needed) plus the canvas dimensions
-    and the optional selection bounds. False-positive rate:
-    astronomically low (SHA-256 of ~200 \u00d7 200 \u00d7 4 bytes).
+    **Fast path (2026-04-24)**: use ``image.get_dirty_count()`` as the
+    primary signal. GIMP bumps dirty_count on every pixel / layer /
+    colorspace op, so an unchanged image produces the same count
+    across repeats. Combined with image id + dims + selection_bounds
+    this is O(1) \u2014 no thumbnail render, no pixel hash. The old code
+    rendered a 256\u00d7256 thumbnail on EVERY export (which on a 4K canvas
+    is ~50-100ms of GIMP work) and hashed it. That was the "first send
+    is still slow" user report.
 
-    When the thumbnail call fails (rare, but some Gimp versions
-    expose it differently) we fall back to
-    ``(image_id, dims, selection_bounds, time)`` \u2014 a signature
-    that NEVER matches across calls, so the cache degrades to the
-    old "always re-upload" behaviour rather than incorrectly
-    serving a stale entry.
+    Thumbnail fallback: when get_dirty_count isn't available (older
+    GIMP 3 builds), fall back to hashing the flattened thumbnail like
+    pre-2026-04-24 behaviour.
+
+    Last-resort fallback: when NEITHER signal is available, use
+    id + dims + name + selection_bounds (stable across repeats of an
+    unchanged canvas). Never falls back to time.time() any more \u2014
+    that defeated the cache entirely on repeat presses.
     """
     import hashlib
     h = hashlib.sha256()
+    # \u2500\u2500 Fast path: dirty_count as primary cache key \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    try:
+        if hasattr(image, 'get_dirty_count'):
+            dirty = image.get_dirty_count()
+            if dirty is not None:
+                parts = [
+                    f"dirty={int(dirty)}",
+                    f"id={image.get_id()}",
+                    f"{image.get_width()}x{image.get_height()}",
+                    f"sel={selection_bounds}",
+                ]
+                h.update("|".join(parts).encode())
+                return h.hexdigest()[:24]
+    except Exception:
+        pass
     try:
         # Gimp.Image.get_thumbnail(w, h, alpha) -> GLib.Bytes.
         # The thumbnail is the FLATTENED image at up to the given
@@ -11904,30 +11925,45 @@ def _export_and_upload_cached(server, image, *, selection_bounds=None,
         non-cached path.
     """
     srv_key = (server or "").rstrip("/")
+    # Timing breadcrumbs \u2014 the user can grep the Python-Fu console
+    # for "[Spellcaster] export-timing" to see where the time goes
+    # on slow sends. Each mark is one integer ms delta from the
+    # previous mark, so the log reads like a flamegraph line.
+    _t0 = time.time()
+    _marks: list = []
+    def _mark(label):
+        _marks.append((label, int((time.time() - _t0) * 1000)))
+
     if not _upload_cache_enabled():
         # Straight-through path: export + upload fresh every time.
         if selection_bounds:
             tmp, _w, _h = _export_selection_to_tmp(image)
         else:
             tmp = _export_image_to_tmp(image)
+        _mark("export")
         if not tmp:
             raise RuntimeError("image export failed")
         uname = f"gimp_{uuid.uuid4().hex[:8]}.png"
         _upload_image(server, tmp, uname)
+        _mark("upload-queue")
         try:
             os.unlink(tmp)
         except Exception:
             pass
+        if debug_prefix:
+            print(f"[Spellcaster] {debug_prefix}export-timing "
+                  f"{_marks} cache=off")
         return uname
 
     fp = _image_fingerprint(image, selection_bounds=selection_bounds)
+    _mark("fingerprint")
     cache_key = (srv_key, fp)
     hit = _UPLOAD_CACHE.get(cache_key)
     now = time.time()
     if hit and (now - hit.get("uploaded_at", 0)) < _UPLOAD_CACHE_TTL:
         if debug_prefix:
             print(f"[Spellcaster] {debug_prefix}cache-hit "
-                  f"{hit['filename']} (fp={fp[:8]}\u2026)")
+                  f"{hit['filename']} (fp={fp[:8]}\u2026, {_marks[-1][1]}ms)")
         # Refresh the timestamp so recently-used entries linger.
         hit["uploaded_at"] = now
         return hit["filename"]
@@ -11937,9 +11973,19 @@ def _export_and_upload_cached(server, image, *, selection_bounds=None,
         tmp, _w, _h = _export_selection_to_tmp(image)
     else:
         tmp = _export_image_to_tmp(image)
+    _mark("export")
     if not tmp:
         raise RuntimeError("image export failed")
-    filename = f"sc_cache_{fp}.png"
+    # Preserve the temp file's extension (.jpg when JPEG fast path
+    # succeeded, .png otherwise) so ComfyUI's loader doesn't try to
+    # PNG-parse JPEG bytes. Pre-2026-04-24 we forced .png which caused
+    # silent downstream decode errors when JPEG exports landed under
+    # a .png cache name.
+    try:
+        _ext = os.path.splitext(tmp)[1].lower() or '.png'
+    except Exception:
+        _ext = '.png'
+    filename = f"sc_cache_{fp}{_ext}"
     try:
         _upload_image(server, tmp, filename)
     finally:
@@ -11947,6 +11993,7 @@ def _export_and_upload_cached(server, image, *, selection_bounds=None,
             os.unlink(tmp)
         except Exception:
             pass
+    _mark("upload-queue")
     _upload_cache_evict_lru(srv_key)
     _UPLOAD_CACHE[cache_key] = {
         "filename": filename,
@@ -11954,8 +12001,9 @@ def _export_and_upload_cached(server, image, *, selection_bounds=None,
         "fp": fp,
     }
     if debug_prefix:
+        total = int((time.time() - _t0) * 1000)
         print(f"[Spellcaster] {debug_prefix}cache-miss {filename} "
-              f"(fp={fp[:8]}\u2026)")
+              f"(fp={fp[:8]}\u2026, {total}ms total; {_marks})")
     return filename
 
 
@@ -20752,13 +20800,15 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         runs = v.get("runs", 1)
         try:
+            srv = v["server"]
             if has_sel:
                 _update_spinner_status("Wan I2V: exporting selection region...")
-                srv = v["server"]
-                tmp, _sw, _sh = _export_selection_to_tmp(image)
+                uname = _export_and_upload_cached(
+                    srv, image,
+                    selection_bounds=(sx1, sy1, sx2, sy2),
+                    debug_prefix="[wan-sel] ")
             else:
                 _update_spinner_status("Wan I2V: exporting image...")
-                srv = v["server"]
                 uname = _export_and_upload_cached(srv, image, debug_prefix="[wan] ")
 
             # IP-Adapter: upload reference image if using a separate file
