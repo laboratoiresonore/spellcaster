@@ -130,3 +130,6 @@ dist/
 installer/antenna_build/
 installer/antenna_spec/
 installer/antenna_entry.py
+Voodoomancer-*.zip
+dist/token.txt
+_embedded_token.py
