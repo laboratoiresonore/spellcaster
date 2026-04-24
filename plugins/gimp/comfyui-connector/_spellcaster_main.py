@@ -22665,7 +22665,7 @@ class Spellcaster(Gimp.PlugIn):
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = _layer_label(
                         "Klein Headswap",
-                        preset_key=v.get("klein_model"),
+                        preset_key=klein_key,
                         run_i=run_i, runs=runs, i=i)
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False, force_layer=True)
             Gimp.displays_flush()
@@ -22987,7 +22987,19 @@ class Spellcaster(Gimp.PlugIn):
                 results = _run_with_spinner(f"{label}: processing...",
                                             lambda: list(_run_comfyui_workflow(srv, _wf, timeout=600)))
                 for i, (fn, sf, ft) in enumerate(results):
-                    _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), _layer_label("Klein Outpaint", preset_key=v.get("klein_model"), run_i=run_i, runs=runs, i=i), False)
+                    # klein_key holds the user's model pick; the old
+                    # v.get("klein_model") was a leftover from a
+                    # dict-of-values refactor this handler never got —
+                    # it's using individual vars (klein_key etc.), so
+                    # NameError on 'v' was guaranteed at the end of
+                    # every successful run.
+                    _apply_mask_mode(
+                        srv, image,
+                        _download_image(srv, fn, sf, ft),
+                        _layer_label("Klein Outpaint",
+                                      preset_key=klein_key,
+                                      run_i=run_i, runs=runs, i=i),
+                        False)
             Gimp.displays_flush()
             return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
         except Exception as e:
@@ -23301,7 +23313,7 @@ class Spellcaster(Gimp.PlugIn):
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = _layer_label(
                         "Klein Blend",
-                        preset_key=v.get("klein_model"),
+                        preset_key=klein_key,
                         run_i=run_i, runs=runs, i=i)
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False, force_layer=True)
             Gimp.displays_flush()
@@ -23740,7 +23752,7 @@ class Spellcaster(Gimp.PlugIn):
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = _layer_label(
                         "Klein Repose",
-                        preset_key=v.get("klein_model"),
+                        preset_key=klein_key,
                         run_i=run_i, runs=runs, i=i)
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False, force_layer=True)
             Gimp.displays_flush()
@@ -24166,7 +24178,7 @@ class Spellcaster(Gimp.PlugIn):
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = _layer_label(
                         "Klein Inpaint",
-                        preset_key=v.get("klein_model"),
+                        preset_key=klein_key,
                         run_i=run_i, runs=runs, i=i)
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False, force_layer=True)
                 Gimp.displays_flush()  # show each run immediately
@@ -27982,7 +27994,7 @@ class Spellcaster(Gimp.PlugIn):
                                             lambda: list(_run_comfyui_workflow(srv, wf)))
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = _layer_label(
-                        "Style Transfer", preset=v.get("preset"),
+                        "Style Transfer", preset=preset,
                         run_i=run_i, runs=runs, i=i)
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False, force_layer=True)
             Gimp.displays_flush()
@@ -28594,7 +28606,7 @@ class Spellcaster(Gimp.PlugIn):
                                             lambda: list(_run_comfyui_workflow(srv, _wf, timeout=600)))
                 for i, (fn, sf, ft) in enumerate(results):
                     lbl = _layer_label(
-                        "Detail Hallucinate", preset=v.get("preset"),
+                        "Detail Hallucinate", preset=preset,
                         extra=detail_key,
                         run_i=run_i, runs=runs, i=i)
                     _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, False)
@@ -30443,7 +30455,7 @@ class Spellcaster(Gimp.PlugIn):
 
                 # Import all variants as layers at native portrait size (not stretched)
                 for i, (fn, sf, ft, img_data) in enumerate(results_data):
-                    _import_result_as_layer(image, img_data, _layer_label("Photobooth", preset=v.get("preset"), i=i),
+                    _import_result_as_layer(image, img_data, _layer_label("Photobooth", preset_key=klein_key, i=i),
                                             keep_size=True)
                 Gimp.displays_flush()
 
@@ -31148,7 +31160,7 @@ class Spellcaster(Gimp.PlugIn):
                     return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
 
                 for i, (fn, sf, ft, img_data) in enumerate(results_data):
-                    _import_result_as_layer(image, img_data, _layer_label("Body Factory", preset=v.get("preset"), i=i))
+                    _import_result_as_layer(image, img_data, _layer_label("Body Factory", preset=preset, i=i))
                 Gimp.displays_flush()
 
                 # Pick dialog
@@ -31167,7 +31179,7 @@ class Spellcaster(Gimp.PlugIn):
                           "for use as a start image in video generation tools.",
                     xalign=0), False, False, 4)
                 pick_combo = Gtk.ComboBoxText()
-                for i in range(len(results_data)): pick_combo.append(str(i), _layer_label("Body Factory", preset=v.get("preset"), i=i))
+                for i in range(len(results_data)): pick_combo.append(str(i), _layer_label("Body Factory", preset=preset, i=i))
                 pick_combo.set_active(0)
                 pick_combo.set_tooltip_text("Select the best result from the generated variants.")
                 pbx.pack_start(pick_combo, False, False, 0)
@@ -31406,7 +31418,7 @@ class Spellcaster(Gimp.PlugIn):
                 for fn_i, (fn, sf, ft) in enumerate(results):
                     if fn.lower().endswith(".png"):
                         lbl = _layer_label(
-                            "Outfit", preset=v.get("preset"),
+                            "Outfit", preset_key=klein_key,
                             run_i=run_i, runs=runs, i=fn_i)
                         _apply_mask_mode(srv, image, _download_image(srv, fn, sf, ft), lbl, True)
                 Gimp.displays_flush()
@@ -31667,7 +31679,7 @@ class Spellcaster(Gimp.PlugIn):
                             bg_results.append((fn, sf, ft, _download_image(srv, fn, sf, ft))); break
 
                 for i, (fn, sf, ft, data) in enumerate(bg_results):
-                    _import_result_as_layer(image, data, _layer_label("Background", preset=v.get("preset"), i=i))
+                    _import_result_as_layer(image, data, _layer_label("Background", preset=preset, i=i))
                 Gimp.displays_flush()
 
                 # Pick best background
@@ -31681,7 +31693,7 @@ class Spellcaster(Gimp.PlugIn):
                 pbx.set_margin_top(10); pbx.set_margin_bottom(10)
                 pbx.pack_start(Gtk.Label(label="Pick the best background from layers.", xalign=0), False, False, 4)
                 pc = Gtk.ComboBoxText()
-                for i in range(len(bg_results)): pc.append(str(i), _layer_label("Background", preset=v.get("preset"), i=i))
+                for i in range(len(bg_results)): pc.append(str(i), _layer_label("Background", preset=preset, i=i))
                 pc.set_active(0); pbx.pack_start(pc, False, False, 0); pbx.show_all()
                 resp = pick_dlg.run()
                 pick_idx = int(pc.get_active_id() or "0")
@@ -31731,7 +31743,7 @@ class Spellcaster(Gimp.PlugIn):
                 for fn, sf, ft in res:
                     if fn.lower().endswith(".png"):
                         img_data = _download_image(srv, fn, sf, ft)
-                        _import_result_as_layer(image, img_data, _layer_label("Scene + Actor", preset=v.get("preset"), extra=f"actor {a_idx+1}"))
+                        _import_result_as_layer(image, img_data, _layer_label("Scene + Actor", preset_key=klein_key, extra=f"actor {a_idx+1}"))
                         # Upload result as the new current scene for next actor
                         next_scene = f"gimp_ss_scene{a_idx}_{uuid.uuid4().hex[:8]}.png"
                         tmp_s = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
