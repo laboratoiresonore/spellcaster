@@ -1189,6 +1189,45 @@ def _klein_enhance_model(nf, model_ref, conditioning_ref,
     return last
 
 
+def _klein_identity_lock(nf, model_ref, identity_latent_ref,
+                          strength=0.3, start_percent=0.0,
+                          end_percent=0.8, mode="adaptive",
+                          feature_strength=0.15,
+                          feature_mode="cosine_pull",
+                          node_base_id=930):
+    """Standalone identity-lock chain — IdentityGuidance +
+    IdentityFeatureTransfer — for Klein builders that DON'T go through
+    `_klein_enhance_model`.
+
+    Use when a Klein builder has `enhance=False` (default) but still
+    wants to lock identity. Same two-node chain as the tail of
+    `_klein_enhance_model`; extracted here so every Klein builder can
+    opt in with a single call regardless of enhancer state.
+
+    Args:
+        nf: NodeFactory.
+        model_ref: [node_id, slot] MODEL to wrap.
+        identity_latent_ref: [node_id, slot] LATENT to lock against.
+        strength, start_percent, end_percent, mode: IdentityGuidance
+            parameters (see node_factory.identity_guidance).
+        feature_strength, feature_mode: IdentityFeatureTransfer
+            parameters.
+        node_base_id: Starting node ID (uses +0 for IG, +1 for IFT).
+
+    Returns:
+        [node_id, 0] — model ref with both identity nodes chained.
+    """
+    ig = nf.identity_guidance(
+        model_ref, identity_latent_ref,
+        strength=strength, start_percent=start_percent,
+        end_percent=end_percent, mode=mode,
+        node_id=str(node_base_id))
+    ift = nf.identity_feature_transfer(
+        [ig, 0], strength=feature_strength, mode=feature_mode,
+        node_id=str(node_base_id + 1))
+    return [ift, 0]
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  GENERIC QUALITY BOOSTERS — per-architecture, sampler-agnostic
 # ═══════════════════════════════════════════════════════════════════════════
@@ -3586,7 +3625,9 @@ def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
                              klein_models=None, enhance=True,
                              identity_lock=False,
                              identity_strength=0.25,
-                             identity_feature_strength=0.15) -> dict:
+                             identity_feature_strength=0.15,
+                             identity_mode="adaptive",
+                             identity_feature_mode="cosine_pull") -> dict:
     """Klein img2img with separate reference image.
 
     Same pipeline as build_klein_img2img but uses the reference image
@@ -3653,7 +3694,9 @@ def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
             identity_latent_ref=([ref_latent_id, 0]
                                   if identity_lock else None),
             identity_strength=identity_strength,
+            identity_mode=identity_mode,
             identity_feature_strength=identity_feature_strength,
+            identity_feature_mode=identity_feature_mode,
         )
 
     # Sampler setup
@@ -3868,16 +3911,15 @@ def build_klein_headswap(target_filename, source_filename, klein_model_key,
             )
         else:
             # No enhancer — still add identity lock when requested.
-            ig = nf.identity_guidance(
-                model_ref, [src_latent_id, 0],
+            model_ref = _klein_identity_lock(
+                nf, model_ref, [src_latent_id, 0],
                 strength=identity_strength,
                 start_percent=identity_start_percent,
                 end_percent=identity_end_percent,
-                mode=identity_mode, node_id="913")
-            ift = nf.identity_feature_transfer(
-                [ig, 0], strength=identity_feature_strength,
-                mode=identity_feature_mode, node_id="914")
-            model_ref = [ift, 0]
+                mode=identity_mode,
+                feature_strength=identity_feature_strength,
+                feature_mode=identity_feature_mode,
+                node_base_id=913)
 
         # Sampling over the TARGET latent (keeps pose/scene).
         guider_id = nf.cfg_guider(
@@ -5336,12 +5378,24 @@ def build_photobooth(ref_filename, prompt_text, seed,
 
 def build_klein_repose(image_filename, klein_model_key, prompt_text, seed,
                        steps=20, denoise=0.65, guidance=1.0, loras=None,
-                       klein_models=None, enhance=True) -> dict:
+                       klein_models=None, enhance=True,
+                       identity_lock=True,
+                       identity_strength=0.35,
+                       identity_feature_strength=0.20,
+                       identity_mode="adaptive",
+                       identity_feature_mode="cosine_pull") -> dict:
     """Klein Re-poser: change character pose using ReferenceLatent + BasicScheduler.
 
     Same as build_klein_img2img but uses BasicScheduler with denoise instead of
     Flux2Scheduler. This allows partial regeneration (controlled by denoise) while
     keeping ReferenceLatent structural guidance from the input image.
+
+    The whole point of re-pose is "same person, new pose" — identity
+    preservation is load-bearing. identity_lock defaults to True: wraps
+    the model with IdentityGuidance + IdentityFeatureTransfer against
+    the input image's latent so the character's face / features stay
+    consistent even at denoise=0.85+. Pass False for the pre-2026-04-24
+    behavior (ReferenceLatent-only).
     """
     if klein_models is None:
         klein_models = KLEIN_MODELS
@@ -5378,8 +5432,20 @@ def build_klein_repose(image_filename, klein_model_key, prompt_text, seed,
     ref_pos_id = nf.reference_latent([pos_id, 0], [latent_id, 0], node_id="20")
     ref_neg_id = nf.reference_latent([neg_id, 0], [latent_id, 0], node_id="21")
 
-    # Enhancer chain
-    _rp_model = _klein_enhance_model(nf, _ref(unet_id), [ref_pos_id, 0], node_base_id=920) if enhance else _ref(unet_id)
+    # Enhancer chain + identity lock against the input image (same
+    # person, new pose — the whole point of repose).
+    if enhance:
+        _rp_model = _klein_enhance_model(
+            nf, _ref(unet_id), [ref_pos_id, 0],
+            node_base_id=920,
+            identity_latent_ref=([latent_id, 0] if identity_lock else None),
+            identity_strength=identity_strength,
+            identity_mode=identity_mode,
+            identity_feature_strength=identity_feature_strength,
+            identity_feature_mode=identity_feature_mode,
+        )
+    else:
+        _rp_model = _ref(unet_id)
 
     # Sampler setup — BasicScheduler with denoise (unlike Flux2Scheduler)
     guider_id = nf.cfg_guider(_rp_model, [ref_pos_id, 0], [ref_neg_id, 0],
@@ -5641,7 +5707,12 @@ def build_klein_inpaint(image_filename, mask_filename=None, prompt_text="", seed
                         klein_models=None, enhance=True,
                         sam3_prompt=None, sam3_invert=False,
                         sam3_confidence=0.6, sam3_expand=4, sam3_blur=4,
-                        sampler_name="euler") -> dict:
+                        sampler_name="euler",
+                        identity_lock=False,
+                        identity_strength=0.25,
+                        identity_feature_strength=0.12,
+                        identity_mode="adaptive",
+                        identity_feature_mode="cosine_pull") -> dict:
     """Klein Inpaint: regenerate masked area using FluxGuidance + SetLatentNoiseMask.
 
     Supports three mask sources (precedence top → bottom):
@@ -5712,10 +5783,27 @@ def build_klein_inpaint(image_filename, mask_filename=None, prompt_text="", seed
     masked_latent_id = nf.set_latent_noise_mask([enc_id, 0], mask_ref,
                                                   node_id="21")
 
-    # Optional DifferentialDiffusion + Enhancer chain
+    # Optional DifferentialDiffusion + Enhancer chain + identity lock
+    # against the input image (preserve identity OUTSIDE the mask —
+    # complements the ImageCompositeMasked preservation at §29 with
+    # an in-sampler signal).
     model_ref = _ref(unet_id)
     if enhance:
-        model_ref = _klein_enhance_model(nf, model_ref, [guided_id, 0], node_base_id=960)
+        model_ref = _klein_enhance_model(
+            nf, model_ref, [guided_id, 0], node_base_id=960,
+            identity_latent_ref=([enc_id, 0] if identity_lock else None),
+            identity_strength=identity_strength,
+            identity_mode=identity_mode,
+            identity_feature_strength=identity_feature_strength,
+            identity_feature_mode=identity_feature_mode,
+        )
+    elif identity_lock:
+        model_ref = _klein_identity_lock(
+            nf, model_ref, [enc_id, 0],
+            strength=identity_strength, mode=identity_mode,
+            feature_strength=identity_feature_strength,
+            feature_mode=identity_feature_mode,
+            node_base_id=965)
     if use_differential_diffusion:
         dd_id = nf.differential_diffusion(model_ref, node_id="22")
         model_ref = [dd_id, 0]
@@ -5754,7 +5842,12 @@ def build_klein_virtual_tryon(face_filename, outfit_filename, prompt_text, seed,
                                klein_model_key="Klein 9B", steps=4,
                                denoise=1.0, guidance=1.0,
                                loras=None, lora_name=None, lora_strength=1.0,
-                               klein_models=None, enhance=False) -> dict:
+                               klein_models=None, enhance=False,
+                               identity_lock=True,
+                               identity_strength=0.35,
+                               identity_feature_strength=0.20,
+                               identity_mode="adaptive",
+                               identity_feature_mode="cosine_pull") -> dict:
     """Klein Virtual Try-On — 4-reference photoshoot composition.
 
     Combines up to 4 reference images in a single Klein pass using
@@ -5839,6 +5932,10 @@ def build_klein_virtual_tryon(face_filename, outfit_filename, prompt_text, seed,
 
     cond_chain = [pos_id, 0]
     first_size_id = None
+    # Capture the face reference's encoded latent so we can optionally
+    # identity-lock against it — preserving the person's identity while
+    # the outfit/bg/pose references drive the composition.
+    face_latent_ref = None
     for i, (label, filename) in enumerate(ref_inputs):
         base = 200 + i * 10
         img = nf.load_image(filename, node_id=str(base))
@@ -5850,6 +5947,7 @@ def build_klein_virtual_tryon(face_filename, outfit_filename, prompt_text, seed,
         # Use first reference (face) dimensions for the empty latent
         if i == 0:
             first_size_id = nf.get_image_size([scaled, 0], node_id=str(base + 4))
+            face_latent_ref = [enc, 0]
 
     # Empty latent at face-reference dimensions
     empty_latent_id = nf.empty_latent_image(1024, 1024, node_id="15")
@@ -5861,10 +5959,27 @@ def build_klein_virtual_tryon(face_filename, outfit_filename, prompt_text, seed,
             "batch_size": 1,
         }, node_id="16")
 
-    # Optional Flux2Klein-Enhancer
+    # Optional Flux2Klein-Enhancer + identity lock against the face
+    # reference (the whole point of virtual try-on: preserve identity
+    # while changing outfit/scene). identity_lock defaults to True.
     model_for_guider = _ref(unet_id)
     if enhance:
-        model_for_guider = _klein_enhance_model(nf, _ref(unet_id), [pos_id, 0])
+        model_for_guider = _klein_enhance_model(
+            nf, _ref(unet_id), [pos_id, 0],
+            identity_latent_ref=(face_latent_ref if identity_lock else None),
+            identity_strength=identity_strength,
+            identity_mode=identity_mode,
+            identity_feature_strength=identity_feature_strength,
+            identity_feature_mode=identity_feature_mode,
+        )
+    elif identity_lock and face_latent_ref is not None:
+        # No enhancer stack but still lock identity against the face.
+        model_for_guider = _klein_identity_lock(
+            nf, _ref(unet_id), face_latent_ref,
+            strength=identity_strength, mode=identity_mode,
+            feature_strength=identity_feature_strength,
+            feature_mode=identity_feature_mode,
+            node_base_id=930)
 
     # Sampler — full denoise since references provide all structure
     guider_id = nf.cfg_guider(model_for_guider, cond_chain, [neg_id, 0],
