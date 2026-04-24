@@ -8351,16 +8351,30 @@ def _dispatch_workflow_impl(workflow, comfy_url, timeout=180,
                     continue
                 entry = data[prompt_id]
 
-                # Check for execution error
+                # Check for execution error. Robust extractor +
+                # partial-success pass-through (§ dispatch.py header).
                 status = entry.get("status", {})
                 if status.get("status_str") == "error":
-                    msgs = status.get("messages", [])
-                    err_msg = msgs[-1][1].get("exception_message", "Unknown error") if msgs else "Unknown error"
+                    try:
+                        from spellcaster_core.dispatch import (
+                            extract_execution_error, has_usable_outputs,
+                        )
+                        err_msg, _ = extract_execution_error(status)
+                        partial_ok = has_usable_outputs(entry)
+                    except ImportError:
+                        msgs = status.get("messages", [])
+                        err_msg = (msgs[-1][1].get("exception_message",
+                                                    "Unknown error")
+                                   if msgs else "Unknown error")
+                        partial_ok = False
                     try:
                         _record_lora_failure(workflow, err_msg)
                     except Exception:
                         pass
-                    raise Exception(f"ComfyUI execution failed: {err_msg}")
+                    if not partial_ok:
+                        raise Exception(f"ComfyUI execution failed: {err_msg}")
+                    print(f"  [Guild] ComfyUI status=error but output "
+                          f"present; continuing. Detail: {err_msg}")
 
                 outputs = entry.get("outputs", {})
 
@@ -9234,9 +9248,21 @@ def _poll_animated_avatars(comfy_url):
                 hist = data[prompt_id]
                 status = hist.get("status", {})
                 if status.get("status_str") == "error":
-                    msgs = status.get("messages", [])
-                    err = (msgs[-1][1].get("exception_message", "Unknown")
-                           if msgs else "Unknown")
+                    try:
+                        from spellcaster_core.dispatch import (
+                            extract_execution_error, has_usable_outputs,
+                        )
+                        err, _ = extract_execution_error(status)
+                        # Animated avatars need all frames — partial
+                        # output isn't usable — so treat error-with-
+                        # outputs as failure too. (Distinct from still-
+                        # image dispatch paths, which do salvage partial
+                        # output.)
+                        _ = has_usable_outputs  # intentionally unused here
+                    except ImportError:
+                        msgs = status.get("messages", [])
+                        err = (msgs[-1][1].get("exception_message", "Unknown")
+                               if msgs else "Unknown")
                     print(f"  [Guild] Animated avatar FAILED for {char_id}: {err}")
                     # Privacy cleanup: scrub uploaded inputs even on failure
                     if PRIVACY_CLEANUP:
