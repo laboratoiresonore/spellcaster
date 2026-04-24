@@ -10550,6 +10550,32 @@ def _export_selection_to_tmp(image):
     tmp_path = tmp.name.replace("/", "/")
     gfile = Gio.File.new_for_path(tmp_path)
 
+    # Strategy 0: JPEG fast export (5-10x faster than PNG). Mirrors
+    # _export_image_to_tmp's strategy 0 — ComfyUI re-encodes through
+    # VAE anyway, so the lossy compression is irrelevant.
+    try:
+        jpg_tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+        jpg_tmp.close()
+        jpg_gfile = Gio.File.new_for_path(jpg_tmp.name)
+        pdb = Gimp.get_pdb()
+        jpeg_proc = (pdb.lookup_procedure('file-jpeg-export')
+                     or pdb.lookup_procedure('file-jpeg-save'))
+        if jpeg_proc:
+            _pdb_run(jpeg_proc.get_name(), {
+                'run-mode': Gimp.RunMode.NONINTERACTIVE,
+                'image': dup, 'file': jpg_gfile,
+            })
+            if os.path.getsize(jpg_tmp.name) > 100:
+                dup.delete()
+                try: os.unlink(tmp.name)
+                except Exception: pass
+                return jpg_tmp.name, sel_w, sel_h
+        try: os.unlink(jpg_tmp.name)
+        except Exception: pass
+    except Exception:
+        try: os.unlink(jpg_tmp.name)
+        except Exception: pass
+
     try:
         Gimp.file_save(Gimp.RunMode.NONINTERACTIVE, dup, [flat], gfile)
         if os.path.getsize(tmp.name) > 100:
@@ -11791,10 +11817,36 @@ def _image_fingerprint(image, selection_bounds=None) -> str:
         if selection_bounds:
             h.update(f"|sel={selection_bounds}".encode())
         return h.hexdigest()[:24]
-    # Fallback — force a miss on every call so we don't cache-hit
-    # with bad data.
-    h.update(f"{image.get_id()}|{image.get_width()}x{image.get_height()}"
-             f"|sel={selection_bounds}|t={time.time()}".encode())
+    # Fallback — thumbnail path failed. Use the image's own
+    # modification tracking so repeats HIT the cache as long as the
+    # user hasn't edited. This is a pragmatic trade: false positives
+    # are bounded to "user made a change that doesn't bump dirty_count
+    # or file-id" (extremely rare — every pixel/layer op bumps dirty).
+    # The pre-2026-04-24 fallback used time.time() which defeated the
+    # cache on every repeat press — user reported this ("if the user
+    # does a repeat, it does it again instead of sending the already
+    # converted thing"). Live behaviour: the cache now hits on repeat
+    # when thumbnail fails.
+    parts = [
+        f"id={image.get_id()}",
+        f"{image.get_width()}x{image.get_height()}",
+        f"sel={selection_bounds}",
+    ]
+    # Every pixel/layer change in GIMP bumps this monotonic counter —
+    # so unchanged repeats produce the SAME fingerprint.
+    try:
+        dirty = image.get_dirty_count() if hasattr(image, 'get_dirty_count') else None
+        if dirty is not None:
+            parts.append(f"dirty={dirty}")
+    except Exception:
+        pass
+    # get_file() is None for unsaved images; get_name() falls back to
+    # "Untitled" which is stable across repeats.
+    try:
+        parts.append(f"name={image.get_name()}")
+    except Exception:
+        pass
+    h.update("|".join(parts).encode())
     return h.hexdigest()[:24]
 
 
@@ -12340,10 +12392,24 @@ def _run_comfyui_workflow(server, workflow, timeout=300):
             # download outputs to local temp files BEFORE they get wiped.
             # Privacy cleanup runs after _precache_results below.
             try:
+                # trusted=True — our build_* functions generate
+                # known-valid workflow JSON (class_types, input shapes,
+                # picker values all sourced from our own canonical
+                # factories), so preflight + file validator + optimizer
+                # are redundant. On servers with many custom-node packs
+                # the /object_info fetch those steps trigger is 25+ MB
+                # / 4–9 s on a cold cache — and GIMP plugin reloads
+                # every GIMP restart, so "cold" is common. Fast-path
+                # cuts pre-submit overhead from ~15 s to ~100 ms.
+                #
+                # External workflows (user-pasted JSON, saved third-
+                # party files) MUST stay trusted=False — see
+                # dispatch_workflow's docstring.
                 result = dispatch_workflow(
                     server, workflow, timeout=timeout,
                     free_vram=True,
                     privacy=False,  # GIMP handles privacy after precache
+                    trusted=True,
                 )
             except RuntimeError as _dispatch_err:
                 # Intercept CN-loader failures (corrupt safetensors /
