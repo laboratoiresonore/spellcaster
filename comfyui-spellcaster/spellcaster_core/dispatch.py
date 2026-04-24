@@ -42,6 +42,140 @@ class DispatchResult:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+#  Error extraction — robust against every ComfyUI status_str=error shape
+# ═══════════════════════════════════════════════════════════════════════
+#
+# ComfyUI does not guarantee that status_str=='error' always comes paired
+# with an 'execution_error' message whose 'exception_message' field is
+# populated. Different node types, interrupt paths, and ComfyUI versions
+# emit differently-shaped messages. The former extractors here only read
+# msgs[-1][1]['exception_message'] or scanned for the single type
+# 'execution_error' — missing everything else and producing the dreaded
+# "unknown error" / "Unknown error" / "(no details available)" fallback
+# that the user saw for a failed Inpaint dispatch. Worse, callers raised
+# even when entry['outputs'] was non-empty, discarding a perfectly good
+# saved result. Single canonical helper now lives here and is imported
+# by every surface that inspects a history entry.
+
+def extract_execution_error(status):
+    """Extract the best error string from a history-entry 'status' dict.
+
+    Walks every message type looking for known error fields, falls back
+    to a structured raw-status dump so the next debugger at least has
+    something to work with (instead of 'unknown error').
+
+    Args:
+        status: The dict at ``history[prompt_id]['status']``. May be
+                None or non-dict — we tolerate both.
+
+    Returns:
+        (detail, recognised): ``detail`` is always a non-empty string
+        capped at ~600 chars; ``recognised`` is True when at least one
+        message had a known error field, False when we fell back to the
+        raw-status dump.
+    """
+    if not isinstance(status, dict):
+        return (f"malformed status: {type(status).__name__}", False)
+    msgs = status.get("messages") or []
+    collected_text = []       # ordered list of (priority, text, ctx)
+    error_types = set()
+    node_ctx = None
+    ERROR_FIELDS = (
+        ("exception_message", 0),
+        ("message",           1),
+        ("error",             2),
+        ("details",           3),
+        ("reason",            4),
+        ("traceback",         5),
+    )
+    ERROR_MSG_TYPES = {
+        "execution_error", "execution_failure",
+        "execution_interrupted", "error",
+    }
+    for m in msgs:
+        if not (isinstance(m, (list, tuple)) and len(m) >= 2):
+            continue
+        msg_type, msg_data = m[0], m[1]
+        if not isinstance(msg_data, dict):
+            continue
+        for field, pri in ERROR_FIELDS:
+            val = msg_data.get(field)
+            if not val:
+                continue
+            if isinstance(val, (list, tuple)):
+                val = "\n".join(str(x) for x in val)
+            text = str(val).strip()
+            if not text:
+                continue
+            # First-match-wins per priority within the message, but
+            # keep every message's top pick so multi-node failures
+            # surface more than just the first line.
+            collected_text.append((pri, msg_type, text))
+            break
+        exc_type = msg_data.get("exception_type")
+        if isinstance(exc_type, str) and exc_type:
+            error_types.add(exc_type)
+        if msg_type in ERROR_MSG_TYPES and node_ctx is None:
+            nt = msg_data.get("node_type")
+            nid = msg_data.get("node_id")
+            if nt:
+                node_ctx = f"[{nt}]"
+            elif nid:
+                node_ctx = f"[node {nid}]"
+    if collected_text:
+        collected_text.sort(key=lambda t: t[0])
+        parts = []
+        if node_ctx:
+            parts.append(node_ctx)
+        if error_types:
+            parts.append(sorted(error_types)[0] + ":")
+        # Keep the top text per priority bucket, cap total length.
+        seen = set()
+        for _, _, txt in collected_text:
+            if txt in seen:
+                continue
+            seen.add(txt)
+            parts.append(txt)
+            if sum(len(p) for p in parts) > 500:
+                break
+        detail = " ".join(parts)
+        return (detail[:600], True)
+    # Fallback: structured dump of what we DID see so next time we know
+    # what shape to decode.
+    try:
+        types_seen = [m[0] for m in msgs
+                       if isinstance(m, (list, tuple)) and m][:10]
+    except Exception:
+        types_seen = []
+    raw = json.dumps({
+        "status_str": status.get("status_str"),
+        "completed":  status.get("completed"),
+        "message_count": len(msgs),
+        "message_types": types_seen,
+    }, default=str)[:400]
+    return (f"no recognised error message; status={raw}", False)
+
+
+def has_usable_outputs(entry):
+    """Return True if a history entry has any downloadable outputs.
+
+    Used to distinguish "partial success" (a side node raised but the
+    main Save*Image node still emitted a file) from a total failure.
+    """
+    outputs = (entry or {}).get("outputs") or {}
+    if not isinstance(outputs, dict):
+        return False
+    for _, node_out in outputs.items():
+        if not isinstance(node_out, dict):
+            continue
+        for key in ("images", "gifs", "videos"):
+            for item in node_out.get(key, []) or []:
+                if isinstance(item, dict) and item.get("filename"):
+                    return True
+    return False
+
+
+# ═══════════════════════════════════════════════════════════════════════
 #  Privacy resolution
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -256,14 +390,23 @@ def dispatch_workflow(server, workflow, *, timeout=300, free_vram=False,
             entry = h[prompt_id]
             status = entry.get("status", {})
 
-            # Check for execution error
+            # Check for execution error. Use the robust extractor +
+            # preserve usable outputs when ComfyUI set status_str=error
+            # BUT the main SaveImage still emitted a file (common when
+            # a side node raised). Raising + discarding the output is
+            # the bug that showed up as "comfyui made it but it never
+            # returned to gimp".
             if status.get("status_str") == "error":
-                err_msg = ""
-                for msg in status.get("messages", []):
-                    if msg[0] == "execution_error":
-                        err_msg = msg[1].get("exception_message", "")
-                raise RuntimeError(
-                    f"ComfyUI execution failed: {err_msg or 'unknown error'}")
+                err_detail, recognised = extract_execution_error(status)
+                if has_usable_outputs(entry):
+                    warnings.append(
+                        f"ComfyUI reported status=error but produced "
+                        f"output — returning it as partial success. "
+                        f"Detail: {err_detail}")
+                    # Fall through to output collection below.
+                else:
+                    raise RuntimeError(
+                        f"ComfyUI execution failed: {err_detail}")
 
             # Collect all output images/videos
             for nid, node_out in entry.get("outputs", {}).items():

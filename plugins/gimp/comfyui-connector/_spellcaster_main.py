@@ -8951,23 +8951,48 @@ def _get_output_images(server, prompt_id, timeout=300):
 
     Returns a list of (filename, subfolder, type) tuples. These can be
     passed to _download_image() to fetch the actual pixel data.
+
+    Uses the canonical ``spellcaster_core.dispatch.extract_execution_error``
+    + ``has_usable_outputs`` helpers so partial-success cases (status=error
+    but SaveImage still emitted a file) return the output instead of
+    discarding it.
     """
     result = _wait_for_prompt(server, prompt_id, timeout)
-    # Check for execution errors in the prompt result
     status = result.get("status", {})
     if status.get("status_str") == "error":
-        msgs = status.get("messages", [])
-        err_text = ""
-        for msg_type, msg_data in msgs:
-            if msg_type == "execution_error":
-                err_text = msg_data.get("message", "") or msg_data.get("exception_message", "")
-                node_type = msg_data.get("node_type", "")
-                if node_type:
-                    err_text = f"[{node_type}] {err_text}"
-                break
-        if err_text:
-            raise RuntimeError(f"ComfyUI execution error: {err_text}")
-        raise RuntimeError("ComfyUI workflow failed (no details available)")
+        try:
+            from spellcaster_core.dispatch import (
+                extract_execution_error, has_usable_outputs,
+            )
+        except ImportError:
+            extract_execution_error = None
+            has_usable_outputs = None
+        if extract_execution_error is not None:
+            err_detail, _recognised = extract_execution_error(status)
+            if has_usable_outputs and has_usable_outputs(result):
+                # Partial success — ComfyUI raised on a side node but
+                # the main SaveImage still produced output. Return it
+                # and let the handler layer its usual import flow.
+                print(f"[Spellcaster] ComfyUI reported status=error but "
+                      f"output was produced; returning it. "
+                      f"Detail: {err_detail}")
+            else:
+                raise RuntimeError(f"ComfyUI execution error: {err_detail}")
+        else:
+            # Fallback if spellcaster_core isn't importable here.
+            msgs = status.get("messages", [])
+            err_text = ""
+            for msg_type, msg_data in msgs:
+                if msg_type == "execution_error":
+                    err_text = (msg_data.get("message", "")
+                                or msg_data.get("exception_message", ""))
+                    node_type = msg_data.get("node_type", "")
+                    if node_type:
+                        err_text = f"[{node_type}] {err_text}"
+                    break
+            raise RuntimeError(
+                f"ComfyUI execution error: {err_text}"
+                if err_text else "ComfyUI workflow failed (no details available)")
     images = []
     for node_id, node_output in result.get("outputs", {}).items():
         for img in node_output.get("images", []):

@@ -998,12 +998,31 @@ class SpellcasterPlugin:
                             outputs = d[pid].get("outputs", {})
                             outcome = "ok"
                             return self._download_and_insert(outputs, label)
-                        for msg in st.get("messages", []):
-                            if msg[0] == "execution_error":
-                                err_str = msg[1].get(
-                                    "exception_message", "?")[:200]
-                                self.show_error(err_str)
-                                return None
+                        if st.get("status_str") == "error":
+                            try:
+                                from spellcaster_core.dispatch import (
+                                    extract_execution_error,
+                                    has_usable_outputs,
+                                )
+                                err_str, _ = extract_execution_error(st)
+                                if has_usable_outputs(d[pid]):
+                                    # Partial success — surface output.
+                                    outcome = "ok"
+                                    return self._download_and_insert(
+                                        d[pid].get("outputs", {}), label)
+                            except ImportError:
+                                msgs = st.get("messages") or []
+                                err_str = "?"
+                                for msg in msgs:
+                                    if (isinstance(msg, (list, tuple))
+                                            and len(msg) >= 2
+                                            and msg[0] == "execution_error"):
+                                        err_str = (msg[1]
+                                                   .get("exception_message",
+                                                         "?"))[:200]
+                                        break
+                            self.show_error(err_str)
+                            return None
                 except Exception:
                     pass
                 time.sleep(2)

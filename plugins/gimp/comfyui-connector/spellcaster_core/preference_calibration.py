@@ -451,9 +451,22 @@ def generate_and_download(server, workflow, timeout=120):
                 f"{server}/history/{pid}", timeout=5).read())
             if pid in h:
                 status = h[pid].get("status", {})
-                for msg in status.get("messages", []):
-                    if msg[0] == "execution_error":
-                        return None
+                # Prefer canonical extractor; fall back to legacy scan
+                # if dispatch.py isn't importable in this install.
+                if status.get("status_str") == "error":
+                    try:
+                        from spellcaster_core.dispatch import (
+                            extract_execution_error, has_usable_outputs,
+                        )
+                        # Calibration tolerates partial output — if an
+                        # image landed anyway, use it (better than None).
+                        if not has_usable_outputs(h[pid]):
+                            return None
+                    except ImportError:
+                        for msg in status.get("messages") or []:
+                            if (isinstance(msg, (list, tuple)) and msg
+                                    and msg[0] == "execution_error"):
+                                return None
                 for out in h[pid].get("outputs", {}).values():
                     for img in out.get("images", []):
                         fn = img["filename"]

@@ -454,10 +454,19 @@ def describe_image(image_filename, server, method="auto"):
                             if "string" in out:
                                 return out["string"][0] if isinstance(out["string"], list) else str(out["string"])
                         return None  # completed but no text output found
-                    # Check for execution errors (missing model, OOM, etc.)
-                    for msg in st.get("messages", []):
-                        if msg[0] == "execution_error":
-                            return None
+                    # Check for execution errors (missing model, OOM, etc.).
+                    # Vision LLM has no "partial success" concept (text
+                    # is either generated or not), so error → None.
+                    if st.get("status_str") == "error":
+                        try:
+                            from spellcaster_core.dispatch import (
+                                extract_execution_error,
+                            )
+                            err, _ = extract_execution_error(st)
+                            print(f"[guild_llm] vision failed: {err[:200]}")
+                        except ImportError:
+                            pass
+                        return None
             except Exception:
                 pass
         return None

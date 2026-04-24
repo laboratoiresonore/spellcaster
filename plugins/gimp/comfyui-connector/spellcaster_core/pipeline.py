@@ -419,9 +419,26 @@ class Pipeline:
                     st = d[pid].get("status", {})
                     if st.get("completed"):
                         return d[pid].get("outputs", {})
-                    for msg in st.get("messages", []):
-                        if msg[0] == "execution_error":
-                            raise RuntimeError(msg[1].get("exception_message", "?")[:200])
+                    if st.get("status_str") == "error":
+                        try:
+                            from spellcaster_core.dispatch import (
+                                extract_execution_error, has_usable_outputs,
+                            )
+                            err, _ = extract_execution_error(st)
+                            if has_usable_outputs(d[pid]):
+                                # Partial success — salvage outputs so
+                                # the next pipeline stage has something
+                                # to consume (matches dispatch.py §).
+                                return d[pid].get("outputs", {})
+                            raise RuntimeError(err)
+                        except ImportError:
+                            for msg in st.get("messages") or []:
+                                if (isinstance(msg, (list, tuple))
+                                        and msg
+                                        and msg[0] == "execution_error"):
+                                    raise RuntimeError(
+                                        msg[1].get("exception_message",
+                                                    "?")[:200])
             except RuntimeError:
                 raise
             except Exception:
