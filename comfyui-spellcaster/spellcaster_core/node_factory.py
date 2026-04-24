@@ -859,16 +859,223 @@ class NodeFactory:
             "strength": strength,
         }, node_id)
 
-    def flux2klein_mask_ref_controller(self, model_ref, mask_ref,
-                                        strength=0.5, node_id=None):
-        """Flux2KleinMaskRefController — mask-guided regional
-        conditioning: masked areas follow the prompt, unmasked areas
-        preserve the original structure. Beta/experimental.
-        Outputs: [0]=MODEL
+    def flux2klein_mask_ref_controller(self, conditioning_ref, mask_ref,
+                                        strength=1.0, invert_mask=False,
+                                        feather=0, channel_mode="all",
+                                        node_id=None):
+        """Flux2KleinMaskRefController — spatial mask control over the
+        reference latent. Masked area gets targeted by the prompt while
+        staying true to its original structure; unmasked area is fully
+        freed up for the prompt to take over. Entirely a conditioning-
+        level operation — NOT inpainting.
+
+        IMPORTANT: the live node (pack v3.2.0) takes CONDITIONING + MASK
+        (no model input) and returns CONDITIONING. Earlier versions of
+        this helper passed a MODEL — that wiring was silently wrong on
+        current packs.
+
+        Args:
+            conditioning_ref: [node_id, slot] for the positive conditioning.
+            mask_ref: [node_id, slot] for the MASK input.
+            strength: 0.0-1.0. How free the unmasked area is.
+            invert_mask: Flip targeted vs free regions.
+            feather: Gaussian blur on mask edges in latent space (0-64).
+            channel_mode: "all" / "low" (structure, ch 0-63) / "high"
+                (texture, ch 64-127).
+
+        Outputs: [0]=CONDITIONING
         """
         return self._add("Flux2KleinMaskRefController", {
-            "model": model_ref, "mask": mask_ref, "strength": strength,
+            "conditioning": conditioning_ref, "mask": mask_ref,
+            "strength": strength, "invert_mask": invert_mask,
+            "feather": feather, "channel_mode": channel_mode,
         }, node_id)
+
+    def flux2klein_ref_latent_weight(self, model_ref, reference_index=0,
+                                      weight=1.0, node_id=None):
+        """Flux2KleinRefLatentWeight — minimal per-reference k/v scaler.
+        Chain one node per reference for independent per-reference control.
+
+        Args:
+            model_ref: [node_id, slot] for the UNET output.
+            reference_index: Which reference image to weight (0-7).
+            weight: 0.0=invisible, 1.0=unchanged, >1.0=stronger.
+
+        Outputs: [0]=MODEL
+        """
+        return self._add("Flux2KleinRefLatentWeight", {
+            "model": model_ref, "reference_index": reference_index,
+            "weight": weight,
+        }, node_id)
+
+    def flux2klein_enhancer(self, conditioning_ref, magnitude=1.0,
+                             contrast=0.0, normalize_strength=0.0,
+                             node_id=None):
+        """Flux2KleinEnhancer — general conditioning enhancer for Klein
+        text-to-image and image editing.
+
+        Args:
+            conditioning_ref: [node_id, slot] for CONDITIONING input.
+            magnitude: 0.0-3.0. Direct scaling of active tokens.
+            contrast: -1.0 to 2.0. Amplifies differences between tokens.
+            normalize_strength: 0.0-1.0. Equalizes token magnitudes.
+
+        Outputs: [0]=CONDITIONING
+        """
+        return self._add("Flux2KleinEnhancer", {
+            "conditioning": conditioning_ref,
+            "magnitude": magnitude, "contrast": contrast,
+            "normalize_strength": normalize_strength,
+        }, node_id)
+
+    def flux2klein_text_enhancer(self, conditioning_ref, magnitude=1.0,
+                                  node_id=None):
+        """Flux2KleinTextEnhancer — simpler text-only enhancer (magnitude
+        scaling without contrast/normalize). Use flux2klein_enhancer for
+        full control.
+
+        Outputs: [0]=CONDITIONING
+        """
+        return self._add("Flux2KleinTextEnhancer", {
+            "conditioning": conditioning_ref, "magnitude": magnitude,
+        }, node_id)
+
+    # ═══════════════════════════════════════════════════════════════════
+    #  IDENTITY CONTROL — the "better face swap" pathway (pack v3.2.0+)
+    # ═══════════════════════════════════════════════════════════════════
+    # Two nodes bypass the conditioning pipeline and lock identity from
+    # OUTSIDE the text stream:
+    #
+    #   IdentityGuidance:         operates in the sampling loop; at each
+    #     step compares the predicted denoised latent to a VAE-encoded
+    #     reference and pulls it back. Sampling-level correction.
+    #
+    #   IdentityFeatureTransfer:  operates inside attention layers; after
+    #     each attention block, finds where the generation's features
+    #     resemble the reference's features and pushes them closer.
+    #     Attention-level alignment.
+    #
+    # Both stack. Guidance handles macro-level pull in latent space,
+    # Feature Transfer handles micro-level alignment inside attention.
+    # Together they replace the legacy ReActor face-swap path for Klein-
+    # arch dispatches — no TensorRT, no inswapper_128, no native
+    # access-violation crash (§20.1). ReActor stays available for non-
+    # Klein archs via _faceswap_guard.
+
+    def identity_guidance(self, model_ref, identity_latent_ref,
+                           strength=0.3, start_percent=0.0,
+                           end_percent=0.8, mode="adaptive",
+                           node_id=None):
+        """IdentityGuidance — sampling-loop identity correction for
+        FLUX.2 Klein. Takes a VAE-encoded reference latent and pulls
+        each denoised prediction toward it.
+
+        Args:
+            model_ref: [node_id, slot] MODEL to wrap.
+            identity_latent_ref: [node_id, slot] LATENT — typically the
+                output of vae_encode() on the reference image.
+            strength: 0.0-1.0. 0.3 = move 30% of the distance toward
+                the reference each step. Higher = tighter lock, less
+                prompt freedom.
+            start_percent: 0.0-1.0. When (as fraction of sampling) to
+                start correcting. 0.0 = from step 0.
+            end_percent: 0.0-1.0. When to stop. 0.8 = last 20% runs
+                freely for texture refinement.
+            mode: "adaptive" (pulls only where prediction already
+                resembles the reference — preserves prompted changes) /
+                "direct" (pulls everywhere equally — tightest lock) /
+                "channel_match" (matches color/feature statistics
+                without copying spatial content).
+
+        Outputs: [0]=MODEL
+        """
+        return self._add("IdentityGuidance", {
+            "model": model_ref, "identity_latent": identity_latent_ref,
+            "strength": strength, "start_percent": start_percent,
+            "end_percent": end_percent, "mode": mode,
+        }, node_id)
+
+    def identity_feature_transfer(self, model_ref, strength=0.15,
+                                    start_block=0, end_block=23,
+                                    mode="cosine_pull",
+                                    top_k_percent=0.25, node_id=None):
+        """IdentityFeatureTransfer — attention-layer feature alignment.
+        Requires that the reference image is already wired as a
+        ReferenceLatent in the conditioning path (the model sees the
+        reference tokens in its image stream).
+
+        Args:
+            model_ref: [node_id, slot] MODEL to wrap.
+            strength: 0.0-1.0. Per-block blend factor. Cumulative across
+                blocks. Start at 0.10-0.20; raise toward 0.5 for
+                stronger identity preservation.
+            start_block: 0-23. First block index to apply on.
+            end_block: 0-23. Last block index to apply on.
+            mode: "cosine_pull" (per-token pull toward most similar
+                reference token) / "topk_replace" (only top K% most
+                similar tokens) / "mean_transfer" (overall feature
+                distribution shift, no spatial matching).
+            top_k_percent: 0.01-1.0. topk_replace mode only.
+
+        Outputs: [0]=MODEL
+        """
+        return self._add("IdentityFeatureTransfer", {
+            "model": model_ref, "strength": strength,
+            "start_block": start_block, "end_block": end_block,
+            "mode": mode, "top_k_percent": top_k_percent,
+        }, node_id)
+
+    def identity_feature_transfer_advanced(
+            self, model_ref, *, reference_index=0, mode="cosine_pull",
+            top_k_percent=0.25, double_enable=True,
+            double_strength=0.15, double_start=0, double_end=7,
+            single_enable=True, single_strength=0.15,
+            single_start=0, single_end=23, block_schedule="flat",
+            sim_floor=0.20, mask_threshold=0.5, subject_mask_ref=None,
+            node_id=None):
+        """IdentityFeatureTransferAdvanced — per-band strength on double
+        vs. single blocks, similarity floor, block schedule, and optional
+        subject mask that restricts the pull to the masked area of the
+        reference.
+
+        Use this over the basic variant when:
+          * subtle edits (outfit swap, same character) — lower sim_floor
+            to ~0.05 + keep strengths at 0.15-0.20 for a wide tight pull;
+          * broader edits (new scene, same person) — raise sim_floor to
+            0.4-0.6 for a sparser pull;
+          * reference contains multiple subjects — paint the desired one
+            as subject_mask and raise strengths to 0.4-0.6 to compete
+            with the model's natural attention to the unmasked subject.
+
+        Subject-mask aspect must match the encoded reference aspect.
+
+        NOTE: Only present in pack v3.2.0+. Preflight the workflow with
+        `_require_comfyui_node("IdentityFeatureTransferAdvanced", ...)`
+        before using; falls back to identity_feature_transfer() when
+        the node is missing.
+
+        Outputs: [0]=MODEL
+        """
+        inputs = {
+            "model": model_ref,
+            "reference_index": reference_index,
+            "mode": mode,
+            "top_k_percent": top_k_percent,
+            "double_enable": double_enable,
+            "double_strength": double_strength,
+            "double_start": double_start,
+            "double_end": double_end,
+            "single_enable": single_enable,
+            "single_strength": single_strength,
+            "single_start": single_start,
+            "single_end": single_end,
+            "block_schedule": block_schedule,
+            "sim_floor": sim_floor,
+            "mask_threshold": mask_threshold,
+        }
+        if subject_mask_ref is not None:
+            inputs["subject_mask"] = subject_mask_ref
+        return self._add("IdentityFeatureTransferAdvanced", inputs, node_id)
 
     # ═══════════════════════════════════════════════════════════════════
     #  LATENT OPERATIONS
