@@ -203,6 +203,43 @@ import sys
 import json
 import os
 import tempfile
+
+
+def _exec_error():
+    """Return a GLib.Error pre-filled with the current exception's
+    message so GIMP's own EXECUTION_ERROR dialog shows the real cause
+    instead of the default "unknown error".
+
+    Called from every handler's `procedure.new_return_values(
+    Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())` tail. When
+    invoked INSIDE an `except Exception` block, ``sys.exc_info()`` is
+    live and we can surface the type + message. When invoked OUTSIDE
+    one (e.g. pre-flight refusals like "server unreachable" that
+    return EXECUTION_ERROR without an exception), we fall back to an
+    empty ``GLib.Error()`` — same as the pre-2026-04-24 behaviour, so
+    this helper is a drop-in replacement for the literal
+    ``GLib.Error()`` argument.
+
+    Before this helper, every Spellcaster handler that hit an
+    exception looked like:
+        Gimp.message(f"Spellcaster Inpaint Error: {e}")   # popup
+        return procedure.new_return_values(
+            Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
+    The popup carried the actual cause but users often clicked past
+    it; all they remembered was GIMP's own wrapper dialog that reads
+    "Execution error for 'Inpaint Selection': unknown error" — the
+    "unknown error" being GIMP's own default for an empty GLib.Error.
+    Now the real message rides INSIDE GIMP's dialog too.
+    """
+    exc = sys.exc_info()[1]
+    if exc is None:
+        return GLib.Error()
+    try:
+        msg = f"{type(exc).__name__}: {exc}"[:500]
+        return GLib.Error.new_literal(
+            GLib.quark_from_string("spellcaster"), msg, 0)
+    except Exception:
+        return GLib.Error()
 import uuid
 import time
 import random
@@ -20400,7 +20437,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster img2img Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_txt2img(self, procedure, run_mode, image, drawables, config, data):
         """Text-to-image: generate from prompt only (no input image)."""
@@ -20453,7 +20490,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster txt2img Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_inpaint(self, procedure, run_mode, image, drawables, config, data):
         """Inpaint: regenerate only the selected area using a mask from GIMP's selection."""
@@ -20471,7 +20508,7 @@ class Spellcaster(Gimp.PlugIn):
             except Exception as _dlg_err:
                 Gimp.message(f"Inpaint dialog failed to open:\n{_dlg_err}")
                 import traceback; traceback.print_exc()
-                return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+                return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
             dlg.w_spin.set_value(image.get_width()); dlg.h_spin.set_value(image.get_height())
             # 3D Normal Map picker — see _run_img2img for rationale.
             _add_normal_map_selector(dlg, dlg.get_content_area(), image)
@@ -20555,7 +20592,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster Inpaint Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_faceswap(self, procedure, run_mode, image, drawables, config, data):
         """Face swap via ReActor: paste a face from a source image onto the canvas."""
@@ -20569,13 +20606,13 @@ class Spellcaster(Gimp.PlugIn):
         v = dlg.get_values(); dlg.destroy()
         if not v["face_file"]:
             Gimp.message("No source face image selected")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
         if not _require_comfyui_node(
                 v["server"], ("ReActorFaceSwap",), "Face Swap (ReActor)",
                 install_hint=("Install 'ComfyUI ReActor Node' via ComfyUI Manager, "
                               "then restart ComfyUI. (Face-swap uses the ReActor "
                               "pack — without it, nothing will happen.)")):
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
         try:
             _update_spinner_status("Face Swap: exporting images...")
             srv = v["server"]
@@ -20623,7 +20660,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster Face Swap Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_faceswap_model(self, procedure, run_mode, image, drawables, config, data):
         """Face swap using a saved face model from the server (no source image file)."""
@@ -20637,14 +20674,14 @@ class Spellcaster(Gimp.PlugIn):
         v = dlg.get_values(); dlg.destroy()
         if not v["face_model"] or v["face_model"] == "none":
             Gimp.message("No face model selected")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
         if not _require_comfyui_node(
                 v["server"], ("ReActorFaceSwap", "ReActorLoadFaceModel"),
                 "Face Swap (Saved Model)",
                 install_hint=("Install 'ComfyUI ReActor Node' via ComfyUI Manager, "
                               "then restart ComfyUI. Saved face models depend on the "
                               "ReActor pack being registered.")):
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
         try:
             _update_spinner_status("Face Swap (Model): exporting image...")
             srv = v["server"]
@@ -20676,7 +20713,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster Face Swap (Model) Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_ltx_t2v(self, procedure, run_mode, image, drawables, config, data):
         """LTX 2.3 text-to-video: generate video from prompt."""
@@ -20844,7 +20881,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster LTX T2V Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_ltx_i2v(self, procedure, run_mode, image, drawables, config, data):
         """LTX 2.3 image-to-video: opens LTX dialog with I2V pre-enabled."""
@@ -20994,7 +21031,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster Wan I2V Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_wan_flf(self, procedure, run_mode, image, drawables, config, data):
         """Wan 2.2 First+Last Frame to Video: generate video transitioning between two keyframes."""
@@ -21172,7 +21209,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster Wan FLF Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ── Wan Director — Two Actors ──────────────────────────────────────
     def _run_wan_director_duo(self, procedure, run_mode, image, drawables, config, data):
@@ -21407,7 +21444,7 @@ class Spellcaster(Gimp.PlugIn):
 
         if not b_file:
             Gimp.message("Actor B face reference is required.")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
         # ═══════════════════════════════════════════════════════════════
         # DIALOG 2..N: PER-STEP CONFIG (reuses WanI2VDialog)
@@ -21565,7 +21602,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Director Duo Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ── Wan Director — Three Actors ────────────────────────────────────
     def _run_wan_director_trio(self, procedure, run_mode, image, drawables, config, data):
@@ -21836,7 +21873,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Director Trio Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ── Video Upscale (V2R) ────────────────────────────────────────────
     def _run_video_upscale(self, procedure, run_mode, image, drawables, config, data):
@@ -21961,7 +21998,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Video Upscale Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ── Video Upscale + ReActor Face Swap ────────────────────────────
     def _run_video_reactor(self, procedure, run_mode, image, drawables, config, data):
@@ -22126,7 +22163,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Video ReActor Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_seedvr2_video(self, procedure, run_mode, image, drawables, config, data):
         """SeedVR2 AI Video Upscaler with hallucination control."""
@@ -22341,7 +22378,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"SeedVR2 Video Upscale Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_faceswap_mtb(self, procedure, run_mode, image, drawables, config, data):
         """Face swap via mtb facetools: direct swap from source image."""
@@ -22355,14 +22392,14 @@ class Spellcaster(Gimp.PlugIn):
         v = dlg.get_values(); dlg.destroy()
         if not v["source_path"]:
             Gimp.message("No source face image selected")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
         if not _require_comfyui_node(
                 v["server"], ("Face Swap (mtb)", "FaceSwap"),
                 "Face Swap (mtb)",
                 install_hint=("Install 'comfy-mtb' via ComfyUI Manager (the mtb "
                               "facetools provide the 'Face Swap (mtb)' node), "
                               "then restart ComfyUI.")):
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
         try:
             _update_spinner_status("Face Swap (mtb): exporting images...")
             srv = v["server"]
@@ -22388,7 +22425,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster Face Swap (mtb) Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_faceid(self, procedure, run_mode, image, drawables, config, data):
         """IPAdapter FaceID img2img: regenerate image preserving face identity."""
@@ -22408,7 +22445,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         if not v["source_path"]:
             Gimp.message("No face reference image selected")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
         if not _require_comfyui_node(
                 v["server"],
                 ("IPAdapterFaceID", "IPAdapterUnifiedLoaderFaceID",
@@ -22417,7 +22454,7 @@ class Spellcaster(Gimp.PlugIn):
                 install_hint=("Install 'ComfyUI_IPAdapter_plus' via ComfyUI Manager "
                               "(cubiq/ComfyUI_IPAdapter_plus) and the matching FaceID "
                               "preset + InsightFace models, then restart ComfyUI.")):
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
         runs = v.get("runs", 1)
         try:
             _update_spinner_status("FaceID: exporting images...")
@@ -22454,7 +22491,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster FaceID Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_pulid_flux(self, procedure, run_mode, image, drawables, config, data):
         """PuLID Flux: generate with Flux model while preserving face identity."""
@@ -22474,7 +22511,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         if not v["source_path"]:
             Gimp.message("No face reference image selected")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
         # PuLID class is version-dependent: ApplyPuLIDFlux2 for the Flux 2 /
         # Kontext variant, ApplyPuLID for the original Flux 1 path. Accept
         # either — each one of these classes proves one of the two
@@ -22486,7 +22523,7 @@ class Spellcaster(Gimp.PlugIn):
                 install_hint=("Install 'ComfyUI-PuLID-Flux' or 'PuLID Flux 2' via "
                               "ComfyUI Manager (plus the InsightFace model pack), "
                               "then restart ComfyUI.")):
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
         runs = v.get("runs", 1)
         try:
             _update_spinner_status("PuLID Flux: exporting images...")
@@ -22525,7 +22562,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster PuLID Flux Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ── Klein Headswap ────────────────────────────────────────────────
     def _run_klein_headswap(self, procedure, run_mode, image, drawables, config, data):
@@ -22755,7 +22792,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Klein Headswap Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_klein(self, procedure, run_mode, image, drawables, config, data):
         """Klein img2img: edit image with Flux 2 Klein distilled model."""
@@ -22767,7 +22804,7 @@ class Spellcaster(Gimp.PlugIn):
         except Exception as _dlg_err:
             Gimp.message(f"Klein dialog failed to open:\n{_dlg_err}")
             import traceback; traceback.print_exc()
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
         last = _SESSION.get("klein")
         if last:
             dlg._apply_user_preset(last)
@@ -22811,7 +22848,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster Klein Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_klein_ref(self, procedure, run_mode, image, drawables, config, data):
         """Klein img2img + reference: edit image with a structure/style reference."""
@@ -22831,7 +22868,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         if not v.get("ref_file"):
             Gimp.message("No reference image selected")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
         runs = v.get("runs", 1)
         try:
             _update_spinner_status("Klein+Ref: exporting images...")
@@ -22868,7 +22905,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster Klein+Ref Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_klein_outpaint(self, procedure, run_mode, image, drawables, config, data):
         """Klein Outpaint: extend canvas using Flux 2 Klein — best outpaint quality."""
@@ -23086,7 +23123,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Klein Outpaint Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_klein_blend(self, procedure, run_mode, image, drawables, config, data):
         """Klein Layer Blender: AI-powered integration of one layer into another."""
@@ -23402,7 +23439,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Klein Layer Blender Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ── Klein Re-poser ──────────────────────────────────────────────────
     def _run_klein_repose(self, procedure, run_mode, image, drawables, config, data):
@@ -23842,7 +23879,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Klein Re-poser Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ── Klein Inpaint Selection ─────────────────────────────────────────
     def _run_klein_inpaint(self, procedure, run_mode, image, drawables, config, data):
@@ -24269,7 +24306,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Klein Inpaint Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ── Klein Detail Enhancer ─────────────────────────────────────────
     def _run_klein_detail(self, procedure, run_mode, image, drawables, config, data):
@@ -24411,7 +24448,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Klein Detail Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ── Klein Generate Object ─────────────────────────────────────────
     def _run_klein_generate(self, procedure, run_mode, image, drawables, config, data):
@@ -24579,7 +24616,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Klein Generate Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ── Klein Auto-Inpaint (Florence2 mask + Klein inpaint) ──────────
     def _run_klein_auto_inpaint(self, procedure, run_mode, image, drawables, config, data):
@@ -24731,7 +24768,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Klein Auto-Inpaint Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ── Klein SAM3 Inpaint ──────────────────────────────────────────
     def _run_klein_sam3_inpaint(self, procedure, run_mode, image, drawables, config, data):
@@ -24919,7 +24956,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Klein SAM3 Inpaint Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ── Klein Refine (multi-reference structural enhancement) ────────
     def _run_klein_refine(self, procedure, run_mode, image, drawables, config, data):
@@ -25059,7 +25096,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Klein Refine Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ── Klein Face Detailer (YOLO bbox + Klein face regen) ───────────
     def _run_klein_face_detail(self, procedure, run_mode, image, drawables, config, data):
@@ -25216,7 +25253,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Klein Face Detail Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ── Klein Color Match (ColorMatchV2, no diffusion) ───────────────
     def _run_klein_color_match(self, procedure, run_mode, image, drawables, config, data):
@@ -25333,7 +25370,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Klein Color Match Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ── Klein Virtual Try-On (face + outfit + optional bg + pose) ────
     def _run_klein_virtual_tryon(self, procedure, run_mode, image, drawables, config, data):
@@ -25522,7 +25559,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Klein Virtual Try-On Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ── Generate Anything (all models) ────────────────────────────────
     def _run_generate_anything(self, procedure, run_mode, image, drawables, config, data):
@@ -25688,7 +25725,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Generate Anything Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ── Layer Blend by Ratio (utility) ────────────────────────────────
     def _run_layer_blend_ratio(self, procedure, run_mode, image, drawables, config, data):
@@ -25816,7 +25853,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Layer Blend Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ── Upscaler Ratio Blender ────────────────────────────────────────
     def _run_upscale_blend(self, procedure, run_mode, image, drawables, config, data):
@@ -25952,7 +25989,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Upscaler Blend Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ── Wan Director ─────────────────────────────────────────────────
     def _run_wan_director(self, procedure, run_mode, image, drawables, config, data):
@@ -26756,7 +26793,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Wan Director Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ── GIF Stitcher ──────────────────────────────────────────────────
     def _run_gif_stitch(self, procedure, run_mode, image, drawables, config, data):
@@ -27000,7 +27037,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"GIF Stitch Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_embed_watermark(self, procedure, run_mode, image, drawables, config, data):
         """Embed invisible encrypted metadata into the current image using LSB steganography."""
@@ -27134,7 +27171,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Watermark embedding failed: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_read_watermark(self, procedure, run_mode, image, drawables, config, data):
         """Read and display hidden metadata from a watermarked image."""
@@ -27205,7 +27242,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Watermark reading failed: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_upscale(self, procedure, run_mode, image, drawables, config, data):
         """Upscale 4x: super-resolution using an upscale model.
@@ -27292,7 +27329,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster Upscale Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_lama_remove(self, procedure, run_mode, image, drawables, config, data):
         """Smart object removal: LaMa fast fill OR AI-guided replacement."""
@@ -27492,7 +27529,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster Object Removal Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_lut(self, procedure, run_mode, image, drawables, config, data):
         """Color grading: apply a cinematic LUT to the image."""
@@ -27563,7 +27600,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster LUT Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_outpaint(self, procedure, run_mode, image, drawables, config, data):
         """Outpaint: extend canvas by generating new content at the edges.
@@ -27773,7 +27810,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster Outpaint Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_style_transfer(self, procedure, run_mode, image, drawables, config, data):
         """Style transfer: apply the visual style of a reference image using IPAdapter."""
@@ -28058,7 +28095,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         if not style_path:
             Gimp.message("No style reference image selected")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
         # Block architectures incompatible with IPAdapter
         _st_arch = preset.get("arch", "sdxl")
         if _st_arch in ("flux2klein", "flux_kontext", "chroma"):
@@ -28098,7 +28135,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster Style Transfer Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_face_restore(self, procedure, run_mode, image, drawables, config, data):
         """Face restore: enhance and restore faces using ReActorRestoreFace."""
@@ -28250,7 +28287,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster Face Restore Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_photo_restore(self, procedure, run_mode, image, drawables, config, data):
         """Photo restoration pipeline: upscale + face restore + sharpen."""
@@ -28388,7 +28425,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster Photo Restore Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_detail_hallucinate(self, procedure, run_mode, image, drawables, config, data):
         """Detail hallucination: upscale + low-denoise img2img to add AI detail."""
@@ -28711,7 +28748,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster Detail Hallucinate Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_seedv2r(self, procedure, run_mode, image, drawables, config, data):
         """SeedV2R Upscale: upscale + img2img with user-controlled scale and hallucination."""
@@ -29045,7 +29082,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster SeedV2R Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_colorize(self, procedure, run_mode, image, drawables, config, data):
         """Colorize B&W photo using ControlNet lineart + img2img."""
@@ -29328,7 +29365,7 @@ class Spellcaster(Gimp.PlugIn):
                 import traceback
                 traceback.print_exc()
                 Gimp.message(f"DDColor Error: {e}")
-                return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+                return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
         # ControlNet path: high quality, needs diffusion model
         _colorize_arch = preset.get("arch", "sdxl")
@@ -29372,7 +29409,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster Colorize Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_batch_variations(self, procedure, run_mode, image, drawables, config, data):
         """Batch Variations: generate multiple txt2img outputs by setting batch_size > 1."""
@@ -29437,7 +29474,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster Batch Variations Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_iclight(self, procedure, run_mode, image, drawables, config, data):
         """IC-Light Relighting: change lighting direction on any photo (SD1.5 only)."""
@@ -29752,7 +29789,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster IC-Light Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_supir(self, procedure, run_mode, image, drawables, config, data):
         """SUPIR AI Restoration: restore and enhance images using SUPIR model."""
@@ -30254,7 +30291,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster SUPIR Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ── Photobooth (Face Model Maker) ─────────────────────────────────
     def _run_photobooth(self, procedure, run_mode, image, drawables, config, data):
@@ -30545,7 +30582,7 @@ class Spellcaster(Gimp.PlugIn):
 
                 if not results_data:
                     Gimp.message("Photobooth: no images were generated. Check server connection.")
-                    return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+                    return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
                 # Import all variants as layers at native portrait size (not stretched)
                 for i, (fn, sf, ft, img_data) in enumerate(results_data):
@@ -30621,7 +30658,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Photobooth Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ── Photobooth — Body Factory ──────────────────────────────────────
     def _run_body_factory(self, procedure, run_mode, image, drawables, config, data):
@@ -31251,7 +31288,7 @@ class Spellcaster(Gimp.PlugIn):
 
                 if not results_data:
                     Gimp.message("Body Factory: no images generated. Check model and server.")
-                    return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+                    return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
                 for i, (fn, sf, ft, img_data) in enumerate(results_data):
                     _import_result_as_layer(image, img_data, _layer_label("Body Factory", preset=preset, i=i))
@@ -31294,7 +31331,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Body Factory Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ── Photobooth — Clothing Store ──────────────────────────────────────
     def _run_clothing_store(self, procedure, run_mode, image, drawables, config, data):
@@ -31472,7 +31509,7 @@ class Spellcaster(Gimp.PlugIn):
 
         if not prompt.strip():
             Gimp.message("Please describe the outfit you want.")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
         try:
             srv = srv.strip()
@@ -31524,7 +31561,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Clothing Store Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ── Photobooth — Studio Set ────────────────────────────────────────
     def _run_studio_set(self, procedure, run_mode, image, drawables, config, data):
@@ -31745,7 +31782,7 @@ class Spellcaster(Gimp.PlugIn):
 
         if not actors:
             Gimp.message("Please select at least one actor PNG.")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
         try:
             # ══════════════════════════════════════════════════════════
@@ -31858,7 +31895,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Studio Set Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_rembg(self, procedure, run_mode, image, drawables, config, data):
         """Remove background: one-click, no settings needed.
@@ -32016,7 +32053,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster Remove Background Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_sam3_select(self, procedure, run_mode, image, drawables, config, data):
         """SAM3 AI Selection: describe a subject and get a GIMP selection.
@@ -32146,7 +32183,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster SAM3 Selection Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_sam3_extract(self, procedure, run_mode, image, drawables, config, data):
         """SAM3 Extract: detect subject, remove background, auto-crop."""
@@ -32233,7 +32270,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster SAM3 Extract Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_sam3_anything_but(self, procedure, run_mode, image, drawables, config, data):
         """SAM3 Anything But — select everything EXCEPT a described subject.
@@ -32337,7 +32374,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster Anything But Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_magic_eraser(self, procedure, run_mode, image, drawables, config, data):
         """Magic Eraser — SAM3 detect + LaMa seamless inpaint.
@@ -32477,7 +32514,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster Magic Eraser Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_send(self, procedure, run_mode, image, drawables, config, data):
         """Upload current canvas to ComfyUI's input folder (no generation)."""
@@ -32518,7 +32555,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Upload Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_my_presets(self, procedure, run_mode, image, drawables, config, data):
         """My Spellcaster Presets: quick access to all saved presets across tools."""
@@ -32875,7 +32912,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster Kontext Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ══════════════════════════════════════════════════════════════════════
     #  Cancel Queued Generations
@@ -33285,7 +33322,7 @@ class Spellcaster(Gimp.PlugIn):
             traceback.print_exc()
             Gimp.message(f"Diagnostics: report write failed: {e}")
             return procedure.new_return_values(
-                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+                Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
         n_pass = sum(1 for r in results if r["status"] == "PASS")
         n_fail = len(results) - n_pass
@@ -33305,7 +33342,7 @@ class Spellcaster(Gimp.PlugIn):
               f"{n_fail} FAIL \u2192 {report_path}")
         if n_fail:
             return procedure.new_return_values(
-                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+                Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
         return procedure.new_return_values(
             Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
@@ -33569,7 +33606,7 @@ class Spellcaster(Gimp.PlugIn):
             except Exception:
                 pass
             return procedure.new_return_values(
-                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+                Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
         try:
             Gimp.message(
                 f"Cleared Spellcaster upload cache.\n\n"
@@ -34289,7 +34326,7 @@ class Spellcaster(Gimp.PlugIn):
             return callback(procedure, Gimp.RunMode.INTERACTIVE, image,
                             drawables, config, data)
         Gimp.message(f"Cannot re-run: procedure '{last_name}' not found.")
-        return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+        return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _get_menu_map(self):
         """Return the procedure→callback mapping (for re-run-last fallback)."""
@@ -34337,7 +34374,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Quick Enhance Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_quick_inpaint(self, procedure, run_mode, image, drawables, config, data):
         """Quick Inpaint: inpaint current selection with last settings."""
@@ -34388,7 +34425,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Quick Inpaint Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_quick_upscale(self, procedure, run_mode, image, drawables, config, data):
         """Quick Upscale 4x: upscale with default model, zero dialogs.
@@ -34416,7 +34453,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Quick Upscale Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_magical_zoom(self, procedure, run_mode, image, drawables, config, data):
         """Magical Zoom — AI-hallucinated super-zoom of the current
@@ -34649,7 +34686,7 @@ class Spellcaster(Gimp.PlugIn):
             traceback.print_exc()
             Gimp.message(f"Magical Zoom Error: {e}")
             return procedure.new_return_values(
-                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+                Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_quick_face_restore(self, procedure, run_mode, image, drawables, config, data):
         """Quick Face Restore: restore all faces with default settings."""
@@ -34673,7 +34710,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Quick Face Restore Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_quick_rembg(self, procedure, run_mode, image, drawables, config, data):
         """Quick Remove Background: instant background removal."""
@@ -34696,7 +34733,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Quick Remove BG Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ══════════════════════════════════════════════════════════════════════
     #  NormalCrafter — 3D surface normal map generation
@@ -34725,7 +34762,7 @@ class Spellcaster(Gimp.PlugIn):
                     "  https://github.com/Stable-X/ComfyUI-NormalCrafter\n\n"
                     f"Then restart ComfyUI and try again.\n(Server: {srv})")
                 return procedure.new_return_values(
-                    Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+                    Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
             uname = _export_and_upload_cached(srv, image, debug_prefix="[normal] ")
             wf = build_normal_map(uname, max_res=min(image.get_width(), 1024))
             results = _run_with_spinner("NormalCrafter: generating normal map...",
@@ -34741,7 +34778,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"NormalCrafter Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ══════════════════════════════════════════════════════════════════════
     #  AI Eraser — select anything, erase it, AI fills the gap
@@ -34803,7 +34840,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"AI Eraser Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # ══════════════════════════════════════════════════════════════════════
     #  F6: AI Color Match
@@ -34879,7 +34916,7 @@ class Spellcaster(Gimp.PlugIn):
         dlg.destroy()
         if not ref_path:
             Gimp.message("No reference image selected.")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
         try:
             _update_spinner_status("Color Match: exporting images...")
             src_uname = _export_and_upload_cached(srv, image, debug_prefix="[color-match-src] ")
@@ -34900,7 +34937,7 @@ class Spellcaster(Gimp.PlugIn):
             import traceback
             traceback.print_exc()
             Gimp.message(f"Spellcaster Color Match Error: {e}")
-            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+            return procedure.new_return_values(Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     # R105: cross-plugin transfer helpers ─────────────────────────────
     # The three _run_send_to_<target> callbacks all route through the
@@ -35077,7 +35114,7 @@ class Spellcaster(Gimp.PlugIn):
         except ImportError as e:
             Gimp.message(f"Character Card Editor: helper module missing — {e}")
             return procedure.new_return_values(
-                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+                Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
         try:
             from spellcaster_core.cross_interface import resolve_guild_url
         except ImportError:
@@ -35114,7 +35151,7 @@ class Spellcaster(Gimp.PlugIn):
         except Exception as e:
             Gimp.message(f"Character Card Editor: read failed — {e}")
             return procedure.new_return_values(
-                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+                Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
         chunks_in = _st.extract_text_chunks(original_bytes)
         chara_b64 = chunks_in.get("chara") or chunks_in.get("ccv3")
@@ -35574,23 +35611,23 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.message(f"Check Inbox: cross_interface helper missing — "
                          f"{result.get('error') or 'ImportError'}")
             return procedure.new_return_values(
-                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+                Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
         if status == "guild_backbone_off":
             Gimp.message(
                 "Check Inbox: the Guild's mailbox primitives are "
                 "disabled (cross-interface backbone off). Start the "
                 "Wizard Guild with cross_interface enabled.")
             return procedure.new_return_values(
-                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+                Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
         if status == "guild_http_error":
             Gimp.message(
                 f"Check Inbox: Guild returned HTTP {result.get('http_code')}.")
             return procedure.new_return_values(
-                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+                Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
         if status == "guild_unreachable":
             Gimp.message(f"Check Inbox: Guild unreachable — {result.get('error')}")
             return procedure.new_return_values(
-                Gimp.PDBStatusType.EXECUTION_ERROR, GLib.Error())
+                Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
         opened = result.get("opened", 0)
         failures = result.get("failures") or []
