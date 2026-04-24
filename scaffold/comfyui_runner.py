@@ -607,8 +607,19 @@ class ComfyUIRunner:
                         outputs = self._extract_outputs(entry)
                         return {"status": "ok", "outputs": outputs}
                     if status.get("status_str") == "error":
-                        msgs = status.get("messages", [])
-                        return {"status": "error", "message": str(msgs)}
+                        # Robust extractor + partial-success surfacing.
+                        try:
+                            from spellcaster_core.dispatch import (
+                                extract_execution_error, has_usable_outputs,
+                            )
+                            err_msg, _ = extract_execution_error(status)
+                            if has_usable_outputs(entry):
+                                outputs = self._extract_outputs(entry)
+                                return {"status": "ok", "outputs": outputs,
+                                        "warning": err_msg}
+                        except ImportError:
+                            err_msg = str(status.get("messages", []))[:600]
+                        return {"status": "error", "message": err_msg}
             except Exception:
                 pass
 

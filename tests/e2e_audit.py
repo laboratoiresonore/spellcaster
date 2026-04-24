@@ -1268,6 +1268,129 @@ def test_blob_bus(report: Report, verbose: bool = False) -> None:
         report.add(section, "GET /blob/<unknown>", FAIL, str(e))
 
 
+def test_error_extraction(report: Report, verbose: bool = False) -> None:
+    """spellcaster_core.dispatch.extract_execution_error +
+    has_usable_outputs — canonical robust error extractor that every
+    dispatch site delegates to. Covers the specific failure shapes we
+    observed producing 'unknown error' in the Inpaint crash report:
+
+      * status_str=error with message type == 'execution_error' but
+        'exception_message' field present under 'message' instead
+        (older ComfyUI builds / some custom nodes).
+      * status_str=error with messages but NO execution_error type
+        (interrupt-race, validation-after-submit).
+      * status_str=error AND outputs emitted (partial success — the
+        fix that lets ComfyUI-completed renders reach the plugin).
+      * malformed status dicts (None, wrong shape).
+    """
+    section = "Error extraction"
+    try:
+        import importlib.util, os as _os
+        here = _os.path.abspath(_os.path.dirname(__file__))
+        mod_path = _os.path.abspath(_os.path.join(
+            here, "..", "comfyui-spellcaster", "spellcaster_core",
+            "dispatch.py"))
+        spec = importlib.util.spec_from_file_location(
+            "spellcaster_dispatch_audit", mod_path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        extract = mod.extract_execution_error
+        has_outputs = mod.has_usable_outputs
+    except Exception as e:
+        report.add(section, "import dispatch.py", FAIL, str(e))
+        return
+    report.add(section, "import dispatch.py", PASS,
+               f"module has {len([n for n in dir(mod) if not n.startswith('_')])} public names")
+
+    cases = [
+        # (name, status, expect_recognised, expect_substring)
+        ("classic execution_error.exception_message",
+         {"status_str": "error", "messages": [[
+            "execution_error",
+            {"exception_message": "Kernel size can't be greater",
+             "exception_type": "RuntimeError", "node_type": "VAEEncode"}]]},
+         True, "Kernel size"),
+        ("execution_error with only 'message' field (non-canonical)",
+         {"status_str": "error", "messages": [[
+            "execution_error",
+            {"message": "node failed", "node_id": "42"}]]},
+         True, "node failed"),
+        ("error type msg without exception_message",
+         {"status_str": "error", "messages": [[
+            "error",
+            {"error": "preflight rejected", "details": "missing CN"}]]},
+         True, "preflight rejected"),
+        ("execution_interrupted (no exception)",
+         {"status_str": "error", "messages": [[
+            "execution_interrupted", {"prompt_id": "abc"}]]},
+         False, "no recognised"),
+        ("empty messages list",
+         {"status_str": "error", "messages": []},
+         False, "no recognised"),
+        ("malformed status",
+         None, False, "malformed"),
+        ("status is a string",
+         "broken", False, "malformed"),
+        ("node_type prefix injection",
+         {"status_str": "error", "messages": [[
+            "execution_error",
+            {"exception_message": "OOM",
+             "node_type": "KSampler"}]]},
+         True, "KSampler"),
+    ]
+    for name, status, expected_rec, substr in cases:
+        try:
+            detail, rec = extract(status)
+            ok_rec = rec == expected_rec
+            ok_sub = substr.lower() in detail.lower()
+            if ok_rec and ok_sub:
+                report.add(section, f"extract[{name}]", PASS,
+                           f"detail={detail[:60]!r}")
+            else:
+                report.add(section, f"extract[{name}]", FAIL,
+                           f"rec={rec} (want {expected_rec}); "
+                           f"detail={detail[:120]!r} (want substr {substr!r})")
+        except Exception as e:
+            report.add(section, f"extract[{name}]", FAIL,
+                       f"{type(e).__name__}: {e}")
+
+    # has_usable_outputs truth table
+    has_cases = [
+        ("None entry", None, False),
+        ("empty dict", {}, False),
+        ("no outputs key", {"status": {}}, False),
+        ("empty outputs", {"outputs": {}}, False),
+        ("outputs with no filenames",
+         {"outputs": {"10": {"images": [{"type": "output"}]}}}, False),
+        ("outputs with images",
+         {"outputs": {"10": {"images": [
+            {"filename": "a.png", "subfolder": "", "type": "output"}]}}},
+         True),
+        ("outputs with gifs",
+         {"outputs": {"10": {"gifs": [
+            {"filename": "a.gif", "subfolder": "", "type": "output"}]}}},
+         True),
+        ("outputs with videos",
+         {"outputs": {"12": {"videos": [
+            {"filename": "a.mp4", "subfolder": "", "type": "output"}]}}},
+         True),
+        ("outputs malformed",
+         {"outputs": "not a dict"}, False),
+    ]
+    for name, entry, expected in has_cases:
+        try:
+            got = has_outputs(entry)
+            if got == expected:
+                report.add(section, f"has_usable_outputs[{name}]",
+                           PASS, f"{got}")
+            else:
+                report.add(section, f"has_usable_outputs[{name}]",
+                           FAIL, f"got {got}, want {expected}")
+        except Exception as e:
+            report.add(section, f"has_usable_outputs[{name}]",
+                       FAIL, f"{type(e).__name__}: {e}")
+
+
 def test_events_schema(report: Report, verbose: bool = False) -> None:
     """spellcaster_core/events.py — every dataclass round-trips through
     to_payload() and parse_event(). Proves that publishers and
@@ -2323,6 +2446,7 @@ SECTIONS = {
     # Post-audit (2026-04-20) — cover every surface shipped this week
     "presence_broker":   test_presence_broker,
     "blob_bus":          test_blob_bus,
+    "error_extraction":  test_error_extraction,
     "events_schema":     test_events_schema,
     "st_routes":         test_sillytavern_routes,
     "guild_client":      test_guild_client,
@@ -2356,7 +2480,7 @@ def main():
     # Sections that don't contact the Guild — safe to run standalone.
     OFFLINE_SECTIONS = {"events_schema", "coverage_inventory",
                          "upload_cache", "guards", "iclight_cn",
-                         "plugin_surface"}
+                         "plugin_surface", "error_extraction"}
 
     selected = set(SECTIONS.keys())
     if args.only:
