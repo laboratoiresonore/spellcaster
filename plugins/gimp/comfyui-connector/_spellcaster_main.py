@@ -4385,6 +4385,86 @@ def _populate_model_combo(combo, label_task="img2img", *,
     return count
 
 
+def _pad_normal_map_for_outpaint(server, normal_map_filename,
+                                   pad_l, pad_t, pad_r, pad_b):
+    """Pad a normal-map PNG with neutral up-facing normal for outpaint.
+
+    Why this helper exists
+    ----------------------
+    When a user runs 3D outpaint, the normal map covers only the
+    ORIGINAL canvas area — but the sampler operates on the PADDED
+    canvas (original + pad_l/pad_t/pad_r/pad_b). ComfyUI's
+    ControlNetApplyAdvanced silently stretches the smaller CN image
+    to match the padded latent, which smears / duplicates the
+    original normal map's edge pixels across the outpaint region.
+    The sampler gets told "the outpaint area is mostly the bottom
+    edge of the original subject's surface" and produces a muddy
+    gray/flat fill (user-reported symptom: "puts a fucking gray area
+    around the 3D image").
+
+    What we do
+    ----------
+    1. Fetch the uploaded normal map from ComfyUI's input/ via the
+       /view endpoint.
+    2. Create a new image at (orig + pads) size filled with neutral
+       normal (RGB 128, 128, 255) = surface pointing straight up
+       (+Z) = "flat region — generate naturally here".
+    3. Paste the original normal map at (pad_l, pad_t) so the
+       original subject's 3D guidance stays pixel-aligned with the
+       padded canvas.
+    4. Upload the padded map under a new filename and return it.
+
+    Returns
+    -------
+    str — the new uploaded filename (or the original when padding is
+    zero or padding fails, so callers never stall on this).
+    """
+    if not normal_map_filename:
+        return normal_map_filename
+    if not (pad_l or pad_t or pad_r or pad_b):
+        return normal_map_filename
+    try:
+        from PIL import Image
+        import io as _io
+        import urllib.parse as _up
+        # Download via ComfyUI /view
+        qs = _up.urlencode({
+            "filename": normal_map_filename,
+            "subfolder": "",
+            "type": "input",
+        })
+        with urllib.request.urlopen(
+                f"{server.rstrip('/')}/view?{qs}", timeout=30) as r:
+            data = r.read()
+        src = Image.open(_io.BytesIO(data)).convert("RGB")
+        sw, sh = src.size
+        new_w = sw + pad_l + pad_r
+        new_h = sh + pad_t + pad_b
+        # Neutral normal = (128, 128, 255) = surface pointing +Z.
+        padded = Image.new("RGB", (new_w, new_h), (128, 128, 255))
+        padded.paste(src, (pad_l, pad_t))
+        # Save + upload
+        tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+        tmp.close()
+        padded.save(tmp.name, "PNG")
+        new_name = f"gimp_nm_pad_{uuid.uuid4().hex[:8]}.png"
+        try:
+            _upload_image_sync(server, tmp.name, new_name)
+        finally:
+            try: os.unlink(tmp.name)
+            except Exception: pass
+        print(f"[Spellcaster] 3D outpaint: padded normal map "
+              f"{normal_map_filename} -> {new_name} "
+              f"({sw}x{sh} -> {new_w}x{new_h}, "
+              f"pad L{pad_l} T{pad_t} R{pad_r} B{pad_b}, neutral fill)")
+        return new_name
+    except Exception as e:
+        print(f"[Spellcaster] 3D outpaint: normal-map pad failed "
+              f"({type(e).__name__}: {e}); falling back to unpadded "
+              f"map — outpaint area may look gray/stretched.")
+        return normal_map_filename
+
+
 def _maybe_override_cn_with_normal_map(controlnet, normal_map_filename,
                                          arch_key=None):
     """Overlay the 'Normal Map (use existing layer)' CN mode onto the
@@ -27629,6 +27709,20 @@ class Spellcaster(Gimp.PlugIn):
                 current_cn_mode=(v.get("controlnet") or {}).get("mode"),
                 arch_key=(v.get("preset") or {}).get("arch"))
         dlg.destroy()
+        # ── 3D outpaint normal-map pad ────────────────────────────
+        # Outpaint extends the canvas but the normal map only covers
+        # the ORIGINAL dims. ComfyUI stretches the CN image to match
+        # the padded latent, which produces the "gray area around the
+        # 3D image" smear. Pad the normal map with neutral up-facing
+        # normal (128,128,255) so the CN has proper guidance for both
+        # regions: real surface normals inside the original, "flat
+        # surface — generate naturally" in the outpaint padding.
+        # No-op when padding is zero (pure inpainting case) or when
+        # there's no normal map at all.
+        if _nm_filename and (pad_left or pad_top or pad_right or pad_bottom):
+            _nm_filename = _pad_normal_map_for_outpaint(
+                v["server"], _nm_filename,
+                pad_left, pad_top, pad_right, pad_bottom)
         out_cn1 = _maybe_override_cn_with_normal_map(
             out_cn1, _nm_filename,
             arch_key=v.get("preset", {}).get("arch"))
