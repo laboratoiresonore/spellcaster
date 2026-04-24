@@ -13,7 +13,7 @@ NOT routed through this: comfyui_llm.py text generation (the LLM IS the model
 being evicted by free_vram — routing it here would be circular).
 
 USAGE:
-    from spellcaster_core.dispatch import dispatch_workflow
+    from .dispatch import dispatch_workflow
 
     result = dispatch_workflow(
         "http://192.168.x.x:8188", workflow,
@@ -227,7 +227,7 @@ def _free_vram(server):
 
 def dispatch_workflow(server, workflow, *, timeout=300, free_vram=False,
                       preflight=True, optimize=True, privacy=None,
-                      on_progress=None):
+                      on_progress=None, trusted=False):
     """Submit a workflow to ComfyUI with full lifecycle management.
 
     Args:
@@ -237,14 +237,35 @@ def dispatch_workflow(server, workflow, *, timeout=300, free_vram=False,
         free_vram: If True, call /free to evict cached models before submit.
                    Use for heavy generation (img2img, txt2img, video).
                    Skip for lightweight jobs (64x64 calibration tests).
-        preflight: Run node validation and automatic fallbacks
-        optimize: Run VRAM capping and auto-tuning
+        preflight: Run node validation and automatic fallbacks. **NOTE**:
+                   on a fresh plugin/process this triggers a /object_info
+                   fetch which on servers with many custom-node packs
+                   can be 25+ MB / 4–9 s. The cache is per-process, so
+                   subsequent dispatches within the same session are free
+                   — but the first one pays the full cost. Skip entirely
+                   by passing ``trusted=True`` when the workflow was
+                   produced by our own ``build_*`` functions (known-valid
+                   JSON by construction).
+        optimize: Run VRAM capping and auto-tuning. Same caveat: relies
+                   on the same /object_info cache. Skip with
+                   ``trusted=True``.
         privacy: True/False to override, None to read from env/config.
                  When enabled, wipes all temp files from ComfyUI after
                  results are downloaded.
         on_progress: Optional callback(stage: str, detail: str) for progress.
                      Stages: "preflight", "optimize", "free", "submit",
                      "poll", "cleanup", "done".
+        trusted: **Fast-path opt-in** (default False for back-compat).
+                   Set True when the workflow is produced by one of our
+                   ``spellcaster_core.workflows.build_*`` functions —
+                   those generate known-valid JSON so preflight +
+                   validator + optimize are redundant, and skipping
+                   them saves the 4–9 s ``/object_info`` fetch on a
+                   cold cache. Overrides ``preflight`` and ``optimize``
+                   when True (both become no-ops). External workflows
+                   (user-pasted JSON, third-party saved files) should
+                   stay ``trusted=False`` so the validator catches
+                   version-skew and missing-node issues up front.
 
     Returns:
         DispatchResult with prompt_id, outputs, elapsed, warnings.
@@ -252,6 +273,14 @@ def dispatch_workflow(server, workflow, *, timeout=300, free_vram=False,
     Raises:
         RuntimeError on critical failures (missing nodes, server offline).
     """
+    # Trusted fast-path: every build_* produces a workflow whose
+    # class_types and input shapes we own in the canonical factories,
+    # so re-validating them per dispatch is pure latency. Flip BOTH
+    # flags off in one go rather than making every caller remember to
+    # set preflight=False AND optimize=False.
+    if trusted:
+        preflight = False
+        optimize = False
     server = server.rstrip("/")
     warnings = []
 
