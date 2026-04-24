@@ -33685,6 +33685,8 @@ class Spellcaster(Gimp.PlugIn):
                 handler_fn(procedure, Gimp.RunMode.INTERACTIVE,
                             image, drawables, config, data)
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 try:
                     Gimp.message(
                         f"Send to {target_name} failed: {e}")
@@ -33854,6 +33856,8 @@ class Spellcaster(Gimp.PlugIn):
             import webbrowser
             webbrowser.open(url, new=2)
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             try:
                 Gimp.message(
                     f"Could not open browser: {e}\n\nManually open: {url}")

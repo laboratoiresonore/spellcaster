@@ -635,12 +635,34 @@ def test_build_functions(report: Report, verbose: bool = False,
     })
 
     build_fn_names = [n for n in dir(_wf) if n.startswith("build_")]
+    # Face-swap builders load inswapper_128.onnx via ONNX Runtime's TRT
+    # provider. On boxes with a mismatched/missing
+    # nvinfer_builder_resource_*.dll this crashes ComfyUI natively
+    # (Windows access violation) — can't be caught from Python, and
+    # /interrupt doesn't help because the crash happens inside the C
+    # model-load before the interrupt is checked. Skip by default; opt
+    # in with SPELLCASTER_AUDIT_INCLUDE_FACESWAP=1 once TRT is verified
+    # healthy. Mirrors the §20.1 guard rationale.
+    FACESWAP_BUILDERS = {
+        "build_faceswap", "build_faceswap_model", "build_faceswap_mtb",
+        "build_face_restore", "build_klein_headswap", "build_photobooth",
+        "build_video_reactor", "build_photo_restore",
+    }
+    include_faceswap = os.environ.get(
+        "SPELLCASTER_AUDIT_INCLUDE_FACESWAP", "").strip().lower() in (
+            "1", "true", "yes", "on")
     tested = 0
     for name in build_fn_names:
         if tested >= max_tests:
             report.add(section, f"(cap reached at {max_tests})",
                        SKIP, f"{len(build_fn_names) - tested} untested")
             break
+        if name in FACESWAP_BUILDERS and not include_faceswap:
+            report.add(section, name, SKIP,
+                       "faceswap family skipped (TRT crash risk); "
+                       "set SPELLCASTER_AUDIT_INCLUDE_FACESWAP=1 to enable")
+            tested += 1
+            continue
         fn = getattr(_wf, name, None)
         if not callable(fn):
             continue
@@ -797,6 +819,7 @@ def test_wizard_names(report: Report, verbose: bool = False) -> None:
     studios_ok = 0
     comfy_raw = []
     comfy_named = 0
+    comfy_unsummoned = 0
     for ch in chars:
         cid = ch.get("id", "")
         name = ch.get("name", "")
@@ -804,6 +827,14 @@ def test_wizard_names(report: Report, verbose: bool = False) -> None:
             studios_ok += 1
             continue
         if cid.startswith("comfyui_") or ch.get("type") == "comfyui_model":
+            # Auto-detected ComfyUI models start with their bare filename
+            # as the display name. Human-friendly naming happens inside
+            # the Summon flow (LLM-assisted) once the user activates the
+            # wizard. Un-summoned wizards legitimately have raw names —
+            # don't flag them.
+            if ch.get("needs_spellcaster") or not ch.get("activated", True):
+                comfy_unsummoned += 1
+                continue
             if looks_raw(name):
                 comfy_raw.append((cid, name))
             else:
@@ -812,17 +843,21 @@ def test_wizard_names(report: Report, verbose: bool = False) -> None:
     report.add(section, "studio wizards", PASS,
                f"{studios_ok} core wizards present")
     total_model = comfy_named + len(comfy_raw)
+    suffix = (f"  ({comfy_unsummoned} un-summoned skipped)"
+              if comfy_unsummoned else "")
     if total_model == 0:
         report.add(section, "per-model wizards", SKIP,
-                   "no per-model wizards discovered")
+                   f"no summoned per-model wizards{suffix}")
     elif not comfy_raw:
         report.add(section, "per-model wizards", PASS,
-                   f"all {total_model} wizards have human names")
+                   f"all {total_model} summoned wizards have human names"
+                   f"{suffix}")
     else:
         snippet = ", ".join(f"{n!r}" for _, n in comfy_raw[:3])
         extra = f" +{len(comfy_raw)-3} more" if len(comfy_raw) > 3 else ""
         report.add(section, "per-model wizards", WARN,
-                   f"{len(comfy_raw)}/{total_model} still raw: {snippet}{extra}")
+                   f"{len(comfy_raw)}/{total_model} summoned but still raw: "
+                   f"{snippet}{extra}{suffix}")
 
 
 def test_video_canon(report: Report, verbose: bool = False) -> None:
@@ -1397,11 +1432,16 @@ def test_guild_client(report: Report, verbose: bool = False) -> None:
             continue
         try:
             sig = _inspect.signature(member)
-            # Zero-required-arg methods we can call directly
+            # Zero-required-arg methods we can call directly. Must
+            # include KEYWORD_ONLY — methods like import_timeline(*,
+            # timeline_name, fps, clips) are all keyword-only-required,
+            # and calling them with no kwargs raises a TypeError that
+            # previously reported as a spurious FAIL.
             required = [p for p in sig.parameters.values()
                         if p.default is _inspect.Parameter.empty
                         and p.kind in (_inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                                       _inspect.Parameter.POSITIONAL_ONLY)]
+                                       _inspect.Parameter.POSITIONAL_ONLY,
+                                       _inspect.Parameter.KEYWORD_ONLY)]
             if not required:
                 methods.append(name)
         except (TypeError, ValueError):
@@ -1473,25 +1513,62 @@ def test_cn_model_coverage(report: Report, verbose: bool = False) -> None:
     report.add(section, "parse CONTROLNET_GUIDE_MODES", PASS,
                f"{len(modes_dict)} modes defined")
 
-    # For each mode + arch pair, check the referenced cn_model file
+    # Exercise the SAME resolver logic §26 describes for the live
+    # plugin: CONTROLNET_GUIDE_MODES mappings are authoritative at the
+    # UI level, but
+    # _resolve_cn_paths_in_workflow rewrites them to installed variants
+    # at dispatch time (flat-form ↔ HF folder-form, fp16 stripping,
+    # basename + stem matching). A mapping is "resolvable" when any of
+    # those matches succeeds — only then is it really a missing file.
+    GENERIC_HF = {"diffusion_pytorch_model.safetensors",
+                   "pytorch_model.safetensors", "model.safetensors"}
+
+    def _stem(path: str) -> str:
+        norm = path.replace("\\", "/")
+        bn = norm.rsplit("/", 1)[-1].lower()
+        if bn in GENERIC_HF and "/" in norm:
+            parent = norm.rsplit("/", 2)[-2].lower()
+            return parent
+        stem = bn.rsplit(".", 1)[0]
+        if stem.endswith("_fp16"):
+            stem = stem[:-len("_fp16")]
+        return stem
+
+    available_stems = {_stem(a) for a in available}
+    available_basenames = {
+        a.replace("\\", "/").rsplit("/", 1)[-1].lower()
+        for a in available}
+
+    def _resolvable(model_file: str) -> bool:
+        if model_file in available:
+            return True
+        bn = model_file.replace("\\", "/").rsplit("/", 1)[-1].lower()
+        if bn not in GENERIC_HF and bn in available_basenames:
+            return True
+        s = _stem(model_file)
+        if s and s in available_stems:
+            return True
+        return False
+
     missing = []
     for mode_name, spec in modes_dict.items():
         cn_models = spec.get("cn_models") or {}
         for arch, model_file in cn_models.items():
             if not model_file:
                 continue
-            if model_file not in available:
+            if not _resolvable(model_file):
                 missing.append(f"{mode_name!r}[{arch}] → {model_file}")
     if not missing:
-        report.add(section, "every mode × arch has a real model", PASS,
-                   f"{len(modes_dict)} modes verified")
+        report.add(section, "every mode × arch resolves to an installed file",
+                   PASS, f"{len(modes_dict)} modes verified via resolver")
     else:
-        # Don't fail outright — missing models = server missing files,
-        # not necessarily a wiring bug. Warn with details.
+        # Don't fail outright — genuinely missing files = install gap,
+        # not a wiring bug. Warn with details.
         sample = "; ".join(missing[:5])
         more = f" (+{len(missing)-5} more)" if len(missing) > 5 else ""
-        report.add(section, "every mode × arch has a real model", WARN,
-                   f"{len(missing)} mappings missing: {sample}{more}")
+        report.add(section, "every mode × arch resolves to an installed file",
+                   WARN,
+                   f"{len(missing)} mappings unresolvable: {sample}{more}")
 
 
 def test_coverage_inventory(report: Report, verbose: bool = False) -> None:
