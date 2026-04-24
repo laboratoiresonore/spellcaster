@@ -19598,17 +19598,30 @@ class Spellcaster(Gimp.PlugIn):
         # top entry on GIMP's menu bar — users scan for the theme,
         # not the generic "Spellcaster" brand.
         #
-        #   💥 Summon   — Generate (magical explosion)
-        #   🪆 Klein    — Flux 2 (voodoo-doll artifact; user ask)
-        #   🎭 Masks    — Face ops (theatrical mask; user ask)
-        #   🕯 Sigils   — Selection (candle / rune)
-        #   ⚗ Alchemy  — Enhance + Colors + Style (alembic)
-        #   🔮 Scrying  — Video (crystal ball)
-        #   🔗 Bridges  — Cross-app (chain links)
-        #   ⚡ Quick    — Zero-dialog shortcuts (lightning)
-        #   🗝 Crypt    — Settings, Diagnostics, Studios, 3D, Tools
-        #                (skeleton key / tomb — catch-all for
-        #                advanced / less-used entries)
+        #   💥 Summon   — Generate (magical explosion): txt2img, img2img,
+        #                inpaint, outpaint, batch-variations, kontext,
+        #                generate-anything
+        #   🪆 Klein    — Flux 2 Klein surgical edits (15 entries)
+        #   🎭 Masks    — Face ops: faceswap, faceid, pulid, face-restore
+        #   🕯 Sigils   — Selection: SAM3, magic-eraser, rembg,
+        #                anything-but (5 entries)
+        #   ⚗ Alchemy  — Enhance + Colors + Style + **3D submenu**:
+        #                upscalers, restore, hallucinate, LUT, colorize,
+        #                IC-Light, normal-map, style, magical-zoom +
+        #                /3D/ with img2img-3d, inpaint-3d, outpaint-3d,
+        #                iclight-3d (the "mandatory 3D normal map"
+        #                variants — locked-on 3D CN, distinct from
+        #                Summon's regular img2img/inpaint/outpaint).
+        #   🔮 Scrying  — Video (LTX, WAN) + /Studios + /View toggles
+        #   🔗 Bridges  — Cross-app: Bridges Panel + /Send-To + /Receive
+        #   ⚡ Quick    — Zero-dialog shortcuts: rerun-last, quick
+        #                enhance / inpaint / upscale / face-restore /
+        #                rembg / erase, cancel-queued
+        #   🗝 Crypt    — Settings, Diagnostics, presets, tools admin.
+        #                (pre-2026-04-24 the comment here listed "3D"
+        #                under Crypt — that was stale; 3D was moved to
+        #                Alchemy/3D by commit 53850f2 and every 3D
+        #                handler lives there now.)
         _M_SUMMON  = "<Image>/💥 Summon"
         _M_KLEIN   = "<Image>/🪆 Klein"
         _M_MASKS   = "<Image>/🎭 Masks"
