@@ -275,12 +275,17 @@ def dispatch_workflow(server, workflow, *, timeout=300, free_vram=False,
     """
     # Trusted fast-path: every build_* produces a workflow whose
     # class_types and input shapes we own in the canonical factories,
-    # so re-validating them per dispatch is pure latency. Flip BOTH
-    # flags off in one go rather than making every caller remember to
-    # set preflight=False AND optimize=False.
+    # so re-validating them per dispatch is pure latency. Skip ONLY
+    # preflight (the /object_info-heavy step) — keep optimize ON
+    # because it's cheap (one /system_stats call + arithmetic) and
+    # it's what VRAM-caps the resolution. Without optimizer, an
+    # oversized workflow on an under-provisioned GPU crawls in
+    # memory-swap territory at 0.01 it/s, which user-side looks
+    # indistinguishable from an indefinite hang (2026-04-24 hotfix
+    # after user reported Klein inpaint "runs indefinitely").
     if trusted:
         preflight = False
-        optimize = False
+        # optimize stays enabled — it's cheap and prevents OOM hangs.
     server = server.rstrip("/")
     warnings = []
 
