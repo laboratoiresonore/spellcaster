@@ -133,3 +133,18 @@ installer/antenna_entry.py
 the private downstream distribution-*.zip
 dist/token.txt
 _embedded_token.py
+
+# Root-level dev scratch: screenshots, JSON dumps, workflow probes,
+# and MCP/Playwright caches that accumulate during debugging. No
+# tracked file matches these patterns at root (checked 2026-04-24).
+/*.png
+/*.gif
+/_*.json
+/_*.bin
+/_*.txt
+/oi.json
+/shootout-list.yml
+/private-distro/
+/.playwright-mcp/
+tavern/activity.log
+tavern/shotboard.json
