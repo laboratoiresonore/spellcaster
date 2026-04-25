@@ -134,8 +134,26 @@ def fetch_civitai_thumb(page_url):
         pass
     return None
 
+# Single shared thread pool for all CivitAI thumbnail fetches across the GUI.
+# Was: one daemon thread per call. With 100+ models on the granular step that
+# spawned 100+ simultaneous threads → memory pressure + CivitAI 429 rate-limit
+# → many thumbnails just silently failed. Bounded pool fetches in batches of
+# 4 concurrent, keeps the request rate civilised, fails-open if the pool
+# itself can't be created (very old Pythons / restricted environments).
+try:
+    from concurrent.futures import ThreadPoolExecutor as _CivPool
+    _civitai_pool = _CivPool(max_workers=4, thread_name_prefix="civitai-thumb")
+except Exception:  # noqa: BLE001
+    _civitai_pool = None
+
+
 def load_image_async(url, label, size=(100, 100)):
-    """Download an image in a daemon thread and update a CTkLabel on the main thread."""
+    """Download an image off the main thread and update a CTkLabel.
+
+    Uses a bounded shared thread pool (4 concurrent) so a granular page
+    with 100+ models doesn't fork 100 OS threads. If the pool isn't
+    available (very old Python), falls back to one-thread-per-call.
+    """
     def worker():
         import requests, io
         try:
@@ -146,6 +164,12 @@ def load_image_async(url, label, size=(100, 100)):
                 ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=img.size)
                 label.after(0, lambda: label.configure(image=ctk_img))
         except Exception:
+            pass
+    if _civitai_pool is not None:
+        try:
+            _civitai_pool.submit(worker)
+            return
+        except Exception:  # noqa: BLE001 — pool may be shut down on app exit
             pass
     threading.Thread(target=worker, daemon=True).start()
 
@@ -1446,9 +1470,24 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         self.start_btn.pack(pady=15)
         _ToolTip(self.start_btn, "Start the installation! This will download all selected models and clone all required custom nodes into your ComfyUI directory. The button is disabled once installation begins. Failed downloads are automatically retried once.")
 
+        # Remote-server hint banner — fires when ComfyUI is on a different
+        # machine. Without this, users on LAN-server setups would dutifully
+        # fill in a non-existent local ComfyUI dir, then watch 50 GB of
+        # models download into the wrong place. The install pipeline already
+        # detects the remote case at run time (line 2589) and skips the
+        # ComfyUI-side phases — this banner just tells the user UPFRONT.
+        ctk.CTkLabel(f_paths,
+                     text="💡 ComfyUI on another machine? LEAVE the ComfyUI Directory "
+                          "field blank — the installer detects this as a remote setup "
+                          "and only installs plugins + Wizard Guild locally. Make sure "
+                          "models and custom nodes are installed on the remote machine.",
+                     font=ctk.CTkFont(family="Inter", size=11),
+                     text_color=self.text_muted, wraplength=720,
+                     justify="left").pack(anchor="w", padx=30, pady=(0, 10))
+
         # Now add the actual path rows into f_paths
         add_path_row(f_paths, "ComfyUI Directory:", self.comfyui_path,
-                     entry_tip="Root folder of your ComfyUI installation (contains 'models', 'custom_nodes', etc.). The installer auto-detects this if ComfyUI is in a standard location. All models and nodes will be installed here.",
+                     entry_tip="Root folder of your ComfyUI installation (contains 'models', 'custom_nodes', etc.). The installer auto-detects this if ComfyUI is in a standard location. All models and nodes will be installed here. LEAVE BLANK if ComfyUI is on a different machine — the installer will then only install plugins + Wizard Guild locally.",
                      browse_tip="Open a folder picker to locate your ComfyUI installation directory.")
         add_path_row(f_paths, "GIMP 3 Plugins Dir:", self.gimp_path,
                      entry_tip="GIMP 3 plug-ins directory where the ComfyUI connector will be installed. Usually auto-detected. On Windows this is typically under AppData/Roaming/GIMP/3.2/plug-ins (or 3.0 for older GIMP).",
