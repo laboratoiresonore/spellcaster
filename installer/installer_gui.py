@@ -2393,6 +2393,14 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         else:
             self._install_models(comfy_path, stats)
 
+        # ---- Phase 4: End-to-end validation ----
+        # Submit tiny test workflows against the configured server to verify
+        # each installed feature actually works. Re-uses install._run_validation
+        # which is also wrapped by the standalone spellcaster-validate-install
+        # tool. Failures get logged but never block the install — users can
+        # always re-run the validator later.
+        self._run_validation_phase(stats)
+
         # ---- Done ----
         elapsed = time.time() - t_start
         self._set_file_progress("Deployment complete!")
@@ -2401,12 +2409,60 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         self.log(f"  DEPLOYMENT COMPLETE in {elapsed:.0f}s")
         self.log(f"  Plugins: {stats['plugins']}  |  Nodes: {stats['nodes']}")
         self.log(f"  Models OK: {stats['models_ok']}  |  Skipped: {stats['models_skip']}  |  Failed: {stats['models_fail']}")
+        if "validation_working" in stats:
+            self.log(f"  Validation: {stats['validation_working']} working, "
+                     f"{stats['validation_broken']} broken")
         if _remote_only:
             self.log(f"\n  Plugins configured for remote server: {self.server_url.get()}")
             self.log(f"  Remember to install nodes & models on the remote machine.")
         self.log(f"{'='*56}")
         self.start_btn.configure(state="normal", text="Completed")
         return
+
+    def _run_validation_phase(self, stats):
+        """Phase 4: probe what was installed actually works end-to-end."""
+        server = self.server_url.get().rstrip("/") if hasattr(self, "server_url") else ""
+        if not server:
+            self.log("\nPhase 4/4: Validation skipped (no server URL).\n")
+            return
+
+        self._set_file_progress("✨ Phase 4/4: Validating installed features...")
+        self.log("\n" + "=" * 56)
+        self.log("Phase 4/4: Validating What Was Installed")
+        self.log("=" * 56)
+        self.log("Submitting tiny test workflows to verify each feature works.")
+        self.log("Takes 1-5 min depending on GPU. If you just installed new")
+        self.log("custom nodes, restart ComfyUI FIRST so probes can find them.\n")
+
+        try:
+            report = builder._run_validation(
+                server,
+                callback=lambda m: self.log(f"  {m}"),
+                save_report=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.log(f"  Validation crashed: {type(exc).__name__}: {exc}")
+            return
+
+        if report is None:
+            self.log("  Validation could not run "
+                     "(diagnostic module missing or server unreachable).")
+            return
+
+        working = report.get("working", [])
+        broken = report.get("broken", [])
+        stats["validation_working"] = len(working)
+        stats["validation_broken"] = len(broken)
+        if broken:
+            self.log(f"\n  {len(broken)} broken feature(s):")
+            for entry in broken:
+                if isinstance(entry, (list, tuple)):
+                    cap, err = entry[0], entry[1] if len(entry) > 1 else ""
+                else:
+                    cap, err = str(entry), ""
+                self.log(f"    - {cap}: {str(err)[:80]}")
+            self.log(f"\n  Re-run validation any time:")
+            self.log(f"    spellcaster-validate-install --server-url {server}")
 
     def _install_nodes(self, comfy_path, stats):
         """Phase 2: Clone custom nodes into ComfyUI."""

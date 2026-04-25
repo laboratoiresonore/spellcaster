@@ -42,15 +42,17 @@ ANTENNA_BAT_DIR_NAME = "antennas"
 
 
 # ─── Prompts ──────────────────────────────────────────────────────────────
+#
+# Late-imported from install.py inside the helpers below to avoid a top-level
+# import cycle (install.py imports antenna_setup near the end of main()).
 
 def _ask_with_default(prompt: str, default: str = "", auto_yes: bool = False) -> str:
-    """ask_text-equivalent; duplicated here to avoid circular import with install.py."""
-    if auto_yes:
-        return default
     try:
-        suffix = f" [{default}]" if default else ""
-        raw = input(f"{prompt}{suffix}: ").strip()
-        return raw or default
+        try:
+            from .install import ask_text  # type: ignore
+        except ImportError:
+            from install import ask_text  # type: ignore
+        return ask_text(prompt, default=default, auto_yes=auto_yes)
     except (EOFError, KeyboardInterrupt):
         print()
         return default
@@ -58,22 +60,14 @@ def _ask_with_default(prompt: str, default: str = "", auto_yes: bool = False) ->
 
 def _ask_choice(prompt: str, choices: list[str], default: int = 0,
                 auto_yes: bool = False) -> int:
-    if auto_yes:
-        return default
-    print(f"\n  {prompt}")
-    for i, c in enumerate(choices, start=1):
-        marker = " (default)" if (i - 1) == default else ""
-        print(f"    [{i}] {c}{marker}")
     try:
-        raw = input("  > ").strip()
-        if not raw:
-            return default
-        idx = int(raw) - 1
-        if 0 <= idx < len(choices):
-            return idx
-    except (ValueError, EOFError, KeyboardInterrupt):
-        pass
-    return default
+        try:
+            from .install import ask_choice  # type: ignore
+        except ImportError:
+            from install import ask_choice  # type: ignore
+        return ask_choice(prompt, choices, default=default, auto_yes=auto_yes)
+    except (EOFError, KeyboardInterrupt):
+        return default
 
 
 # ─── Main step ────────────────────────────────────────────────────────────

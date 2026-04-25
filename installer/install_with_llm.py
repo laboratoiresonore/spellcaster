@@ -636,7 +636,8 @@ def main():
         install.step_install_nodes(manifest, selected, paths, args.dry_run,
                                    server_info)
 
-    install.step_install_models(manifest, selected, paths, args)
+    install.step_install_models(manifest, selected, paths, args, server_info,
+                                getattr(args, '_vram_mb', 0))
     install._write_shared_settings(paths, server_url, llm_url, server_info,
                                    args.dry_run)
     install.step_install_plugins(paths, server_url, args.dry_run)
