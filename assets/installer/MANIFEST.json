@@ -1,0 +1,202 @@
+{
+  "version": 1,
+  "note": "Asset listing for bootstrap.py auto-fetch. Bump version when content changes to force re-download.",
+  "files": [
+    {
+      "name": "arch_chroma.png",
+      "size": 47269
+    },
+    {
+      "name": "arch_flux.png",
+      "size": 58167
+    },
+    {
+      "name": "arch_illustrious.png",
+      "size": 81635
+    },
+    {
+      "name": "arch_klein.png",
+      "size": 72990
+    },
+    {
+      "name": "arch_ltx.png",
+      "size": 79683
+    },
+    {
+      "name": "arch_sdxl.png",
+      "size": 71634
+    },
+    {
+      "name": "arch_wan.png",
+      "size": 73531
+    },
+    {
+      "name": "arch_zit.png",
+      "size": 46392
+    },
+    {
+      "name": "bg_components.png",
+      "size": 1075302
+    },
+    {
+      "name": "bg_deploy.png",
+      "size": 1000996
+    },
+    {
+      "name": "bg_detect.png",
+      "size": 1022454
+    },
+    {
+      "name": "bg_models.png",
+      "size": 1067746
+    },
+    {
+      "name": "bg_profiles.png",
+      "size": 1068324
+    },
+    {
+      "name": "bg_setup.png",
+      "size": 1128486
+    },
+    {
+      "name": "bg_system.png",
+      "size": 1176653
+    },
+    {
+      "name": "bg_welcome.png",
+      "size": 1235896
+    },
+    {
+      "name": "completion_celebration.png",
+      "size": 1692496
+    },
+    {
+      "name": "error_sigil.png",
+      "size": 65945
+    },
+    {
+      "name": "feature_controlnet.png",
+      "size": 106464
+    },
+    {
+      "name": "feature_generation.png",
+      "size": 95241
+    },
+    {
+      "name": "feature_identity.png",
+      "size": 106076
+    },
+    {
+      "name": "feature_metadata.png",
+      "size": 108875
+    },
+    {
+      "name": "feature_restoration.png",
+      "size": 113683
+    },
+    {
+      "name": "feature_styling.png",
+      "size": 73776
+    },
+    {
+      "name": "feature_video.png",
+      "size": 125080
+    },
+    {
+      "name": "hero_welcome.png",
+      "size": 1887181
+    },
+    {
+      "name": "loading_pulse_00.png",
+      "size": 136475
+    },
+    {
+      "name": "loading_pulse_01.png",
+      "size": 116341
+    },
+    {
+      "name": "loading_pulse_02.png",
+      "size": 126762
+    },
+    {
+      "name": "loading_pulse_03.png",
+      "size": 137799
+    },
+    {
+      "name": "loading_pulse_04.png",
+      "size": 142099
+    },
+    {
+      "name": "loading_pulse_05.png",
+      "size": 139483
+    },
+    {
+      "name": "loading_pulse_06.png",
+      "size": 135743
+    },
+    {
+      "name": "loading_pulse_07.png",
+      "size": 131410
+    },
+    {
+      "name": "loading_spin_00.png",
+      "size": 126650
+    },
+    {
+      "name": "loading_spin_01.png",
+      "size": 119891
+    },
+    {
+      "name": "loading_spin_02.png",
+      "size": 128866
+    },
+    {
+      "name": "loading_spin_03.png",
+      "size": 131830
+    },
+    {
+      "name": "loading_spin_04.png",
+      "size": 133997
+    },
+    {
+      "name": "loading_spin_05.png",
+      "size": 130431
+    },
+    {
+      "name": "loading_spin_06.png",
+      "size": 129440
+    },
+    {
+      "name": "loading_spin_07.png",
+      "size": 126736
+    },
+    {
+      "name": "sidebar_companion.png",
+      "size": 302844
+    },
+    {
+      "name": "usecase_face_swap.png",
+      "size": 817910
+    },
+    {
+      "name": "usecase_img2img.png",
+      "size": 691816
+    },
+    {
+      "name": "usecase_inpaint.png",
+      "size": 829868
+    },
+    {
+      "name": "usecase_restoration.png",
+      "size": 785404
+    },
+    {
+      "name": "usecase_text_to_image.png",
+      "size": 695863
+    },
+    {
+      "name": "usecase_video.png",
+      "size": 582781
+    }
+  ]
+}
