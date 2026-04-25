@@ -189,9 +189,13 @@ def build(target_platform: str, onedir: bool = False):
 def build_manual_update():
     """Build the lightweight manual update/repair tool.
 
-    This is a simple console app with no bundled data — it downloads
-    everything from GitHub at runtime.  Produces a small standalone exe.
+    Uses bootstrap.py as the entry point (variant detected from .exe name)
+    so the .exe self-updates from GitHub on every launch — same auto-update
+    mechanism as the main installer. Bundles manual_update.py as the
+    offline fallback. Net effect: never need to recompile this .exe to
+    ship a manual_update.py fix.
     """
+    sep = os.pathsep
     print("Building manual update tool…")
     cmd = [
         sys.executable, "-m", "PyInstaller",
@@ -199,9 +203,15 @@ def build_manual_update():
         "--onefile",
         "--console",
         "--name", "spellcaster-manual-update",
+        # Bootstrap is the entry; the actual tool ships as a baked
+        # fallback that the bootstrap loads when GitHub is unreachable.
+        "--hidden-import", "manual_update",
+        "--hidden-import", "splash",
+        "--hidden-import", "theme",
+        "--add-data", f"manual_update.py{sep}.",
         "--distpath", str(REPO_ROOT / "dist"),
         "--workpath", str(REPO_ROOT / "build"),
-        "manual_update.py",
+        "bootstrap.py",
     ]
     # Add icon on Windows if available
     icon_path = REPO_ROOT / "assets" / "spellcaster.ico"
@@ -233,9 +243,15 @@ def build_validate(target_platform: str):
         "--onefile",
         "--console",
         "--name", "spellcaster-validate-install",
-        # Validator imports install._run_validation + spellcaster_core.diagnostic
+        # Bootstrap entry — variant detected from .exe name. validate_install.py
+        # is bundled as the offline fallback; bootstrap fetches the latest from
+        # GitHub on every launch when network is reachable.
         "--hidden-import", "install",
+        "--hidden-import", "validate_install",
+        "--hidden-import", "splash",
+        "--hidden-import", "theme",
         "--add-data", f"install.py{sep}.",
+        "--add-data", f"validate_install.py{sep}.",
         "--add-data", f"manifest.json{sep}.",
         # diagnostic.py + its sibling spellcaster_core modules ship inside
         # the bundled GIMP plugin tree.
@@ -255,7 +271,7 @@ def build_validate(target_platform: str):
         cmd += ["--osx-bundle-identifier",
                 "com.laboratoiresonore.spellcaster.validate"]
 
-    cmd.append("validate_install.py")
+    cmd.append("bootstrap.py")
 
     print("Command:", " ".join(str(c) for c in cmd))
     result = subprocess.run(cmd, cwd=str(HERE))
@@ -290,8 +306,14 @@ def build_llm_variant(target_platform: str):
     common = [
         sys.executable, "-m", "PyInstaller",
         "--noconfirm",
-        "--hidden-import", "install",             # imported dynamically by install_with_llm
+        # Bootstrap entry — variant detected from .exe name. install_with_llm
+        # is bundled as the offline fallback. Same auto-update story as the
+        # main installer.
+        "--hidden-import", "install",
+        "--hidden-import", "install_with_llm",
         "--hidden-import", "installer_gui",
+        "--hidden-import", "splash",
+        "--hidden-import", "theme",
         "--hidden-import", "tkinter",
         "--hidden-import", "tkinter.scrolledtext",
         "--hidden-import", "tkinter.ttk",
@@ -301,6 +323,7 @@ def build_llm_variant(target_platform: str):
         "--hidden-import", "requests",
         "--add-data", f"manifest.json{sep}.",
         "--add-data", f"install.py{sep}.",
+        "--add-data", f"install_with_llm.py{sep}.",
         "--add-data", f"installer_gui.py{sep}.",
         "--add-data", f"{REPO_ROOT / 'plugins'}{sep}plugins",
         "--distpath", str(REPO_ROOT / "dist"),
@@ -318,7 +341,7 @@ def build_llm_variant(target_platform: str):
             "--onefile",
             "--console",   # experimental — keep console visible for LLM download progress
             "--name", "spellcaster-installer-llm",
-            "install_with_llm.py",
+            "bootstrap.py",
         ]
         output = "dist/spellcaster-installer-llm.exe"
     elif target_platform == "macos":
@@ -331,7 +354,7 @@ def build_llm_variant(target_platform: str):
             "--console",
             "--name", "spellcaster-installer-llm",
             "--osx-bundle-identifier", "com.laboratoiresonore.spellcaster.llm",
-            "install_with_llm.py",
+            "bootstrap.py",
         ]
         output = "dist/spellcaster-installer-llm"
     else:  # linux
@@ -339,7 +362,7 @@ def build_llm_variant(target_platform: str):
             "--onefile",
             "--console",
             "--name", "spellcaster-installer-llm",
-            "install_with_llm.py",
+            "bootstrap.py",
         ]
         output = "dist/spellcaster-installer-llm"
 
@@ -371,10 +394,16 @@ def build_remote_installer(target_platform: str):
         "--onefile",
         "--console",                                    # always console — no GUI
         "--name", "spellcaster-remote-installer",
-        # install.py provides the canonical helpers (path detection, plugin
-        # source lookup, LoRA classification) that install_remote re-exports.
+        # Bootstrap entry — variant detected from .exe name. install_remote
+        # is bundled as offline fallback. install.py provides the canonical
+        # helpers (path detection, LoRA classification) that install_remote
+        # re-exports.
         "--hidden-import", "install",
+        "--hidden-import", "install_remote",
+        "--hidden-import", "splash",
+        "--hidden-import", "theme",
         "--add-data", f"install.py{sep}.",
+        "--add-data", f"install_remote.py{sep}.",
         "--add-data", f"manifest.json{sep}.",
         "--add-data", f"{REPO_ROOT / 'plugins'}{sep}plugins",
         "--distpath", str(REPO_ROOT / "dist"),
@@ -397,7 +426,7 @@ def build_remote_installer(target_platform: str):
         if icon_path.exists():
             cmd += ["--icon", str(icon_path)]
 
-    cmd.append("install_remote.py")
+    cmd.append("bootstrap.py")
 
     print("Command:", " ".join(str(c) for c in cmd))
     result = subprocess.run(cmd, cwd=str(HERE))
