@@ -507,6 +507,48 @@ def find_default_comfyui() -> str:
     return ""
 
 
+def find_all_gimp_dirs() -> list[Path]:
+    """Like find_default_gimp() but returns ALL detected plug-ins dirs.
+
+    Users with both GIMP 3.0 and 3.2 installed side-by-side previously
+    only got the plugin into ONE version (whichever the auto-detector
+    found first). This returns every plausible candidate so the caller
+    can install everywhere — important because GIMP versions don't
+    share plug-ins/ across versions.
+    """
+    seen: set[Path] = set()
+    out: list[Path] = []
+    home = Path.home()
+    config_roots: list[Path] = []
+    if platform.system() == "Windows":
+        for env_key in ("APPDATA", "LOCALAPPDATA"):
+            v = os.environ.get(env_key, "")
+            if v:
+                config_roots.append(Path(v) / "GIMP")
+        config_roots.append(home / "AppData" / "Roaming" / "GIMP")
+    elif platform.system() == "Darwin":
+        config_roots.extend([
+            home / "Library" / "Application Support" / "GIMP",
+            home / "Library" / "GIMP",
+        ])
+    else:
+        config_roots.extend([
+            home / ".config" / "GIMP",
+            home / ".var" / "app" / "org.gimp.GIMP" / "config" / "GIMP",
+            home / "snap" / "gimp" / "current" / ".config" / "GIMP",
+        ])
+    for root in config_roots:
+        for p in _scan_gimp_versions(root):
+            try:
+                rp = p.resolve()
+            except OSError:
+                rp = p
+            if rp not in seen and (rp.is_dir() or rp.parent.is_dir()):
+                seen.add(rp)
+                out.append(p)
+    return out
+
+
 def find_default_gimp() -> str:
     """Auto-detect GIMP 3 user plug-ins directory using multiple strategies.
 
@@ -1143,6 +1185,21 @@ def download_file(url: str, dest: Path, dry_run: bool = False,
                 print()
         print(f"  {C_GREEN}✓ Saved to {dest}{C_RESET}")
         return True
+    except KeyboardInterrupt:
+        # User pressed Ctrl+C mid-download. Clean up the partial file so
+        # re-runs don't see a half-MB stub and skip the model thinking
+        # it's already there. Re-raise so the outer pipeline tears down
+        # cleanly (the caller's try/except handles the wider rollback).
+        if dest.exists():
+            try:
+                size_mb = dest.stat().st_size / 1048576
+                dest.unlink()
+                print(f"\n  {C_YELLOW}⚠ Cancelled. Removed partial file "
+                      f"({size_mb:.1f} MB).{C_RESET}")
+            except OSError:
+                print(f"\n  {C_YELLOW}⚠ Cancelled. Could not remove partial "
+                      f"{dest} — delete manually before re-running.{C_RESET}")
+        raise
     except urllib.error.HTTPError as e:
         if dest.exists():
             dest.unlink()
@@ -1774,6 +1831,35 @@ def _is_remote_server(server_url: str) -> bool:
     return host not in ("", "localhost", "127.0.0.1", "::1", "0.0.0.0")
 
 
+def _split_url_credentials(server_url: str) -> tuple[str, str | None]:
+    """Strip ``user:pass@`` from a server URL, returning (clean_url, header).
+
+    Some users protect their ComfyUI instance with HTTP basic auth via a
+    reverse proxy (nginx, traefik). Without this helper, urllib's plain
+    Request never sends the Authorization header, all probes return 401,
+    and the installer reports "unreachable" with no actionable message.
+
+    Returns:
+      (clean_url, "Basic <b64>")  when credentials were present
+      (server_url, None)          otherwise — caller skips the header
+    """
+    try:
+        from urllib.parse import urlparse, urlunparse
+        parts = urlparse(server_url)
+        if not parts.username:
+            return server_url, None
+        # Re-assemble without the user:pass@ prefix so it never gets logged
+        netloc = parts.hostname or ""
+        if parts.port:
+            netloc = f"{netloc}:{parts.port}"
+        clean = urlunparse(parts._replace(netloc=netloc))
+        import base64
+        creds = f"{parts.username}:{parts.password or ''}".encode("utf-8")
+        return clean, "Basic " + base64.b64encode(creds).decode("ascii")
+    except Exception:  # noqa: BLE001
+        return server_url, None
+
+
 def step_preflight(server_url: str, args) -> bool:
     """Pre-flight: quick reachability check on (a) the configured ComfyUI
     server and (b) general internet (GitHub raw, the source of all nodes/
@@ -1828,20 +1914,33 @@ def step_preflight(server_url: str, args) -> bool:
 
     # Probe 1 — ComfyUI server (5s timeout: we just want a TCP handshake +
     # any HTTP response; the deeper /object_info probe runs later).
+    # If the URL had user:pass@ credentials, strip them + send Authorization.
+    clean_url, auth_header = _split_url_credentials(server_url)
     server_ok = False
-    print(f"  → ComfyUI server: {C_CYAN}{server_url}{C_RESET}")
+    print(f"  → ComfyUI server: {C_CYAN}{clean_url}{C_RESET}"
+          + (f"  {C_DIM}(with HTTP basic auth){C_RESET}" if auth_header else ""))
     try:
-        req = urllib.request.Request(f"{server_url.rstrip('/')}/system_stats")
+        req = urllib.request.Request(f"{clean_url.rstrip('/')}/system_stats")
+        if auth_header:
+            req.add_header("Authorization", auth_header)
         with urllib.request.urlopen(req, timeout=5) as r:
             r.read(64)
         print(f"    {C_GREEN}✓ reachable{C_RESET}")
         server_ok = True
+    except urllib.error.HTTPError as e:
+        if e.code == 401 and not auth_header:
+            print(f"    {C_RED}✗ HTTP 401 — server requires authentication.{C_RESET}")
+            print(f"    {C_YELLOW}Re-run with credentials in the URL:{C_RESET}")
+            print(f"      --server-url http://USER:PASSWORD@{server_url.split('//', 1)[-1]}")
+        else:
+            print(f"    {C_RED}✗ HTTP {e.code}: {e}{C_RESET}")
     except Exception as e:  # noqa: BLE001
         print(f"    {C_RED}✗ unreachable: {type(e).__name__}: {e}{C_RESET}")
         print(f"    {C_YELLOW}Common causes:{C_RESET}")
         print(f"      • ComfyUI isn't running yet — start it, then re-run this installer")
         print(f"      • Wrong URL — re-run with --server-url http://<IP>:<PORT>")
         print(f"      • Firewall blocks the port — open it on the ComfyUI machine")
+        print(f"      • Server requires auth — try http://USER:PASS@host:port")
 
     # Probe 2 — internet (raw.githubusercontent.com is what bootstrap +
     # node installs hit; if it's down everything else will fail too).
@@ -2814,6 +2913,104 @@ def step_install_nodes(manifest: dict, selected: dict[str, bool], paths: dict,
     return newly_installed_sentinels
 
 
+def _read_extra_model_paths(comfy_root: Path) -> dict[str, Path]:
+    """Parse ComfyUI's extra_model_paths.yaml for redirected model dirs.
+
+    Many users keep checkpoints / LoRAs on a different drive and point
+    ComfyUI at them via this YAML. The installer used to ignore the file
+    and dump downloads into ``comfy/models/<category>/`` regardless,
+    filling the wrong drive while the user's external drive sat empty.
+
+    Returns a mapping ``category → Path`` for every category mentioned
+    in the YAML, e.g. ``{"checkpoints": Path("D:/AI/SDXL"), "loras": ...}``.
+    Empty dict on no-file / parse-failure (caller falls back to default
+    layout). Per-category value picks the FIRST writable path listed.
+
+    YAML format (excerpt) — ComfyUI canonical:
+        a111:
+          base_path: D:/AI/SDXL/
+          checkpoints: Stable-diffusion
+          loras: Lora
+        comfyui:
+          base_path: D:/Comfy/models/
+          checkpoints: checkpoints
+    """
+    yaml_path = comfy_root / "extra_model_paths.yaml"
+    if not yaml_path.is_file():
+        return {}
+    try:
+        text = yaml_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return {}
+
+    # Try PyYAML first; fall back to a tiny line parser sufficient for
+    # the canonical format. Bundled installers don't ship PyYAML so
+    # the line parser is the realistic path.
+    parsed: dict | None = None
+    try:
+        import yaml  # type: ignore
+        parsed = yaml.safe_load(text)
+    except Exception:  # noqa: BLE001 — module missing or YAML error
+        parsed = None
+
+    if parsed is None:
+        # Minimal fallback parser. Recognises:
+        #   group_name:
+        #     base_path: <abs_path>
+        #     <category>: <subdir or abs path>
+        # Ignores comments and unknown directives.
+        parsed = {}
+        cur_group = None
+        cur: dict = {}
+        for raw in text.splitlines():
+            line = raw.split("#", 1)[0].rstrip()
+            if not line:
+                continue
+            if not line.startswith(" "):
+                # New group header
+                if cur_group is not None:
+                    parsed[cur_group] = cur
+                cur_group = line.rstrip(":").strip()
+                cur = {}
+                continue
+            if ":" not in line:
+                continue
+            k, _, v = line.lstrip().partition(":")
+            cur[k.strip()] = v.strip()
+        if cur_group is not None:
+            parsed[cur_group] = cur
+
+    if not isinstance(parsed, dict):
+        return {}
+
+    redirects: dict[str, Path] = {}
+    for _group, body in parsed.items():
+        if not isinstance(body, dict):
+            continue
+        base = body.get("base_path", "")
+        for cat, sub in body.items():
+            if cat == "base_path" or not isinstance(sub, str):
+                continue
+            # Multiple paths can be newline-separated in canonical YAML;
+            # pick the first one for downloads.
+            for sub_one in sub.replace(",", "\n").splitlines():
+                sub_one = sub_one.strip()
+                if not sub_one:
+                    continue
+                p = Path(sub_one).expanduser()
+                if not p.is_absolute() and base:
+                    p = (Path(base).expanduser() / p)
+                # Test writable so we don't propose a read-only network mount
+                try:
+                    p.mkdir(parents=True, exist_ok=True)
+                    if cat not in redirects:
+                        redirects[cat] = p
+                    break
+                except OSError:
+                    continue
+    return redirects
+
+
 def step_install_models(manifest: dict, selected: dict[str, bool], paths: dict,
                         args, server_info: dict | None = None,
                         local_vram_mb: int = 0) -> None:
@@ -2873,6 +3070,19 @@ def step_install_models(manifest: dict, selected: dict[str, bool], paths: dict,
         )
 
     models_dir = paths["comfyui"] / "models"
+
+    # Honor extra_model_paths.yaml if present — many users keep their
+    # checkpoints/LoRAs on a different drive and point ComfyUI there
+    # via this YAML. Without this, downloads would land in the default
+    # comfy/models/<cat>/ tree, filling the wrong drive while the
+    # external drive sat empty.
+    extra_paths = _read_extra_model_paths(paths["comfyui"])
+    if extra_paths:
+        print(f"  {C_CYAN}Detected extra_model_paths.yaml — downloads will "
+              f"redirect:{C_RESET}")
+        for cat, p in sorted(extra_paths.items()):
+            print(f"    {C_DIM}{cat:14s} → {p}{C_RESET}")
+
     warnings: list[str] = []
     downloaded = skipped = already_present = failed = 0
 
@@ -3012,7 +3222,16 @@ def step_install_models(manifest: dict, selected: dict[str, bool], paths: dict,
             if rel_path.startswith("custom_nodes/"):
                 dest = paths["comfyui"] / rel_path
             else:
-                dest = models_dir / rel_path
+                # If extra_model_paths.yaml redirects this category to a
+                # different drive, honour it. rel_path is shaped like
+                # "checkpoints/SDXL/Foo/bar.safetensors" — split off the
+                # leading category and re-root onto the redirected dir.
+                category = rel_path.split("/", 1)[0] if "/" in rel_path else ""
+                if category and category in extra_paths:
+                    remainder = rel_path.split("/", 1)[1] if "/" in rel_path else rel_path
+                    dest = extra_paths[category] / remainder
+                else:
+                    dest = models_dir / rel_path
 
             # Category hint for the server-side check. Manifest paths
             # like "checkpoints/SDXL/Base/foo.safetensors" lead with
@@ -3511,6 +3730,31 @@ def step_validate_install(paths: dict, server_url: str, server_info: dict,
     print(f"  {C_DIM}Running tiny test workflows against your ComfyUI server to")
     print(f"  verify each installed feature works end-to-end. Takes 1-5 min.{C_RESET}\n")
 
+    # ── Queue check ────────────────────────────────────────────────
+    # Validation submits ~10 workflows. If ComfyUI is currently busy
+    # with someone else's render, our test workflows queue behind it
+    # and the per-test 180s timeout fires falsely. Probe /queue first
+    # and warn / wait if there's significant backlog.
+    try:
+        req = urllib.request.Request(f"{server_url.rstrip('/')}/queue")
+        with urllib.request.urlopen(req, timeout=5) as r:
+            q = json.loads(r.read())
+        running = len(q.get("queue_running") or [])
+        pending = len(q.get("queue_pending") or [])
+        if running + pending > 0:
+            print(f"  {C_YELLOW}⚠ ComfyUI queue is busy: "
+                  f"{running} running, {pending} pending.{C_RESET}")
+            print(f"  {C_DIM}Validation workflows will queue behind these and may "
+                  f"time out. Recommended: wait for the queue to drain, then "
+                  f"re-run validation.{C_RESET}")
+            if not headless and not ask_yn(
+                    "  Run validation anyway?", default=False):
+                print(f"  {C_DIM}Skipped. Re-run later via spellcaster-validate-install"
+                      f".{C_RESET}")
+                return None
+    except Exception:  # noqa: BLE001 — queue endpoint may not exist on old ComfyUI
+        pass
+
     # Restart-aware sentinel check — if we just cloned new node packs,
     # /object_info must include their class_types before validation makes
     # sense. Interactive: loop with menu. Headless: skip the loop, log a
@@ -3696,6 +3940,50 @@ def step_install_plugins(paths: dict, server_url: str, dry_run: bool = False):
     # GIMP 3 plugin naming rule: the folder name MUST match the main script
     # name (minus .py).  So "comfyui-connector/comfyui-connector.py" is the
     # required layout inside plug-ins/.
+    #
+    # Multi-version handling: if BOTH 3.0 and 3.2 are detected, install to
+    # both. GIMP versions don't share plug-ins/ across versions and users
+    # who haven't fully migrated still expect Spellcaster to show up
+    # everywhere they have GIMP. Falls back to the single auto-detected
+    # path when only one version exists.
+    extra_gimp_dirs: list[Path] = []
+    if paths["gimp"] and not dry_run:
+        try:
+            all_dirs = find_all_gimp_dirs()
+            for d in all_dirs:
+                try:
+                    rp = d.resolve()
+                except OSError:
+                    rp = d
+                if rp != paths["gimp"].resolve() and (rp.is_dir() or rp.parent.is_dir()):
+                    extra_gimp_dirs.append(d)
+            if extra_gimp_dirs:
+                print(f"  {C_CYAN}Detected {len(extra_gimp_dirs) + 1} GIMP "
+                      f"version(s) — will install plugin to all of them:{C_RESET}")
+                print(f"    {C_DIM}{paths['gimp']}{C_RESET}")
+                for d in extra_gimp_dirs:
+                    print(f"    {C_DIM}{d}{C_RESET}")
+        except Exception as _multi_err:  # noqa: BLE001 — multi-detect is a nicety
+            extra_gimp_dirs = []
+
+    # GIMP-running detection — GIMP holds locks on pluginrc; copies still
+    # land but don't take effect until restart, AND on Windows can fail
+    # with WinError 32. Best-effort detection via psutil OR pluginrc lock.
+    if paths["gimp"] and not dry_run:
+        try:
+            import psutil  # type: ignore
+            if any("gimp" in (p.info.get("name", "") or "").lower()
+                   for p in psutil.process_iter(["name"])):
+                print(f"  {C_YELLOW}⚠ GIMP appears to be running. Plugin files will "
+                      f"be copied but won't load until you fully exit + restart "
+                      f"GIMP (Files → Quit, not just close-window).{C_RESET}")
+        except ImportError:
+            # psutil not bundled — fall back to nothing; this is a best-
+            # effort UX hint, not a correctness requirement.
+            pass
+        except Exception:  # noqa: BLE001 — any psutil oddness, just skip
+            pass
+
     if paths["gimp"]:
         # Pre-flight: verify the plug-ins dir is writable BEFORE we start
         # copying. Catches read-only system-wide GIMP installs early —
@@ -3719,13 +4007,25 @@ def step_install_plugins(paths: dict, server_url: str, dry_run: bool = False):
 
             if not dry_run:
                 # GIMP plugin reads server URL from config.json at runtime,
-                # so we write it there instead of patching the Python source
+                # so we write it there instead of patching the Python source.
+                # Strip any HTTP-basic-auth credentials from the URL — they
+                # belong in a separate field (or env var) so the password
+                # doesn't end up baked into a config file the user might
+                # screenshot / share / commit.
                 config_path = dest / "config.json"
+                clean_url, auth_header = _split_url_credentials(server_url)
                 if dest.is_dir():
                     try:
-                        cfg = {"server_url": server_url}
+                        cfg = {"server_url": clean_url}
+                        if auth_header:
+                            cfg["server_auth_header"] = auth_header
+                            cfg["_note"] = ("server_auth_header was extracted from "
+                                             "the URL you provided. The plugin sends "
+                                             "it as the Authorization header on every "
+                                             "ComfyUI request.")
                         config_path.write_text(json.dumps(cfg, indent=4), encoding="utf-8")
-                        print(f"  {C_GREEN}✓ Wrote server configuration to config.json{C_RESET}")
+                        print(f"  {C_GREEN}✓ Wrote server configuration to config.json{C_RESET}"
+                              + (f"  {C_DIM}(with basic auth header){C_RESET}" if auth_header else ""))
                     except OSError as e:
                         print(f"  {C_YELLOW}⚠ Failed to write config.json: {e}{C_RESET}")
 
@@ -3756,6 +4056,34 @@ def step_install_plugins(paths: dict, server_url: str, dry_run: bool = False):
 
             # Install AI canvas size templates into GIMP's template list
             install_gimp_ai_templates(paths["gimp"], dry_run)
+
+            # Mirror to OTHER detected GIMP versions (3.0 + 3.2 side-by-
+            # side case). Each version has its own plug-ins/, config dir,
+            # and pluginrc cache. We re-run the same copy + config-write
+            # + cache-delete dance against each so all versions pick up
+            # the plugin without the user having to re-run the installer.
+            for extra_dir in extra_gimp_dirs:
+                if not _check_writable(extra_dir, f"GIMP plug-ins ({extra_dir})"):
+                    continue
+                extra_dest = extra_dir / gimp_src.name
+                print(f"  {C_CYAN}Mirroring plugin to:{C_RESET} {extra_dir}")
+                copy_plugin(gimp_src, extra_dest, dry_run)
+                if _core_src and extra_dest.is_dir():
+                    copy_plugin(_core_src, extra_dest / "spellcaster_core", dry_run)
+                # config.json with the same auth/server settings
+                try:
+                    extra_cfg = {"server_url": clean_url}
+                    if auth_header:
+                        extra_cfg["server_auth_header"] = auth_header
+                    (extra_dest / "config.json").write_text(
+                        json.dumps(extra_cfg, indent=4), encoding="utf-8")
+                except OSError:
+                    pass
+                if os.name != "nt":
+                    py = extra_dest / "comfyui-connector.py"
+                    if py.exists():
+                        py.chmod(0o755)
+                install_gimp_ai_templates(extra_dir, dry_run)
 
         else:
             print(f"  {C_YELLOW}⚠ GIMP plugin source not found.{C_RESET}")
@@ -4730,7 +5058,27 @@ def main():
 
 
 def _run_cli(args):
-    """Run the full CLI installation pipeline."""
+    """CLI pipeline entry. Wraps _run_cli_inner with graceful Ctrl+C handling.
+
+    Without this wrapper, Ctrl+C dumped a traceback and left whatever
+    half-downloaded models / half-cloned nodes were in flight on disk.
+    The download_file()/git_clone helpers now clean up THEIR partial
+    file before re-raising; this wrapper catches the propagated
+    KeyboardInterrupt at the top level and prints a friendly bye-bye
+    instead of a 50-line traceback.
+    """
+    try:
+        _run_cli_inner(args)
+    except KeyboardInterrupt:
+        print(f"\n\n  {C_YELLOW}Install cancelled by user (Ctrl+C).{C_RESET}")
+        print(f"  {C_DIM}Partial downloads have been cleaned up. Re-run the "
+              f"installer to resume — already-installed nodes/models will "
+              f"be skipped automatically.{C_RESET}\n")
+        sys.exit(130)  # POSIX convention: 128 + SIGINT
+
+
+def _run_cli_inner(args):
+    """Internal: the actual CLI pipeline. Wrapped by _run_cli for KeyboardInterrupt handling."""
     banner()
 
     if args.dry_run:
