@@ -239,11 +239,11 @@ A real pipeline, all built into the GIMP menu. Generate a scene → AI-select th
 | **GIMP 3** | Free image editor (the free Photoshop) | [gimp.org](https://www.gimp.org/downloads/) |
 | **A GPU with 4+ GB VRAM** | Runs the AI models | You probably have one |
 
-> **No GPU on this machine?** That's fine — your ComfyUI can live on a different computer on your LAN (e.g. a gaming PC in the closet). Use **`spellcaster-remote-installer.exe`** below.
+> **No GPU on this machine?** That's fine — if you have a gaming PC in another room, you can run ComfyUI there and Spellcaster on your laptop. Use the **Remote Installer** further down.
 
 ### Get the installer
 
-The main installer auto-detects your GPU + ComfyUI, downloads what you don't have, configures every plugin, generates shortcuts. ~370 MB, includes 49 locally-generated visual assets.
+This is the one you want **99% of the time**. Double-click and click Next a few times. It looks at your computer, downloads what's missing, sets up GIMP, and makes desktop shortcuts. About 370 MB — includes the wizard's own artwork (drawn locally by Spellcaster's own engine).
 
 <p align="center">
   <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-installer.exe"><img src="https://img.shields.io/badge/Windows-spellcaster--installer.exe-7c3aed?style=for-the-badge&logo=windows&logoColor=white" alt="Windows"/></a>
@@ -253,31 +253,53 @@ The main installer auto-detects your GPU + ComfyUI, downloads what you don't hav
   <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-installer"><img src="https://img.shields.io/badge/Linux-spellcaster--installer-7c3aed?style=for-the-badge&logo=linux&logoColor=white" alt="Linux"/></a>
 </p>
 
-1. **Download** and run the installer. It detects your GPU, downloads models, installs plugins, creates shortcuts.
-2. **Open GIMP.** `Filters > Spellcaster` — all 69 AI tools are there.
-3. **Pick any tool. Click Generate.** Every preset is already optimized. The AI does the rest. You take the credit.
+**How to use it:**
 
-> **From source:** `git clone https://github.com/laboratoiresonore/spellcaster && cd spellcaster && python installer/install.py`
+1. **Download it.** Double-click. Wait. (First time, it asks Windows for permission — click Yes.)
+2. **Click through the wizard.** It auto-fills almost everything; you mostly just click *Next*. If something looks unfamiliar, leave it as the default — we picked smart defaults.
+3. **Open GIMP.** Go to the **Filters** menu → **Spellcaster**. Every AI tool is there. Pick one, click Generate, get a result.
 
-### Companion tools
+That's the whole thing. If anything goes wrong, the installer tells you in plain English what went wrong and what to do.
 
-Three smaller binaries shipped alongside the main installer for specific scenarios:
+> **Comfortable with the command line?** From source: `git clone https://github.com/laboratoiresonore/spellcaster && cd spellcaster && python installer/install.py`. Skip this line if you don't know what `git` is.
+
+---
+
+### Other downloads (most people don't need these)
+
+The main installer above does almost everything. These three smaller tools are for special situations:
 
 <p align="center">
-  <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-remote-installer.exe"><img src="https://img.shields.io/badge/Remote%20Installer-LAN%20ComfyUI-2ed573?style=for-the-badge&logo=windows&logoColor=white" alt="Remote installer"/></a>
+  <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-remote-installer.exe"><img src="https://img.shields.io/badge/Remote%20Installer-When%20ComfyUI%20is%20on%20another%20PC-2ed573?style=for-the-badge&logo=windows&logoColor=white" alt="Remote installer"/></a>
   &nbsp;
-  <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-validate-install.exe"><img src="https://img.shields.io/badge/Validator-Re--check%20anytime-FFB300?style=for-the-badge&logo=windows&logoColor=white" alt="Validator"/></a>
+  <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-validate-install.exe"><img src="https://img.shields.io/badge/Health%20Checker-Did%20it%20install%20OK%3F-FFB300?style=for-the-badge&logo=windows&logoColor=white" alt="Health checker"/></a>
   &nbsp;
-  <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-manual-update.exe"><img src="https://img.shields.io/badge/Manual%20Update-Repair%20tool-6BB6FF?style=for-the-badge&logo=windows&logoColor=white" alt="Manual update"/></a>
+  <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-manual-update.exe"><img src="https://img.shields.io/badge/Repair%20Tool-Plugin%20vanished%3F-6BB6FF?style=for-the-badge&logo=windows&logoColor=white" alt="Repair tool"/></a>
 </p>
 
-| Tool | When to use it |
-|---|---|
-| **`spellcaster-remote-installer.exe`** | Your ComfyUI runs on a **different machine on your LAN**. Auto-discovers servers (`--scan`), installs only the local plugins + Wizard Guild + shortcuts pointing at the remote URL. ~600 MB. |
-| **`spellcaster-validate-install.exe`** | Re-runnable smoke test — submits tiny workflows for every installed feature, reports which work end-to-end. Exit codes (0/1/2/3) make it CI-friendly. ~66 MB. |
-| **`spellcaster-manual-update.exe`** | Things broke; the GIMP plugin doesn't appear; you want to force-resync without re-running the full installer. ~8 MB. |
+#### 🌐 Remote Installer — *for when ComfyUI lives on a different computer*
 
-> **Added new models to ComfyUI after install?** Don't re-run the installer. Open GIMP → `Filters > Spellcaster > 🜍 Crypt > ↻ Refresh Models from Server…` — re-probes `/object_info` and updates the inventory in ~2 seconds.
+Some people have a powerful PC with a beefy graphics card sitting in a closet, and use a quiet laptop on the couch. The Remote Installer is for that. It puts the GIMP plugin and chat UI on **your laptop**, but tells them "the actual AI brain is over there on the gaming PC". It also tries to find your gaming PC automatically.
+
+**Use it when**: your ComfyUI is on a different computer on the same Wi-Fi/network as the one you're installing on. **Skip it if** ComfyUI is on the same machine you're installing onto — use the regular installer instead.
+
+#### 🩺 Health Checker — *"is everything actually working?"*
+
+After installing, this tool runs a quick test on every feature you installed. It picks each one ("background remove", "face swap", "upscale"…), tries it for real on tiny test images, and tells you which ones work and which ones don't (and why). Takes about 1–5 minutes.
+
+**Use it when**: you ran the installer and want to make sure everything actually works before opening GIMP. Or weeks later, when you've added new models to ComfyUI and want to confirm Spellcaster sees them. Or any time something feels broken.
+
+#### 🔧 Repair Tool — *"the plugin disappeared from GIMP!"*
+
+Sometimes things break. GIMP doesn't show the Spellcaster menu anymore. Or a file got deleted. Or you tried to update and it half-worked. This tool re-downloads the GIMP plugin from GitHub and reinstalls it, without making you re-download every model again.
+
+**Use it when**: Spellcaster used to work, then stopped, and you don't want to re-run the big installer. Try this first.
+
+---
+
+### 💡 Already installed Spellcaster, then added new models to ComfyUI?
+
+You don't need to re-run the installer. **Open GIMP** → **Filters → Spellcaster → 🜍 Crypt → ↻ Refresh Models from Server**. It re-checks your ComfyUI server and updates the model lists everywhere in about 2 seconds. New LoRAs, new checkpoints, new ControlNet files — all pulled in. The dropdowns in every Spellcaster dialog will show the new options the next time you open them.
 
 ---
 
