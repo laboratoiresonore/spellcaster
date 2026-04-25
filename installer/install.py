@@ -839,7 +839,14 @@ def find_default_darktable() -> str:
 # ─── Download & install helpers ───────────────────────────────────────────────
 
 def detect_gpu_vram() -> tuple[str, int]:
-    """Detect primary GPU name and VRAM in MB. Returns ('Unknown', 0) on failure."""
+    """Detect GPU name and VRAM in MB. Returns ('Unknown', 0) on failure.
+
+    Multi-GPU machines: returns the GPU with the LARGEST VRAM. ComfyUI
+    typically uses one GPU at a time (--gpu-only N), so the biggest card
+    is the realistic ceiling for what models will run. Picking the first
+    card silently mis-tiered users with mixed configurations (e.g. an
+    iGPU listed before a discrete RTX 4090).
+    """
     # ── Strategy 1: NVIDIA via nvidia-smi (most reliable for NVIDIA GPUs) ──
     try:
         r = subprocess.run(
@@ -847,9 +854,21 @@ def detect_gpu_vram() -> tuple[str, int]:
             capture_output=True, text=True, timeout=5
         )
         if r.returncode == 0 and r.stdout.strip():
-            # Output format: "NVIDIA GeForce RTX 4090, 24564" (name, VRAM in MB)
-            parts = r.stdout.strip().splitlines()[0].split(",")
-            return parts[0].strip(), int(parts[1].strip())
+            # Output format (one line per GPU): "NVIDIA GeForce RTX 4090, 24564"
+            best_name, best_mb = "", 0
+            for line in r.stdout.strip().splitlines():
+                parts = line.split(",")
+                if len(parts) < 2:
+                    continue
+                try:
+                    mb = int(parts[1].strip())
+                except ValueError:
+                    continue
+                if mb > best_mb:
+                    best_mb = mb
+                    best_name = parts[0].strip()
+            if best_mb > 0:
+                return best_name, best_mb
     except Exception:
         pass
     # ── Strategy 2: AMD via rocm-smi (Linux ROCm driver) ──
@@ -1740,11 +1759,31 @@ def step_system_detection(args) -> tuple[str, int]:
     return gpu_name, vram_mb
 
 
+def _is_remote_server(server_url: str) -> bool:
+    """True when the URL points at something other than localhost.
+
+    Used to detect the "ComfyUI on another machine" scenario so we can
+    skip local-side work (model downloads, custom-node clones) that
+    would just sit on the wrong machine.
+    """
+    try:
+        from urllib.parse import urlparse
+        host = (urlparse(server_url).hostname or "").lower()
+    except Exception:  # noqa: BLE001
+        return False
+    return host not in ("", "localhost", "127.0.0.1", "::1", "0.0.0.0")
+
+
 def step_preflight(server_url: str, args) -> bool:
     """Pre-flight: quick reachability check on (a) the configured ComfyUI
     server and (b) general internet (GitHub raw, the source of all nodes/
     models). Catches the two most common no-go conditions BEFORE the
     user spends time picking features only to fail at download time.
+
+    Also detects the remote-server case (server_url != localhost) and
+    nudges the user toward install_remote.py — the main installer would
+    otherwise download models/clone nodes into a LOCAL ComfyUI dir that
+    the remote server will never see.
 
     Returns True if both probes pass OR the user accepts to continue.
     Returns False to abort the install. No side effects.
@@ -1754,6 +1793,38 @@ def step_preflight(server_url: str, args) -> bool:
     print(f"{C_BOLD}{_BOX_LINE}{C_RESET}")
     print(f"  {C_DIM}Catching network problems early — better to fix them now")
     print(f"  than to fail mid-download an hour from now.{C_RESET}\n")
+
+    # Remote-server warning — fires BEFORE the network probes so the user
+    # can bail/redirect even if their LAN is healthy.
+    if _is_remote_server(server_url):
+        print(f"  {C_YELLOW}⚠ Detected a non-local ComfyUI URL:{C_RESET} {server_url}")
+        print(f"  {C_DIM}This installer downloads models + clones nodes into the LOCAL")
+        print(f"  ComfyUI directory. For a server on another machine, those files")
+        print(f"  will sit on the WRONG machine. Use these args instead:{C_RESET}")
+        print(f"    {C_BOLD}--skip-models --skip-nodes{C_RESET}    "
+              f"{C_DIM}(plugins + Guild only, no server-side downloads){C_RESET}")
+        print(f"  {C_DIM}OR run the dedicated remote installer:{C_RESET}")
+        print(f"    {C_BOLD}spellcaster-remote-installer {server_url}{C_RESET}\n")
+        # In headless mode, force-set the skip flags so the user's intent
+        # ("install on this machine, server is over there") gets respected.
+        if args.yes and not (args.skip_models and args.skip_nodes):
+            print(f"  {C_DIM}--yes + remote URL → auto-enabling --skip-models "
+                  f"--skip-nodes for safety.{C_RESET}\n")
+            args.skip_models = True
+            args.skip_nodes = True
+        elif not args.yes:
+            if not ask_yn("  Continue with this installer (and skip server-side downloads)?",
+                          default=True):
+                return False
+            # User opted to continue — auto-flip the skip flags so they
+            # don't have to re-run with the right CLI args.
+            if not args.skip_models:
+                print(f"    {C_DIM}Auto-enabling --skip-models{C_RESET}")
+                args.skip_models = True
+            if not args.skip_nodes:
+                print(f"    {C_DIM}Auto-enabling --skip-nodes{C_RESET}")
+                args.skip_nodes = True
+            print()
 
     # Probe 1 — ComfyUI server (5s timeout: we just want a TCP handshake +
     # any HTTP response; the deeper /object_info probe runs later).
@@ -1995,10 +2066,13 @@ def step_probe_server(server_url: str, args) -> dict:
         print(f"    Features will be based on manifest defaults.")
         return result
 
-    # Fetch installed nodes (class types)
+    # Fetch installed nodes (class types). 60s timeout is generous: a
+    # fully-loaded server with every node pack installed can return a
+    # 1-5 MB JSON payload, and on slow LANs (10 Mbps shared link) that
+    # legitimately takes 30+ seconds.
     try:
         req = urllib.request.Request(f"{server_url}/object_info")
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=60) as resp:
             data = json.loads(resp.read().decode('utf-8'))
             result['available_nodes'] = set(data.keys())
             print(f"    Installed nodes: {len(result['available_nodes'])}")
@@ -3232,7 +3306,15 @@ def step_check_cn_coverage(paths: dict, server_info: dict,
         else:
             missing.append((target, url, size, label))
 
+    # One-line summary first so users on small terminals (or scrolling
+    # back through CI logs) see the headline before the per-file detail.
+    total = len(installed) + len(missing)
+    print(f"  {C_BOLD}CN coverage: {len(installed)}/{total} canonical files "
+          f"present on server.{C_RESET}")
     if installed:
+        # Detail block — collapsed to one line per file. With 50+ CNs
+        # installed the original printout was unreadable; this stays
+        # tight while still confirming what's there.
         print(f"  {C_GREEN}Already installed ({len(installed)}):{C_RESET}")
         for lbl in installed:
             print(f"    {C_GREEN}✓{C_RESET} {lbl}")
@@ -3489,9 +3571,26 @@ def step_validate_install(paths: dict, server_url: str, server_info: dict,
     broken = report_dict.get("broken", [])
     if broken and not headless:
         broken_count = len(broken)
-        print(f"\n  {C_YELLOW}⚠ {broken_count} feature(s) failed validation.{C_RESET}")
-        print(f"  {C_DIM}Common causes: ComfyUI not restarted after node install, "
-              f"missing models, server VRAM exhausted.{C_RESET}\n")
+        # First-run / empty-server detection — when the dominant failure
+        # mode is "no model" (vs missing nodes / runtime errors), we're
+        # almost certainly looking at a fresh ComfyUI with nothing
+        # downloaded yet. Phrase the message accordingly so the user
+        # doesn't think the install is BROKEN — it's just unfurnished.
+        no_model_count = sum(
+            1 for entry in broken
+            if isinstance(entry, (list, tuple)) and len(entry) >= 2
+            and "no" in str(entry[1]).lower()
+            and ("model" in str(entry[1]).lower()
+                 or "available" in str(entry[1]).lower()))
+        if no_model_count >= broken_count - 1:  # almost all = "no model"
+            print(f"\n  {C_DIM}{broken_count} feature(s) reported missing models — "
+                  f"this is normal on a fresh ComfyUI server.{C_RESET}")
+            print(f"  {C_DIM}Pick a checkpoint to download in the next steps and "
+                  f"the diagnostic will turn green next time.{C_RESET}\n")
+        else:
+            print(f"\n  {C_YELLOW}⚠ {broken_count} feature(s) failed validation.{C_RESET}")
+            print(f"  {C_DIM}Common causes: ComfyUI not restarted after node install, "
+                  f"missing models, server VRAM exhausted.{C_RESET}\n")
         if not ask_yn(
                 "  Continue with plugin install anyway? "
                 "(Plugin will hide broken features until they work.)",
