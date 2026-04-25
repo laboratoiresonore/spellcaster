@@ -69,6 +69,13 @@ import requests
 # Import actual installation logic (git clone, file copy, download helpers)
 import install as builder
 
+# Theme helpers — palette + asset resolver. Optional: if theme.py is missing
+# from a stripped bundle the GUI degrades to inline fallbacks.
+try:
+    import theme as _theme  # type: ignore
+except ImportError:
+    _theme = None  # type: ignore
+
 
 # ---------------------------------------------------------------------------
 # Lightweight tooltip helper — no external packages required
@@ -141,6 +148,28 @@ def load_image_async(url, label, size=(100, 100)):
         except Exception:
             pass
     threading.Thread(target=worker, daemon=True).start()
+
+
+def _load_installer_image(kind, key, target_w, target_h=None):
+    """Resolve a generated installer asset and return a CTkImage scaled to fit.
+
+    Aspect ratio is preserved when target_h is omitted. Returns None if the
+    asset can't be located OR Pillow is missing — callers must tolerate that.
+    """
+    if _theme is None:
+        return None
+    p = _theme.installer_asset(kind, key)
+    if not p:
+        return None
+    try:
+        img = Image.open(p)
+        if target_h is None:
+            target_h = int(target_w * img.height / img.width)
+        img = img.resize((target_w, target_h), Image.LANCZOS)
+        return ctk.CTkImage(light_image=img, dark_image=img,
+                            size=(target_w, target_h))
+    except Exception:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -404,8 +433,39 @@ class MagicalEffects:
 
         self.update_idletasks()
 
+    def _start_loading_sprite(self):
+        """Begin cycling the 8-frame pulse sprite at 8fps."""
+        if not getattr(self, '_loading_frames', None):
+            return
+        self._loading_idx = 0
+        self._tick_loading_sprite()
+
+    def _stop_loading_sprite(self):
+        """Pause the cycle and rest the sprite on frame 0."""
+        after_id = getattr(self, '_loading_after_id', None)
+        if after_id is not None:
+            try: self.after_cancel(after_id)
+            except Exception: pass
+            self._loading_after_id = None
+        if getattr(self, '_loading_frames', None):
+            try:
+                self.loading_sprite.configure(image=self._loading_frames[0])
+            except Exception: pass
+
+    def _tick_loading_sprite(self):
+        if not getattr(self, '_loading_frames', None):
+            return
+        try:
+            self.loading_sprite.configure(
+                image=self._loading_frames[self._loading_idx])
+        except Exception:
+            return
+        self._loading_idx = (self._loading_idx + 1) % len(self._loading_frames)
+        self._loading_after_id = self.after(125, self._tick_loading_sprite)
+
     def _celebration_burst(self):
         """Trigger a visual celebration when installation completes."""
+        self._stop_loading_sprite()
         self.start_btn.configure(
             text="\u2728  Installation Complete!  \u2728",
             fg_color="#00E676", hover_color="#00C853",
@@ -419,6 +479,10 @@ class MagicalEffects:
         self._flash_count = 0
         self._flash_completion()
 
+        # Fullscreen celebration overlay \u2014 generated locally by Spellcaster.
+        # Fades in 800ms after the burst so the green progress bar lands first.
+        self.after(800, self._show_completion_overlay)
+
     def _flash_completion(self):
         """Flash the percentage label between gold and green."""
         if self._flash_count >= 10:
@@ -428,6 +492,74 @@ class MagicalEffects:
         self.progress_pct_label.configure(text_color=colors[self._flash_count % 2])
         self._flash_count += 1
         self.after(300, self._flash_completion)
+
+    def _show_completion_overlay(self):
+        """Fullscreen overlay with the celebration art + next-step actions.
+
+        Lays a CTkFrame at z-top covering the entire installer window. Click
+        the Close button (or Escape) to dismiss back to the deploy screen.
+        """
+        try:
+            overlay = ctk.CTkFrame(self, fg_color="#0a0612", corner_radius=0)
+            overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+            overlay.lift()
+
+            # Centered content stack
+            content = ctk.CTkFrame(overlay, fg_color="transparent")
+            content.place(relx=0.5, rely=0.5, anchor="center")
+
+            celebration_img = _load_installer_image(
+                "completion", "completion_celebration",
+                target_w=480, target_h=480)
+            if celebration_img is not None:
+                ctk.CTkLabel(content, text="", image=celebration_img
+                             ).pack(pady=(0, 24))
+
+            ctk.CTkLabel(content, text="You're all set!",
+                         font=ctk.CTkFont(family="Inter", size=42, weight="bold"),
+                         text_color="#FFD700").pack(pady=(0, 6))
+            ctk.CTkLabel(content,
+                         text="Spellcaster is wired into your tools and ready to cast.",
+                         font=ctk.CTkFont(family="Inter", size=15),
+                         text_color="#c4b8e3").pack(pady=(0, 30))
+
+            actions = ctk.CTkFrame(content, fg_color="transparent")
+            actions.pack()
+
+            def _open_url(url):
+                import webbrowser
+                try:
+                    webbrowser.open(url)
+                except Exception:
+                    pass
+
+            server = self.server_url.get().rstrip("/")
+            ctk.CTkButton(actions, text="Open ComfyUI", width=160, height=42,
+                          font=ctk.CTkFont(family="Inter", size=14, weight="bold"),
+                          fg_color="#FFD700", hover_color="#FFEA00",
+                          text_color="#12101d",
+                          command=lambda: _open_url(server)
+                          ).grid(row=0, column=0, padx=8)
+            ctk.CTkButton(actions, text="View Docs", width=160, height=42,
+                          font=ctk.CTkFont(family="Inter", size=14),
+                          fg_color="#281D45", hover_color="#3a2863",
+                          text_color="#FFFFFF",
+                          command=lambda: _open_url(
+                              "https://github.com/laboratoiresonore/spellcaster")
+                          ).grid(row=0, column=1, padx=8)
+            ctk.CTkButton(actions, text="Close", width=160, height=42,
+                          font=ctk.CTkFont(family="Inter", size=14),
+                          fg_color="transparent", hover_color="#1a1730",
+                          text_color="#c4b8e3", border_width=1,
+                          border_color="#3A2863",
+                          command=overlay.destroy
+                          ).grid(row=0, column=2, padx=8)
+
+            self.bind("<Escape>", lambda _e: overlay.destroy(), add="+")
+        except Exception:
+            # Never let completion-overlay failure mask the actual install
+            # success \u2014 the user already sees the green progress + flash.
+            pass
 
 
 class InstallerApp(MagicalEffects, ctk.CTk):
@@ -610,6 +742,17 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                                               text_color=self.text_muted)
         self.feat_count_label.grid(row=13, column=0, padx=20, pady=(0, 15), sticky="s")
 
+        # Wizard companion — generated by Spellcaster's own SDXL pipeline
+        # (tools/generate_installer_assets.py). Lives at the very bottom of
+        # the sidebar; degrades to nothing if the asset isn't bundled.
+        companion_img = _load_installer_image("companion", "sidebar_companion",
+                                               target_w=170)
+        if companion_img is not None:
+            companion_label = ctk.CTkLabel(self.sidebar_frame, text="",
+                                            image=companion_img)
+            companion_label.grid(row=14, column=0, padx=20, pady=(0, 10),
+                                  sticky="s")
+
     def _build_main_frames(self):
         """Construct the eight content frames."""
         self.frames = {}
@@ -620,9 +763,18 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         f_welcome = ctk.CTkScrollableFrame(self, corner_radius=0, fg_color="transparent")
         self.frames["welcome"] = f_welcome
 
+        # Cinematic hero banner \u2014 generated locally by Spellcaster's own
+        # SDXL pipeline. 1920\u00d7600 source, scaled to fit the content area.
+        # Fronts the welcome screen with a sense of "this is something".
+        hero_img = _load_installer_image("hero", "hero_welcome",
+                                          target_w=720, target_h=225)
+        if hero_img is not None:
+            hero_label = ctk.CTkLabel(f_welcome, text="", image=hero_img)
+            hero_label.pack(anchor="w", padx=30, pady=(20, 10), fill="x")
+
         ctk.CTkLabel(f_welcome, text="\u2728 Welcome to Spellcaster \u2728",
                      font=ctk.CTkFont(family="Inter", size=30, weight="bold"),
-                     text_color=self.accent_hover).pack(anchor="w", padx=30, pady=(35, 5))
+                     text_color=self.accent_hover).pack(anchor="w", padx=30, pady=(15, 5))
         ctk.CTkLabel(f_welcome, text="Dynamic middleware between ComfyUI and GIMP/Darktable.\n"
                      "69 AI tools — generate images, fix photos, swap faces, remove\n"
                      "backgrounds, change lighting, create videos — all with one click.\n"
@@ -775,30 +927,56 @@ class InstallerApp(MagicalEffects, ctk.CTk):
              "showcase_rembg.png"),
         ]
 
+        # Map use-case label keywords to the locally-generated installer
+        # heroes (assets/installer/usecase_*.png). When a label matches, the
+        # 200-px hero replaces the small showcase thumbnail. Unmapped use
+        # cases keep their existing thumb but at the same 200-px size for
+        # visual consistency.
+        _USECASE_HERO_MAP = [
+            ("create images from text", "text_to_image"),
+            ("fix and enhance my photographs", "restoration"),
+            ("swap faces", "face_swap"),
+            ("short videos", "video"),
+            ("Flux 2 Klein", "img2img"),       # Klein = headline img2img engine
+            ("maximum quality restoration", "inpaint"),
+        ]
+
         self._usecase_vars = {}
         for label, desc, features, *_img in _use_cases:
             _showcase_img = _img[0] if _img else None
             card = ctk.CTkFrame(f_use, fg_color="#161228", corner_radius=10,
                                 border_width=1, border_color="#3A2863")
-            card.pack(fill="x", padx=30, pady=5)
+            card.pack(fill="x", padx=30, pady=6)
             var = ctk.BooleanVar(value=False)
             self._usecase_vars[label] = (var, features)
 
             # Card layout: image on left, text on right
             card_inner = ctk.CTkFrame(card, fg_color="transparent")
-            card_inner.pack(fill="x", padx=10, pady=8)
+            card_inner.pack(fill="x", padx=12, pady=10)
 
-            # Showcase image thumbnail (left side)
-            if _showcase_img:
+            # Hero image — generated locally when we have a match, else the
+            # existing showcase thumb. Either way, 200-px wide for a consistent
+            # card rhythm. Aspect ratio is preserved.
+            _hero_img = None
+            for kw, key in _USECASE_HERO_MAP:
+                if kw in label:
+                    _hero_img = _load_installer_image("usecase", key, target_w=200)
+                    break
+            if _hero_img is None and _showcase_img:
                 try:
                     _img_path = _os.path.join(_assets_dir, _showcase_img)
                     if _os.path.exists(_img_path):
-                        _img = Image.open(_img_path)
-                        _img = _img.resize((80, int(80 * _img.height / _img.width)), Image.LANCZOS)
-                        _ctk_img = ctk.CTkImage(light_image=_img, dark_image=_img, size=_img.size)
-                        ctk.CTkLabel(card_inner, text="", image=_ctk_img).pack(side="left", padx=(5, 10))
+                        _src = Image.open(_img_path)
+                        _h = int(200 * _src.height / _src.width)
+                        _src = _src.resize((200, _h), Image.LANCZOS)
+                        _hero_img = ctk.CTkImage(light_image=_src,
+                                                  dark_image=_src,
+                                                  size=(200, _h))
                 except Exception:
                     pass
+            if _hero_img is not None:
+                ctk.CTkLabel(card_inner, text="", image=_hero_img
+                             ).pack(side="left", padx=(5, 14))
 
             # Text content (right side)
             text_frame = ctk.CTkFrame(card_inner, fg_color="transparent")
@@ -1070,11 +1248,35 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         self.summary_details.pack(fill="x", padx=20, pady=(5, 15))
         self.summary_details.configure(state="disabled")
 
-        # Per-file progress label
-        self.file_progress_label = ctk.CTkLabel(f_inst, text="",
+        # Animated loading sprite (locally generated by Spellcaster) +
+        # the per-file progress label, packed side-by-side. The sprite
+        # cycles through 8 frames at 8fps while the install thread runs;
+        # _start_loading_sprite() begins the cycle, _stop_loading_sprite()
+        # ends it. Degrades to invisible if the asset isn't bundled.
+        progress_row = ctk.CTkFrame(f_inst, fg_color="transparent")
+        progress_row.pack(fill="x", padx=30, pady=(0, 5), anchor="w")
+
+        self._loading_frames = []
+        if _theme is not None:
+            for _i in range(8):
+                _img = _load_installer_image("loading", f"pulse_{_i:02d}",
+                                              target_w=64, target_h=64)
+                if _img is not None:
+                    self._loading_frames.append(_img)
+        self._loading_idx = 0
+        self._loading_after_id = None
+
+        self.loading_sprite = ctk.CTkLabel(progress_row, text="",
+                                            width=64, height=64)
+        if self._loading_frames:
+            self.loading_sprite.configure(image=self._loading_frames[0])
+        self.loading_sprite.pack(side="left", padx=(0, 12))
+
+        self.file_progress_label = ctk.CTkLabel(progress_row, text="",
                                                  font=ctk.CTkFont(family="Inter", size=12),
-                                                 text_color=self.accent_hover)
-        self.file_progress_label.pack(anchor="w", padx=30, pady=(0, 5))
+                                                 text_color=self.accent_hover,
+                                                 anchor="w", justify="left")
+        self.file_progress_label.pack(side="left", fill="x", expand=True)
         _ToolTip(self.file_progress_label, "Shows which file or phase is currently being processed. Updates in real-time as the installer works through plugins, nodes, and model downloads.")
 
         self.progress_bar = ctk.CTkProgressBar(f_inst, height=12,
@@ -1640,7 +1842,18 @@ class InstallerApp(MagicalEffects, ctk.CTk):
              "See the ControlNet Poses showcase for examples."),
         ]
 
-        # Icon map for category headers
+        # Category icons. Each cat_key maps to (a) a generated installer badge
+        # key (assets/installer/feature_<key>.png) and (b) an emoji fallback
+        # for stripped bundles. Badges win when present.
+        _cat_badges = {
+            "paint":   "generation",
+            "wand":    "restoration",
+            "palette": "styling",
+            "masks":   "identity",
+            "film":    "video",
+            "tools":   "metadata",
+            "grid":    "controlnet",
+        }
         _cat_icons = {
             "paint": "\U0001F3A8",      # artist palette
             "wand": "\U00002728",        # sparkles
@@ -1693,13 +1906,27 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                                       border_width=1, border_color="#3A2863")
             cat_frame.pack(fill="x", padx=30, pady=(0, 18))
 
-            # Category header
+            # Category header — badge image where available (locally-generated
+            # by Spellcaster), else the emoji fallback rendered as text.
             cat_header = ctk.CTkFrame(cat_frame, fg_color="transparent")
             cat_header.pack(fill="x", padx=20, pady=(18, 5))
 
-            ctk.CTkLabel(cat_header, text=f"{icon}  {cat_title}",
-                         font=ctk.CTkFont(family="Inter", size=20, weight="bold"),
-                         text_color=self.accent_hover).pack(side="left")
+            badge_key = _cat_badges.get(cat_key)
+            badge_img = (_load_installer_image("feature", badge_key,
+                                                target_w=48, target_h=48)
+                         if badge_key else None)
+            if badge_img is not None:
+                ctk.CTkLabel(cat_header, text="", image=badge_img
+                             ).pack(side="left", padx=(0, 12))
+                ctk.CTkLabel(cat_header, text=cat_title,
+                             font=ctk.CTkFont(family="Inter", size=20,
+                                              weight="bold"),
+                             text_color=self.accent_hover).pack(side="left")
+            else:
+                ctk.CTkLabel(cat_header, text=f"{icon}  {cat_title}",
+                             font=ctk.CTkFont(family="Inter", size=20,
+                                              weight="bold"),
+                             text_color=self.accent_hover).pack(side="left")
 
             # Category description
             ctk.CTkLabel(cat_frame, text=cat_desc,
@@ -2090,6 +2317,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
     def start_installation(self):
         """Kick off the install in a daemon thread so the UI stays responsive."""
         self.start_btn.configure(state="disabled", text="Deploying...")
+        self._start_loading_sprite()
         threading.Thread(target=self._run_install_thread, daemon=True).start()
 
     def _run_install_thread(self):
