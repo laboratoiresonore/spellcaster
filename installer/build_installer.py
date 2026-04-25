@@ -217,6 +217,59 @@ def build_manual_update():
     return result.returncode
 
 
+def build_validate(target_platform: str):
+    """Build the standalone post-install validator (validate_install.py).
+
+    Re-uses install.py's _run_validation helper, so install.py must be
+    bundled. Also bundles the GIMP plugin tree because that's where the
+    spellcaster_core/diagnostic.py module the validator imports lives.
+    """
+    sep = os.pathsep
+    print("Building install validator…")
+
+    cmd = [
+        sys.executable, "-m", "PyInstaller",
+        "--noconfirm",
+        "--onefile",
+        "--console",
+        "--name", "spellcaster-validate-install",
+        # Validator imports install._run_validation + spellcaster_core.diagnostic
+        "--hidden-import", "install",
+        "--add-data", f"install.py{sep}.",
+        "--add-data", f"manifest.json{sep}.",
+        # diagnostic.py + its sibling spellcaster_core modules ship inside
+        # the bundled GIMP plugin tree.
+        "--add-data", f"{REPO_ROOT / 'plugins'}{sep}plugins",
+        "--distpath", str(REPO_ROOT / "dist"),
+        "--workpath", str(REPO_ROOT / "build"),
+    ]
+
+    if target_platform == "windows":
+        icon_path = REPO_ROOT / "assets" / "spellcaster.ico"
+        if icon_path.exists():
+            cmd += ["--icon", str(icon_path)]
+    elif target_platform == "macos":
+        icon_path = REPO_ROOT / "assets" / "spellcaster.icns"
+        if icon_path.exists():
+            cmd += ["--icon", str(icon_path)]
+        cmd += ["--osx-bundle-identifier",
+                "com.laboratoiresonore.spellcaster.validate"]
+
+    cmd.append("validate_install.py")
+
+    print("Command:", " ".join(str(c) for c in cmd))
+    result = subprocess.run(cmd, cwd=str(HERE))
+    if result.returncode == 0:
+        ext = ".exe" if target_platform == "windows" else ""
+        output = f"dist/spellcaster-validate-install{ext}"
+        print(f"\nValidator built: {output}")
+        print(f"  Re-run any time after install: {output}")
+        print(f"  Exit codes: 0=all OK, 1=broken features, 2=server unreachable")
+    else:
+        print(f"\nValidator build failed (exit code {result.returncode})")
+    return result.returncode
+
+
 def build_llm_variant(target_platform: str):
     """Build the experimental LLM-enabled installer from install_with_llm.py.
 
@@ -318,6 +371,10 @@ def build_remote_installer(target_platform: str):
         "--onefile",
         "--console",                                    # always console — no GUI
         "--name", "spellcaster-remote-installer",
+        # install.py provides the canonical helpers (path detection, plugin
+        # source lookup, LoRA classification) that install_remote re-exports.
+        "--hidden-import", "install",
+        "--add-data", f"install.py{sep}.",
         "--add-data", f"manifest.json{sep}.",
         "--add-data", f"{REPO_ROOT / 'plugins'}{sep}plugins",
         "--distpath", str(REPO_ROOT / "dist"),
@@ -385,6 +442,10 @@ def main():
         "--llm-variant", action="store_true",
         help="Also build the experimental LLM-enabled installer (install_with_llm.py)",
     )
+    parser.add_argument(
+        "--validate", action="store_true",
+        help="Also build the standalone install validator (validate_install.py)",
+    )
     args = parser.parse_args()
 
     # Auto-detect platform from the current OS if not explicitly provided
@@ -412,6 +473,9 @@ def main():
 
     if args.remote or args.remote_only:
         build_remote_installer(target)
+
+    if args.validate:
+        build_validate(target)
 
 
 if __name__ == "__main__":

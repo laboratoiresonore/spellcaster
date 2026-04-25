@@ -2024,11 +2024,17 @@ def _classify_server_loras(loras: list) -> dict:
 
 
 def _write_shared_settings(paths: dict, server_url: str, llm_url: str,
-                           server_info: dict, dry_run: bool = False):
+                           server_info: dict, dry_run: bool = False,
+                           validation_report: dict | None = None):
     """Write spellcaster_settings.json — the ONE shared config all plugins read.
 
     Stored alongside the installer (or in a platform-appropriate location).
     Each plugin also gets a copy written into its own directory.
+
+    `validation_report` is the dict returned by step_validate_install (or
+    None if validation didn't run). When present, its key fields are folded
+    into the settings under a top-level "validation" block so the GIMP
+    plugin can hide capabilities the installer couldn't get to work.
     """
     # Classify LoRAs by architecture
     lora_archs = {}
@@ -2054,6 +2060,24 @@ def _write_shared_settings(paths: dict, server_url: str, llm_url: str,
         },
         "lora_architectures": lora_archs,
     }
+
+    # Validation digest — informs the plugin which capabilities were proved
+    # to work end-to-end at install time. Plugin code can read
+    # settings["validation"]["banish_wizards"] to hide broken features.
+    if validation_report:
+        import time as _time
+        settings["validation"] = {
+            "validated_at": _time.time(),
+            "working": validation_report.get("working", []),
+            "broken": [
+                {"capability": c, "error": e}
+                for c, e in validation_report.get("broken", [])
+            ],
+            "missing_nodes": validation_report.get("missing_nodes", []),
+            "banish_wizards": validation_report.get("banish_wizards", []),
+            "warnings": validation_report.get("warnings", []),
+            "timings": validation_report.get("timings", {}),
+        }
 
     if dry_run:
         print(f"  {C_DIM}[dry-run] Would write spellcaster_settings.json{C_RESET}")
@@ -2533,17 +2557,27 @@ def step_select_features(manifest: dict, paths: dict, args,
 
 
 def step_install_nodes(manifest: dict, selected: dict[str, bool], paths: dict,
-                       dry_run: bool = False, server_info: dict | None = None):
-    """Step 4: Install required custom nodes."""
+                       dry_run: bool = False, server_info: dict | None = None
+                       ) -> dict[str, list[str]]:
+    """Step 4: Install required custom nodes.
+
+    Returns a dict mapping node_pack_name → list of class_types that pack
+    provides, restricted to packs that were freshly installed in THIS run
+    (skipped if already on server). The validation step uses this to detect
+    whether ComfyUI was restarted post-install — if any of these sentinel
+    class_types is still missing from /object_info, the server hasn't picked
+    up the new code yet.
+    """
+    newly_installed_sentinels: dict[str, list[str]] = {}
     if not paths["comfyui"]:
         print(f"\n  {C_YELLOW}Skipping custom node installation (no ComfyUI path).{C_RESET}")
-        return
+        return newly_installed_sentinels
 
     if not shutil.which("git"):
         print(f"\n  {C_RED}Error: 'git' is not installed or not found in PATH.{C_RESET}")
         print(f"  {C_YELLOW}Custom nodes require git to clone. Skipping node installation.{C_RESET}")
         print(f"  {C_YELLOW}Install git from https://git-scm.com/ and re-run the installer.{C_RESET}\n")
-        return
+        return newly_installed_sentinels
 
     if server_info is None:
         server_info = {}
@@ -2568,7 +2602,7 @@ def step_install_nodes(manifest: dict, selected: dict[str, bool], paths: dict,
 
     if not needed_nodes:
         print(f"  {C_GREEN}No custom nodes needed for selected features.{C_RESET}")
-        return
+        return newly_installed_sentinels
 
     node_defs = manifest.get("custom_nodes", {})
     failed_nodes = []
@@ -2597,6 +2631,10 @@ def step_install_nodes(manifest: dict, selected: dict[str, bool], paths: dict,
 
         if success and not dry_run:
             install_node_requirements(dest, paths["comfyui"], dry_run)
+            # Record the class types this pack provides — validation will
+            # check /object_info for them after asking the user to restart.
+            if provides:
+                newly_installed_sentinels[node_name] = list(provides)
         elif not success:
             failed_nodes.append(node_name)
 
@@ -2611,6 +2649,7 @@ def step_install_nodes(manifest: dict, selected: dict[str, bool], paths: dict,
         print(f"  Install these manually into: {custom_nodes_dir}")
 
     # ComfyUI-Spellcaster is now a standard git-cloned repo (auto-updates via git pull)
+    return newly_installed_sentinels
 
 
 def step_install_models(manifest: dict, selected: dict[str, bool], paths: dict,
@@ -3157,6 +3196,228 @@ def step_check_cn_coverage(paths: dict, server_info: dict,
     print(f"\n  {C_GREEN if ok_count == len(missing) else C_YELLOW}"
           f"Downloaded {ok_count}/{len(missing)} ControlNet files."
           f"{C_RESET}")
+
+
+def _load_diagnostic_module():
+    """Locate spellcaster_core.diagnostic and import it.
+
+    The module ships in three places, in priority order:
+      1. The bundled GIMP plugin tree (PyInstaller --add-data plugins/...)
+      2. The bootstrap-fetched temp dir (when running self-updated)
+      3. The repo source layout (running from source)
+
+    Returns the imported diagnostic module, or None if it can't be located.
+    The function manipulates sys.path to make `import spellcaster_core.X`
+    succeed for the diagnostic's own relative imports.
+    """
+    candidates = [
+        BUNDLE_DIR / "plugins" / "gimp" / "comfyui-connector",
+        SCRIPT_DIR / "plugins" / "gimp" / "comfyui-connector",
+        SCRIPT_DIR.parent / "plugins" / "gimp" / "comfyui-connector",
+        SCRIPT_DIR.parent / "comfyui-spellcaster",
+        BUNDLE_DIR.parent / "comfyui-spellcaster",
+    ]
+    for parent in candidates:
+        diag_path = parent / "spellcaster_core" / "diagnostic.py"
+        if not diag_path.exists():
+            continue
+        try:
+            if str(parent) not in sys.path:
+                sys.path.insert(0, str(parent))
+            # Force fresh import so a stale partial load doesn't poison us
+            for stale in [k for k in list(sys.modules)
+                          if k == "spellcaster_core" or k.startswith("spellcaster_core.")]:
+                sys.modules.pop(stale, None)
+            from spellcaster_core import diagnostic  # type: ignore
+            return diagnostic
+        except Exception as exc:  # noqa: BLE001
+            print(f"  {C_DIM}diagnostic load failed at {parent}: "
+                  f"{type(exc).__name__}: {exc}{C_RESET}")
+            continue
+    return None
+
+
+def _check_node_sentinels(server_url: str,
+                           sentinels: dict[str, list[str]]) -> dict[str, list[str]]:
+    """Probe /object_info; return packs whose provided class_types are still missing.
+
+    Used by step_validate_install to detect "ComfyUI hasn't restarted yet" before
+    running the diagnostic — running it without restart would just produce a wall
+    of false-positive failures.
+    """
+    if not sentinels:
+        return {}
+    try:
+        req = urllib.request.Request(f"{server_url}/object_info")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        present = set(data.keys())
+    except Exception:
+        # If /object_info itself is down, treat all sentinels as "missing"
+        return dict(sentinels)
+    missing: dict[str, list[str]] = {}
+    for pack, class_types in sentinels.items():
+        not_loaded = [c for c in class_types if c not in present]
+        if not_loaded:
+            missing[pack] = not_loaded
+    return missing
+
+
+def step_validate_install(paths: dict, server_url: str, server_info: dict,
+                          args,
+                          newly_installed_sentinels: dict[str, list[str]] | None = None
+                          ) -> dict | None:
+    """Step 5c: Submit tiny test workflows to verify every installed feature works.
+
+    Borrows the in-app `spellcaster_core.diagnostic.run_diagnostic` —
+    the same probe the GIMP plugin and Wizard Guild use to decide which
+    capabilities to expose. Per-arch txt2img + capability-specific tests
+    take 1-5 minutes total depending on GPU.
+
+    If `newly_installed_sentinels` is provided, the step first checks whether
+    those node-pack class_types are present in /object_info. If any are
+    missing, ComfyUI hasn't been restarted since the node install — the
+    diagnostic would report a wall of false-positive failures, so we ask
+    the user to restart and retry instead.
+
+    Skipped under --dry-run, --yes (CI), --skip-validate, or when the
+    server is unreachable. Writes a JSON report alongside the master
+    settings so users can re-inspect later.
+
+    Returns the diagnostic report dict (or None if skipped/failed).
+    """
+    if args.dry_run:
+        print(f"\n  {C_DIM}[dry-run] Would run install validation{C_RESET}")
+        return None
+    if getattr(args, 'skip_validate', False):
+        print(f"\n  {C_DIM}--skip-validate: skipping post-install validation.{C_RESET}")
+        return None
+    if getattr(args, 'yes', False):
+        print(f"\n  {C_DIM}--yes: skipping post-install validation (no time for "
+              f"interactive workflow probes in headless mode).{C_RESET}")
+        return None
+    if not server_info.get('reachable'):
+        print(f"\n  {C_YELLOW}Server unreachable — skipping post-install validation.{C_RESET}")
+        return None
+
+    print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
+    print(f"{C_BOLD}  STEP 5c: Validating What Was Installed{C_RESET}")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}")
+    print(f"  {C_DIM}Running tiny test workflows against your ComfyUI server to")
+    print(f"  verify each installed feature works end-to-end. Takes 1-5 min.{C_RESET}\n")
+
+    # Restart-aware sentinel check — if we just cloned new node packs, /object_info
+    # must include their class_types before validation makes sense. Loop until the
+    # user either restarts ComfyUI, gives up, or asks to skip the check.
+    if newly_installed_sentinels:
+        while True:
+            missing = _check_node_sentinels(server_url, newly_installed_sentinels)
+            if not missing:
+                if newly_installed_sentinels:
+                    print(f"  {C_GREEN}✓ All newly-installed node packs are loaded.{C_RESET}\n")
+                break
+            print(f"  {C_YELLOW}⚠ ComfyUI hasn't picked up the freshly-installed nodes yet.{C_RESET}")
+            print(f"  {C_DIM}Missing class_types per pack:{C_RESET}")
+            for pack, classes in missing.items():
+                print(f"    {C_YELLOW}{pack}{C_RESET}: {', '.join(classes[:4])}"
+                      + (f" (+{len(classes)-4} more)" if len(classes) > 4 else ""))
+            print()
+            print(f"  {C_BOLD}Restart ComfyUI now, then come back here.{C_RESET}")
+            choice = ask_choice(
+                "  What now?",
+                ["I restarted ComfyUI — re-check",
+                 "Skip the sentinel check and run validation anyway",
+                 "Skip validation entirely"],
+                default=0, auto_yes=False)
+            if choice == 0:
+                continue
+            if choice == 1:
+                print(f"  {C_DIM}Continuing without restart — broken results expected.{C_RESET}")
+                break
+            print(f"  {C_DIM}Validation skipped. Re-run later: "
+                  f"python validate_install.py --server-url {server_url}{C_RESET}")
+            return None
+
+    if not ask_yn("  Run validation now?", default=True, auto_yes=False):
+        print(f"  {C_DIM}Skipped. Re-run anytime with: "
+              f"python validate_install.py --server-url {server_url}{C_RESET}")
+        return None
+
+    report_dict = _run_validation(server_url)
+    if report_dict is None:
+        return None
+
+    # If anything broke, give the user a chance to abort BEFORE plugin install
+    broken = report_dict.get("broken", [])
+    if broken:
+        broken_count = len(broken)
+        print(f"\n  {C_YELLOW}⚠ {broken_count} feature(s) failed validation.{C_RESET}")
+        print(f"  {C_DIM}Common causes: ComfyUI not restarted after node install, "
+              f"missing models, server VRAM exhausted.{C_RESET}\n")
+        if not ask_yn(
+                "  Continue with plugin install anyway? "
+                "(Plugin will hide broken features until they work.)",
+                default=True):
+            print(f"\n  {C_YELLOW}Aborting before plugin install. "
+                  f"Fix the server-side issues above and re-run.{C_RESET}")
+            sys.exit(1)
+
+    return report_dict
+
+
+def _run_validation(server_url: str,
+                    callback=None,
+                    save_report: bool = True) -> dict | None:
+    """Core validation logic: load diagnostic, run it, persist report.
+
+    Shared between step_validate_install (interactive) and validate_install.py
+    (standalone). `callback` receives progress messages from the diagnostic;
+    defaults to indented stdout. Returns the report dict, or None on failure.
+    """
+    diagnostic = _load_diagnostic_module()
+    if diagnostic is None:
+        print(f"  {C_YELLOW}⚠ Could not locate spellcaster_core.diagnostic — "
+              f"validation skipped.{C_RESET}")
+        return None
+
+    # diagnostic.run_diagnostic uses `log(...)` like print — including the
+    # `end=` kwarg in Phase 5 — so the callback MUST forward kwargs to print.
+    if callback is None:
+        cb = lambda *a, **kw: print(f"  {a[0]}" if a else "", *a[1:], **kw)
+    else:
+        # Wrap user callback to swallow print-style kwargs it may not accept
+        def cb(*a, **kw):  # noqa: E306
+            try:
+                callback(*a, **kw)
+            except TypeError:
+                # Drop kwargs and retry — keeps simple `lambda m: log(m)` working
+                callback(*a)
+    try:
+        report = diagnostic.run_diagnostic(
+            server_url, callback=cb, interactive=False)
+    except KeyboardInterrupt:
+        print(f"\n  {C_YELLOW}Validation cancelled by user.{C_RESET}")
+        return None
+    except Exception as exc:  # noqa: BLE001 — never let validation crash the install
+        print(f"\n  {C_YELLOW}⚠ Validation crashed: "
+              f"{type(exc).__name__}: {exc}{C_RESET}")
+        return None
+
+    try:
+        report_dict = report.to_json()
+    except Exception:  # noqa: BLE001
+        return None
+
+    if save_report:
+        try:
+            report_path = SCRIPT_DIR / "spellcaster_install_validation.json"
+            report_path.write_text(json.dumps(report_dict, indent=2),
+                                   encoding="utf-8")
+            print(f"\n  {C_DIM}Validation report: {report_path}{C_RESET}")
+        except Exception:  # noqa: BLE001
+            pass
+
+    return report_dict
 
 
 def step_install_plugins(paths: dict, server_url: str, dry_run: bool = False):
@@ -4149,15 +4410,56 @@ def build_arg_parser():
     parser.add_argument("--plugins", default="",
                         help="Comma-separated plugin keys to install (gimp, darktable). "
                              "When set, skips plugin prompts.")
+    parser.add_argument("--skip-validate", action="store_true",
+                        help="Skip the post-install validation step (the one that "
+                             "submits tiny test workflows to ComfyUI to verify "
+                             "every installed feature actually works end-to-end). "
+                             "Validation can take 1-5 minutes; --yes mode skips it "
+                             "automatically.")
     parser.add_argument("--version", action="version",
                         version=f"Spellcaster Installer v{VERSION}")
     return parser
 
 
 def main():
-    """Run the full CLI installation pipeline."""
+    """Top-level entry. Routes GUI vs CLI, then runs the install pipeline.
+
+    bootstrap.py invokes this via importlib, so the routing decision MUST
+    happen here — the historic `if __name__ == "__main__"` block at the
+    bottom of this file never fires under bootstrap.
+    """
     args = build_arg_parser().parse_args()
 
+    is_frozen = getattr(sys, 'frozen', False)
+    has_tty = bool(sys.stdin) and sys.stdin.isatty()
+    force_cli = getattr(args, 'cli', False)
+
+    # Default to GUI when frozen (--windowed bundles have no console) OR when
+    # a TTY is attached and the user didn't pass --cli. Headless source runs
+    # (CI, piped stdin) drop straight to CLI.
+    want_gui = not force_cli and (is_frozen or has_tty)
+
+    if want_gui:
+        try:
+            from installer_gui import run_gui
+            run_gui(args, load_manifest())
+            return
+        except Exception as exc:  # noqa: BLE001
+            if has_tty:
+                import traceback
+                print(f"GUI failed to load: {exc}", file=sys.stderr)
+                traceback.print_exc()
+                # fall through to CLI
+            else:
+                # Frozen-windowed has no console; bootstrap's crash dialog
+                # will catch this and show it to the user.
+                raise
+
+    _run_cli(args)
+
+
+def _run_cli(args):
+    """Run the full CLI installation pipeline."""
     banner()
 
     if args.dry_run:
@@ -4193,8 +4495,10 @@ def main():
 
     selected = step_select_features(manifest, paths, args, server_info)
 
+    new_node_sentinels: dict[str, list[str]] = {}
     if not args.skip_nodes:
-        step_install_nodes(manifest, selected, paths, args.dry_run, server_info)
+        new_node_sentinels = step_install_nodes(
+            manifest, selected, paths, args.dry_run, server_info) or {}
     else:
         print(f"\n  {C_YELLOW}--skip-nodes specified \u2014 skipping custom node installation.{C_RESET}")
 
@@ -4212,7 +4516,20 @@ def main():
     except Exception as _cn_err:
         print(f"  {C_YELLOW}CN coverage check failed: "
               f"{_cn_err} (continuing){C_RESET}")
-    settings = _write_shared_settings(paths, server_url, llm_url, server_info, args.dry_run)
+    # End-to-end validation BEFORE we copy plugin files so the user can fix
+    # server-side issues without dragging in a half-broken GIMP install. The
+    # step is a no-op under --yes / --skip-validate / --dry-run / no-server.
+    validation_report: dict | None = None
+    try:
+        validation_report = step_validate_install(
+            paths, server_url, server_info, args,
+            newly_installed_sentinels=new_node_sentinels)
+    except Exception as _val_err:
+        print(f"  {C_YELLOW}Validation step crashed (continuing): "
+              f"{_val_err}{C_RESET}")
+    settings = _write_shared_settings(paths, server_url, llm_url, server_info,
+                                      args.dry_run,
+                                      validation_report=validation_report)
     step_install_plugins(paths, server_url, args.dry_run)
     step_install_tavern(paths, server_url, llm_url, selected, args.dry_run, args.yes)
     step_import_luts(paths, args)
@@ -4251,25 +4568,5 @@ def main():
     step_final_summary(manifest, selected, paths, server_url)
 
 
-# \u2500\u2500\u2500 GUI wrapper \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-
 if __name__ == "__main__":
-    _args = build_arg_parser().parse_args()
-    _is_frozen_gui = getattr(sys, 'frozen', False) and not sys.stdin
-    _force_cli = getattr(_args, 'cli', False)
-    if _force_cli and sys.stdin:
-        main()
-    elif _is_frozen_gui or (not _force_cli and sys.stdin and sys.stdin.isatty()):
-        try:
-            from installer_gui import run_gui
-            run_gui(_args, load_manifest())
-        except Exception as e:
-            if sys.stdin:
-                import traceback
-                print(f"Failed to load premium GUI: {e}")
-                traceback.print_exc()
-                main()
-            else:
-                raise
-    else:
-        main()
+    main()

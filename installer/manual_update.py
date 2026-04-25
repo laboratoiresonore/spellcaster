@@ -31,9 +31,6 @@ import urllib.request
 from pathlib import Path
 
 VERSION = "2.3"
-# Date the static fallback lists were last verified — used to warn users when
-# they are running from a stale local copy that the GitHub API could not reach.
-STATIC_LIST_DATE = "2026-04-16"
 GITHUB_RAW = "https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main"
 GITHUB_API = "https://api.github.com/repos/laboratoiresonore/spellcaster/commits?sha=main&per_page=1"
 GITHUB_TREE = "https://api.github.com/repos/laboratoiresonore/spellcaster/git/trees/main?recursive=1"
@@ -130,18 +127,9 @@ def discover_remote_files(prefix: str) -> list[str] | None:
 
 
 def _warn_static_list_age():
-    """Warn the user if the static fallback file list is potentially stale."""
-    import datetime
-    try:
-        cutoff = datetime.date.fromisoformat(STATIC_LIST_DATE)
-        age_days = (datetime.date.today() - cutoff).days
-        if age_days > 30:
-            print(f"    {Y}⚠ Static file list is {age_days} days old — "
-                  f"some newer files may be missing. Check GitHub for an updater release.{X}")
-        else:
-            print(f"    {D}Static file list dated {STATIC_LIST_DATE} ({age_days} days old — OK){X}")
-    except Exception:
-        pass
+    """Warn the user that the static fallback list may miss newer files."""
+    print(f"    {Y}⚠ Using bundled static file list — may miss recently added files. "
+          f"Check GitHub for a newer updater if anything seems missing.{X}")
 
 
 def discover_gimp_plugin_files() -> list[tuple[str, str]] | None:
