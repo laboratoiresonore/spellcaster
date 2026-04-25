@@ -56,15 +56,59 @@ from pathlib import Path
 # ── Configuration ───────────────────────────────────────────────────────────
 REPO = "laboratoiresonore/spellcaster"
 BRANCH = "main"
-# Files fetched into the temp dir. Keep this list small — only Python
-# source and manifest. Asset dirs stay in the bundle.
+
+# Files fetched into the temp dir on every launch. Keep this list to Python
+# source + JSON only — asset PNGs go through the persistent cache (see
+# _ensure_assets() below). The list is the UNION across every variant so
+# the same FETCH set works for all five .exes; per-variant filtering would
+# add maintenance overhead with negligible bandwidth savings (these are
+# all small files, total ~700 KB).
 FETCH_FILES = [
-    "installer/install.py",
-    "installer/installer_gui.py",
-    "installer/theme.py",          # added 2026-04-25 so polish helpers ship via auto-update
-    "installer/manifest.json",
+    "installer/install.py",          # used by ALL variants
+    "installer/installer_gui.py",    # main GUI installer + LLM variant
+    "installer/theme.py",            # palette + asset resolver (all GUI surfaces)
+    "installer/manifest.json",       # all variants
+
+    # Per-variant entry scripts — bootstrap.py picks one to invoke based
+    # on the .exe name (spellcaster-validate-install → validate_install,
+    # spellcaster-remote-installer → install_remote, etc.)
+    "installer/install_with_llm.py",
+    "installer/install_remote.py",
+    "installer/validate_install.py",
+    "installer/manual_update.py",
 ]
 FETCH_TIMEOUT = 15  # per file
+
+# ── Variant routing ─────────────────────────────────────────────────────────
+# Every .exe runs THIS bootstrap.py. The .exe name (sys.argv[0]) tells us
+# which entry script to invoke after the fetch. Substring match — order
+# matters because some keys are prefixes of others (e.g. "installer-llm"
+# must be checked before "installer").
+_VARIANTS = [
+    ("validate-install", {"main_module": "validate_install",  "fetch_assets": False}),
+    ("remote-installer", {"main_module": "install_remote",    "fetch_assets": False}),
+    ("installer-llm",    {"main_module": "install_with_llm",  "fetch_assets": True}),
+    ("manual-update",    {"main_module": "manual_update",     "fetch_assets": False}),
+    # Default catches the unmodified "spellcaster-installer.exe" / "spellcaster-installer".
+    ("installer",        {"main_module": "install",           "fetch_assets": True}),
+]
+
+
+def _detect_variant() -> dict:
+    """Pick the right entry-script + asset policy from the .exe name."""
+    name = ""
+    try:
+        name = Path(sys.argv[0]).stem.lower()
+    except Exception:  # noqa: BLE001
+        pass
+    for substr, cfg in _VARIANTS:
+        if substr in name:
+            return cfg
+    # Fall back to the main installer behavior so an unrecognised name
+    # still does *something* useful (better than a hard crash).
+    return _VARIANTS[-1][1]
+
+
 # Asset auto-update — pulls the locally-generated installer artwork into a
 # persistent cache so existing .exes get visual polish without rebuild.
 ASSET_MANIFEST_PATH = "assets/installer/MANIFEST.json"
@@ -244,20 +288,30 @@ def _ensure_assets(say) -> Path | None:
     return cache_dir
 
 
-def _run_baked(argv: list[str]) -> int:
-    """Run install.py from the PyInstaller bundle. Returns exit code."""
+def _run_baked(argv: list[str], main_module: str = "install") -> int:
+    """Run the baked entry script for the active variant. Returns exit code.
+
+    `main_module` names the .py file to load (e.g. "install",
+    "validate_install", "install_remote"). Falls back to "install" if the
+    requested module isn't bundled (defence against build-time omissions).
+    """
     here = Path(getattr(sys, "_MEIPASS",
                         os.path.dirname(os.path.abspath(__file__))))
-    install_py = here / "install.py"
-    if not install_py.exists():
-        print(f"[bootstrap] FATAL: baked install.py missing at {install_py}")
+    entry_py = here / f"{main_module}.py"
+    if not entry_py.exists():
+        # Fallback to install.py — every bundle ships it as the floor
+        print(f"[bootstrap] baked {main_module}.py missing — falling back to install.py")
+        entry_py = here / "install.py"
+    if not entry_py.exists():
+        print(f"[bootstrap] FATAL: baked install.py missing at {here}")
         return 2
-    # Ensure the bundle dir is on sys.path so installer_gui imports work
+    # Ensure the bundle dir is on sys.path so cross-variant imports work
+    # (validate_install + install_remote + install_with_llm all do `import install`)
     if str(here) not in sys.path:
         sys.path.insert(0, str(here))
     sys.argv = [sys.argv[0]] + argv
     import importlib.util
-    spec = importlib.util.spec_from_file_location("install", install_py)
+    spec = importlib.util.spec_from_file_location(main_module, entry_py)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     try:
@@ -267,17 +321,24 @@ def _run_baked(argv: list[str]) -> int:
         return int(e.code) if e.code is not None else 0
 
 
-def _run_fetched(temp_dir: Path, argv: list[str]) -> int:
-    """Run the fetched install.py from temp_dir. Returns exit code."""
+def _run_fetched(temp_dir: Path, argv: list[str],
+                 main_module: str = "install") -> int:
+    """Run the fetched entry script from temp_dir. Returns exit code."""
     # Set env var so fetched install.py uses temp_dir for manifest lookups
     os.environ["SPELLCASTER_INSTALLER_ROOT"] = str(temp_dir)
     # Put temp_dir on sys.path AHEAD of the bundle so the fresh code wins
-    # (import resolution for `import installer_gui` etc.).
+    # (import resolution for `import installer_gui`, `import install`, etc.)
     sys.path.insert(0, str(temp_dir))
     sys.argv = [sys.argv[0], "--bootstrapped"] + argv
 
+    entry_py = temp_dir / f"{main_module}.py"
+    if not entry_py.exists():
+        # Fetched set didn't include this entry — fall back to baked
+        print(f"[bootstrap] fetched {main_module}.py missing — using baked")
+        return _run_baked(argv, main_module=main_module)
+
     import importlib.util
-    spec = importlib.util.spec_from_file_location("install", temp_dir / "install.py")
+    spec = importlib.util.spec_from_file_location(main_module, entry_py)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     try:
@@ -290,16 +351,21 @@ def _run_fetched(temp_dir: Path, argv: list[str]) -> int:
 def main() -> int:
     argv = list(sys.argv[1:])
 
+    # Pick the variant first so even baked / no-update / bootstrapped
+    # paths invoke the right entry script.
+    variant = _detect_variant()
+    main_module = variant["main_module"]
+
     # Already bootstrapped? Run baked (prevents recursion).
     if "--bootstrapped" in argv:
         argv = [a for a in argv if a != "--bootstrapped"]
-        return _run_baked(argv)
+        return _run_baked(argv, main_module=main_module)
 
     # User asked for offline/baked mode explicitly.
     if "--no-update" in argv:
         argv = [a for a in argv if a != "--no-update"]
-        print("[bootstrap] --no-update: using baked-in installer")
-        return _run_baked(argv)
+        print(f"[bootstrap] --no-update: using baked-in {main_module}")
+        return _run_baked(argv, main_module=main_module)
 
     print(_BANNER)
 
@@ -307,47 +373,56 @@ def main() -> int:
     # Under `--windowed` the console print above is invisible; the
     # splash is the only thing users see before install.py paints its
     # real window. Silent fallback if Tk isn't available.
-    try:
-        from . import splash as _splash  # type: ignore
-    except Exception:  # noqa: BLE001
+    # Console-only variants (validate / remote / manual-update) skip the
+    # splash entirely — it would just look weird on a CLI tool.
+    sp = None
+    if variant.get("fetch_assets", True):
         try:
-            import splash as _splash  # type: ignore
+            from . import splash as _splash  # type: ignore
         except Exception:  # noqa: BLE001
-            _splash = None
+            try:
+                import splash as _splash  # type: ignore
+            except Exception:  # noqa: BLE001
+                _splash = None
+        if _splash is not None:
+            sp = _splash.show_splash()
 
-    sp = _splash.show_splash() if _splash is not None else None
     def _say(msg: str) -> None:
         if sp is not None:
             try: sp.status(msg)
             except Exception: pass  # noqa: BLE001
+        else:
+            # Console variants — print to stdout so the user sees progress
+            print(f"[bootstrap] {msg}")
 
-    temp = Path(tempfile.mkdtemp(prefix="spellcaster-installer-"))
+    temp = Path(tempfile.mkdtemp(prefix=f"spellcaster-{main_module}-"))
     try:
-        _say("Checking for the latest installer…")
+        _say(f"Checking for the latest {main_module}…")
         fetched = _fetch_latest(temp)
 
-        # Asset auto-update — runs whether or not the Python fetch succeeded,
-        # because new assets can ship to OLD bundled .py too. Failures here
-        # are non-fatal (the GUI degrades to emoji/text per asset).
-        cache = _ensure_assets(_say)
-        if cache is not None:
-            os.environ["SPELLCASTER_INSTALLER_ASSET_DIR"] = str(cache)
+        # Asset auto-update — only for variants that show the GUI. Skipping
+        # the 20 MB asset fetch on console-only variants keeps their startup
+        # tight (CLI users care about responsiveness more than artwork).
+        if variant.get("fetch_assets", True):
+            cache = _ensure_assets(_say)
+            if cache is not None:
+                os.environ["SPELLCASTER_INSTALLER_ASSET_DIR"] = str(cache)
 
         if fetched:
-            print(f"[bootstrap] Fetched latest installer ({len(FETCH_FILES)} files)")
-            print("[bootstrap] Running updated code...\n")
-            _say("Launching the updated installer…")
+            print(f"[bootstrap] Fetched latest source ({len(FETCH_FILES)} files); "
+                  f"running {main_module}\n")
+            _say(f"Launching the updated {main_module}…")
             if sp is not None:
                 try: sp.close()
                 except Exception: pass  # noqa: BLE001
-            return _run_fetched(temp, argv)
+            return _run_fetched(temp, argv, main_module=main_module)
         else:
-            print("[bootstrap] Using baked-in installer (network unavailable)\n")
-            _say("Offline — launching the bundled installer…")
+            print(f"[bootstrap] Using baked-in {main_module} (network unavailable)\n")
+            _say(f"Offline — launching bundled {main_module}…")
             if sp is not None:
                 try: sp.close()
                 except Exception: pass  # noqa: BLE001
-            return _run_baked(argv)
+            return _run_baked(argv, main_module=main_module)
     finally:
         try:
             if sp is not None: sp.close()
