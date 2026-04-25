@@ -239,9 +239,11 @@ A real pipeline, all built into the GIMP menu. Generate a scene → AI-select th
 | **GIMP 3** | Free image editor (the free Photoshop) | [gimp.org](https://www.gimp.org/downloads/) |
 | **A GPU with 4+ GB VRAM** | Runs the AI models | You probably have one |
 
-> **No GPU?** Use the **Antenna** to connect to ComfyUI on another machine on your network. Gaming PC in the closet, laptop on the couch — they get along.
+> **No GPU on this machine?** That's fine — your ComfyUI can live on a different computer on your LAN (e.g. a gaming PC in the closet). Use **`spellcaster-remote-installer.exe`** below.
 
 ### Get the installer
+
+The main installer auto-detects your GPU + ComfyUI, downloads what you don't have, configures every plugin, generates shortcuts. ~370 MB, includes 49 locally-generated visual assets.
 
 <p align="center">
   <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-installer.exe"><img src="https://img.shields.io/badge/Windows-spellcaster--installer.exe-7c3aed?style=for-the-badge&logo=windows&logoColor=white" alt="Windows"/></a>
@@ -257,19 +259,25 @@ A real pipeline, all built into the GIMP menu. Generate a scene → AI-select th
 
 > **From source:** `git clone https://github.com/laboratoiresonore/spellcaster && cd spellcaster && python installer/install.py`
 
-### The Antenna — remote ComfyUI in one click
+### Companion tools
 
-The **Antenna** is a small always-on bridge that lets Spellcaster on your laptop drive ComfyUI, KoboldCpp, Ollama, Resolve, Darktable, GIMP, or SillyTavern on **another PC** on your LAN. Pair once, forget forever.
+Three smaller binaries shipped alongside the main installer for specific scenarios:
 
 <p align="center">
-  <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-antenna-windows.exe"><img src="https://img.shields.io/badge/Windows-spellcaster--antenna.exe-2ed573?style=for-the-badge&logo=windows&logoColor=white" alt="Antenna Windows"/></a>
+  <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-remote-installer.exe"><img src="https://img.shields.io/badge/Remote%20Installer-LAN%20ComfyUI-2ed573?style=for-the-badge&logo=windows&logoColor=white" alt="Remote installer"/></a>
   &nbsp;
-  <a href="https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main/installer/install_antenna.sh"><img src="https://img.shields.io/badge/macOS%20%2F%20Linux-install__antenna.sh-2ed573?style=for-the-badge&logo=apple&logoColor=white" alt="Antenna shell"/></a>
+  <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-validate-install.exe"><img src="https://img.shields.io/badge/Validator-Re--check%20anytime-FFB300?style=for-the-badge&logo=windows&logoColor=white" alt="Validator"/></a>
+  &nbsp;
+  <a href="https://github.com/laboratoiresonore/spellcaster/releases/latest/download/spellcaster-manual-update.exe"><img src="https://img.shields.io/badge/Manual%20Update-Repair%20tool-6BB6FF?style=for-the-badge&logo=windows&logoColor=white" alt="Manual update"/></a>
 </p>
 
-**Windows:** download the ~140 MB binary, double-click. First launch asks about desktop icon / Start Menu entry / run-at-login. Tray icon appears; right-click → *Pair with Guild…* → type the 6-digit code into your Guild sidebar.
+| Tool | When to use it |
+|---|---|
+| **`spellcaster-remote-installer.exe`** | Your ComfyUI runs on a **different machine on your LAN**. Auto-discovers servers (`--scan`), installs only the local plugins + Wizard Guild + shortcuts pointing at the remote URL. ~600 MB. |
+| **`spellcaster-validate-install.exe`** | Re-runnable smoke test — submits tiny workflows for every installed feature, reports which work end-to-end. Exit codes (0/1/2/3) make it CI-friendly. ~66 MB. |
+| **`spellcaster-manual-update.exe`** | Things broke; the GIMP plugin doesn't appear; you want to force-resync without re-running the full installer. ~8 MB. |
 
-**macOS / Linux:** `curl -LO <link>` → `chmod +x install_antenna.sh && ./install_antenna.sh`. Tray works on macOS; Linux falls back to console mode.
+> **Added new models to ComfyUI after install?** Don't re-run the installer. Open GIMP → `Filters > Spellcaster > 🜍 Crypt > ↻ Refresh Models from Server…` — re-probes `/object_info` and updates the inventory in ~2 seconds.
 
 ---
 
@@ -345,7 +353,7 @@ If you can order food on your phone, you can use this. If you once successfully 
 - **Prompts?** Automated. Type "a cat" — a local AI rewrites it into the flavour your model was trained on. SDXL wants tags. Flux wants paragraphs. Klein wants bullets. It does this for you. [Details →](DEEP_DIVE.md#-prompt-enhancement--per-architecture-per-method-per-model)
 - **Model selection?** Automated. The plugin detects what models are installed and picks the best one.
 - **VRAM management?** Automated. Video resolution auto-scales to fit your GPU. The LLM politely unloads itself during image generation. TeaCache acceleration silently injected.
-- **Remote ComfyUI?** Automated. The **Antenna** makes a ComfyUI on another machine feel local.
+- **Remote ComfyUI?** Automated. Use **`spellcaster-remote-installer.exe`** — auto-discovers servers on your LAN, installs only the local plugins + Wizard Guild pointing at the remote.
 - **Updates?** Automated. The plugin checks GitHub on launch and silently patches itself.
 - **Recovery?** Automated. If an update corrupts the plugin, a 3-tier recovery system restores from backup, re-downloads from GitHub, or shows a visible error. GIMP never bricks.
 
@@ -390,7 +398,7 @@ Yes. `Filters > Spellcaster Tools > Workflow Library` runs any workflow JSON fro
 <details>
 <summary><strong>ComfyUI on another machine?</strong></summary>
 
-Yes. The Antenna auto-detects ComfyUI servers on your network, or set the URL in Settings. Gaming PC in the closet, laptop on the couch — we have enabled laziness at an architectural level and we're proud of it. [Antenna details →](#the-antenna--remote-comfyui-in-one-click)
+Yes. The **`spellcaster-remote-installer.exe`** auto-discovers ComfyUI servers on your network (`--scan`), or pass the URL directly. Gaming PC in the closet, laptop on the couch — we have enabled laziness at an architectural level and we're proud of it. For multi-app coordination across multiple machines (Resolve on box A, GIMP on box B, SillyTavern on box C), see the optional [**Antenna service-mesh**](antenna/README.md) — most users never need it.
 
 </details>
 
@@ -426,7 +434,7 @@ Because every tool is a spell, every workflow is an incantation, your GPU is a f
 
 ## Dig deeper
 
-- [**Full technical reference →** `DEEP_DIVE.md`](DEEP_DIVE.md) — all 69 tools enumerated, the 9-architecture registry, scaffold state machines, antenna endpoints, cross-interface backbone, prompt enhancement chain, privacy + boot safety details, every subsystem explained.
+- [**Full technical reference →** `DEEP_DIVE.md`](DEEP_DIVE.md) — all 69 tools enumerated, the 9-architecture registry, scaffold state machines, antenna service-mesh endpoints (optional, for advanced multi-machine setups), cross-interface backbone, prompt enhancement chain, privacy + boot safety details, every subsystem explained.
 - [**ComfyUI dependencies** → `DEPENDENCIES.md`](DEPENDENCIES.md) — 24 custom node packs Spellcaster uses, linked to upstream.
 
 ---
