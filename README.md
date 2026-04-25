@@ -261,6 +261,8 @@ This is the one you want **99% of the time**. Double-click and click Next a few 
 
 That's the whole thing. If anything goes wrong, the installer tells you in plain English what went wrong and what to do.
 
+> **Self-updating**. Every Spellcaster installer below downloads the latest version from GitHub on every launch — you don't need to re-download new releases just to get bug fixes. Want to use the version baked into the .exe instead (e.g. you're offline)? Add `--no-update` when launching.
+
 > **Comfortable with the command line?** From source: `git clone https://github.com/laboratoiresonore/spellcaster && cd spellcaster && python installer/install.py`. Skip this line if you don't know what `git` is.
 
 ---
