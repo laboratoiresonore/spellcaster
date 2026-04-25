@@ -61,9 +61,16 @@ BRANCH = "main"
 FETCH_FILES = [
     "installer/install.py",
     "installer/installer_gui.py",
+    "installer/theme.py",          # added 2026-04-25 so polish helpers ship via auto-update
     "installer/manifest.json",
 ]
 FETCH_TIMEOUT = 15  # per file
+# Asset auto-update — pulls the locally-generated installer artwork into a
+# persistent cache so existing .exes get visual polish without rebuild.
+ASSET_MANIFEST_PATH = "assets/installer/MANIFEST.json"
+ASSET_FETCH_TIMEOUT = 30          # per asset (PNGs can be 1-2 MB each)
+ASSET_MAX_BYTES = 8 * 1024 * 1024  # per asset, hard cap (largest legitimate
+                                    # asset is the welcome hero at ~2 MB)
 
 # Small network banner so users understand the delay.
 # NOTE: use explicit `+` between each piece — implicit adjacent-literal
@@ -128,6 +135,113 @@ def _fetch_latest(dest_dir: Path) -> bool:
         print(f"[bootstrap] Fetched files are corrupt: {e}")
         return False
     return True
+
+
+def _asset_cache_dir() -> Path:
+    """Persistent location for downloaded installer artwork.
+
+    Survives between launches so we don't re-download the 20 MB asset set
+    every time. theme.py reads this via the SPELLCASTER_INSTALLER_ASSET_DIR
+    env var (set in main() after _ensure_assets succeeds).
+    """
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or os.path.expanduser("~")
+        root = Path(base) / "Spellcaster"
+    elif sys.platform == "darwin":
+        root = Path.home() / "Library" / "Application Support" / "Spellcaster"
+    else:
+        root = Path(os.environ.get("XDG_DATA_HOME",
+                                    os.path.expanduser("~/.local/share"))
+                    ) / "spellcaster"
+    return root / "installer_cache" / "assets" / "installer"
+
+
+def _ensure_assets(say) -> Path | None:
+    """Download any missing installer assets into the persistent cache.
+
+    Returns the cache dir on success, or None if anything went wrong (in
+    which case the GUI falls back to whatever's baked in the bundle and
+    degrades to emoji/text where assets are missing).
+
+    `say(msg)` is the splash-status callback (passed in from main()) so the
+    user sees "Fetching artwork (12/49)…" instead of staring at nothing.
+    """
+    cache_dir = _asset_cache_dir()
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        print(f"[bootstrap] cannot create asset cache {cache_dir}: {e}")
+        return None
+
+    # Step 1: fetch the asset MANIFEST.json (small, fast)
+    try:
+        say("Checking artwork manifest…")
+        url = _raw_url(ASSET_MANIFEST_PATH)
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "spellcaster-installer-bootstrap"})
+        with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT) as r:
+            mf_blob = r.read(_MAX_FETCH_BYTES + 1)
+        if len(mf_blob) > _MAX_FETCH_BYTES:
+            raise IOError("manifest too large")
+        manifest = json.loads(mf_blob.decode("utf-8"))
+    except (urllib.error.URLError, ssl.SSLError,
+            IOError, OSError, ValueError) as e:
+        print(f"[bootstrap] asset manifest fetch failed: {e}")
+        return None
+
+    files = manifest.get("files", [])
+    if not files:
+        return None
+
+    # Step 2: write the manifest into the cache so later runs can compare
+    try:
+        (cache_dir / "MANIFEST.json").write_bytes(mf_blob)
+    except OSError:
+        pass
+
+    # Step 3: download each asset that's missing OR has wrong size
+    missing = []
+    for entry in files:
+        name = entry.get("name", "")
+        size = int(entry.get("size", 0))
+        local = cache_dir / name
+        try:
+            if local.exists() and local.stat().st_size == size:
+                continue
+        except OSError:
+            pass
+        missing.append((name, size))
+
+    if not missing:
+        say("Artwork up to date.")
+        return cache_dir
+
+    total = len(missing)
+    for i, (name, size) in enumerate(missing, 1):
+        say(f"Fetching artwork ({i}/{total})…")
+        try:
+            url = _raw_url(f"assets/installer/{name}")
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "spellcaster-installer-bootstrap"})
+            with urllib.request.urlopen(
+                    req, timeout=ASSET_FETCH_TIMEOUT) as r:
+                blob = r.read(ASSET_MAX_BYTES + 1)
+            if len(blob) > ASSET_MAX_BYTES:
+                # Skip this asset — never write a hostile-mirror payload
+                continue
+            if size and len(blob) != size:
+                # Size mismatch — likely a stale manifest. Take the file we
+                # got but warn so a re-run can catch up.
+                print(f"[bootstrap] {name} size {len(blob)} != manifest {size}")
+            (cache_dir / name).write_bytes(blob)
+        except (urllib.error.URLError, ssl.SSLError,
+                IOError, OSError) as e:
+            print(f"[bootstrap] asset {name} failed: {e}")
+            # Continue with other assets — partial cache is better than
+            # zero cache, since theme.py degrades per-asset to None.
+            continue
+
+    return cache_dir
 
 
 def _run_baked(argv: list[str]) -> int:
@@ -210,7 +324,16 @@ def main() -> int:
     temp = Path(tempfile.mkdtemp(prefix="spellcaster-installer-"))
     try:
         _say("Checking for the latest installer…")
-        if _fetch_latest(temp):
+        fetched = _fetch_latest(temp)
+
+        # Asset auto-update — runs whether or not the Python fetch succeeded,
+        # because new assets can ship to OLD bundled .py too. Failures here
+        # are non-fatal (the GUI degrades to emoji/text per asset).
+        cache = _ensure_assets(_say)
+        if cache is not None:
+            os.environ["SPELLCASTER_INSTALLER_ASSET_DIR"] = str(cache)
+
+        if fetched:
             print(f"[bootstrap] Fetched latest installer ({len(FETCH_FILES)} files)")
             print("[bootstrap] Running updated code...\n")
             _say("Launching the updated installer…")

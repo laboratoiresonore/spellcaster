@@ -149,6 +149,19 @@ def installer_loading_frames(seq: str = "pulse") -> list[Path]:
 
 def _candidate_roots() -> list[Path]:
     roots: list[Path] = []
+
+    # SPELLCASTER_INSTALLER_ASSET_DIR is set by bootstrap.py:_ensure_assets()
+    # to a persistent cache (e.g. %APPDATA%/Spellcaster/installer_cache/
+    # assets/installer/). Callers query "installer/foo.png", so the cache's
+    # PARENT (.../assets/) is the right root — joining it with the queried
+    # name yields .../assets/installer/foo.png. Listed first so the freshest
+    # cached art always wins over bundled fallbacks.
+    cache = os.environ.get("SPELLCASTER_INSTALLER_ASSET_DIR", "").strip()
+    if cache:
+        cp = Path(cache)
+        if cp.is_dir():
+            roots.append(cp.parent)
+
     meipass = getattr(sys, "_MEIPASS", None)
     if meipass:
         roots.extend([
