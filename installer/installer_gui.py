@@ -504,6 +504,8 @@ class MagicalEffects:
 
         Lays a CTkFrame at z-top covering the entire installer window. Click
         the Close button (or Escape) to dismiss back to the deploy screen.
+        Now also surfaces a structured recap (selected features, validation
+        result if available) so the user sees concretely what was installed.
         """
         try:
             overlay = ctk.CTkFrame(self, fg_color="#0a0612", corner_radius=0)
@@ -516,18 +518,60 @@ class MagicalEffects:
 
             celebration_img = _load_installer_image(
                 "completion", "completion_celebration",
-                target_w=480, target_h=480)
+                target_w=320, target_h=320)
             if celebration_img is not None:
                 ctk.CTkLabel(content, text="", image=celebration_img
-                             ).pack(pady=(0, 24))
+                             ).pack(pady=(0, 16))
 
             ctk.CTkLabel(content, text="You're all set!",
-                         font=ctk.CTkFont(family="Inter", size=42, weight="bold"),
-                         text_color="#FFD700").pack(pady=(0, 6))
+                         font=ctk.CTkFont(family="Inter", size=36, weight="bold"),
+                         text_color="#FFD700").pack(pady=(0, 4))
             ctk.CTkLabel(content,
                          text="Spellcaster is wired into your tools and ready to cast.",
-                         font=ctk.CTkFont(family="Inter", size=15),
-                         text_color="#c4b8e3").pack(pady=(0, 30))
+                         font=ctk.CTkFont(family="Inter", size=14),
+                         text_color="#c4b8e3").pack(pady=(0, 16))
+
+            # Structured recap — what actually got installed.
+            n_features = sum(1 for v in self.feature_vars.values() if v.get())
+            n_models = sum(1 for m in self.model_vars.values()
+                           if m["var"].get())
+            n_nodes = sum(1 for v in self.node_vars.values() if v.get())
+            recap = ctk.CTkFrame(content, fg_color="#161228",
+                                  corner_radius=10, border_width=1,
+                                  border_color="#3A2863")
+            recap.pack(pady=(0, 18), padx=20, fill="x")
+            ctk.CTkLabel(recap,
+                         text=(f"Installed: {n_features} feature(s)  •  "
+                               f"{n_nodes} custom node pack(s)  •  "
+                               f"{n_models} model(s)"),
+                         font=ctk.CTkFont(family="Inter", size=13,
+                                          weight="bold"),
+                         text_color="#FFFFFF").pack(padx=14, pady=(10, 4))
+
+            # Validation summary (if step_validate_install ran and wrote a
+            # report; harmless if it didn't — the file just won't exist)
+            try:
+                import json as _json
+                from pathlib import Path as _P
+                gimp_dir = self.gimp_path.get()
+                if gimp_dir:
+                    sp = _P(gimp_dir) / "comfyui-connector" / "spellcaster_settings.json"
+                    if sp.is_file():
+                        v = (_json.loads(sp.read_text(encoding="utf-8"))
+                             .get("validation") or {})
+                        n_ok = len(v.get("working") or [])
+                        n_bad = len(v.get("broken") or [])
+                        if n_ok or n_bad:
+                            color = "#00E676" if not n_bad else "#FFB300"
+                            ctk.CTkLabel(recap,
+                                         text=(f"Validation: {n_ok} feature(s) "
+                                               f"verified, {n_bad} broken"),
+                                         font=ctk.CTkFont(family="Inter",
+                                                          size=12),
+                                         text_color=color
+                                         ).pack(padx=14, pady=(0, 10))
+            except Exception:  # noqa: BLE001 — recap is decorative, never crash
+                pass
 
             actions = ctk.CTkFrame(content, fg_color="transparent")
             actions.pack()
@@ -638,6 +682,47 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         # Start ambient animations
         self._start_pulse_animation()
         self.after(500, self._start_sigil_animation)
+
+        # Wizard navigation order — drives Back / Esc / future Next-key
+        # bindings. Source of truth for the sidebar order too.
+        self._WIZARD_ORDER = [
+            "welcome", "usecases", "quick", "advisor",
+            "paths", "features", "granular", "install",
+        ]
+        # Esc → go back one step (works on every frame except welcome).
+        self.bind("<Escape>", lambda _e: self._go_back(), add="+")
+
+    def _go_back(self):
+        """Navigate one step backward in the wizard. No-op on Welcome."""
+        try:
+            cur = next(k for k, f in self.frames.items()
+                       if f.winfo_ismapped())
+        except StopIteration:
+            return
+        try:
+            i = self._WIZARD_ORDER.index(cur)
+        except ValueError:
+            return
+        if i > 0:
+            self.select_frame(self._WIZARD_ORDER[i - 1])
+
+    def _add_back_button(self, parent, side="left", padx=(0, 10)):
+        """Standard ‹← Back› secondary button. Pack into a button row.
+
+        Used in every wizard frame (except Welcome) so the user can
+        reverse without using the sidebar. Visually understated so it
+        doesn't compete with the primary Continue button.
+        """
+        btn = ctk.CTkButton(
+            parent, text="← Back", width=110, height=36,
+            font=ctk.CTkFont(family="Inter", size=13),
+            fg_color="transparent", hover_color="#1a1730",
+            text_color=self.text_muted, border_width=1,
+            border_color="#3A2863",
+            command=self._go_back,
+        )
+        btn.pack(side=side, padx=padx)
+        return btn
 
     # ------------------------------------------------------------------
     # UI construction
@@ -998,6 +1083,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         # Apply + Next
         btn_row = ctk.CTkFrame(f_use, fg_color="transparent")
         btn_row.pack(fill="x", padx=30, pady=(15, 25))
+        self._add_back_button(btn_row)
         ctk.CTkButton(btn_row, text="Apply Selections & Continue  \u2192", height=42,
                        font=ctk.CTkFont(family="Inter", size=15, weight="bold"),
                        fg_color=self.accent_color, hover_color=self.accent_hover,
@@ -1049,6 +1135,20 @@ class InstallerApp(MagicalEffects, ctk.CTk):
             "You'll go through Steps 4-7 and check exactly what you want.\n"
             "For advanced users who know which models they need.",
             "#3A2863", self._quick_nothing)
+
+        # Direct shortcut to feature picker \u2014 saves the user from walking
+        # through Model Advisor + System Layout when they want to fine-tune.
+        # Addresses the audit finding that Quick Setup \u2192 feature picker
+        # was 3 wizard steps apart for no good reason.
+        nav_quick = ctk.CTkFrame(f_quick, fg_color="transparent")
+        nav_quick.pack(fill="x", padx=30, pady=(20, 25))
+        self._add_back_button(nav_quick)
+        ctk.CTkButton(nav_quick,
+                      text="Skip ahead to \u2728 Magic Profiles (handpick by category)  \u2192",
+                      height=38, font=ctk.CTkFont(family="Inter", size=13),
+                      fg_color="#281D45", hover_color="#3A2863",
+                      command=lambda: self.select_frame("features")
+                      ).pack(side="left", padx=10)
 
         # ================================================================
         # STEP 4: MODEL ADVISOR — Flux2-aware smart guidance
@@ -1144,9 +1244,42 @@ class InstallerApp(MagicalEffects, ctk.CTk):
 
         ctk.CTkFrame(tips_frame, fg_color="transparent", height=5).pack()
 
+        # ── Apply-recommendations action ──────────────────────────────
+        # Audit finding: this step was previously read-only — it gave
+        # advice but the user had to manually toggle features. Now the
+        # button below ACTUALLY applies the VRAM-tier-aware selection
+        # to the feature_vars so users who trust the advisor can move
+        # straight to Review & Deploy.
+        apply_frame = ctk.CTkFrame(f_advisor, fg_color="#0d1226",
+                                    corner_radius=10, border_width=1,
+                                    border_color=self.accent_hover)
+        apply_frame.pack(fill="x", padx=30, pady=(15, 5))
+        ctk.CTkLabel(apply_frame, text="Trust the Advisor?",
+                     font=ctk.CTkFont(family="Inter", size=15, weight="bold"),
+                     text_color=self.accent_hover).pack(anchor="w",
+                                                         padx=20, pady=(12, 2))
+        ctk.CTkLabel(apply_frame,
+                     text=("One click applies the recommended feature mix for your "
+                           f"{vram_gb:.0f} GB GPU — Klein + supporting tools when "
+                           "VRAM allows, SDXL/SD1.5 fallback otherwise. You can "
+                           "still fine-tune in Magic Profiles afterwards."),
+                     font=ctk.CTkFont(family="Inter", size=12),
+                     text_color=self.text_muted, wraplength=720,
+                     justify="left").pack(anchor="w", padx=20, pady=(0, 10))
+        ctk.CTkButton(apply_frame,
+                      text="✓ Apply Advisor Recommendations to my Selection",
+                      height=40,
+                      font=ctk.CTkFont(family="Inter", size=14, weight="bold"),
+                      fg_color=self.accent_color,
+                      hover_color=self.accent_hover,
+                      text_color="#12101d",
+                      command=self._apply_advisor_recs
+                      ).pack(anchor="w", padx=20, pady=(0, 14))
+
         # Navigation
         nav_row = ctk.CTkFrame(f_advisor, fg_color="transparent")
         nav_row.pack(fill="x", padx=30, pady=(15, 25))
+        self._add_back_button(nav_row)
         ctk.CTkButton(nav_row, text="Continue to System Layout  \u2192", height=42,
                        font=ctk.CTkFont(family="Inter", size=15, weight="bold"),
                        fg_color=self.accent_color, hover_color=self.accent_hover,
@@ -2174,6 +2307,59 @@ class InstallerApp(MagicalEffects, ctk.CTk):
             fvar.set(False)
         self._update_size()
         self.select_frame("features")
+
+    def _apply_advisor_recs(self):
+        """Apply the Model Advisor's VRAM-tier-aware recommendations.
+
+        Encodes the same rules the Advisor screen narrates in prose:
+        * Always-on core: img2img, txt2img, inpaint, upscale, rembg,
+          face_restore.
+        * VRAM ≥ 6 GB → enable klein_flux2 (the headline new arch).
+        * VRAM ≥ 8 GB → also enable wan_i2v (image→video).
+        * VRAM ≥ 10 GB → enable face_swap_reactor + lut_grading + the
+          full identity-preservation stack (faceid_img2img).
+        * VRAM ≥ 12 GB → also enable controlnet + style_transfer +
+          iclight (relighting).
+        * VRAM ≥ 16 GB → enable seedv2r + supir (heavy restoration).
+
+        Features absent from the manifest are silently skipped. The
+        function never DISABLES something the user has already turned
+        on — it's purely additive so users keep their custom picks.
+        """
+        vram_gb = self._vram_mb / 1024 if self._vram_mb > 0 else 0
+        recs = ["img2img", "txt2img", "inpaint", "upscale",
+                "rembg", "face_restore", "photo_restore"]
+        if vram_gb >= 6 or vram_gb == 0:  # vram=0 means unknown/remote — try anyway
+            recs.append("klein_flux2")
+        if vram_gb >= 8 or vram_gb == 0:
+            recs.append("wan_i2v")
+        if vram_gb >= 10 or vram_gb == 0:
+            recs += ["face_swap_reactor", "faceid_img2img",
+                     "lut_grading", "lama_remove", "colorize"]
+        if vram_gb >= 12 or vram_gb == 0:
+            recs += ["controlnet", "style_transfer", "iclight"]
+        if vram_gb >= 16 or vram_gb == 0:
+            recs += ["seedv2r", "supir", "detail_hallucinate"]
+
+        added = 0
+        for fkey in recs:
+            if fkey in self.feature_vars and not self.feature_vars[fkey].get():
+                self.feature_vars[fkey].set(True)
+                added += 1
+        self._update_size()
+
+        # Confirmation banner — gives the user immediate feedback that the
+        # button DID something. Without this, click → silent → "did it work?"
+        try:
+            from tkinter import messagebox
+            messagebox.showinfo(
+                "Recommendations applied",
+                f"Added {added} feature(s) to your selection based on "
+                f"your {vram_gb:.0f} GB GPU.\n\n"
+                f"Total selected: {sum(1 for v in self.feature_vars.values() if v.get())} features.\n\n"
+                f"Continue to System Layout, or jump to Magic Profiles to fine-tune.")
+        except Exception:  # noqa: BLE001
+            pass
 
     # ------------------------------------------------------------------
     # Feature <-> granular synchronisation
