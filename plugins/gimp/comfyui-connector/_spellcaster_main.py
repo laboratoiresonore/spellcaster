@@ -1752,13 +1752,33 @@ _config_lock = threading.Lock()
 
 def _load_config():
     """Load config.json from the plugin directory. Returns {} on any error.
-    Thread-safe: serialized with _save_config via _config_lock."""
+    Thread-safe: serialized with _save_config via _config_lock.
+
+    Errors used to be silently swallowed — corrupt config = empty dict =
+    plugin starts with zero menus and the user has no idea why. Now we
+    log the actual cause to stderr (visible in GIMP's error console) so
+    the cause is debuggable. {} is still returned to keep callers safe.
+    """
     cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
     with _config_lock:
         try:
             with open(cfg_path, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception:
+        except FileNotFoundError:
+            # Fresh install or pre-config-write — silent is correct here
+            return {}
+        except json.JSONDecodeError as e:
+            import sys as _sys
+            print(f"[Spellcaster] config.json parse error at {cfg_path}: "
+                  f"line {e.lineno}, col {e.colno}: {e.msg}", file=_sys.stderr)
+            print(f"[Spellcaster] Falling back to empty config — your settings "
+                  f"will not load. Re-run the installer to regenerate.",
+                  file=_sys.stderr)
+            return {}
+        except OSError as e:
+            import sys as _sys
+            print(f"[Spellcaster] config.json read error: {type(e).__name__}: "
+                  f"{e}", file=_sys.stderr)
             return {}
 
 
@@ -19431,13 +19451,57 @@ class Spellcaster(Gimp.PlugIn):
         cfg = _load_config()
         disabled = set(cfg.get("disabled_features") or [])
         present = _get_features_present_cached(cfg)  # None = couldn't probe
+
+        # ── Validation-broken gating (added 2026-04-25) ──
+        # The installer's step_validate_install runs tiny test workflows
+        # against the user's actual server and writes a "validation"
+        # block to spellcaster_settings.json with `broken: [["upscale",
+        # "missing model"], …]`. We translate broken capabilities into
+        # feature keys and add them to `disabled`, so the user doesn't
+        # see menu items for tools that are PROVEN not to work end-to-
+        # end on their server.
+        #
+        # Fail-open: if the file is missing / malformed / lacks the
+        # validation block, we add nothing and the existing probe gate
+        # still applies. Capabilities that don't map to a feature key
+        # (e.g. arch-specific txt2img_flux) are silently ignored.
+        try:
+            _settings_path = (Path(os.path.dirname(os.path.abspath(__file__)))
+                              / "spellcaster_settings.json")
+            if _settings_path.is_file():
+                _settings = json.loads(_settings_path.read_text(encoding="utf-8"))
+                _broken = (_settings.get("validation") or {}).get("broken") or []
+                # Capability→feature map. Capability IDs come from
+                # spellcaster_core.diagnostic.CAPABILITY_TESTS.
+                _CAP_TO_FEATURE = {
+                    "upscale":      "upscale",
+                    "rembg":        "rembg",
+                    "face_restore": "face_restore",
+                    "faceswap":     "face_swap_reactor",
+                    "wan_i2v":      "wan_i2v",
+                    "ltx_t2v":      "ltx_video",
+                    "iclight":      "iclight",
+                    "colorize":     "colorize",
+                    "lut":          "lut_grading",
+                    "style_transfer": "style_transfer",
+                }
+                for entry in _broken:
+                    # Format is either ["cap", "err"] (newer) or just "cap"
+                    cap = entry[0] if isinstance(entry, (list, tuple)) and entry else entry
+                    if isinstance(cap, str) and cap in _CAP_TO_FEATURE:
+                        disabled.add(_CAP_TO_FEATURE[cap])
+        except Exception as _val_err:  # noqa: BLE001 — never block menu reg
+            import sys as _sys
+            print(f"[Spellcaster] validation-gate read failed (showing all features): "
+                  f"{type(_val_err).__name__}: {_val_err}", file=_sys.stderr)
+
         procs = []
         for name, feature in _PROC_FEATURES.items():
             if feature is None:
                 procs.append(name)               # always-on core tool
                 continue
             if feature in disabled:
-                continue                          # explicitly hidden
+                continue                          # explicitly hidden OR validation-broken
             if present is not None and feature not in present:
                 continue                          # probe says node missing
             procs.append(name)

@@ -1138,30 +1138,52 @@ def download_file(url: str, dest: Path, dry_run: bool = False,
                 print(f"\n  {C_RED}✗ 401 Unauthorized: {e}{C_RESET}")
         elif e.code == 403:
             print(f"\n  {C_RED}✗ 403 Forbidden — access denied. The model may require authentication.{C_RESET}")
+        elif e.code == 429:
+            # Rate-limit / quota exhausted — distinct actionable advice per host
+            retry_hint = e.headers.get("Retry-After", "") if e.headers else ""
+            wait_msg = f" Server says retry after {retry_hint}s." if retry_hint else ""
+            print(f"\n  {C_RED}✗ 429 Too Many Requests — rate-limited.{wait_msg}{C_RESET}")
+            if "civitai.com" in url:
+                print(f"    {C_YELLOW}CivitAI daily download cap exhausted. Wait 24h, "
+                      f"or sign in with a higher-quota account via --civitai-key.{C_RESET}")
+            elif "huggingface.co" in url:
+                print(f"    {C_YELLOW}HuggingFace anonymous quota exhausted. Add "
+                      f"--hf-token with a free account token to lift the limit.{C_RESET}")
+            else:
+                print(f"    {C_YELLOW}Wait a few minutes before re-running.{C_RESET}")
         else:
             print(f"\n  {C_RED}✗ Download failed (HTTP {e.code}): {e}{C_RESET}")
         return False
     except (urllib.error.URLError, OSError) as e:
         if dest.exists():
             dest.unlink()
-        # Retry once on network errors
-        print(f"\n  {C_YELLOW}⟳ Network error, retrying...{C_RESET}")
-        try:
-            import time; time.sleep(2)
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=300) as resp:
-                with open(dest, "wb") as f:
-                    while True:
-                        chunk = resp.read(1024 * 1024)
-                        if not chunk: break
-                        f.write(chunk)
-            print(f"  {C_GREEN}✓ Saved to {dest} (retry succeeded){C_RESET}")
-            return True
-        except Exception as e2:
-            if dest.exists():
-                dest.unlink()
-            print(f"  {C_RED}✗ Download failed after retry: {e2}{C_RESET}")
-            return False
+        # Three-attempt exponential backoff on transient network errors.
+        # Adaptive: longer waits when the previous attempt failed quickly
+        # (typical of router/DNS hiccups that need a moment to recover).
+        import time
+        BACKOFFS = (2, 5, 12)  # seconds — total wait under 20s on full retry
+        for attempt, delay in enumerate(BACKOFFS, start=1):
+            print(f"\n  {C_YELLOW}⟳ Network error ({type(e).__name__}); "
+                  f"retry {attempt}/{len(BACKOFFS)} in {delay}s…{C_RESET}")
+            time.sleep(delay)
+            try:
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=300) as resp:
+                    with open(dest, "wb") as f:
+                        while True:
+                            chunk = resp.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                print(f"  {C_GREEN}✓ Saved to {dest} (retry {attempt} succeeded){C_RESET}")
+                return True
+            except Exception as e2:
+                if dest.exists():
+                    dest.unlink()
+                e = e2  # carry the latest error to the final report
+                continue
+        print(f"  {C_RED}✗ Download failed after {len(BACKOFFS)} retries: {e}{C_RESET}")
+        return False
 
 
 def git_clone(repo_url: str, dest: Path, dry_run: bool = False) -> bool:
@@ -1716,6 +1738,72 @@ def step_system_detection(args) -> tuple[str, int]:
     args._vram_mb  = vram_mb
     args._vram_tier = tier
     return gpu_name, vram_mb
+
+
+def step_preflight(server_url: str, args) -> bool:
+    """Pre-flight: quick reachability check on (a) the configured ComfyUI
+    server and (b) general internet (GitHub raw, the source of all nodes/
+    models). Catches the two most common no-go conditions BEFORE the
+    user spends time picking features only to fail at download time.
+
+    Returns True if both probes pass OR the user accepts to continue.
+    Returns False to abort the install. No side effects.
+    """
+    print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
+    print(f"{C_BOLD}  Pre-flight Connectivity Check{C_RESET}")
+    print(f"{C_BOLD}{_BOX_LINE}{C_RESET}")
+    print(f"  {C_DIM}Catching network problems early — better to fix them now")
+    print(f"  than to fail mid-download an hour from now.{C_RESET}\n")
+
+    # Probe 1 — ComfyUI server (5s timeout: we just want a TCP handshake +
+    # any HTTP response; the deeper /object_info probe runs later).
+    server_ok = False
+    print(f"  → ComfyUI server: {C_CYAN}{server_url}{C_RESET}")
+    try:
+        req = urllib.request.Request(f"{server_url.rstrip('/')}/system_stats")
+        with urllib.request.urlopen(req, timeout=5) as r:
+            r.read(64)
+        print(f"    {C_GREEN}✓ reachable{C_RESET}")
+        server_ok = True
+    except Exception as e:  # noqa: BLE001
+        print(f"    {C_RED}✗ unreachable: {type(e).__name__}: {e}{C_RESET}")
+        print(f"    {C_YELLOW}Common causes:{C_RESET}")
+        print(f"      • ComfyUI isn't running yet — start it, then re-run this installer")
+        print(f"      • Wrong URL — re-run with --server-url http://<IP>:<PORT>")
+        print(f"      • Firewall blocks the port — open it on the ComfyUI machine")
+
+    # Probe 2 — internet (raw.githubusercontent.com is what bootstrap +
+    # node installs hit; if it's down everything else will fail too).
+    inet_ok = False
+    print(f"  → Internet (raw.githubusercontent.com)…")
+    try:
+        req = urllib.request.Request(
+            "https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main/README.md")
+        with urllib.request.urlopen(req, timeout=8) as r:
+            r.read(64)
+        print(f"    {C_GREEN}✓ reachable{C_RESET}")
+        inet_ok = True
+    except Exception as e:  # noqa: BLE001
+        print(f"    {C_YELLOW}⚠ no internet: {type(e).__name__}: {e}{C_RESET}")
+        print(f"    {C_DIM}Custom node installs + model downloads will fail. "
+              f"Use --skip-nodes --skip-models for an offline-only run.{C_RESET}")
+
+    if server_ok and inet_ok:
+        print(f"\n  {C_GREEN}All pre-flight checks passed.{C_RESET}")
+        return True
+
+    if args.yes:
+        # Headless mode: log the failures and continue. The downstream
+        # step_probe_server / model downloads will surface the real errors
+        # so CI logs show exactly what went wrong.
+        print(f"\n  {C_YELLOW}--yes: continuing despite pre-flight warnings.{C_RESET}")
+        return True
+
+    print()
+    return ask_yn(
+        "  Continue anyway? (downstream steps will likely fail — "
+        "fix and re-run is usually faster)",
+        default=False)
 
 
 def step_detect_server(args) -> str:
@@ -2670,6 +2758,38 @@ def step_install_models(manifest: dict, selected: dict[str, bool], paths: dict,
         print(f"  {C_YELLOW}--skip-models specified — skipping all model downloads.{C_RESET}")
         return
 
+    # ── Disk-space pre-flight ───────────────────────────────────────
+    # Compute the total estimated download size of selected REQUIRED
+    # models, compare to free space on the ComfyUI volume, warn (and
+    # in interactive mode prompt) if margin is thin. Better than
+    # silently filling the disk mid-Flux-checkpoint at 22 GB in.
+    try:
+        import shutil as _sh
+        free_bytes = _sh.disk_usage(str(paths["comfyui"])).free
+        free_gb = free_bytes / (1024 ** 3)
+        # Sum required model sizes from manifest for selected features
+        est_mb = 0.0
+        for fkey, on in selected.items():
+            if on and fkey in manifest.get("features", {}):
+                est_mb += estimate_feature_size(manifest["features"][fkey],
+                                                 required_only=True)
+        est_gb = est_mb / 1024
+        # 2 GB headroom for tempfiles + CN + LoRAs not in the estimate
+        needed_gb = est_gb + 2.0
+        print(f"  {C_DIM}Disk: {free_gb:.1f} GB free, "
+              f"~{est_gb:.1f} GB to download (+2 GB headroom).{C_RESET}")
+        if free_gb < needed_gb:
+            print(f"  {C_RED}⚠ Low disk space: need ~{needed_gb:.1f} GB but only "
+                  f"{free_gb:.1f} GB free on {paths['comfyui'].drive or paths['comfyui']}.{C_RESET}")
+            print(f"    Free up space or pick fewer features. Continuing risks "
+                  f"corrupt half-downloaded models.")
+            if not args.yes and not ask_yn(
+                    "  Continue anyway?", default=False):
+                print(f"  {C_YELLOW}Model install aborted by user.{C_RESET}")
+                return
+    except Exception as _disk_err:  # noqa: BLE001
+        print(f"  {C_DIM}(disk-space check skipped: {_disk_err}){C_RESET}")
+
     # Ask about optional models once
     include_optional = True
     if not args.yes:
@@ -3292,13 +3412,16 @@ def step_validate_install(paths: dict, server_url: str, server_info: dict,
     if getattr(args, 'skip_validate', False):
         print(f"\n  {C_DIM}--skip-validate: skipping post-install validation.{C_RESET}")
         return None
-    if getattr(args, 'yes', False):
-        print(f"\n  {C_DIM}--yes: skipping post-install validation (no time for "
-              f"interactive workflow probes in headless mode).{C_RESET}")
-        return None
     if not server_info.get('reachable'):
         print(f"\n  {C_YELLOW}Server unreachable — skipping post-install validation.{C_RESET}")
         return None
+
+    # --yes mode used to skip validation entirely, leaving a stale
+    # validation block in spellcaster_settings.json on every re-run.
+    # Now: --yes skips the prompts but STILL runs the diagnostic so
+    # the report stays fresh. Headless callers can opt out with
+    # --skip-validate when they truly want zero workflow submissions.
+    headless = bool(getattr(args, 'yes', False))
 
     print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
     print(f"{C_BOLD}  STEP 5c: Validating What Was Installed{C_RESET}")
@@ -3306,50 +3429,65 @@ def step_validate_install(paths: dict, server_url: str, server_info: dict,
     print(f"  {C_DIM}Running tiny test workflows against your ComfyUI server to")
     print(f"  verify each installed feature works end-to-end. Takes 1-5 min.{C_RESET}\n")
 
-    # Restart-aware sentinel check — if we just cloned new node packs, /object_info
-    # must include their class_types before validation makes sense. Loop until the
-    # user either restarts ComfyUI, gives up, or asks to skip the check.
+    # Restart-aware sentinel check — if we just cloned new node packs,
+    # /object_info must include their class_types before validation makes
+    # sense. Interactive: loop with menu. Headless: skip the loop, log a
+    # warning, and let the diagnostic surface the missing-node failures.
     if newly_installed_sentinels:
-        while True:
-            missing = _check_node_sentinels(server_url, newly_installed_sentinels)
-            if not missing:
-                if newly_installed_sentinels:
+        if headless:
+            missing = _check_node_sentinels(
+                server_url, newly_installed_sentinels)
+            if missing:
+                print(f"  {C_YELLOW}⚠ ComfyUI hasn't picked up the freshly-"
+                      f"installed nodes yet — diagnostic results will "
+                      f"include false-positive failures for: "
+                      f"{', '.join(missing.keys())}{C_RESET}")
+        else:
+            while True:
+                missing = _check_node_sentinels(
+                    server_url, newly_installed_sentinels)
+                if not missing:
                     print(f"  {C_GREEN}✓ All newly-installed node packs are loaded.{C_RESET}\n")
-                break
-            print(f"  {C_YELLOW}⚠ ComfyUI hasn't picked up the freshly-installed nodes yet.{C_RESET}")
-            print(f"  {C_DIM}Missing class_types per pack:{C_RESET}")
-            for pack, classes in missing.items():
-                print(f"    {C_YELLOW}{pack}{C_RESET}: {', '.join(classes[:4])}"
-                      + (f" (+{len(classes)-4} more)" if len(classes) > 4 else ""))
-            print()
-            print(f"  {C_BOLD}Restart ComfyUI now, then come back here.{C_RESET}")
-            choice = ask_choice(
-                "  What now?",
-                ["I restarted ComfyUI — re-check",
-                 "Skip the sentinel check and run validation anyway",
-                 "Skip validation entirely"],
-                default=0, auto_yes=False)
-            if choice == 0:
-                continue
-            if choice == 1:
-                print(f"  {C_DIM}Continuing without restart — broken results expected.{C_RESET}")
-                break
-            print(f"  {C_DIM}Validation skipped. Re-run later: "
+                    break
+                print(f"  {C_YELLOW}⚠ ComfyUI hasn't picked up the freshly-installed nodes yet.{C_RESET}")
+                print(f"  {C_DIM}Missing class_types per pack:{C_RESET}")
+                for pack, classes in missing.items():
+                    print(f"    {C_YELLOW}{pack}{C_RESET}: {', '.join(classes[:4])}"
+                          + (f" (+{len(classes)-4} more)" if len(classes) > 4 else ""))
+                print()
+                print(f"  {C_BOLD}Restart ComfyUI now, then come back here.{C_RESET}")
+                choice = ask_choice(
+                    "  What now?",
+                    ["I restarted ComfyUI — re-check",
+                     "Skip the sentinel check and run validation anyway",
+                     "Skip validation entirely"],
+                    default=0, auto_yes=False)
+                if choice == 0:
+                    continue
+                if choice == 1:
+                    print(f"  {C_DIM}Continuing without restart — broken results expected.{C_RESET}")
+                    break
+                print(f"  {C_DIM}Validation skipped. Re-run later: "
+                      f"python validate_install.py --server-url {server_url}{C_RESET}")
+                return None
+
+    # Interactive runs ask before burning ~5 min of GPU time on validation.
+    # Headless skips the prompt — the whole point of --yes is no prompts.
+    if not headless:
+        if not ask_yn("  Run validation now?", default=True, auto_yes=False):
+            print(f"  {C_DIM}Skipped. Re-run anytime with: "
                   f"python validate_install.py --server-url {server_url}{C_RESET}")
             return None
-
-    if not ask_yn("  Run validation now?", default=True, auto_yes=False):
-        print(f"  {C_DIM}Skipped. Re-run anytime with: "
-              f"python validate_install.py --server-url {server_url}{C_RESET}")
-        return None
 
     report_dict = _run_validation(server_url)
     if report_dict is None:
         return None
 
-    # If anything broke, give the user a chance to abort BEFORE plugin install
+    # If anything broke, prompt for abort. Headless never aborts — the
+    # broken capabilities show up in the saved validation block and
+    # downstream tooling can decide what to do.
     broken = report_dict.get("broken", [])
-    if broken:
+    if broken and not headless:
         broken_count = len(broken)
         print(f"\n  {C_YELLOW}⚠ {broken_count} feature(s) failed validation.{C_RESET}")
         print(f"  {C_DIM}Common causes: ComfyUI not restarted after node install, "
@@ -3420,6 +3558,32 @@ def _run_validation(server_url: str,
     return report_dict
 
 
+def _check_writable(target_dir: Path, label: str) -> bool:
+    """Verify we can actually write to *target_dir* before copying anything.
+
+    Drops a temp file, removes it. Returns True on success. Failure is
+    reported inline with an actionable hint. Catches the common case of
+    a read-only ProgramFiles GIMP install where copy_plugin would fail
+    deep inside the recursion, leaving partial state.
+    """
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        probe = target_dir / ".spellcaster_write_check"
+        probe.write_bytes(b"ok")
+        probe.unlink()
+        return True
+    except PermissionError:
+        print(f"  {C_RED}✗ {label} dir not writable: {target_dir}{C_RESET}")
+        print(f"    {C_YELLOW}This is usually a permissions issue. Re-run the "
+              f"installer as Administrator (Windows) or with sudo (Unix), "
+              f"OR move {label} to a user-owned location.{C_RESET}")
+        return False
+    except OSError as e:
+        print(f"  {C_RED}✗ {label} dir unusable ({type(e).__name__}: {e}): "
+              f"{target_dir}{C_RESET}")
+        return False
+
+
 def step_install_plugins(paths: dict, server_url: str, dry_run: bool = False):
     """Step 6: Copy plugin files, patching the server URL."""
     print(f"\n{C_BOLD}{_BOX_LINE}{C_RESET}")
@@ -3434,11 +3598,15 @@ def step_install_plugins(paths: dict, server_url: str, dry_run: bool = False):
     # name (minus .py).  So "comfyui-connector/comfyui-connector.py" is the
     # required layout inside plug-ins/.
     if paths["gimp"]:
+        # Pre-flight: verify the plug-ins dir is writable BEFORE we start
+        # copying. Catches read-only system-wide GIMP installs early —
+        # without this, copy_plugin would fail recursively and leave
+        # partial state behind.
+        if (gimp_src and not dry_run
+                and not _check_writable(paths["gimp"], "GIMP plug-ins")):
+            print(f"  {C_YELLOW}Skipping GIMP plugin install.{C_RESET}")
+            gimp_src = None
         if gimp_src:
-            # Ensure the plug-ins directory exists (may not on fresh installs)
-            if not dry_run:
-                paths["gimp"].mkdir(parents=True, exist_ok=True)
-
             dest = paths["gimp"] / gimp_src.name
             print(f"  {C_CYAN}Installing GIMP plugin…{C_RESET}")
             copy_plugin(gimp_src, dest, dry_run)
@@ -3497,6 +3665,10 @@ def step_install_plugins(paths: dict, server_url: str, dry_run: bool = False):
 
     # ── Darktable ──
     if paths["darktable"]:
+        if (dt_src and not dry_run
+                and not _check_writable(paths["darktable"], "Darktable lua")):
+            print(f"  {C_YELLOW}Skipping Darktable plugin install.{C_RESET}")
+            dt_src = None
         if dt_src:
             dest = paths["darktable"] / dt_src.name
             print(f"  {C_CYAN}Installing Darktable plugin…{C_RESET}")
@@ -4478,6 +4650,12 @@ def _run_cli(args):
     step_system_detection(args)
     step_api_keys(args)
     server_url = step_detect_server(args)
+    # Pre-flight: bail early if the server / internet is down. Cheap, fast
+    # (max ~13s on full timeout), saves the user from picking features for
+    # an installer that's about to fail at download time.
+    if not step_preflight(server_url, args):
+        print(f"\n  {C_YELLOW}Install cancelled at pre-flight.{C_RESET}")
+        sys.exit(1)
     paths = step_detect_paths(args)
     server_info = step_probe_server(server_url, args)
     llm_url = step_detect_llm_server(args, server_url, server_info)
