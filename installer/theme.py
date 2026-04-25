@@ -90,7 +90,61 @@ _ASSET_NAMES = {
     "antenna":    ["antenna_logo.png", "30_antenna_logo.png"],
     "wizard_ico": ["wizard_guild.ico"],
     "spinner":    ["wizard_banner.gif", "spinner.gif"],
+
+    # Generated installer artwork (tools/generate_installer_assets.py).
+    # All live under assets/installer/ — _candidate_roots() walks both
+    # assets/ AND assets/installer/ so plain filenames resolve.
+    "installer_hero":       ["installer/hero_welcome.png"],
+    "installer_completion": ["installer/completion_celebration.png"],
+    "installer_companion":  ["installer/sidebar_companion.png"],
+    "installer_error":      ["installer/error_sigil.png"],
 }
+
+
+def installer_asset(kind: str, key: str) -> Path | None:
+    """Resolve a generated installer asset by category and key.
+
+    Examples:
+      installer_asset("feature", "generation")        → assets/installer/feature_generation.png
+      installer_asset("arch", "klein")                → assets/installer/arch_klein.png
+      installer_asset("bg", "welcome")                → assets/installer/bg_welcome.png
+      installer_asset("usecase", "img2img")           → assets/installer/usecase_img2img.png
+      installer_asset("loading", "pulse_03")          → assets/installer/loading_pulse_03.png
+
+    Singletons in the catalog use a key that already includes the category
+    (hero_welcome, completion_celebration, sidebar_companion, error_sigil),
+    so we avoid doubling the prefix when the caller passes them through:
+      installer_asset("hero", "hero_welcome")         → assets/installer/hero_welcome.png
+      installer_asset("completion", "completion_celebration")
+                                                      → assets/installer/completion_celebration.png
+    """
+    # Try in order: key-as-stem, then kind_key, then key alone — robust to
+    # both catalog naming conventions (sidebar_companion.png vs
+    # companion_sidebar.png).
+    for fname in (
+        f"installer/{key}.png" if key.startswith(f"{kind}_") else None,
+        f"installer/{kind}_{key}.png",
+        f"installer/{key}.png",
+    ):
+        if not fname:
+            continue
+        p = asset(fname)
+        if p:
+            return p
+    return None
+
+
+def installer_loading_frames(seq: str = "pulse") -> list[Path]:
+    """Return all 8 loading frames for a sequence in order. Empty if missing.
+
+    seq: 'pulse' or 'spin' (matching tools/generate_installer_assets.py).
+    """
+    frames: list[Path] = []
+    for i in range(8):
+        p = installer_asset("loading", f"{seq}_{i:02d}")
+        if p:
+            frames.append(p)
+    return frames
 
 
 def _candidate_roots() -> list[Path]:
