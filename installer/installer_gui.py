@@ -154,11 +154,17 @@ def _load_installer_image(kind, key, target_w, target_h=None):
     """Resolve a generated installer asset and return a CTkImage scaled to fit.
 
     Aspect ratio is preserved when target_h is omitted. Returns None if the
-    asset can't be located OR Pillow is missing — callers must tolerate that.
+    asset can't be located, Pillow is missing, OR theme.py is an old version
+    that doesn't have installer_asset() (case: existing .exe bundled with
+    pre-polish theme.py picks up new installer_gui.py via auto-update —
+    we degrade silently to the legacy emoji/text rendering).
     """
-    if _theme is None:
+    if _theme is None or not hasattr(_theme, "installer_asset"):
         return None
-    p = _theme.installer_asset(kind, key)
+    try:
+        p = _theme.installer_asset(kind, key)
+    except Exception:  # noqa: BLE001 — never let asset resolution crash UI build
+        return None
     if not p:
         return None
     try:
@@ -2318,7 +2324,39 @@ class InstallerApp(MagicalEffects, ctk.CTk):
         """Kick off the install in a daemon thread so the UI stays responsive."""
         self.start_btn.configure(state="disabled", text="Deploying...")
         self._start_loading_sprite()
-        threading.Thread(target=self._run_install_thread, daemon=True).start()
+        # Stash the worker thread + register a graceful WM_DELETE handler.
+        # If the user closes the window mid-install we ask before bailing
+        # so they don't orphan a half-downloaded model in ComfyUI's models/.
+        self._install_thread = threading.Thread(
+            target=self._run_install_thread, daemon=True)
+        self._install_thread.start()
+        try:
+            self.protocol("WM_DELETE_WINDOW", self._on_close_request)
+        except Exception:  # noqa: BLE001 — never block the install on UI hook
+            pass
+
+    def _on_close_request(self):
+        """Window-close handler — guards against killing a live install."""
+        live = (getattr(self, "_install_thread", None) is not None
+                and self._install_thread.is_alive())
+        if not live:
+            self.destroy()
+            return
+        # Ask before quitting. Daemon threads die with the process so we
+        # can't actually cancel a download mid-flight, but we CAN warn.
+        try:
+            from tkinter import messagebox
+            ok = messagebox.askyesno(
+                "Install in progress",
+                "An installation is currently running. Closing now will "
+                "interrupt model downloads and may leave partial files in "
+                "your ComfyUI/models/ directory.\n\n"
+                "Quit anyway?")
+        except Exception:  # noqa: BLE001 — never block close
+            ok = True
+        if ok:
+            self._stop_loading_sprite()
+            self.destroy()
 
     def _run_install_thread(self):
         """Background worker — three-phase installation with retry logic:

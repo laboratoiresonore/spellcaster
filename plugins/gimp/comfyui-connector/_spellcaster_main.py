@@ -827,10 +827,19 @@ def _privacy_verify_cleanup(server: str, workflow: dict,
             "sufficient. Install / update the pack on your ComfyUI "
             "server.")
         return
-    # Verify every file we cared about was deleted.
+    # Verify every file we cared about is gone from the server.
+    # A file counts as cleaned up if it was either explicitly deleted
+    # OR the route confirmed it wasn't present anywhere — both satisfy
+    # the privacy goal "no leak left behind". Only real errors
+    # (permission denied, OS error, locked file) count as a miss.
     deleted_names = {d.get("name") if isinstance(d, dict) else d
                      for d in (resp.get("deleted") or [])}
-    missed = [n for n in names if n not in deleted_names]
+    not_found_names = {
+        f.get("name") for f in (resp.get("failed") or [])
+        if isinstance(f, dict) and "not found" in str(f.get("error", "")).lower()
+    }
+    cleaned = deleted_names | not_found_names
+    missed = [n for n in names if n not in cleaned]
     if missed:
         _record_privacy_audit("partial_cleanup",
                                 f"missed {len(missed)}: {missed[:5]}")
@@ -840,7 +849,8 @@ def _privacy_verify_cleanup(server: str, workflow: dict,
             f"{'…' if len(missed) > 3 else ''}. Check ComfyUI logs "
             f"for permission / locking errors on the output dir.")
         return
-    _record_privacy_audit("ok", f"deleted {len(deleted_names)}")
+    _record_privacy_audit("ok",
+                          f"deleted {len(deleted_names)} not_found {len(not_found_names)}")
 
 
 def _set_privacy_block(reason: str) -> None:
@@ -19331,6 +19341,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-my-presets": None,
             "spellcaster-bridge": None,
             "spellcaster-clear-upload-cache": None,
+            "spellcaster-refresh-from-server": None,
             "spellcaster-test-harness": None,
             # SAM3 AI Selection
             "spellcaster-sam3-select": None,    # always register — preflight checks server at runtime
@@ -19607,6 +19618,15 @@ class Spellcaster(Gimp.PlugIn):
                                                  "image by skipping the re-export; clearing it restores a "
                                                  "stricter privacy posture at the cost of one re-upload the "
                                                  "next time you send that image."),
+            "spellcaster-refresh-from-server": ("↻ Refresh Models from Server…",
+                                                  self._run_refresh_from_server,
+                                                  "Re-probe ComfyUI for newly added checkpoints, LoRAs, "
+                                                  "VAEs, ControlNets, and custom nodes. Use this after "
+                                                  "you drop new files into ComfyUI/models/ or install a "
+                                                  "new node pack — your dropdowns will see the new "
+                                                  "items without needing to re-run the installer or "
+                                                  "restart GIMP. Re-open any open Spellcaster dialogs "
+                                                  "afterwards to pick up the changes."),
             "spellcaster-test-harness": ("\U0001F50D Run Diagnostics\u2026",
                                           self._run_test_harness,
                                           "End-to-end sanity check of your Spellcaster install: "
@@ -19923,6 +19943,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-bridge":            _M_CRYPT,
             "spellcaster-calibration-wizard": _M_CRYPT,
             "spellcaster-clear-upload-cache": _M_CRYPT,
+            "spellcaster-refresh-from-server": _M_CRYPT,
             "spellcaster-test-harness":      _M_CRYPT,
             # Bridges — all cross-plugin flows live under the
             # 🔗 Bridges top. The bridges-panel gets TOP-LEVEL
@@ -20032,6 +20053,7 @@ class Spellcaster(Gimp.PlugIn):
             # Settings + diagnostics next to GIMP's own tool-window
             # management.
             "spellcaster-settings":          "<Image>/Windows",
+            "spellcaster-refresh-from-server": "<Image>/Windows",
             "spellcaster-show-minihud":      "<Image>/Windows",
             "spellcaster-bridges-panel":     "<Image>/Windows",
             # Magical Zoom lives under <Image>/View next to GIMP's
@@ -33617,6 +33639,139 @@ class Spellcaster(Gimp.PlugIn):
             print(f"[Spellcaster] Cleared upload cache: {wiped} file(s)")
         return procedure.new_return_values(
             Gimp.PDBStatusType.SUCCESS, GLib.Error())
+
+    def _run_refresh_from_server(self, procedure, run_mode, image, drawables, config, data):
+        """Re-probe ComfyUI and rewrite spellcaster_settings.json in-place.
+
+        Solves the most common post-install pain point: user adds a LoRA or
+        checkpoint to ComfyUI manually, plugin doesn't see it until the
+        installer re-runs (1+ hours). This is the fast path — re-fetch
+        /object_info + per-loader endpoints, regenerate the inventory
+        snapshot, preserve unrelated keys (validation, lora_architectures,
+        version), stamp ``refreshed_at`` so other code can detect freshness.
+
+        The user must re-open any open Spellcaster dialog to pick up new
+        items because dropdowns are populated at dialog-build time. A
+        future iteration could broadcast a refresh event to live dialogs
+        (would need every combo to subscribe) — for v1, the message tells
+        them to re-open.
+        """
+        try:
+            import urllib.request as _ur  # local: matches plugin convention
+            cfg = _load_config()
+            server_url = (cfg.get("server_url")
+                          or "http://127.0.0.1:8188").rstrip("/")
+
+            # Fetch the full /object_info dump once (covers node inventory)
+            try:
+                req = _ur.Request(f"{server_url}/object_info")
+                with _ur.urlopen(req, timeout=10) as r:
+                    obj_info = json.loads(r.read().decode("utf-8"))
+                available_nodes = sorted(obj_info.keys())
+            except Exception as exc:  # noqa: BLE001
+                Gimp.message(f"Refresh failed: cannot reach {server_url}\n\n{exc}")
+                return procedure.new_return_values(
+                    Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
+
+            # Per-loader model lists. Each entry: (key, node_type, param_name).
+            queries = [
+                ("checkpoints", "CheckpointLoaderSimple", "ckpt_name"),
+                ("loras",       "LoraLoader",            "lora_name"),
+                ("vaes",        "VAELoader",             "vae_name"),
+                ("controlnets", "ControlNetLoader",      "control_net_name"),
+            ]
+            models: dict = {}
+            for key, node_type, param in queries:
+                try:
+                    items = (obj_info.get(node_type, {}).get("input", {})
+                             .get("required", {}).get(param, [None])[0])
+                    if isinstance(items, list):
+                        models[key] = items
+                except Exception:  # noqa: BLE001
+                    models[key] = []
+
+            # UNET / GGUF — first one with input present wins
+            for nt in ("UNETLoader", "UnetLoaderGGUF"):
+                if nt in obj_info:
+                    try:
+                        items = (obj_info[nt].get("input", {})
+                                 .get("required", {})
+                                 .get("unet_name", [None])[0])
+                        if isinstance(items, list):
+                            models["unet_models"] = items
+                            break
+                    except Exception:  # noqa: BLE001
+                        pass
+
+            # CLIP / DualCLIP
+            for nt in ("CLIPLoader", "DualCLIPLoader"):
+                if nt in obj_info:
+                    try:
+                        req_in = obj_info[nt].get("input", {}).get("required", {})
+                        for pname in ("clip_name", "clip_name1"):
+                            items = req_in.get(pname, [None])[0]
+                            if isinstance(items, list):
+                                models["clip_models"] = items
+                                break
+                    except Exception:  # noqa: BLE001
+                        pass
+                    break
+
+            # Merge with existing settings.json — preserve validation,
+            # lora_architectures, version, anything else not refreshed here.
+            settings_path = (Path(os.path.dirname(os.path.abspath(__file__)))
+                             / "spellcaster_settings.json")
+            existing: dict = {}
+            if settings_path.exists():
+                try:
+                    existing = json.loads(
+                        settings_path.read_text(encoding="utf-8"))
+                except Exception:  # noqa: BLE001
+                    existing = {}
+
+            existing["comfyui_url"] = server_url
+            existing["server_reachable"] = True
+            existing["available_nodes"] = available_nodes
+            existing.setdefault("models", {}).update(models)
+            import time as _t
+            existing["refreshed_at"] = _t.time()
+
+            try:
+                settings_path.write_text(
+                    json.dumps(existing, indent=2), encoding="utf-8")
+            except Exception as exc:  # noqa: BLE001
+                Gimp.message(f"Refresh: probe OK but couldn't write "
+                             f"{settings_path}: {exc}")
+                return procedure.new_return_values(
+                    Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
+
+            n_models = sum(len(v) for v in models.values()
+                           if isinstance(v, list))
+            try:
+                Gimp.message(
+                    f"Refreshed Spellcaster inventory.\n\n"
+                    f"  • {len(available_nodes)} ComfyUI nodes seen\n"
+                    f"  • {n_models} models across "
+                    f"{sum(1 for v in models.values() if v)} loaders\n"
+                    f"  • Wrote: {settings_path.name}\n\n"
+                    f"Re-open any open Spellcaster dialog to see the new "
+                    f"models / LoRAs in their dropdowns. For deeper changes "
+                    f"(new feature gate), restart GIMP.")
+            except Exception:  # noqa: BLE001
+                print(f"[Spellcaster] Refreshed: {n_models} models, "
+                      f"{len(available_nodes)} nodes")
+
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.SUCCESS, GLib.Error())
+        except Exception as e:  # noqa: BLE001
+            import traceback
+            traceback.print_exc()
+            try:
+                Gimp.message(f"Refresh from Server failed: {e}")
+            except Exception:
+                pass
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.EXECUTION_ERROR, _exec_error())
 
     def _run_cancel_queued(self, procedure, run_mode, image, drawables, config, data):
         """Signal every in-flight Spellcaster job to cancel cooperatively.
