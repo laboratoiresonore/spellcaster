@@ -37,6 +37,10 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+# Canonical helpers live in install.py — we re-export the ones we need below
+# (after SCRIPT_DIR is set up so install.py's module-level resolution agrees).
+import install  # noqa: E402
+
 # ─── Constants ────────────────────────────────────────────────────────────────
 
 if getattr(sys, 'frozen', False):
@@ -386,210 +390,21 @@ def detect_nsfw_mode(server_info: dict) -> bool:
     return is_nsfw
 
 
-# ─── Local app detection (reused from install.py patterns) ────────────────────
+# ─── Shared helpers (re-exported from install.py) ─────────────────────────────
+#
+# install.py is the canonical source for path detection, plugin-source lookup,
+# and LoRA classification. Re-binding here keeps existing call sites working
+# while ensuring both installers stay in lockstep on these helpers.
 
-def _scan_gimp_versions(root: Path) -> list[Path]:
-    results = []
-    if not root.is_dir():
-        return results
-    try:
-        for d in sorted(root.iterdir(), reverse=True):
-            if d.is_dir() and (d.name.startswith("3.") or d.name.startswith("2.99")):
-                results.append(d / "plug-ins")
-    except (PermissionError, OSError):
-        pass
-    return results
-
-
-def _win_registry_gimp() -> str:
-    try:
-        import winreg
-        for hive in [winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER]:
-            for subkey in [r"SOFTWARE\GIMP\3", r"SOFTWARE\GIMP\3.0",
-                           r"SOFTWARE\GIMP\3.2", r"SOFTWARE\GIMP"]:
-                try:
-                    with winreg.OpenKey(hive, subkey) as key:
-                        val, _ = winreg.QueryValueEx(key, "InstallPath")
-                        if val and Path(val).is_dir():
-                            return val
-                except (OSError, FileNotFoundError):
-                    continue
-    except ImportError:
-        pass
-    return ""
-
-
-def find_default_gimp() -> str:
-    """Auto-detect GIMP plug-ins directory (cross-platform)."""
-    candidates: list[Path] = []
-    home = Path.home()
-
-    if platform.system() == "Windows":
-        # Registry
-        reg_path = _win_registry_gimp()
-        if reg_path:
-            p = Path(reg_path)
-            # Check common config locations
-            for config_root in [
-                Path(os.environ.get("APPDATA", "")) / "GIMP",
-                Path(os.environ.get("LOCALAPPDATA", "")) / "GIMP",
-                home / "AppData" / "Roaming" / "GIMP",
-            ]:
-                candidates.extend(_scan_gimp_versions(config_root))
-        else:
-            for config_root in [
-                Path(os.environ.get("APPDATA", "")) / "GIMP",
-                Path(os.environ.get("LOCALAPPDATA", "")) / "GIMP",
-                home / "AppData" / "Roaming" / "GIMP",
-            ]:
-                candidates.extend(_scan_gimp_versions(config_root))
-
-    elif platform.system() == "Darwin":
-        for base in [
-            home / "Library" / "Application Support" / "GIMP",
-            home / "Library" / "GIMP",
-        ]:
-            candidates.extend(_scan_gimp_versions(base))
-
-    else:  # Linux
-        for base in [
-            home / ".config" / "GIMP",
-            home / ".var" / "app" / "org.gimp.GIMP" / "config" / "GIMP",
-            home / "snap" / "gimp" / "current" / ".config" / "GIMP",
-        ]:
-            candidates.extend(_scan_gimp_versions(base))
-
-    for c in candidates:
-        if c.is_dir() or c.parent.is_dir():
-            return str(c)
-    return ""
-
-
-def find_default_darktable() -> str:
-    """Auto-detect Darktable lua/contrib directory (cross-platform)."""
-    home = Path.home()
-    candidates: list[Path] = []
-
-    if platform.system() == "Windows":
-        for base in [
-            Path(os.environ.get("LOCALAPPDATA", "")) / "darktable",
-            Path(os.environ.get("APPDATA", "")) / "darktable",
-            home / "AppData" / "Local" / "darktable",
-        ]:
-            candidates.append(base / "lua" / "contrib")
-
-    elif platform.system() == "Darwin":
-        candidates.append(home / "Library" / "Application Support" / "darktable" / "lua" / "contrib")
-
-    else:  # Linux
-        for base in [
-            home / ".config" / "darktable",
-            home / ".var" / "app" / "org.darktable.Darktable" / "config" / "darktable",
-        ]:
-            candidates.append(base / "lua" / "contrib")
-
-    for c in candidates:
-        if c.is_dir():
-            return str(c)
-    return ""
-
-
-# ─── Plugin source location ──────────────────────────────────────────────────
-
-def _find_gimp_plugin_src() -> Path | None:
-    search_dirs = [
-        SCRIPT_DIR,
-        SCRIPT_DIR / "plugins",
-        SCRIPT_DIR / "plugins" / "gimp",
-        SCRIPT_DIR.parent,
-        SCRIPT_DIR.parent / "plugins" / "gimp",
-    ]
-    for d in search_dirs:
-        candidate = d / "comfyui-connector" / "comfyui-connector.py"
-        if candidate.exists():
-            return candidate.parent
-    return None
-
-
-def _find_darktable_plugin_src() -> Path | None:
-    search_dirs = [
-        SCRIPT_DIR,
-        SCRIPT_DIR / "plugins",
-        SCRIPT_DIR / "plugins" / "darktable",
-        SCRIPT_DIR.parent,
-        SCRIPT_DIR.parent / "plugins" / "darktable",
-    ]
-    for d in search_dirs:
-        candidate = d / "comfyui_connector.lua"
-        if candidate.exists():
-            return candidate
-    return None
-
-
-def _find_tavern_src() -> Path | None:
-    candidates = [
-        SCRIPT_DIR / "tavern",
-        SCRIPT_DIR.parent / "tavern",
-    ]
-    for c in candidates:
-        if c.is_dir() and (c / "server.py").exists():
-            return c.resolve()
-    return None
-
-
-def _find_scaffold_src() -> Path | None:
-    candidates = [
-        SCRIPT_DIR / "scaffold",
-        SCRIPT_DIR.parent / "scaffold",
-    ]
-    for c in candidates:
-        if c.is_dir() and (c / "__init__.py").exists():
-            return c.resolve()
-    return None
-
-
-# ─── LoRA classification ─────────────────────────────────────────────────────
-
-def _classify_server_loras(loras: list) -> dict:
-    """Classify LoRAs by architecture using path prefixes + name hints."""
-    LORA_ARCH_PREFIXES = {
-        "sd15": ["models/loras/sd15"],
-        "sdxl": ["models/loras/sdxl"],
-        "flux": ["models/loras/flux"],
-    }
-    LORA_NAME_ARCH_HINTS = [
-        ("sd15", "sd15"),
-        ("sdxl", "sdxl"),
-        ("flux", "flux"),
-    ]
-
-    # Try to import the canonical version
-    try:
-        from spellcaster_core.model_detect import LORA_ARCH_PREFIXES as _P, LORA_NAME_ARCH_HINTS as _H
-        LORA_ARCH_PREFIXES = _P
-        LORA_NAME_ARCH_HINTS = _H
-    except ImportError:
-        pass
-
-    result = {}
-    for lora in loras:
-        archs = []
-        for arch, prefixes in LORA_ARCH_PREFIXES.items():
-            for p in (prefixes or []):
-                alt = p.replace("\\", "/") if "\\" in p else p.replace("/", "\\")
-                if lora.startswith(p) or lora.startswith(alt):
-                    archs.append(arch)
-                    break
-        if not archs:
-            lora_lower = lora.lower().replace("\\", "/")
-            for hint_kw, hint_arch in LORA_NAME_ARCH_HINTS:
-                if hint_kw in lora_lower:
-                    archs = [hint_arch]
-                    break
-        if not archs:
-            archs = ["unknown"]
-        result[lora] = archs
-    return result
+_scan_gimp_versions       = install._scan_gimp_versions
+_win_registry_gimp        = install._win_registry_gimp
+find_default_gimp         = install.find_default_gimp
+find_default_darktable    = install.find_default_darktable
+_find_gimp_plugin_src     = install._find_gimp_plugin_src
+_find_darktable_plugin_src = install._find_darktable_plugin_src
+_find_tavern_src          = install._find_tavern_src
+_find_scaffold_src        = install._find_scaffold_src
+_classify_server_loras    = install._classify_server_loras
 
 
 # ─── Settings writer ─────────────────────────────────────────────────────────
@@ -688,34 +503,8 @@ def install_gimp_plugin(gimp_path: Path, server_url: str, dry_run: bool = False)
     _delete_gimp_pluginrc()
 
 
-def _delete_gimp_pluginrc():
-    """Delete GIMP's pluginrc cache so it rescans plugins on next launch."""
-    home = Path.home()
-    roots: list[Path] = []
-    if platform.system() == "Windows":
-        roots = [
-            Path(os.environ.get("APPDATA", "")) / "GIMP",
-            Path(os.environ.get("LOCALAPPDATA", "")) / "GIMP",
-        ]
-    elif platform.system() == "Darwin":
-        roots = [home / "Library" / "Application Support" / "GIMP"]
-    else:
-        roots = [
-            home / ".config" / "GIMP",
-            home / ".var" / "app" / "org.gimp.GIMP" / "config" / "GIMP",
-        ]
-    for root in roots:
-        if not root.is_dir():
-            continue
-        try:
-            for d in root.iterdir():
-                if d.is_dir() and (d.name.startswith("3.") or d.name.startswith("2.99")):
-                    rc = d / "pluginrc"
-                    if rc.exists():
-                        rc.unlink()
-                        log_dim(f"Deleted pluginrc cache: {rc}")
-        except (PermissionError, OSError):
-            pass
+# Re-export — single source of truth in install.py
+_delete_gimp_pluginrc = install._delete_gimp_pluginrc
 
 
 def install_darktable_plugin(dt_path: Path, server_url: str, dry_run: bool = False):
