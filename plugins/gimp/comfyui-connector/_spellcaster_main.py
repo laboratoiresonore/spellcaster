@@ -33726,10 +33726,13 @@ class Spellcaster(Gimp.PlugIn):
             server_url = (cfg.get("server_url")
                           or "http://127.0.0.1:8188").rstrip("/")
 
-            # Fetch the full /object_info dump once (covers node inventory)
+            # Fetch the full /object_info dump once (covers node inventory).
+            # 60s timeout because a fully-loaded server returns 1-5 MB JSON
+            # which can take 30+ seconds on a slow LAN. Was 10s, which
+            # spuriously failed against beefy remote rigs.
             try:
                 req = _ur.Request(f"{server_url}/object_info")
-                with _ur.urlopen(req, timeout=10) as r:
+                with _ur.urlopen(req, timeout=60) as r:
                     obj_info = json.loads(r.read().decode("utf-8"))
                 available_nodes = sorted(obj_info.keys())
             except Exception as exc:  # noqa: BLE001
