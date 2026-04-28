@@ -1845,15 +1845,69 @@ _FEATURE_SENTINELS: dict[str, tuple[str, ...]] = {
 
 
 def _probe_comfyui_nodes(server_url: str, timeout: float = 3.0) -> set[str]:
-    """One-shot GET /object_info → set of class_type names. Empty on failure."""
+    """One-shot GET /object_info → set of class_type names. Empty on failure.
+
+    Also opportunistically refreshes the capabilities-server capabilities cache
+    so any future button-render code can ask `has_feature(...)` /
+    `has_arch(...)` synchronously without an extra network round-trip.
+    Caps fetch failures are silent — non-capabilities-server ComfyUI installs
+    (no caps server on :8191) stay unaffected.
+    """
     try:
         import urllib.request as _ur
         req = _ur.Request(f"{server_url.rstrip('/')}/object_info")
         with _ur.urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-        return set(data.keys()) if isinstance(data, dict) else set()
+        result = set(data.keys()) if isinstance(data, dict) else set()
+        # Opportunistic caps probe — sister side-effect, silent on miss.
+        try:
+            from . import _private_caps_client as _caps  # type: ignore
+        except ImportError:
+            try:
+                import _private_caps_client as _caps  # type: ignore
+            except ImportError:
+                _caps = None
+        if _caps is not None:
+            try:
+                _caps.fetch_capabilities(
+                    _caps.derive_caps_url(server_url),
+                    force=False, timeout=2.0)
+            except Exception:  # noqa: BLE001
+                pass
+        return result
     except Exception:
         return set()
+
+
+def private_caps(server_url: str) -> "dict | None":
+    """Return the cached capabilities-server capabilities document for this
+    server URL, or None when the caps server isn't reachable (e.g. a
+    non-capabilities-server ComfyUI install).
+
+    One-liner gate for any inline AI Actions / button-render code:
+
+        from _spellcaster_main import private_caps
+        from _private_caps_client import has_feature
+        if has_feature(private_caps(srv), "sam3"):
+            # render the SAM3 button
+            ...
+
+    Permissive default — when caps is None, the `_private_caps_client`
+    accessors return True so the plug-in stays usable on legacy
+    servers without the caps endpoint.
+    """
+    try:
+        from . import _private_caps_client as _caps  # type: ignore
+    except ImportError:
+        try:
+            import _private_caps_client as _caps  # type: ignore
+        except ImportError:
+            return None
+    try:
+        return _caps.fetch_capabilities(
+            _caps.derive_caps_url(server_url), force=False, timeout=2.0)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _require_comfyui_node(server_url, class_names, feature_name,
