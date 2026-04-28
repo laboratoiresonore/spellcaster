@@ -1910,6 +1910,54 @@ def private_caps(server_url: str) -> "dict | None":
         return None
 
 
+def _caps_preflight_feature(server_url: str, feature: str,
+                             friendly_pack: str) -> tuple[bool, str]:
+    """Cached caps preflight for a feature flag.
+
+    Returns (allowed, reason). `allowed` is True when:
+      * the caps document reports `feature_flags[feature] == True`, OR
+      * the caps server is unreachable (permissive default — legacy
+        ComfyUI installs without a capabilities-server caps server stay
+        usable; the handler's existing /object_info probe is the
+        deeper safety net).
+
+    Returns False ONLY when caps explicitly says the feature is
+    absent. `reason` is a friendly user-facing message in that case
+    (caller passes it to Gimp.message), empty string otherwise.
+
+    Example:
+        ok, msg = _caps_preflight_feature(srv, "sam3", "SAM3 node pack")
+        if not ok:
+            Gimp.message(msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
+    """
+    caps = private_caps(server_url)
+    if caps is None:
+        return True, ""
+    try:
+        from . import _private_caps_client as _caps  # type: ignore
+    except ImportError:
+        try:
+            import _private_caps_client as _caps  # type: ignore
+        except ImportError:
+            return True, ""
+    if _caps.has_feature(caps, feature):
+        return True, ""
+    chan = _caps.channel(caps)
+    summary = _caps.server_summary(caps)
+    msg = (
+        f"This feature ({friendly_pack}) is not installed on the "
+        f"capabilities-server server you're connected to.\n\n"
+        f"Server: {summary}\n"
+        f"Channel: {chan}\n\n"
+        f"To enable it: install the {friendly_pack} via ComfyUI Manager "
+        f"on the server, restart ComfyUI, then POST to the caps server's "
+        f"/v1/cache-flush endpoint (or wait ~30 s for the cache to expire)."
+    )
+    return False, msg
+
+
 def _require_comfyui_node(server_url, class_names, feature_name,
                             install_hint=None):
     """Preflight that a ComfyUI install has the custom-pack node(s) a
@@ -24916,6 +24964,15 @@ class Spellcaster(Gimp.PlugIn):
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         srv_probe = COMFYUI_DEFAULT_URL
+        # Caps preflight — SAM3 + Klein-enhancer (this is the Klein-SAM3
+        # combo handler; both packs are required).
+        for _feat, _name in (("sam3", "SAM3 node pack"),
+                              ("klein_enhancer", "Klein enhancer pack")):
+            _ok, _msg = _caps_preflight_feature(srv_probe, _feat, _name)
+            if not _ok:
+                Gimp.message(_msg)
+                return procedure.new_return_values(
+                    Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _api_get(srv_probe, "/object_info/SAM3Segment")
         except Exception:
@@ -32206,6 +32263,16 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         # Preflight: check if SAM3 node pack is installed on the server
         srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        # Caps-based preflight: cheap (cached), exits early with a richer
+        # error when the capabilities-server server explicitly says SAM3 is missing.
+        # Falls through to the legacy /object_info probe below for non-
+        # capabilities-server ComfyUI installs (caps unreachable -> permissive).
+        _caps_ok, _caps_msg = _caps_preflight_feature(
+            srv, "sam3", "SAM3 node pack")
+        if not _caps_ok:
+            Gimp.message(_caps_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _api_get(srv, "/object_info/SAM3Segment")
         except Exception:
@@ -32331,6 +32398,16 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         # Preflight: check if SAM3 node pack is installed on the server
         srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        # Caps-based preflight: cheap (cached), exits early with a richer
+        # error when the capabilities-server server explicitly says SAM3 is missing.
+        # Falls through to the legacy /object_info probe below for non-
+        # capabilities-server ComfyUI installs (caps unreachable -> permissive).
+        _caps_ok, _caps_msg = _caps_preflight_feature(
+            srv, "sam3", "SAM3 node pack")
+        if not _caps_ok:
+            Gimp.message(_caps_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _api_get(srv, "/object_info/SAM3Segment")
         except Exception:
@@ -32422,6 +32499,16 @@ class Spellcaster(Gimp.PlugIn):
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        # Caps-based preflight: cheap (cached), exits early with a richer
+        # error when the capabilities-server server explicitly says SAM3 is missing.
+        # Falls through to the legacy /object_info probe below for non-
+        # capabilities-server ComfyUI installs (caps unreachable -> permissive).
+        _caps_ok, _caps_msg = _caps_preflight_feature(
+            srv, "sam3", "SAM3 node pack")
+        if not _caps_ok:
+            Gimp.message(_caps_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _api_get(srv, "/object_info/SAM3Segment")
         except Exception:
@@ -32526,6 +32613,16 @@ class Spellcaster(Gimp.PlugIn):
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        # Caps-based preflight: cheap (cached), exits early with a richer
+        # error when the capabilities-server server explicitly says SAM3 is missing.
+        # Falls through to the legacy /object_info probe below for non-
+        # capabilities-server ComfyUI installs (caps unreachable -> permissive).
+        _caps_ok, _caps_msg = _caps_preflight_feature(
+            srv, "sam3", "SAM3 node pack")
+        if not _caps_ok:
+            Gimp.message(_caps_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _api_get(srv, "/object_info/SAM3Segment")
         except Exception:
