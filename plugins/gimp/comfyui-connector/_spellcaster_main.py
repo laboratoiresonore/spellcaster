@@ -20907,6 +20907,14 @@ class Spellcaster(Gimp.PlugIn):
         """LTX 2.3 text-to-video: generate video from prompt."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: LTX video pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "ltx_video", "LTX video pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         GimpUi.init("spellcaster")
 
         dlg = LtxVideoDialog()
@@ -21080,6 +21088,22 @@ class Spellcaster(Gimp.PlugIn):
         """Wan 2.2 image-to-video: generate video from canvas or selection."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: LTX video pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "ltx_video", "LTX video pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
+        # ── Caps-based preflight: WAN video pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "wan_video", "WAN video pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         GimpUi.init("spellcaster")
 
         # Check for selection — if present, use selection region as start image
@@ -21225,6 +21249,14 @@ class Spellcaster(Gimp.PlugIn):
         """Wan 2.2 First+Last Frame to Video: generate video transitioning between two keyframes."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: WAN video pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "wan_video", "WAN video pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         GimpUi.init("spellcaster")
 
         # Reuse the I2V dialog but add an end-image file chooser
@@ -21404,6 +21436,14 @@ class Spellcaster(Gimp.PlugIn):
         """Wan Director for two-actor scenes with dual face tracking."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: WAN video pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "wan_video", "WAN video pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         GimpUi.init("spellcaster")
 
         # ── Duo Director Script Presets ──────────────────────────────
@@ -21797,6 +21837,14 @@ class Spellcaster(Gimp.PlugIn):
         """Wan Director for three-actor scenes with triple face tracking."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: WAN video pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "wan_video", "WAN video pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         GimpUi.init("spellcaster")
 
         TRIO_SCRIPTS = {
@@ -26313,6 +26361,14 @@ class Spellcaster(Gimp.PlugIn):
         """Wan Director: multi-step video pipeline with variations and editing room."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: WAN video pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "wan_video", "WAN video pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         GimpUi.init("spellcaster")
 
         # ── Director Script Presets ──────────────────────────────────
