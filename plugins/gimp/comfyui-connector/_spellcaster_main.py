@@ -20786,6 +20786,14 @@ class Spellcaster(Gimp.PlugIn):
         """Face swap via ReActor: paste a face from a source image onto the canvas."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: ReActor faceswap pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "face_swap_reactor", "ReActor faceswap pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = FaceSwapDialog()
         if dlg.run() != Gtk.ResponseType.OK:
@@ -20854,6 +20862,14 @@ class Spellcaster(Gimp.PlugIn):
         """Face swap using a saved face model from the server (no source image file)."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: ReActor faceswap pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "face_swap_reactor", "ReActor faceswap pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = FaceSwapModelDialog()
         if dlg.run() != Gtk.ResponseType.OK:
@@ -22620,6 +22636,14 @@ class Spellcaster(Gimp.PlugIn):
         """Face swap via mtb facetools: direct swap from source image."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: ReActor faceswap pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "face_swap_reactor", "ReActor faceswap pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = MtbFaceSwapDialog()
         if dlg.run() != Gtk.ResponseType.OK:
@@ -30672,6 +30696,14 @@ class Spellcaster(Gimp.PlugIn):
         then save the best as a ReActor face model for future face swaps."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: ReActor faceswap pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "face_swap_reactor", "ReActor faceswap pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         GimpUi.init("spellcaster")
 
         # ═══════════════════════════════════════════════════════════════
