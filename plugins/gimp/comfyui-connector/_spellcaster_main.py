@@ -25124,15 +25124,13 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(
                 Gimp.PDBStatusType.CANCEL, GLib.Error())
         srv_probe = COMFYUI_DEFAULT_URL
-        # Caps preflight — SAM3 + Klein-enhancer (this is the Klein-SAM3
-        # combo handler; both packs are required).
-        for _feat, _name in (("sam3", "SAM3 node pack"),
-                              ("klein_enhancer", "Klein enhancer pack")):
-            _ok, _msg = _caps_preflight_feature(srv_probe, _feat, _name)
-            if not _ok:
-                Gimp.message(_msg)
-                return procedure.new_return_values(
-                    Gimp.PDBStatusType.CANCEL, GLib.Error())
+        # SAM3 caps preflight (klein_enhancer already checked above).
+        _ok, _msg = _caps_preflight_feature(
+            srv_probe, "sam3", "SAM3 node pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             _api_get(srv_probe, "/object_info/SAM3Segment")
         except Exception:
