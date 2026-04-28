@@ -22757,6 +22757,14 @@ class Spellcaster(Gimp.PlugIn):
         """Klein Headswap: face swap + Klein refinement for natural integration."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: Klein enhancer pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "klein_enhancer", "Klein enhancer pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         GimpUi.init("spellcaster")
 
         dlg = Gtk.Dialog(title="Spellcaster — Klein Headswap")
@@ -22986,6 +22994,14 @@ class Spellcaster(Gimp.PlugIn):
         """Klein img2img: edit image with Flux 2 Klein distilled model."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: Klein enhancer pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "klein_enhancer", "Klein enhancer pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
             GimpUi.init("spellcaster")
             dlg = KleinDialog("Spellcaster — Klein Image Editor", with_reference=False)
@@ -23042,6 +23058,14 @@ class Spellcaster(Gimp.PlugIn):
         """Klein img2img + reference: edit image with a structure/style reference."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: Klein enhancer pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "klein_enhancer", "Klein enhancer pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = KleinDialog("Spellcaster — Klein Editor + Reference", with_reference=True)
         last = _SESSION.get("klein_ref")
@@ -23099,6 +23123,14 @@ class Spellcaster(Gimp.PlugIn):
         """Klein Outpaint: extend canvas using Flux 2 Klein — best outpaint quality."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: Klein enhancer pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "klein_enhancer", "Klein enhancer pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = Gtk.Dialog(title="Spellcaster — Klein Outpaint")
         dlg.set_default_size(520, -1)
@@ -23317,6 +23349,14 @@ class Spellcaster(Gimp.PlugIn):
         """Klein Layer Blender: AI-powered integration of one layer into another."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: Klein enhancer pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "klein_enhancer", "Klein enhancer pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         GimpUi.init("spellcaster")
 
         # Need at least 2 layers
@@ -23634,6 +23674,14 @@ class Spellcaster(Gimp.PlugIn):
         """Klein Re-poser: change character pose/position using Flux 2 Klein."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: Klein enhancer pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "klein_enhancer", "Klein enhancer pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         GimpUi.init("spellcaster")
 
         # ── Preset libraries ──────────────────────────────────────────
@@ -24076,6 +24124,14 @@ class Spellcaster(Gimp.PlugIn):
         DifferentialDiffusion for smooth edges."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: Klein enhancer pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "klein_enhancer", "Klein enhancer pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         GimpUi.init("spellcaster")
 
         # ── Inpaint task presets ──────────────────────────────────────
@@ -24501,6 +24557,14 @@ class Spellcaster(Gimp.PlugIn):
         """Klein Detail Enhancer: enhance any region with presets."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: Klein enhancer pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "klein_enhancer", "Klein enhancer pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         GimpUi.init("spellcaster")
         _apply_spellcaster_theme()
         dlg = Gtk.Dialog(title="Spellcaster — Klein Detail Enhancer")
@@ -24643,6 +24707,14 @@ class Spellcaster(Gimp.PlugIn):
         """Klein Generate Object: create any object/person as a transparent layer."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: Klein enhancer pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "klein_enhancer", "Klein enhancer pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         GimpUi.init("spellcaster")
         _apply_spellcaster_theme()
         dlg = Gtk.Dialog(title="Spellcaster — Klein Generate Object")
@@ -24811,6 +24883,14 @@ class Spellcaster(Gimp.PlugIn):
         """Klein Auto-Inpaint: Florence2 auto-mask + Klein inpaint."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: Klein enhancer pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "klein_enhancer", "Klein enhancer pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         # Preflight: Florence2
         srv_probe = COMFYUI_DEFAULT_URL
         try:
@@ -24963,6 +25043,14 @@ class Spellcaster(Gimp.PlugIn):
         """Klein SAM3 Inpaint: SAM3 segment + Klein inpaint, optional reference."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: Klein enhancer pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "klein_enhancer", "Klein enhancer pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         srv_probe = COMFYUI_DEFAULT_URL
         # Caps preflight — SAM3 + Klein-enhancer (this is the Klein-SAM3
         # combo handler; both packs are required).
@@ -25160,6 +25248,14 @@ class Spellcaster(Gimp.PlugIn):
         """Klein Refine: multi-reference structural enhancement."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: Klein enhancer pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "klein_enhancer", "Klein enhancer pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = Gtk.Dialog(title="Spellcaster — Klein Refine")
         dlg.set_default_size(520, -1)
@@ -25300,6 +25396,14 @@ class Spellcaster(Gimp.PlugIn):
         """Klein Face Detailer: YOLO face detection + Klein high-detail regen."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: Klein enhancer pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "klein_enhancer", "Klein enhancer pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         srv_probe = COMFYUI_DEFAULT_URL
         try:
             _api_get(srv_probe, "/object_info/FaceDetailer")
@@ -25457,6 +25561,14 @@ class Spellcaster(Gimp.PlugIn):
         """Klein Color Match: ColorMatchV2 to a reference image (no diffusion)."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: Klein enhancer pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "klein_enhancer", "Klein enhancer pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         srv_probe = COMFYUI_DEFAULT_URL
         try:
             _api_get(srv_probe, "/object_info/ColorMatchV2")
@@ -25579,6 +25691,14 @@ class Spellcaster(Gimp.PlugIn):
         """
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: Klein enhancer pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok, _msg = _caps_preflight_feature(
+            _srv_chk, "klein_enhancer", "Klein enhancer pack")
+        if not _ok:
+            Gimp.message(_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = Gtk.Dialog(title="Spellcaster — Klein Virtual Try-On")
         dlg.set_default_size(560, -1)
