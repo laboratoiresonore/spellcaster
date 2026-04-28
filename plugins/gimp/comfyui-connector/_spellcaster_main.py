@@ -27732,6 +27732,14 @@ class Spellcaster(Gimp.PlugIn):
         """Smart object removal: LaMa fast fill OR AI-guided replacement."""
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
+        # ── Caps-based preflight: LaMa inpaint pack (added 2026-04-27)
+        _srv_chk = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        _ok_lm, _msg_lm = _caps_preflight_feature(
+            _srv_chk, "lama_inpaint", "LaMa inpaint pack")
+        if not _ok_lm:
+            Gimp.message(_msg_lm)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
         GimpUi.init("spellcaster")
         dlg = Gtk.Dialog(title="Spellcaster — Smart Object Removal")
         dlg.set_default_size(520, -1)
@@ -32829,6 +32837,13 @@ class Spellcaster(Gimp.PlugIn):
             srv, "sam3", "SAM3 node pack")
         if not _caps_ok:
             Gimp.message(_caps_msg)
+            return procedure.new_return_values(
+                Gimp.PDBStatusType.CANCEL, GLib.Error())
+        # ── Caps-based preflight: LaMa inpaint pack (added 2026-04-27)
+        _ok_lm, _msg_lm = _caps_preflight_feature(
+            srv, "lama_inpaint", "LaMa inpaint pack")
+        if not _ok_lm:
+            Gimp.message(_msg_lm)
             return procedure.new_return_values(
                 Gimp.PDBStatusType.CANCEL, GLib.Error())
         try:
