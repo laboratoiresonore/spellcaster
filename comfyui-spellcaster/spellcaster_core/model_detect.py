@@ -10,7 +10,7 @@ Before: these lists were scattered across guild_common.py and duplicated
 in the GIMP plugin. Now, they live here.
 
 USAGE:
-    from spellcaster_core.model_detect import (
+    from .model_detect import (
         classify_unet_model, classify_ckpt_model,
         UNET_ARCH_RULES, CKPT_ARCH_RULES,
         FAMILY_MODEL_KEYWORDS, LORA_NAME_ARCH_HINTS,

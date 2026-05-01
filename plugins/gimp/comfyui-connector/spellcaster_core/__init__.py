@@ -11,7 +11,7 @@ this package. When you fix a bug or add a new architecture, fix it ONCE here
 and all 39+ workflow builders are automatically updated.
 
 USAGE:
-    from spellcaster_core import (
+    from . import (
         ARCHITECTURES, ArchConfig, get_arch,
         classify_unet_model, classify_ckpt_model,
         NodeFactory,

@@ -5,11 +5,11 @@ everywhere: GIMP, Wizard Guild, CLI, ComfyUI nodes.
 
 Usage:
     # Register a custom architecture from JSON
-    from spellcaster_core.arch_registry import load_custom_archs
+    from .arch_registry import load_custom_archs
     load_custom_archs()  # Scans archs/ directory
 
     # Or register programmatically
-    from spellcaster_core.arch_registry import register_arch
+    from .arch_registry import register_arch
     register_arch("my_model", {
         "loader": "checkpoint",
         "default_steps": 20,
@@ -47,7 +47,7 @@ try:
     from .model_detect import UNET_ARCH_RULES, CKPT_ARCH_RULES, LORA_ARCH_PREFIXES
 except ImportError:
     from _architectures import ARCHITECTURES, ArchConfig, _reg
-    from spellcaster_core.model_detect import UNET_ARCH_RULES, CKPT_ARCH_RULES, LORA_ARCH_PREFIXES
+    from .model_detect import UNET_ARCH_RULES, CKPT_ARCH_RULES, LORA_ARCH_PREFIXES
 
 # Directory for custom architecture JSON files
 _HERE = os.path.dirname(os.path.abspath(__file__))

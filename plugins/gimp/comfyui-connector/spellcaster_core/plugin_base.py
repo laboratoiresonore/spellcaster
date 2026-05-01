@@ -52,7 +52,7 @@ try:
         wan_turbo_kwargs,
     )
 except ImportError:
-    from spellcaster_core.workflows import (
+    from .workflows import (
         build_txt2img, build_img2img, build_upscale, build_rembg,
         build_faceswap, build_face_restore, build_style_transfer,
         build_iclight, build_lut, build_inpaint,
@@ -60,12 +60,12 @@ except ImportError:
         build_detail_hallucinate, build_colorize, build_magic_eraser,
         build_ltx_video, build_wan_video,
     )
-    from spellcaster_core.architectures import get_arch
-    from spellcaster_core.model_detect import classify_unet_model, classify_ckpt_model
-    from spellcaster_core.preflight import preflight_workflow
-    from spellcaster_core.optimizer import optimize_workflow
-    from spellcaster_core.recommend import recommend
-    from spellcaster_core.video_presets import (
+    from .architectures import get_arch
+    from .model_detect import classify_unet_model, classify_ckpt_model
+    from .preflight import preflight_workflow
+    from .optimizer import optimize_workflow
+    from .recommend import recommend
+    from .video_presets import (
         detect_ltx_preset, detect_wan_preset, ltx_mode_kwargs,
         wan_turbo_kwargs,
     )
@@ -1000,7 +1000,7 @@ class SpellcasterPlugin:
                             return self._download_and_insert(outputs, label)
                         if st.get("status_str") == "error":
                             try:
-                                from spellcaster_core.dispatch import (
+                                from .dispatch import (
                                     extract_execution_error,
                                     has_usable_outputs,
                                 )
@@ -1063,7 +1063,7 @@ class SpellcasterPlugin:
             "UNetLoader",
         }
         try:
-            from spellcaster_core.model_detect import classify_ckpt_model
+            from .model_detect import classify_ckpt_model
         except Exception:
             classify_ckpt_model = None
         for node in workflow.values():

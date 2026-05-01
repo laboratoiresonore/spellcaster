@@ -17,7 +17,7 @@ minutes per message). A completely disconnected client doesn't
 accumulate forever.
 
 Usage:
-    from spellcaster_core.mailbox import get_mailbox
+    from .mailbox import get_mailbox
 
     mb = get_mailbox("gimp")
     mb.deliver({"kind": "gimp.asset.open", "data": {...}})

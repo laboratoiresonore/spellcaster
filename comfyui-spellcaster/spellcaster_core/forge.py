@@ -8,7 +8,7 @@ The meta-wizard that creates other wizards. Capabilities:
   5. Customize: clone a scaffold and modify its parameters
 
 Usage:
-    from spellcaster_core.forge import (
+    from .forge import (
         reverse_engineer_image, analyze_workflow,
         build_chimera, discover_comfyui_workflows,
     )
@@ -39,8 +39,8 @@ try:
     from .model_detect import classify_unet_model, classify_ckpt_model
     from .architectures import get_arch, ARCHITECTURES
 except ImportError:
-    from spellcaster_core.model_detect import classify_unet_model, classify_ckpt_model
-    from spellcaster_core.architectures import get_arch, ARCHITECTURES
+    from .model_detect import classify_unet_model, classify_ckpt_model
+    from .architectures import get_arch, ARCHITECTURES
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -349,7 +349,7 @@ def execute_chimera(chimera, server, callback=None):
     try:
         from .pipeline import Pipeline
     except ImportError:
-        from spellcaster_core.pipeline import Pipeline
+        from .pipeline import Pipeline
 
     log = callback or print
     p = Pipeline(server, verbose=True)

@@ -5,7 +5,7 @@ workflow, checks if ComfyUI has that node type installed, and applies
 automatic substitutions for known-broken or missing nodes.
 
 Usage:
-    from spellcaster_core.preflight import preflight_workflow
+    from .preflight import preflight_workflow
 
     workflow = build_txt2img(preset, prompt, negative, seed)
     ok, workflow, report = preflight_workflow(workflow, comfy_url)

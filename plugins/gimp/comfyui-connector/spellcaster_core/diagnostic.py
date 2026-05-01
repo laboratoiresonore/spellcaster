@@ -8,7 +8,7 @@ Runs a systematic probe of the connected ComfyUI server:
   5. Generates a capability report + recommended configuration
 
 Usage:
-    from spellcaster_core.diagnostic import run_diagnostic
+    from .diagnostic import run_diagnostic
 
     report = run_diagnostic("http://192.168.x.x:8188", interactive=False)
     # report.working = ["txt2img_sd15", "txt2img_sdxl", "upscale", ...]
@@ -38,11 +38,11 @@ try:
         build_iclight, build_lut, build_wan_video, build_ltx_video,
     )
 except ImportError:
-    from spellcaster_core.preflight import get_available_nodes
-    from spellcaster_core.optimizer import get_server_vram, estimate_vram, get_max_resolution
-    from spellcaster_core.model_detect import classify_unet_model, classify_ckpt_model
-    from spellcaster_core.architectures import get_arch, ARCHITECTURES
-    from spellcaster_core.workflows import (
+    from .preflight import get_available_nodes
+    from .optimizer import get_server_vram, estimate_vram, get_max_resolution
+    from .model_detect import classify_unet_model, classify_ckpt_model
+    from .architectures import get_arch, ARCHITECTURES
+    from .workflows import (
         build_txt2img, build_upscale, build_rembg, build_faceswap,
         build_face_restore, build_faceswap_model, build_style_transfer,
         build_iclight, build_lut, build_wan_video, build_ltx_video,

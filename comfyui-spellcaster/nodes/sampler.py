@@ -15,12 +15,8 @@ import comfy.samplers
 import comfy.utils
 import latent_preview
 
-# ── spellcaster_core import ────────────────────────────────────────────
-_pack_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _pack_dir not in sys.path:
-    sys.path.insert(0, _pack_dir)
 
-from spellcaster_core.architectures import get_arch
+from ..spellcaster_core.architectures import get_arch
 
 
 class SpellcasterSampler:

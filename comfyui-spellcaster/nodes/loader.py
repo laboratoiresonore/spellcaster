@@ -14,13 +14,9 @@ import folder_paths
 import comfy.sd
 import comfy.utils
 
-# ── spellcaster_core import ────────────────────────────────────────────
-_pack_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _pack_dir not in sys.path:
-    sys.path.insert(0, _pack_dir)
 
-from spellcaster_core.architectures import ARCHITECTURES, get_arch
-from spellcaster_core.model_detect import classify_unet_model, classify_ckpt_model
+from ..spellcaster_core.architectures import ARCHITECTURES, get_arch
+from ..spellcaster_core.model_detect import classify_unet_model, classify_ckpt_model
 
 
 class SpellcasterLoader:

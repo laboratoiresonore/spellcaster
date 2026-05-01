@@ -42,7 +42,7 @@ estimate landed where it did (useful for SpeedCoach's retrospective
 
 API summary::
 
-    from spellcaster_core import estimate as est
+    from . import estimate as est
 
     pre = est.estimate_pre_dispatch(
         {"arch": "sdxl", "handler": "build_img2img",
@@ -266,7 +266,7 @@ def estimate_pre_dispatch(spec: dict, *,
         from . import speedcoach as sc
     except ImportError:
         try:
-            from spellcaster_core import speedcoach as sc  # type: ignore
+            from . import speedcoach as sc  # type: ignore
         except ImportError:
             sc = None  # type: ignore
 

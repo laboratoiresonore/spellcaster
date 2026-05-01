@@ -9,7 +9,7 @@ Every generation gets a thumbs up/down. The system learns:
 Storage: .guild_state/wizard_memory.json
 
 Usage:
-    from spellcaster_core.memory import WizardMemory
+    from .memory import WizardMemory
 
     mem = WizardMemory.load("path/to/wizard_memory.json")
 

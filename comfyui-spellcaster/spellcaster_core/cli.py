@@ -38,10 +38,10 @@ _parent = os.path.dirname(_here)
 if _parent not in sys.path:
     sys.path.insert(0, _parent)
 
-from spellcaster_core.workflows import build_txt2img, build_upscale, build_rembg
-from spellcaster_core.architectures import get_arch, ARCHITECTURES
-from spellcaster_core.model_detect import classify_unet_model, classify_ckpt_model
-from spellcaster_core.preflight import preflight_workflow, get_available_nodes
+from .workflows import build_txt2img, build_upscale, build_rembg
+from .architectures import get_arch, ARCHITECTURES
+from .model_detect import classify_unet_model, classify_ckpt_model
+from .preflight import preflight_workflow, get_available_nodes
 
 
 DEFAULT_SERVER = "http://127.0.0.1:8188"
@@ -345,7 +345,7 @@ def _print_models(server):
 
 def cmd_vram(args):
     """Estimate VRAM usage for a generation configuration."""
-    from spellcaster_core.optimizer import estimate_vram, get_max_resolution, get_server_vram, ARCH_BASE_VRAM
+    from .optimizer import estimate_vram, get_max_resolution, get_server_vram, ARCH_BASE_VRAM
 
     server_vram = get_server_vram(args.server) if args.server != DEFAULT_SERVER else None
 
@@ -377,7 +377,7 @@ def cmd_vram(args):
 
 def cmd_diagnostic(args):
     """Run the full diagnostic test suite."""
-    from spellcaster_core.diagnostic import run_diagnostic
+    from .diagnostic import run_diagnostic
     report = run_diagnostic(args.server, callback=print)
     # Save report
     import json as _j
@@ -390,7 +390,7 @@ def cmd_diagnostic(args):
 
 def cmd_calibrate(args):
     """Run full model+LoRA compatibility calibration."""
-    from spellcaster_core.calibration import calibrate, save_matrix
+    from .calibration import calibrate, save_matrix
     print("Starting calibration (this may take 5-20 minutes)...")
     matrix = calibrate(
         args.server, callback=print,
@@ -407,7 +407,7 @@ def cmd_calibrate(args):
 
 def cmd_recommend(args):
     """Recommend the best model and settings for a prompt."""
-    from spellcaster_core.recommend import recommend
+    from .recommend import recommend
 
     rec = recommend(args.prompt, server=args.server)
     print(f"Recommendation for: \"{args.prompt}\"")

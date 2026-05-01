@@ -36,7 +36,7 @@ Supported nodes (tried in priority order):
   2. (future nodes can be added here)
 
 USAGE:
-    from spellcaster_core.comfyui_llm import discover_llm, generate_text
+    from .comfyui_llm import discover_llm, generate_text
 
     info = discover_llm("http://192.168.x.x:8188")
     # {"node_class": "AILab_QwenVL_GGUF_PromptEnhancer",
