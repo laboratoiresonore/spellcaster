@@ -34,11 +34,26 @@ import urllib.error
 
 @dataclasses.dataclass
 class DispatchResult:
-    """Standardized result from a ComfyUI workflow execution."""
+    """Standardized result from a ComfyUI workflow execution.
+
+    ``outputs`` lists filename-based outputs (the historical poll-path
+    return shape, used by every existing caller). ``binary_outputs`` is
+    populated only on the websocket path when ``SaveImageWebsocket`` /
+    ``ETN_SendImageWebSocket`` are present in the workflow -- those
+    nodes return image bytes via a ws binary frame instead of writing
+    to disk. Each entry is ``(format_name, image_bytes)`` where
+    ``format_name`` is one of ``"png"``, ``"jpg"``, ``"jpeg"``,
+    ``"webp"``.
+
+    ``transport`` records which path produced the result so callers
+    can log + branch (download via /view for ``"poll"``, decode bytes
+    in-memory for ``"websocket"``)."""
     prompt_id: str
     outputs: list       # [(filename, subfolder, folder_type), ...]
     elapsed: float      # seconds from submit to completion
     warnings: list      # preflight/optimizer messages
+    binary_outputs: list = dataclasses.field(default_factory=list)
+    transport: str = "poll"  # "poll" | "websocket"
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -227,7 +242,8 @@ def _free_vram(server):
 
 def dispatch_workflow(server, workflow, *, timeout=300, free_vram=False,
                       preflight=True, optimize=True, privacy=None,
-                      on_progress=None, trusted=False):
+                      on_progress=None, trusted=False,
+                      use_websocket=False, ws_fallback_to_poll=True):
     """Submit a workflow to ComfyUI with full lifecycle management.
 
     Args:
@@ -266,9 +282,26 @@ def dispatch_workflow(server, workflow, *, timeout=300, free_vram=False,
                    (user-pasted JSON, third-party saved files) should
                    stay ``trusted=False`` so the validator catches
                    version-skew and missing-node issues up front.
+        use_websocket: **Phase 9 opt-in** (default False). When True,
+                   replaces the ``/history/<prompt_id>`` poll loop with
+                   a websocket subscription to ``/ws?clientId=<uuid>``.
+                   Gains: no 500 ms poll race for short workflows, and
+                   binary image frames from ``SaveImageWebsocket`` /
+                   ``ETN_SendImageWebSocket`` arrive in-memory without
+                   touching the filesystem. The result's
+                   ``binary_outputs`` field carries the bytes; the
+                   ``outputs`` field still carries any filename-based
+                   outputs (mixed-mode workflows are supported).
+        ws_fallback_to_poll: When ``use_websocket=True`` and the ws
+                   connection fails (``websockets`` not installed,
+                   ComfyUI version too old, network blip), fall back
+                   to the historical poll path. Default True for
+                   safety. Set False to make ws failures hard-error
+                   (useful for tests / strict deployments).
 
     Returns:
-        DispatchResult with prompt_id, outputs, elapsed, warnings.
+        DispatchResult with prompt_id, outputs, elapsed, warnings,
+        binary_outputs, transport.
 
     Raises:
         RuntimeError on critical failures (missing nodes, server offline).
@@ -370,7 +403,101 @@ def dispatch_workflow(server, workflow, *, timeout=300, free_vram=False,
         _progress("free", "unloading cached models...")
         _free_vram(server)
 
-    # ── 4. Submit ─────────────────────────────────────────────────
+    # ── 4. Submit + wait ─────────────────────────────────────────
+    # Two transports, same shape on the way out:
+    #   - ws (Phase 9): subscribe to /ws first, then POST /prompt
+    #     with matching client_id, then collect ws messages until
+    #     the canonical done signal. Binary frames carry image bytes
+    #     when SaveImageWebsocket / ETN_SendImageWebSocket are in
+    #     the workflow; filename outputs still fall through the
+    #     'executed' message's output.images / output.gifs fields.
+    #   - poll (historical default): POST /prompt, then loop
+    #     /history/<prompt_id> every 500 ms until status_str==error
+    #     or outputs appear.
+    # The ws path falls back to poll on any WS error when
+    # ws_fallback_to_poll=True (default). Both paths converge on
+    # the same DispatchResult shape; only the `transport` field
+    # records which one ran.
+    if use_websocket:
+        try:
+            from .comfy_ws import (
+                WSError, WSExecutionError, WSTimeout,
+                _WS_FORMAT_NAMES,
+                submit_and_listen,
+            )
+        except ImportError as exc:
+            if not ws_fallback_to_poll:
+                raise RuntimeError(
+                    f"websocket transport requested but comfy_ws "
+                    f"unavailable: {exc}")
+            _progress("ws.fallback", f"comfy_ws import failed: {exc}")
+            use_websocket = False  # fall through to poll path
+
+    if use_websocket:
+        _progress("ws.dispatch", "subscribing + submitting via /ws")
+        t0 = time.time()
+        try:
+            ws_result = submit_and_listen(
+                server, workflow, timeout=timeout,
+                on_progress=on_progress,
+            )
+        except WSError as exc:
+            if not ws_fallback_to_poll:
+                raise RuntimeError(f"ws dispatch failed: {exc}")
+            warnings.append(f"WS path failed, falling back to poll: {exc}")
+            _progress("ws.fallback", str(exc))
+            use_websocket = False  # fall through to poll path
+
+    if use_websocket:
+        # Done via ws path; build the DispatchResult and short-circuit.
+        if ws_result.error_detail and not ws_result.file_outputs and not ws_result.binary_frames:
+            raise RuntimeError(
+                f"ComfyUI execution failed: {ws_result.error_detail}")
+        if ws_result.error_detail and (ws_result.file_outputs or ws_result.binary_frames):
+            warnings.append(
+                f"ComfyUI reported execution_error but produced output -- "
+                f"returning it as partial success. Detail: "
+                f"{ws_result.error_detail}")
+        if ws_result.interrupted:
+            raise RuntimeError(
+                f"ComfyUI execution interrupted for prompt "
+                f"{ws_result.prompt_id}")
+
+        binary_outputs = [
+            (_WS_FORMAT_NAMES.get(f.format, f"fmt{f.format}"), f.image_bytes)
+            for f in ws_result.binary_frames
+        ]
+        elapsed = ws_result.elapsed
+        _progress(
+            "done",
+            f"{len(ws_result.file_outputs)} file + "
+            f"{len(binary_outputs)} ws-binary outputs in {elapsed:.1f}s",
+        )
+
+        # Privacy cleanup is a no-op for the ws path's binary frames
+        # (nothing landed on disk); but file outputs from non-ws nodes
+        # in the same workflow do need the cleanup pass.
+        if _should_cleanup(privacy) and ws_result.file_outputs:
+            _progress("cleanup", "wiping temp files...")
+            try:
+                from .privacy import cleanup_server_files
+                cleanup_server_files(
+                    server, workflow=workflow,
+                    results=ws_result.file_outputs,
+                )
+            except ImportError:
+                pass
+
+        return DispatchResult(
+            prompt_id=ws_result.prompt_id,
+            outputs=list(ws_result.file_outputs),
+            elapsed=elapsed,
+            warnings=warnings,
+            binary_outputs=binary_outputs,
+            transport="websocket",
+        )
+
+    # ── poll path (historical default) ────────────────────────────
     _progress("submit", "posting workflow...")
     t0 = time.time()
     try:
@@ -487,4 +614,6 @@ def dispatch_workflow(server, workflow, *, timeout=300, free_vram=False,
         outputs=outputs,
         elapsed=elapsed,
         warnings=warnings,
+        binary_outputs=[],
+        transport="poll",
     )
