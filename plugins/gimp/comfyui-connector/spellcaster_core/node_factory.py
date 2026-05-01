@@ -1239,6 +1239,99 @@ class NodeFactory:
             "images": images_ref, "filename_prefix": prefix,
         }, node_id)
 
+    # ── Inline transport (Phase 9) ────────────────────────────────
+    # Pair of nodes that eliminate filesystem round-trips for
+    # Spellcaster-authored workflows. Use with `dispatch_workflow(...,
+    # use_websocket=True)` so the binary output frame is captured.
+    #
+    #   etn_load_image_base64       INPUT side  (Acly's pack)
+    #   etn_send_image_websocket    OUTPUT side (Acly's pack)
+    #   save_image_websocket        OUTPUT side (ComfyUI core)
+    #
+    # The ETN_* prefix is the on-the-wire class_type from
+    # comfyui-tooling-nodes (Acly, GPL-3.0). The bundle's
+    # build_portable_bundle.py git-clones the pack into
+    # custom_nodes/, so this is a sibling-pack dep, not a vendored
+    # one (license-clean).
+    #
+    # SaveImageWebsocket is in ComfyUI core -- no extra pack needed.
+    # Use it when you don't want the GPL-3 sibling dep.
+
+    def etn_load_image_base64(self, image_b64, node_id=None):
+        """ETN_LoadImageBase64 — embed an input image as base64 in the
+        prompt JSON (Acly/comfyui-tooling-nodes).
+
+        Eliminates the ``POST /upload/image`` + ``GET /view?filename=...``
+        round-trip for Spellcaster-authored workflows. Pair with
+        ``dispatch_workflow(..., use_websocket=True)`` and one of the
+        ws-output nodes (``etn_send_image_websocket`` or
+        ``save_image_websocket``) for fully filesystem-free I/O.
+
+        Args:
+            image_b64: Base64-encoded PNG (or JPG) bytes as a `str`.
+                       Caller is responsible for the encoding; helpers:
+                         buf = io.BytesIO(); img.save(buf, "PNG")
+                         b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+
+        Returns:
+            Node ID (string). Outputs:
+              - [node_id, 0]: IMAGE (pixel tensor)
+              - [node_id, 1]: MASK (alpha channel as mask, if present)
+        """
+        return self._add(
+            "ETN_LoadImageBase64",
+            {"image": image_b64},
+            node_id,
+        )
+
+    def etn_send_image_websocket(self, images_ref, *,
+                                  format="PNG", node_id=None):
+        """ETN_SendImageWebSocket — return image via ws binary frame
+        (Acly/comfyui-tooling-nodes, GPL-3.0 sibling pack).
+
+        Terminal node. The image bytes are emitted as a binary message
+        on the ws connection that submitted the prompt (matching
+        ``client_id``). Pair with ``dispatch_workflow(...,
+        use_websocket=True)`` so the dispatcher collects the frame.
+
+        Args:
+            images_ref: Reference to image tensor, typically
+                        [vae_decode_id, 0]
+            format: "PNG" (default) or "JPEG"
+
+        Returns:
+            Node ID (string), but has no outputs (terminal node).
+
+        Note: if you don't want the GPL-3 sibling dep, use
+        ``save_image_websocket`` (ComfyUI core class) instead.
+        Identical wire format.
+        """
+        return self._add(
+            "ETN_SendImageWebSocket",
+            {"images": images_ref, "format": format},
+            node_id,
+        )
+
+    def save_image_websocket(self, images_ref, node_id=None):
+        """SaveImageWebsocket — return image via ws binary frame
+        (ComfyUI core class -- no sibling pack required).
+
+        Terminal node. ComfyUI emits the image bytes as a binary ws
+        message to the client_id that submitted the prompt. Always PNG.
+
+        Args:
+            images_ref: Reference to image tensor, typically
+                        [vae_decode_id, 0]
+
+        Returns:
+            Node ID (string), but has no outputs (terminal node).
+        """
+        return self._add(
+            "SaveImageWebsocket",
+            {"images": images_ref},
+            node_id,
+        )
+
     def image_scale(self, image_ref, width, height,
                     upscale_method="lanczos", crop="disabled", node_id=None):
         """ImageScale — resize image to exact target dimensions.
