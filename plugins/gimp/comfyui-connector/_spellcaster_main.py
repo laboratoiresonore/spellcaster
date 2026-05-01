@@ -243,6 +243,7 @@ def _exec_error():
 import uuid
 import time
 import random
+import inspect         # Phase 9 feature detect for dispatch_workflow ws kwargs
 import struct          # for pure-Python PNG writer (IHDR/IDAT chunk packing)
 import platform
 import zlib            # for PNG IDAT compression and CRC32 checksums
@@ -12685,6 +12686,19 @@ def _run_comfyui_workflow(server, workflow, timeout=300):
 
         try:
             from spellcaster_core.dispatch import dispatch_workflow
+            # Phase 9 ws-path opt-in. The sibling spellcaster_core/ on
+            # the GIMP plugin's import path is mirror surface #2; until
+            # it's mirrored from canonical (R1), it has the pre-Phase-9
+            # signature and would TypeError on the new kwargs. Feature-
+            # detect once per call and silently keep the poll path when
+            # the kwargs aren't supported. ws_fallback_to_poll=True
+            # gives a second safety net (degrade to /history poll on
+            # any ws-side failure once the kwargs ARE supported).
+            _disp_params = inspect.signature(dispatch_workflow).parameters
+            _ws_kwargs = (
+                {"use_websocket": True, "ws_fallback_to_poll": True}
+                if "use_websocket" in _disp_params else {}
+            )
             # GIMP passes privacy=False to dispatch because it needs to
             # download outputs to local temp files BEFORE they get wiped.
             # Privacy cleanup runs after _precache_results below.
@@ -12707,6 +12721,7 @@ def _run_comfyui_workflow(server, workflow, timeout=300):
                     free_vram=True,
                     privacy=False,  # GIMP handles privacy after precache
                     trusted=True,
+                    **_ws_kwargs,
                 )
             except RuntimeError as _dispatch_err:
                 # Intercept CN-loader failures (corrupt safetensors /
@@ -12721,7 +12736,28 @@ def _run_comfyui_workflow(server, workflow, timeout=300):
                 except Exception:
                     pass
                 raise
-            images = result.outputs
+            images = list(result.outputs)
+            # Phase 9: ws-binary outputs (from SaveImageWebsocket /
+            # ETN_SendImageWebSocket) arrive in-memory as bytes, never
+            # touch the server filesystem. Synthesise a (filename, "",
+            # "output") key per frame, write bytes to a temp file, and
+            # pre-populate _download_cache. _precache_results below
+            # then short-circuits these (cache hit), and the rest of
+            # the GIMP-side import path consumes them uniformly with
+            # file outputs. binary_outputs is empty in practice today
+            # (no current builder uses save_image_websocket); this
+            # fold-in is defensive for the eventual builder switch.
+            for _fmt, _blob in (getattr(result, "binary_outputs", None) or []):
+                _synth = (f"ws_inline_{uuid.uuid4().hex[:12]}.{_fmt}", "", "output")
+                _tmp = tempfile.NamedTemporaryFile(
+                    suffix=f".{_fmt}",
+                    prefix="spellcaster_ws_",
+                    delete=False,
+                )
+                _tmp.write(_blob)
+                _tmp.close()
+                _download_cache[_synth] = _tmp.name
+                images.append(_synth)
             _tel_warnings = list(result.warnings or [])
             for w in result.warnings:
                 print(f"[Spellcaster] {w}")
