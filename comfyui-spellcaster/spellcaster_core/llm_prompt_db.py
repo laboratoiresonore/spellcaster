@@ -53,7 +53,7 @@ churn, hand-curated).
 
 API
 ───
-    from spellcaster_core.llm_prompt_db import (
+    from .llm_prompt_db import (
         get_model_settings, set_model_settings, all_models, forget_model,
         merge_with_profile,
     )

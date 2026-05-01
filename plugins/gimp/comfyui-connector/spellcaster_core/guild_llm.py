@@ -459,7 +459,7 @@ def describe_image(image_filename, server, method="auto"):
                     # is either generated or not), so error → None.
                     if st.get("status_str") == "error":
                         try:
-                            from spellcaster_core.dispatch import (
+                            from .dispatch import (
                                 extract_execution_error,
                             )
                             err, _ = extract_execution_error(st)
@@ -595,7 +595,7 @@ def generate_ab_test(prompt, server, num_variants=3, **gen_kwargs):
     try:
         from .pipeline import Pipeline
     except ImportError:
-        from spellcaster_core.pipeline import Pipeline
+        from .pipeline import Pipeline
 
     variants = []
     for i in range(num_variants):

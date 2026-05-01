@@ -4,7 +4,7 @@ Maps user intent ("anime portrait", "photorealistic landscape", "video of
 a sunset") to the best architecture and model on the connected ComfyUI server.
 
 Usage:
-    from spellcaster_core.recommend import recommend
+    from .recommend import recommend
 
     rec = recommend("anime girl in a garden", server="http://192.168.x.x:8188")
     print(rec)
@@ -20,8 +20,8 @@ try:
     from .model_detect import classify_unet_model, classify_ckpt_model
     from .architectures import get_arch, ARCHITECTURES
 except ImportError:
-    from spellcaster_core.model_detect import classify_unet_model, classify_ckpt_model
-    from spellcaster_core.architectures import get_arch, ARCHITECTURES
+    from .model_detect import classify_unet_model, classify_ckpt_model
+    from .architectures import get_arch, ARCHITECTURES
 
 
 # ═══════════════════════════════════════════════════════════════════════

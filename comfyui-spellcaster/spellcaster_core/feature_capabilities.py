@@ -25,7 +25,7 @@ Resolution rules:
     hide an unparseable feature than to surface a broken one.
 
 Usage:
-    from spellcaster_core.feature_capabilities import (
+    from .feature_capabilities import (
         resolve_capability, resolve_feature)
 
     ok, reason = resolve_capability("comfyui:pack:ComfyUI-Spellcaster", snap)

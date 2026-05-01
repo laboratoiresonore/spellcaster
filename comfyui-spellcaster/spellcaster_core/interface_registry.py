@@ -26,7 +26,7 @@ The registry is in-process and fed by three sources:
 
 Usage:
 
-    from spellcaster_core.interface_registry import registry
+    from .interface_registry import registry
 
     # At Guild startup (one-shot probe):
     registry.detect_all()

@@ -168,13 +168,13 @@ def get_status(
 
     fs_state: dict = {}
     try:
-        from spellcaster_core.faceswap_health import get_effective_state
+        from .faceswap_health import get_effective_state
         fs_state = get_effective_state()
     except Exception:
         pass
     scorer_probe: dict = {"ok": False, "reason": "module missing"}
     try:
-        from spellcaster_core.lora_scorer import (
+        from .lora_scorer import (
             probe_available, DEFAULT_OLLAMA_URL, DEFAULT_MODEL,
         )
         scorer_probe = probe_available(

@@ -10,10 +10,6 @@ deadlock the queue.
 import os
 import sys
 
-# ── spellcaster_core import ────────────────────────────────────────────
-_pack_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _pack_dir not in sys.path:
-    sys.path.insert(0, _pack_dir)
 
 
 class SpellcasterPromptEnhance:
@@ -72,7 +68,7 @@ class SpellcasterPromptEnhance:
         # comfy_url is intentionally NOT passed — this node runs inside a
         # ComfyUI workflow, and submitting a nested LLM workflow would
         # deadlock the queue.  External LLM servers only.
-        from spellcaster_core.prompt_enhance import enhance_prompt
+        from ..spellcaster_core.prompt_enhance import enhance_prompt
         result = enhance_prompt(
             prompt, arch_key,
             kobold_url=llm_url,

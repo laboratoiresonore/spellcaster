@@ -227,7 +227,7 @@ def inject_lora_chain(nf, loras, model_ref, clip_ref, base_id=100,
         try:
             from .model_detect import lora_is_compatible
         except ImportError:
-            from spellcaster_core.model_detect import lora_is_compatible
+            from .model_detect import lora_is_compatible
         filtered = []
         dropped = []
         for lora in loras:

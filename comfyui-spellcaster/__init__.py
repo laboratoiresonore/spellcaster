@@ -207,14 +207,32 @@ def _write_web_marker(installed: bool):
         pass
 
 
-# Run the check at import time (ComfyUI startup)
-_suite_ok = _check_full_suite_installed()
-_write_web_marker(_suite_ok)
+# Run the check at import time (ComfyUI startup). Every side effect
+# below is wrapped so a failure never takes down ComfyUI's own startup
+# or a Manager update pass.
+try:
+    _suite_ok = _check_full_suite_installed()
+except Exception:
+    _suite_ok = False
+try:
+    _write_web_marker(_suite_ok)
+except Exception:
+    pass
 
 # Register the presence broker routes on ComfyUI's HTTP server. Silent
-# no-op if PromptServer isn't available (bare-import contexts).
-_presence_ok = _presence.install()
-_blob_ok = _blob_bus.install()
+# no-op if PromptServer isn't available (bare-import contexts). Hard
+# guard around every route installer because a third-party pack's
+# aiohttp version bump has crashed us here before.
+try:
+    _presence_ok = _presence.install()
+except Exception as _e:
+    _presence_ok = False
+    print(f"[Spellcaster] presence broker disabled: {_e}")
+try:
+    _blob_ok = _blob_bus.install()
+except Exception as _e:
+    _blob_ok = False
+    print(f"[Spellcaster] blob bus disabled: {_e}")
 
 _extras = []
 if _presence_ok:
@@ -223,25 +241,15 @@ if _blob_ok:
     _extras.append("blob bus ON")
 _extras_str = ("  •  " + "  •  ".join(_extras)) if _extras else ""
 
-if _suite_ok:
-    print("\033[36m[Spellcaster]\033[0m Node pack loaded — 4 nodes registered"
-          + _extras_str)
-else:
-    _bat = _drop_installer_bat()
-    print("")
-    print("\033[36m" + "=" * 58 + "\033[0m")
-    print("\033[36m  [Spellcaster]\033[0m Nodes loaded — 4 nodes registered")
-    print("")
-    print("  \033[33mFull suite not detected.\033[0m")
-    print("  For \033[1mWizard Guild\033[0m, \033[1mGIMP/Darktable plugins\033[0m,")
-    print("  desktop shortcuts, and the model downloader:")
-    print("")
-    if _bat:
-        print(f"    \033[32m>>> Run: {os.path.basename(_bat)}\033[0m")
-        print(f"    \033[90m    (in your custom_nodes folder)\033[0m")
-    else:
-        print("    \033[32m>>> python install.py\033[0m")
-        print("    \033[90m    github.com/laboratoiresonore/spellcaster\033[0m")
-    print("")
-    print("\033[36m" + "=" * 58 + "\033[0m")
-    print("")
+# Single-line startup banner. No ANSI colors (Windows cmd.exe without
+# ENABLE_VIRTUAL_TERMINAL_PROCESSING prints the literal escape codes
+# and that has triggered ComfyUI Manager log parsers to flag the pack
+# as broken). The full-suite installer nudge is handled by a one-line
+# README hint instead of a drop-a-.bat-into-custom_nodes side effect.
+try:
+    _suite_status = "suite installed" if _suite_ok else "nodes only"
+    print(f"[Spellcaster] 4 nodes registered"
+          + (f"  •  {_extras_str.strip(' •')}" if _extras_str else "")
+          + f"  •  {_suite_status}")
+except Exception:
+    pass

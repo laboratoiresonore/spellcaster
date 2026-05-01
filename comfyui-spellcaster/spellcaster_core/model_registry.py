@@ -18,7 +18,7 @@ illustrious/zit/kontext/unknown).
 
 Usage (server-side):
 
-    from spellcaster_core.model_registry import get_registry
+    from .model_registry import get_registry
     reg = get_registry(comfy_url="http://...:8188")
     models = reg.snapshot()
     # {"checkpoints": [{"name": "...", "arch": "sdxl"}, ...], "loras": [...], ...}

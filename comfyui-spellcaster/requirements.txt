@@ -1,0 +1,10 @@
+# ComfyUI-Spellcaster runtime dependencies.
+#
+# ComfyUI already ships: torch, numpy, Pillow, aiohttp. We only list
+# deps NOT shipped with ComfyUI to keep updates fast.
+#
+# All entries are soft-pinned (>=) so we cooperate with whatever
+# version ComfyUI or other packs already installed.
+
+huggingface_hub>=0.23         # model_repair.py — CN redownload + sha probe
+zeroconf>=0.131               # presence.py LAN discovery (soft-optional)

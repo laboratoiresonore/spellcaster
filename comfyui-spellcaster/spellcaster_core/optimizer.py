@@ -7,7 +7,7 @@ Analyzes a workflow before submission and applies safe adjustments:
   4. Warns about known-problematic parameter combinations
 
 Usage:
-    from spellcaster_core.optimizer import optimize_workflow
+    from .optimizer import optimize_workflow
 
     workflow, warnings = optimize_workflow(workflow, vram_gb=16.0)
     for w in warnings:

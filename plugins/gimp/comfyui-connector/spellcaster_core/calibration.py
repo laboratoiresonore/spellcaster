@@ -11,7 +11,7 @@ This runs during installation (first-time calibration) or on-demand
 via the Wizard Guild health system. Results persist across sessions.
 
 Usage:
-    from spellcaster_core.calibration import calibrate, load_matrix
+    from .calibration import calibrate, load_matrix
 
     # Full calibration (may take 5-20 minutes depending on model count)
     matrix = calibrate("http://192.168.x.x:8188", callback=print)
@@ -36,9 +36,9 @@ try:
     from .architectures import get_arch, ARCHITECTURES
     from .preflight import preflight_workflow, get_available_nodes
 except ImportError:
-    from spellcaster_core.model_detect import classify_unet_model, classify_ckpt_model
-    from spellcaster_core.architectures import get_arch, ARCHITECTURES
-    from spellcaster_core.preflight import preflight_workflow, get_available_nodes
+    from .model_detect import classify_unet_model, classify_ckpt_model
+    from .architectures import get_arch, ARCHITECTURES
+    from .preflight import preflight_workflow, get_available_nodes
 
 
 class CompatibilityMatrix:
@@ -209,7 +209,7 @@ def _build_test_workflow(model, arch_key, lora=None, lora_strength=0.5):
     try:
         from .workflows import build_txt2img
     except ImportError:
-        from spellcaster_core.workflows import build_txt2img
+        from .workflows import build_txt2img
 
     a = get_arch(arch_key)
     if not a:

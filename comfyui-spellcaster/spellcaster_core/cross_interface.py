@@ -2,7 +2,7 @@
 
 Usage from any plugin (GIMP, Darktable, Resolve, etc):
 
-    from spellcaster_core.cross_interface import CrossInterfaceClient
+    from .cross_interface import CrossInterfaceClient
     client = CrossInterfaceClient(interface_key="gimp")
 
     # Announce liveness (call every 10s)

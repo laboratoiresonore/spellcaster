@@ -5,7 +5,7 @@ feeds the next. The pipeline handles file upload, workflow building,
 preflight, optimization, submission, and result download automatically.
 
 Usage:
-    from spellcaster_core.pipeline import Pipeline
+    from .pipeline import Pipeline
 
     # Simple generation + upscale
     Pipeline("http://192.168.x.x:8188") \\
@@ -53,9 +53,9 @@ except ImportError:
     )
     build_wan_video = build_ltx_video = None
     from _architectures import get_arch
-    from spellcaster_core.model_detect import classify_unet_model, classify_ckpt_model
-    from spellcaster_core.preflight import preflight_workflow
-    from spellcaster_core.optimizer import optimize_workflow
+    from .model_detect import classify_unet_model, classify_ckpt_model
+    from .preflight import preflight_workflow
+    from .optimizer import optimize_workflow
 
 
 class Pipeline:
@@ -421,7 +421,7 @@ class Pipeline:
                         return d[pid].get("outputs", {})
                     if st.get("status_str") == "error":
                         try:
-                            from spellcaster_core.dispatch import (
+                            from .dispatch import (
                                 extract_execution_error, has_usable_outputs,
                             )
                             err, _ = extract_execution_error(st)

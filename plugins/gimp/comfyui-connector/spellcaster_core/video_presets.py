@@ -389,7 +389,7 @@ def wan_turbo_kwargs(turbo: bool) -> dict:
 
     Usage:
 
-        from spellcaster_core import video_presets, workflows
+        from . import video_presets, workflows
         extra = video_presets.wan_turbo_kwargs(turbo=False)
         wf = workflows.build_wan_video(..., turbo=False, **extra)
 

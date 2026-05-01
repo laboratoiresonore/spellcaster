@@ -32,7 +32,7 @@ Design rules:
 
 Configuration:
 
-    from spellcaster_core import speedcoach
+    from . import speedcoach
     speedcoach.set_state_dir("/path/to/.guild_state")
     speedcoach.configure(min_sample_size=3, min_speedup_pct=30)
 

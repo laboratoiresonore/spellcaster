@@ -9,7 +9,7 @@ It was originally embedded in server.py but is extracted here to be:
   3. Centralized for prompt engineering updates
 
 USAGE:
-    from spellcaster_core.prompt_enhance import enhance_prompt
+    from .prompt_enhance import enhance_prompt
 
     enhanced = enhance_prompt(
         "cat sleeping in sunlight",

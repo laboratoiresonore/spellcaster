@@ -9,7 +9,7 @@ Complements calibration.py (which tests model/LoRA *compatibility*) — this
 module tests user *preferences*.
 
 Usage:
-    from spellcaster_core.preference_calibration import (
+    from .preference_calibration import (
         discover_models, build_comparison_set, generate_and_download,
         arch_valid_ranges, CalibrationProfile, save_profile,
     )
@@ -32,9 +32,9 @@ try:
     from .model_detect import classify_unet_model, classify_ckpt_model
     from .architectures import get_arch, ARCHITECTURES
 except ImportError:
-    from spellcaster_core.calibration import _get_opts, _submit_and_wait
-    from spellcaster_core.model_detect import classify_unet_model, classify_ckpt_model
-    from spellcaster_core.architectures import get_arch, ARCHITECTURES
+    from .calibration import _get_opts, _submit_and_wait
+    from .model_detect import classify_unet_model, classify_ckpt_model
+    from .architectures import get_arch, ARCHITECTURES
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -324,7 +324,7 @@ def build_comparison_set(model, parameter, values, prompt, neg_prompt, seed):
     try:
         from .workflows import build_txt2img
     except ImportError:
-        from spellcaster_core.workflows import build_txt2img
+        from .workflows import build_txt2img
 
     arch_key = model["arch"]
     arch = get_arch(arch_key)
@@ -424,7 +424,7 @@ def generate_and_download(server, workflow, timeout=120):
     try:
         from .preflight import preflight_workflow
     except ImportError:
-        from spellcaster_core.preflight import preflight_workflow
+        from .preflight import preflight_workflow
 
     try:
         _ok, workflow, _ = preflight_workflow(workflow, server)
@@ -455,7 +455,7 @@ def generate_and_download(server, workflow, timeout=120):
                 # if dispatch.py isn't importable in this install.
                 if status.get("status_str") == "error":
                     try:
-                        from spellcaster_core.dispatch import (
+                        from .dispatch import (
                             extract_execution_error, has_usable_outputs,
                         )
                         # Calibration tolerates partial output — if an
@@ -511,7 +511,7 @@ def generate_model_sample_rich(server, model, seed=42, timeout=180,
     try:
         from .workflows import build_txt2img
     except ImportError:
-        from spellcaster_core.workflows import build_txt2img
+        from .workflows import build_txt2img
 
     arch_key = model["arch"]
     t0 = time.time()

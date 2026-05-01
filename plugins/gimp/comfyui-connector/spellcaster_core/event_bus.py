@@ -30,7 +30,7 @@ so late subscribers can catch up.
 
 Usage:
 
-    from spellcaster_core.event_bus import EventBus
+    from .event_bus import EventBus
     bus = EventBus.default()
     bus.publish("guild.shot.ready", origin="guild", data={"shot_id": "abc"})
 

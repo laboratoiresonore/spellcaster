@@ -19,7 +19,7 @@ Usage
 
 Publisher (preferred, typed path)::
 
-    from spellcaster_core.events import GenerationFinished, publish_event
+    from .events import GenerationFinished, publish_event
     publish_event(bus, GenerationFinished(
         prompt=prompt, model=ckpt, arch="sdxl",
         image_url=url, seed=seed))
@@ -30,14 +30,14 @@ Publisher (loose path, unchanged from before)::
 
 Subscriber (typed view on a raw event dict)::
 
-    from spellcaster_core.events import parse_event
+    from .events import parse_event
     evt = parse_event(kind, data_dict)        # returns a dataclass or None
     if isinstance(evt, GenerationFinished):
         use(evt.prompt, evt.image_url)
 
 Subscriber (defensive, known-kinds catalog)::
 
-    from spellcaster_core.events import EVENT_SCHEMAS
+    from .events import EVENT_SCHEMAS
     schema = EVENT_SCHEMAS.get(kind)
     if schema is not None and not schema.validate(data):
         print("skipping malformed", kind)

@@ -5,7 +5,7 @@ uploaded inputs and generated outputs with a 1x1 transparent PNG to
 reclaim space and prevent data persistence on the server.
 
 USAGE:
-    from spellcaster_core.privacy import cleanup_server_files
+    from .privacy import cleanup_server_files
 
     # After downloading results locally:
     cleanup_server_files(comfy_url, workflow, results)

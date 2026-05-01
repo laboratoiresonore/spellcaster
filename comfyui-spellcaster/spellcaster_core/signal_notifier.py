@@ -19,7 +19,7 @@ Design:
 
 Guild bootstrap:
 
-    from spellcaster_core.signal_notifier import SignalNotifier, start_default
+    from .signal_notifier import SignalNotifier, start_default
     start_default(event_bus, signal_bridge_url, config_path)
 """
 
