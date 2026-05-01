@@ -11,7 +11,7 @@ Usage from the GIMP plug-in:
         invalidate_cache,
     )
 
-    caps = fetch_capabilities("http://<INTERNAL_HOST>:8191")
+    caps = fetch_capabilities("http://192.168.0.10:8191")
     if has_feature("sam3"):
         # Show the SAM3 button on the inline AI Actions expander
         ...
@@ -75,7 +75,7 @@ def fetch_capabilities(base_url: str,
                        timeout: float = 5.0) -> Optional[dict]:
     """Fetch the capabilities document from a capabilities-server server.
 
-    `base_url` is the caps-server origin — "http://<INTERNAL_HOST>:8191"
+    `base_url` is the caps-server origin — "http://192.168.0.10:8191"
     (NOT the ComfyUI URL on 8190; the caps server is a separate port).
     If the caller has only the ComfyUI URL, use `derive_caps_url(...)`.
 

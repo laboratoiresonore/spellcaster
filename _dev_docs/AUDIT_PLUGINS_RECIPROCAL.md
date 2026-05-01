@@ -310,7 +310,7 @@ After phase-4's sync-checker pass, ran a **parallel audit across three new surfa
 Probed the running Guild at `127.0.0.1:7777` with a valid `/reference` POST. The endpoint now works (dispatcher fix live) but replied with:
 
 ```json
-"ref_image": "C:\\Users\\redacted\\Documents\\AI\\Spellcaster\\spellcaster\\tavern\\creations\\tmp87v9modl.png"
+"ref_image": "C:\\Users\\<redacted>\\Documents\\AI\\Spellcaster\\spellcaster\\tavern\\creations\\tmp87v9modl.png"
 ```
 
 **The Guild's shot API leaks absolute local paths containing the user's account name to every caller on the LAN.** Affects every shot-returning endpoint (list, add, update, duplicate, cancel, variation, revert, restore-snapshot, archived-shots) because they all pass `scaffold.shotboard.Shot.to_dict()` verbatim.
