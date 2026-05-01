@@ -36759,8 +36759,27 @@ class Spellcaster(Gimp.PlugIn):
             import sys as _sys
             update_status.set_text("Updating...")
             btn.set_sensitive(False)
+            # UI heartbeat: pump pending GTK events between blocking
+            # urllib calls so the status label + button-disabled state
+            # actually paint, and the progress count refreshes between
+            # files. Without this, the full download (~250 files; minutes
+            # on a relayed Tailscale path) freezes the dialog at
+            # "Updating..." with no visual change, and the user assumes
+            # the plugin has hung. The download is still synchronous on
+            # the GTK main thread; this just lets the toolkit redraw.
+            def _pump():
+                try:
+                    while Gtk.events_pending():
+                        Gtk.main_iteration_do(False)
+                except Exception:
+                    pass
+            _pump()
             try:
                 _hdrs = _github_headers()
+                update_status.set_markup(
+                    '<span foreground="#FFC107">'
+                    'Fetching file list from GitHub...</span>')
+                _pump()
                 req_tree = urllib.request.Request(_GITHUB_TREE, headers=_hdrs)
                 with urllib.request.urlopen(req_tree, timeout=15) as r:
                     tree = json.loads(r.read())
@@ -36784,8 +36803,13 @@ class Spellcaster(Gimp.PlugIn):
                     update_status.set_markup('<span foreground="#FF5252">No files found on server</span>')
                     btn.set_sensitive(True)
                     return
+                _total = len(remote_files)
+                update_status.set_markup(
+                    '<span foreground="#FFC107">Found ' + str(_total) +
+                    ' files; downloading...</span>')
+                _pump()
                 updated = 0
-                for rel_path, remainder in remote_files:
+                for _i, (rel_path, remainder) in enumerate(remote_files, 1):
                     try:
                         url = f"{_RAW_BASE}/{rel_path}"
                         dest = _PLUGIN_DIR / remainder
@@ -36813,6 +36837,16 @@ class Spellcaster(Gimp.PlugIn):
                                 updated += 1
                     except Exception as e:
                         print(f"[Repair] Failed: {remainder}: {e}", file=_sys.stderr)
+                    # Repaint status + pump every 5 files (and on the
+                    # final file) so the user sees progress without
+                    # the redraw cost on every small JSON/preset file.
+                    if _i % 5 == 0 or _i == _total:
+                        update_status.set_markup(
+                            '<span foreground="#FFC107">Downloading ' +
+                            str(_i) + '/' + str(_total) + ': ' +
+                            GLib.markup_escape_text(remainder) +
+                            '</span>')
+                        _pump()
                 # Delete version file to force re-check
                 ver = _PLUGIN_DIR / ".spellcaster_version"
                 if ver.exists():
