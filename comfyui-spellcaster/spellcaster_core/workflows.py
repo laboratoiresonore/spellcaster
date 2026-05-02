@@ -703,7 +703,7 @@ def build_generate_anything(prompt_text, negative_text, seed, preset,
         )
 
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="6")
-    nf.save_image([dec_id, 0], "generated_raw", node_id="7")
+    nf.save_image_websocket([dec_id, 0], node_id="7", label="generated_raw")
 
     # ── BiRefNet background removal → transparent cutout ─────────────
     rmbg_id = nf._add("BiRefNetRMBG", {
@@ -716,7 +716,7 @@ def build_generate_anything(prompt_text, negative_text, seed, preset,
         "background_color": "#000000",
         "image": [dec_id, 0],
     }, node_id="50")
-    nf.save_image([rmbg_id, 0], "generated_object", node_id="51")
+    nf.save_image_websocket([rmbg_id, 0], node_id="51", label="generated_object")
 
     return nf.build()
 
@@ -4064,7 +4064,8 @@ def build_video_upscale(video_name, upscale_model="4x-UltraSharp.pth",
                           "format": "auto", "codec": "auto",
                           "video": ["30", 0]}},
     })
-    nf.save_image(video_ref, "gimp_video_upscale_frame", node_id="32")
+    nf.save_image_websocket(video_ref, node_id="32",
+                            label="gimp_video_upscale_frame")
 
     return nf.build()
 
@@ -4134,7 +4135,8 @@ def build_video_reactor(video_name, face_models, upscale_model="4x-UltraSharp.pt
                           "format": "auto", "codec": "auto",
                           "video": ["70", 0]}},
     })
-    nf.save_image(img_ref, "gimp_video_reactor_frame", node_id="72")
+    nf.save_image_websocket(img_ref, node_id="72",
+                            label="gimp_video_reactor_frame")
 
     return nf.build()
 
@@ -4690,7 +4692,8 @@ def build_wan_video(image_filename, preset, prompt_text, negative_text, seed,
         "85": {"class_type": "ImageFromBatch+",
                "inputs": {"image": [dec_id, 0], "start": length - 1, "length": 1}},
     })
-    nf.save_image(["85", 0], f"{prefix}_lastframe", node_id="86")
+    nf.save_image_websocket(["85", 0], node_id="86",
+                            label=f"{prefix}_lastframe")
 
     return nf.build()
 
@@ -4981,7 +4984,8 @@ def build_seedvr2_video_upscale(video_name, seed=-1,
                           "crf": 17, "pingpong": False,
                           "save_output": True}},
     })
-    nf.save_image(["3", 0], "seedvr2_upscale_frame", node_id="11")
+    nf.save_image_websocket(["3", 0], node_id="11",
+                            label="seedvr2_upscale_frame")
 
     return nf.build()
 
@@ -5670,7 +5674,8 @@ def build_klein_batch_variations(image_filename, klein_model_key, prompt_text,
     )
 
     dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="50")
-    nf.save_image([dec_id, 0], "spellcaster_klein_variations", node_id="60")
+    nf.save_image_websocket([dec_id, 0], node_id="60",
+                            label="spellcaster_klein_variations")
 
     # Optional 2x2 grid (only when count is exactly 4).
     if grid and count == 4:
@@ -5688,8 +5693,8 @@ def build_klein_batch_variations(image_filename, klein_model_key, prompt_text,
             "image3": [slot_ids[2], 0],
             "image4": [slot_ids[3], 0],
         }, node_id="75")
-        nf.save_image([grid_id, 0], "spellcaster_klein_variations_grid",
-                      node_id="80")
+        nf.save_image_websocket([grid_id, 0], node_id="80",
+                                label="spellcaster_klein_variations_grid")
 
     return nf.build()
 
@@ -6493,9 +6498,9 @@ def build_sam3_segment(image_filename, prompt, confidence=0.6,
     }, node_id="20")
 
     # Save the segmented subject (foreground on alpha from SAM3 slot 0)
-    nf.save_image([sam3_id, 0], "sam3_subject", node_id="30")
+    nf.save_image_websocket([sam3_id, 0], node_id="30", label="sam3_subject")
     # Save the mask as a separate image
-    nf.save_image([mask_img, 0], "sam3_mask", node_id="31")
+    nf.save_image_websocket([mask_img, 0], node_id="31", label="sam3_mask")
 
     return nf.build()
 
@@ -7181,7 +7186,7 @@ def build_klein_generate_object(scene_filename, prompt_text, seed,
     dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="36")
 
     # Save the raw generation (with background)
-    nf.save_image([dec_id, 0], "klein_generated", node_id="40")
+    nf.save_image_websocket([dec_id, 0], node_id="40", label="klein_generated")
 
     # ── Background removal — BiRefNet for high-quality alpha ─────────
     rmbg_id = nf._add("BiRefNetRMBG", {
@@ -7196,7 +7201,7 @@ def build_klein_generate_object(scene_filename, prompt_text, seed,
     }, node_id="50")
 
     # Save the transparent cutout
-    nf.save_image([rmbg_id, 0], "klein_object", node_id="51")
+    nf.save_image_websocket([rmbg_id, 0], node_id="51", label="klein_object")
 
     return nf.build()
 

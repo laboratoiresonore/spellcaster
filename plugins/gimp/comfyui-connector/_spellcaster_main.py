@@ -12744,11 +12744,26 @@ def _run_comfyui_workflow(server, workflow, timeout=300):
             # pre-populate _download_cache. _precache_results below
             # then short-circuits these (cache hit), and the rest of
             # the GIMP-side import path consumes them uniformly with
-            # file outputs. binary_outputs is empty in practice today
-            # (no current builder uses save_image_websocket); this
-            # fold-in is defensive for the eventual builder switch.
-            for _fmt, _blob in (getattr(result, "binary_outputs", None) or []):
-                _synth = (f"ws_inline_{uuid.uuid4().hex[:12]}.{_fmt}", "", "output")
+            # file outputs.
+            #
+            # When the builder set a discriminator label on the ws
+            # save node (multi-output builders -- e.g. "sam3_subject"
+            # vs "sam3_mask"), it arrives as the third tuple element
+            # and is embedded into the synth filename so existing
+            # downstream filename-substring filters keep matching
+            # without further code changes (e.g. "object" / "rmbg" /
+            # "lastframe" / "_grid" checks elsewhere in this file).
+            for _entry in (getattr(result, "binary_outputs", None) or []):
+                if len(_entry) >= 3:
+                    _fmt, _blob, _label = _entry[0], _entry[1], _entry[2]
+                else:  # legacy 2-tuple from a pre-OQ7 dispatcher
+                    _fmt, _blob = _entry[0], _entry[1]
+                    _label = None
+                _label_part = f"{_label}_" if _label else ""
+                _synth = (
+                    f"ws_inline_{_label_part}{uuid.uuid4().hex[:12]}.{_fmt}",
+                    "", "output",
+                )
                 _tmp = tempfile.NamedTemporaryFile(
                     suffix=f".{_fmt}",
                     prefix="spellcaster_ws_",
