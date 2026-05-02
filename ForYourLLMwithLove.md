@@ -248,7 +248,7 @@ BEFORE recommending a restart: check `git status -s | grep <affected-dir>` and w
 ## §COMMON-PITFALLS
 - never `git add -A` or `git add .` — always specific files (CLAUDE.md §11,§12)
 - never `git add -f` on gitignored (especially nsfw/)
-- never commit IPs/paths/emails/tokens → scan via `git diff --cached | grep -iE "192\.168|redacted|redacted|@gmail|ghp_"`
+- never commit IPs/paths/emails/tokens → keep your leak-pattern regex in `$HOME/.config/spellcaster/leak-pattern` (used by `.githooks/pre-commit`); scan staged diff with `git diff --cached | grep -iE "$(cat $HOME/.config/spellcaster/leak-pattern)"`
 - gitignored: config.json, guild_config.json, session_state.json, user_presets.json, .guild_state/, .claude/, nsfw/, tavern/creations/, CLAUDE.md, ForYourLLMwithLove.md
 - pluginrc: clear via `rm -f %APPDATA%/GIMP/3.2/pluginrc` when menu reg changes
 - .update files: `rm -f %APPDATA%/GIMP/3.2/plug-ins/comfyui-connector/*.update` before copying new plugin
@@ -300,7 +300,7 @@ comfyui-spellcaster/:
 Template: "<scope>: <headline verb-object>\n\n<what changed + why>\n\n<how verified>\n\nCo-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 scopes: gimp, core, server+gimp, gimp/3d, gimp/theme, gimp/restart, server+installer, docs, pack
 never skip hooks (no --no-verify unless user asks)
-verify: `git diff --cached | grep -iE "192\.168|redacted|redacted|@gmail|ghp_"` must be empty
+verify: `git diff --cached | grep -iE "$(cat $HOME/.config/spellcaster/leak-pattern)"` must be empty
 
 ## §PROMISE — invariants future-LLM should not break
 1. spellcaster_core is single source of truth;never have parallel impl in plugin

@@ -87,7 +87,7 @@ _WS_HEADER_FMT = ">II"  # 2x uint32 big-endian -- per ComfyUI server.py
 _WS_HEADER_LEN = 8
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclasses.dataclass
 class WSImageFrame:
     """One binary image frame from ComfyUI.
 
@@ -97,11 +97,17 @@ class WSImageFrame:
 
     ``image_bytes`` are the raw encoded bytes -- ready to write to a
     file or feed into PIL.Image.open(BytesIO(...)).
+
+    ``node_id`` is the workflow node id whose execution produced this
+    frame (filled in by submit_and_listen from the most recent
+    ``executing`` message). Used by the dispatcher to map a frame back
+    to a node-side label for multi-output builders.
     """
     event: int
     format: int
     image_bytes: bytes
     received_at: float  # time.monotonic() at frame receipt; for diag
+    node_id: Optional[str] = None
 
     @property
     def format_name(self) -> str:
@@ -109,7 +115,8 @@ class WSImageFrame:
 
     def __repr__(self) -> str:  # pragma: no cover - just diag
         return (f"<WSImageFrame event={self.event} "
-                f"format={self.format_name} bytes={len(self.image_bytes)}>")
+                f"format={self.format_name} bytes={len(self.image_bytes)} "
+                f"node_id={self.node_id}>")
 
 
 @dataclasses.dataclass
@@ -329,6 +336,12 @@ def submit_and_listen(
     cached_nodes: List[str] = []
     interrupted = False
     error_detail: Optional[str] = None
+    # Track which node is currently executing so binary frames can be
+    # attributed back to their producer (SaveImageWebsocket /
+    # ETN_SendImageWebSocket emit a binary frame while their node is
+    # active; ComfyUI sends `executing(node=<id>)` immediately before
+    # the node runs, then `executing(node=<next>)` when it moves on).
+    current_node_id: Optional[str] = None
     t0 = time.monotonic()
     deadline = t0 + timeout
 
@@ -363,6 +376,7 @@ def submit_and_listen(
             if isinstance(msg, (bytes, bytearray)):
                 frame = _decode_binary_frame(bytes(msg), received_at=recv_time)
                 if frame is not None:
+                    frame.node_id = current_node_id
                     binary_frames.append(frame)
                 continue
 
@@ -392,11 +406,17 @@ def submit_and_listen(
                 continue
 
             if mtype == "executing":
-                node_id = mdata.get("node")
-                if node_id is None and owner_pid == prompt_id:
+                executing_node = mdata.get("node")
+                if executing_node is None and owner_pid == prompt_id:
                     # Done signal: the prompt graph has fully executed.
                     break
-                _progress("ws.executing", str(node_id) if node_id else "")
+                current_node_id = (
+                    str(executing_node) if executing_node is not None else None
+                )
+                _progress(
+                    "ws.executing",
+                    str(executing_node) if executing_node else "",
+                )
                 continue
 
             if mtype == "executed":

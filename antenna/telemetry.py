@@ -1,8 +1,8 @@
 """GET /telemetry — structured antenna snapshot for Guild/fleet dashboards.
 
-Pattern borrowed from Spellcaster's `/api/antenna/telemetry` endpoint
-(launch/spellcaster_antenna.py) so Spellcaster's antenna emits snapshots
-compatible with any FleetTelemetry-shaped consumer.
+Emits snapshots in a FleetTelemetry-shaped schema so consuming
+dashboards can ingest Spellcaster's antenna data alongside any other
+fleet source.
 
 Schema:
 

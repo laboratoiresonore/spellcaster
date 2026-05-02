@@ -106,7 +106,7 @@ Severities: **C** = critical, **H** = high, **M** = medium, **L** = low. *(verif
 | M9 | `cross_interface.py:101-110` `CrossInterfaceClient.__init__` | `auto_heartbeat=True` spawns a daemon thread every time the client is instantiated. `_spellcaster_main.py:988` memoizes the client — good — but `_spellcaster_main.py:24404` creates a **second** client every `_cross_interface_send` call. Over a long GIMP session with many Send-to-Guild presses, N daemon heartbeat threads accumulate (only stopped on process exit). *(verified)* |
 | M10 | `server-plugin.js:455-475` `/cross/inbox` | Default `consume=1` — a single poll consumes the queue. If ST client disconnects before rendering, messages are lost. Should default `consume=0` and let the client explicitly ack. *(verified)* |
 | M11 | `server-plugin.js:1422, 1488` `buildKleinEditWorkflow` / `buildKontextEditWorkflow` | Hardcoded Klein/Kontext UNET + CLIP + VAE filenames as module constants. Missing-model check is delegated to ComfyUI (silent 500). Should fall back to `detectBestModel` on missing. *(verified)* |
-| M12 | `_spellcaster_main.py:944` | `COMFYUI_DEFAULT_URL = "http://127.0.0.1:8188"` is fine. But the live Guild config at `127.0.0.1:7777/api/config` returns `"comfyui_url":"http://<INTERNAL_HOST>:8188"` — that's a real LAN IP, which CLAUDE.md §11 says must never leak. Config file is gitignored (confirmed in CLAUDE.md §11) so this isn't a repo leak — but auditing found NSFW mode **on** (`"nsfw_mode": true`) on the user's live instance. Not a code issue, but worth flagging that `guild_config.json` must stay untracked. *(verified via live probe)* |
+| M12 | `_spellcaster_main.py:944` | `COMFYUI_DEFAULT_URL = "http://127.0.0.1:8188"` is fine. But the live Guild config at `127.0.0.1:7777/api/config` returns a `"comfyui_url"` pointing at an internal LAN host — which CLAUDE.md §11 says must never leak. Config file is gitignored (confirmed in CLAUDE.md §11) so this isn't a repo leak — but auditing found NSFW mode **on** (`"nsfw_mode": true`) on the user's live instance. Not a code issue, but worth flagging that `guild_config.json` must stay untracked. *(verified via live probe)* |
 | M13 | Agent 3 vs Agent 4 disagreement on Klein node names | Agent 3 said "class names are correct"; Agent 4 said "names hallucinated with dots/spaces". I grepped both plugins: every occurrence uses the canonical CamelCase (`Flux2KleinRefLatentController`, `Flux2KleinTextRefBalance`, `Flux2KleinColorAnchor`). Agent 4 was wrong. ✅ *(verified — non-issue)* |
 | M14 | Agent 4 claimed OOB read in `sillytavern_card.extract_text_chunks` | Re-read lines 46-80: `if data_end + 4 > n: break` runs **before** `data = png_bytes[data_start:data_end]`, and Python byte slicing is bounds-safe anyway. Agent 4 was wrong. ✅ *(verified — non-issue)* |
 
@@ -119,7 +119,7 @@ Severities: **C** = critical, **H** = high, **M** = medium, **L** = low. *(verif
 | L3 | `index.js:1044-1060` `_findLastChatImage` | Regex for markdown + `<img>` doesn't escape special chars in extracted URL. Low impact — an attacker with chat write is already privileged. |
 | L4 | `_spellcaster_main.py:24404` | `CrossInterfaceClient(interface_key="gimp")` hardcoded — but also see M9, compounding issue. |
 | L5 | `_spellcaster_main.py` auto-updater | Reviewed by structural agent: 3-tier recovery (normal → `.bak` → GitHub fresh → visible CRASHED menu) is robust. `.py` files are staged as `.update` (never live-replaced). NTFS null-byte scrub. No symlink validation in update payload — but remote is `raw.githubusercontent.com` so risk is minimal. Note: CLAUDE.md rule 13 already warns that auto-updater overwrites uncommitted local edits. |
-| L6 | `_spellcaster_main.py` no personal data | Grep confirmed: no `redacted`, `redacted`, `@gmail`, `ghp_`, `<INTERNAL_HOST>.` in source. ✅ |
+| L6 | `_spellcaster_main.py` no personal data | Grep confirmed: no identity strings, internal-host IPs, or token prefixes in source (per the project leak-pattern hook). ✅ |
 | L7 | `_spellcaster_main.py:5476-5542` WAN+LTX dispatch | Uses canonical `spellcaster_core.video_presets.wan_turbo_kwargs()` + `build_wan_video()` / `build_ltx_video()` — no duplication. ✅ Matches CLAUDE.md §16.4. |
 | L8 | `asset_gallery.py` flat cache fallback | Read-only per CLAUDE.md §15 comment — verify new code never writes the flat cache. (Not a current bug; watch for regressions.) |
 
@@ -295,7 +295,7 @@ All 5 modules synced to all four `spellcaster_core/` copies (MD5 verified identi
 
 ### 9.7 Cumulative tally
 
-6 CRITICAL, 10 HIGH originally + 5 CRITICAL, 9 HIGH discovered in phase 2/3 = **11 CRITICAL + 19 HIGH** security issues closed. All spellcaster_core copies hash-identical across 4 repos. All three files pass syntax checks where applicable (node --check, python -m ast). No personal-data leaks in any commit (scanned `<INTERNAL_HOST>.`, `redacted`, `redacted`, `@gmail`, `ghp_`).
+6 CRITICAL, 10 HIGH originally + 5 CRITICAL, 9 HIGH discovered in phase 2/3 = **11 CRITICAL + 19 HIGH** security issues closed. All spellcaster_core copies hash-identical across 4 repos. All three files pass syntax checks where applicable (node --check, python -m ast). No personal-data leaks in any commit (scan via the project's leak-pattern hook).
 
 **Restart warning (CLAUDE.md §13):** the running Guild at `127.0.0.1:7777` is still executing the pre-fix `server.py`. On next Guild restart the auto-updater will pull the fixed code. GIMP likewise needs a restart to pick up `_spellcaster_main.py` and `spellcaster_core/` updates. The NSFW auto-updater pulls from `spellcaster_NSFW` — already pushed.
 
@@ -310,7 +310,7 @@ After phase-4's sync-checker pass, ran a **parallel audit across three new surfa
 Probed the running Guild at `127.0.0.1:7777` with a valid `/reference` POST. The endpoint now works (dispatcher fix live) but replied with:
 
 ```json
-"ref_image": "C:\\Users\\<redacted>\\Documents\\AI\\Spellcaster\\spellcaster\\tavern\\creations\\tmp87v9modl.png"
+"ref_image": "C:\\Users\\<redacted>\\Documents\\AI\\<redacted>\\spellcaster\\tavern\\creations\\tmp87v9modl.png"
 ```
 
 **The Guild's shot API leaks absolute local paths containing the user's account name to every caller on the LAN.** Affects every shot-returning endpoint (list, add, update, duplicate, cancel, variation, revert, restore-snapshot, archived-shots) because they all pass `scaffold.shotboard.Shot.to_dict()` verbatim.
@@ -370,7 +370,7 @@ Added two helpers at the top of `app.js`:
 - **6 plugins/components** hardened: ST (server + UI), GIMP (main + inbox), Resolve (bridge + sync + SSE), Darktable (Lua), Guild (dispatcher + API responses + XSS), installer (bootstrap + NSFW token), ComfyUI nodes (NSFW registration + URL clamp)
 - **38 files** in `spellcaster_core/` kept byte-identical across 4 tracked repos after every phase (sync verified by MD5)
 - **4 repos pushed** on every change (spellcaster + ComfyUI-Spellcaster + ComfyUI-Spellcaster-NSFW + spellcaster_NSFW via `build_nsfw.py`)
-- **No personal data leaked** in any committed code (scan: `<INTERNAL_HOST>.`, `redacted`, `redacted`, `@gmail`, `ghp_`)
+- **No personal data leaked** in any committed code (scan via the project's leak-pattern hook)
 
 **Truly deferred items:**
 - Installer signing + version pinning (release-process change, not a code fix)

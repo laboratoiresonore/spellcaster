@@ -755,6 +755,144 @@ def test_full_inline_workflow_shape():
 
 
 # ────────────────────────────────────────────────────────────────────
+# Label discriminator (multi-output builders)
+# ────────────────────────────────────────────────────────────────────
+
+
+def test_save_image_websocket_label_attaches_meta():
+    """``label=`` writes to the node's ``_meta`` dict."""
+    nf = node_factory.NodeFactory()
+    src = nf.etn_load_image_base64("aGk=")
+    nid = nf.save_image_websocket([src, 0], label="sam3_mask")
+    wf = nf.build()
+    assert wf[nid]["_meta"] == {"label": "sam3_mask"}
+
+
+def test_save_image_websocket_no_label_omits_meta():
+    """No ``label=`` -> no ``_meta`` (preserve pre-OQ7 wire shape)."""
+    nf = node_factory.NodeFactory()
+    src = nf.etn_load_image_base64("aGk=")
+    nid = nf.save_image_websocket([src, 0])
+    wf = nf.build()
+    assert "_meta" not in wf[nid]
+
+
+def test_dispatch_workflow_ws_labels_multi_output():
+    """Two SaveImageWebsocket nodes with different labels -> dispatcher
+    threads each frame's producing node label through to
+    binary_outputs[i][2]. Mirrors the build_sam3_segment shape."""
+    pid = "label-pid"
+    img_subject = b"\x89PNG\r\nsubject"
+    img_mask = b"\x89PNG\r\nmask"
+    fake_ws = _FakeWS([
+        json.dumps({"type": "execution_start",
+                    "data": {"prompt_id": pid}}),
+        json.dumps({"type": "executing",
+                    "data": {"node": "30", "prompt_id": pid}}),
+        _bin_frame(img_subject),
+        json.dumps({"type": "executing",
+                    "data": {"node": "31", "prompt_id": pid}}),
+        _bin_frame(img_mask),
+        json.dumps({"type": "executing",
+                    "data": {"node": None, "prompt_id": pid}}),
+    ])
+
+    workflow = {
+        "30": {"class_type": "SaveImageWebsocket",
+               "inputs": {"images": ["1", 0]},
+               "_meta": {"label": "sam3_subject"}},
+        "31": {"class_type": "SaveImageWebsocket",
+               "inputs": {"images": ["2", 0]},
+               "_meta": {"label": "sam3_mask"}},
+    }
+
+    stops: List = []
+    try:
+        _patch_ws_and_post(stops, fake_ws, _make_post_response(pid))
+        result = dispatch.dispatch_workflow(
+            "http://comfy.test:8188",
+            workflow=workflow,
+            timeout=5.0, trusted=True, free_vram=False,
+            privacy=False, use_websocket=True,
+        )
+    finally:
+        _stop_all(stops)
+
+    assert result.transport == "websocket"
+    assert len(result.binary_outputs) == 2
+    # Order matches receipt order (subject first, mask second).
+    assert result.binary_outputs[0] == ("png", img_subject, "sam3_subject")
+    assert result.binary_outputs[1] == ("png", img_mask, "sam3_mask")
+
+
+def test_dispatch_workflow_ws_label_none_when_unset():
+    """Single ws save with no label -> third tuple element is None.
+    Backward compat: the GIMP fold-in handles None as 'no label'."""
+    pid = "nolabel-pid"
+    img = b"\x89PNG\r\nplain"
+    fake_ws = _FakeWS([
+        json.dumps({"type": "executing",
+                    "data": {"node": "7", "prompt_id": pid}}),
+        _bin_frame(img),
+        json.dumps({"type": "executing",
+                    "data": {"node": None, "prompt_id": pid}}),
+    ])
+
+    workflow = {
+        "7": {"class_type": "SaveImageWebsocket",
+              "inputs": {"images": ["1", 0]}},
+    }
+
+    stops: List = []
+    try:
+        _patch_ws_and_post(stops, fake_ws, _make_post_response(pid))
+        result = dispatch.dispatch_workflow(
+            "http://comfy.test:8188",
+            workflow=workflow,
+            timeout=5.0, trusted=True, free_vram=False,
+            privacy=False, use_websocket=True,
+        )
+    finally:
+        _stop_all(stops)
+
+    assert len(result.binary_outputs) == 1
+    assert result.binary_outputs[0] == ("png", img, None)
+
+
+def test_ws_image_frame_carries_node_id():
+    """``submit_and_listen`` tags each binary frame with the most recent
+    ``executing`` node's id, so the dispatcher can map frame->label."""
+    pid = "frame-tag-pid"
+    img_a = b"frame-a"
+    img_b = b"frame-b"
+    fake_ws = _FakeWS([
+        json.dumps({"type": "executing",
+                    "data": {"node": "alpha", "prompt_id": pid}}),
+        _bin_frame(img_a),
+        json.dumps({"type": "executing",
+                    "data": {"node": "beta", "prompt_id": pid}}),
+        _bin_frame(img_b),
+        json.dumps({"type": "executing",
+                    "data": {"node": None, "prompt_id": pid}}),
+    ])
+
+    stops: List = []
+    try:
+        _patch_ws_and_post(stops, fake_ws, _make_post_response(pid))
+        ws_result = comfy_ws.submit_and_listen(
+            "http://comfy.test:8188", workflow={}, timeout=5.0,
+        )
+    finally:
+        _stop_all(stops)
+
+    assert len(ws_result.binary_frames) == 2
+    assert ws_result.binary_frames[0].node_id == "alpha"
+    assert ws_result.binary_frames[0].image_bytes == img_a
+    assert ws_result.binary_frames[1].node_id == "beta"
+    assert ws_result.binary_frames[1].image_bytes == img_b
+
+
+# ────────────────────────────────────────────────────────────────────
 # Main
 # ────────────────────────────────────────────────────────────────────
 
@@ -811,6 +949,16 @@ def main() -> int:
         ("save_image_websocket class_type",
             test_save_image_websocket_emits_correct_class),
         ("full inline workflow shape", test_full_inline_workflow_shape),
+        ("save_image_websocket label attaches _meta",
+            test_save_image_websocket_label_attaches_meta),
+        ("save_image_websocket no-label omits _meta",
+            test_save_image_websocket_no_label_omits_meta),
+        ("dispatch ws labels multi-output",
+            test_dispatch_workflow_ws_labels_multi_output),
+        ("dispatch ws label None when unset",
+            test_dispatch_workflow_ws_label_none_when_unset),
+        ("WSImageFrame carries node_id",
+            test_ws_image_frame_carries_node_id),
     ]
 
     for name, fn in tests:

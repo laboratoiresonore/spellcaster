@@ -3,15 +3,15 @@
 Spellcaster — Themed Menu Icons Generator
 ==========================================
 
-Generates 9 category icons for the private-themed top-level GIMP menus
+Generates 9 category icons for the occult-themed top-level GIMP menus
 via Spellcaster's OWN build_txt2img workflow (same canonical builder
 the plugin uses at runtime — no hand-rolled JSON, no duplicated logic).
 
 Each icon targets the menubar theme it represents:
 
   💥 Summon  — magical explosion conjuring energy
-  🪆 Klein   — russian nesting private doll with floating "2"
-  🎭 Masks   — ornate tribal private mask
+  🪆 Klein   — russian nesting matryoshka doll with floating "2"
+  🎭 Masks   — ornate tribal ceremonial mask
   🕯 Sigils  — glowing runic pentagram
   ⚗ Alchemy  — bubbling alchemical flask with runes
   🔮 Scrying — crystal ball with swirling smoke
@@ -67,12 +67,12 @@ _ICONS: list[tuple[str, str]] = [
      "volumetric light, glowing core, dynamic energy waves, "
      "cinematic, masterpiece"),
     ("klein",
-     "an ornate russian matryoshka nesting private doll, carved wood "
+     "an ornate russian matryoshka nesting doll, carved wood "
      "with glowing cyan runes, a luminous golden number 2 sigil "
      "floating above its head, centered emblem icon, solid black "
      "void background, symmetrical composition, mystical lighting"),
     ("masks",
-     "an ornate tribal private ceremonial mask with glowing magenta "
+     "an ornate tribal ceremonial mask with glowing magenta "
      "eyes and intricate carved patterns, bone and obsidian "
      "material, centered emblem icon, solid black void background, "
      "symmetrical, volumetric rim light, mystical"),

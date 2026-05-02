@@ -41,9 +41,14 @@ class DispatchResult:
     populated only on the websocket path when ``SaveImageWebsocket`` /
     ``ETN_SendImageWebSocket`` are present in the workflow -- those
     nodes return image bytes via a ws binary frame instead of writing
-    to disk. Each entry is ``(format_name, image_bytes)`` where
+    to disk. Each entry is ``(format_name, image_bytes, label)`` where
     ``format_name`` is one of ``"png"``, ``"jpg"``, ``"jpeg"``,
-    ``"webp"``.
+    ``"webp"``, and ``label`` is the optional discriminator string
+    set on the producing node via
+    ``nf.save_image_websocket(..., label=...)``. ``label`` is ``None``
+    when the builder did not set one (single-output builders); it is
+    populated when a multi-output builder needs to disambiguate frames
+    (e.g. ``"sam3_subject"`` vs ``"sam3_mask"``).
 
     ``transport`` records which path produced the result so callers
     can log + branch (download via /view for ``"poll"``, decode bytes
@@ -463,8 +468,29 @@ def dispatch_workflow(server, workflow, *, timeout=300, free_vram=False,
                 f"ComfyUI execution interrupted for prompt "
                 f"{ws_result.prompt_id}")
 
+        # Map producing-node id -> label for any SaveImageWebsocket /
+        # ETN_SendImageWebSocket node that was tagged via
+        # nf.save_image_websocket(..., label="..."). The factory stores
+        # the label under the node's ``_meta`` key (a ComfyUI-recognised
+        # convention -- the server ignores ``_meta`` entries it doesn't
+        # know about).
+        _ws_save_classes = ("SaveImageWebsocket", "ETN_SendImageWebSocket")
+        _node_labels = {}
+        for _nid, _ndef in (workflow or {}).items():
+            if not isinstance(_ndef, dict):
+                continue
+            if _ndef.get("class_type") not in _ws_save_classes:
+                continue
+            _meta = _ndef.get("_meta") or {}
+            _lbl = _meta.get("label")
+            if _lbl:
+                _node_labels[str(_nid)] = str(_lbl)
         binary_outputs = [
-            (_WS_FORMAT_NAMES.get(f.format, f"fmt{f.format}"), f.image_bytes)
+            (
+                _WS_FORMAT_NAMES.get(f.format, f"fmt{f.format}"),
+                f.image_bytes,
+                _node_labels.get(f.node_id) if f.node_id is not None else None,
+            )
             for f in ws_result.binary_frames
         ]
         elapsed = ws_result.elapsed

@@ -1285,7 +1285,7 @@ class NodeFactory:
         )
 
     def etn_send_image_websocket(self, images_ref, *,
-                                  format="PNG", node_id=None):
+                                  format="PNG", label=None, node_id=None):
         """ETN_SendImageWebSocket — return image via ws binary frame
         (Acly/comfyui-tooling-nodes, GPL-3.0 sibling pack).
 
@@ -1298,6 +1298,13 @@ class NodeFactory:
             images_ref: Reference to image tensor, typically
                         [vae_decode_id, 0]
             format: "PNG" (default) or "JPEG"
+            label: Optional discriminator string surfaced as the third
+                   element of the dispatcher's
+                   ``DispatchResult.binary_outputs`` tuple. Use when a
+                   builder emits multiple ws frames and downstream code
+                   needs to tell them apart (e.g. ``"sam3_subject"`` vs
+                   ``"sam3_mask"``). Stored in the node's ``_meta``
+                   dict, which ComfyUI passes through unchanged.
 
         Returns:
             Node ID (string), but has no outputs (terminal node).
@@ -1306,13 +1313,16 @@ class NodeFactory:
         ``save_image_websocket`` (ComfyUI core class) instead.
         Identical wire format.
         """
-        return self._add(
+        nid = self._add(
             "ETN_SendImageWebSocket",
             {"images": images_ref, "format": format},
             node_id,
         )
+        if label is not None:
+            self._nodes[nid]["_meta"] = {"label": str(label)}
+        return nid
 
-    def save_image_websocket(self, images_ref, node_id=None):
+    def save_image_websocket(self, images_ref, *, label=None, node_id=None):
         """SaveImageWebsocket — return image via ws binary frame
         (ComfyUI core class -- no sibling pack required).
 
@@ -1322,15 +1332,25 @@ class NodeFactory:
         Args:
             images_ref: Reference to image tensor, typically
                         [vae_decode_id, 0]
+            label: Optional discriminator string surfaced as the third
+                   element of the dispatcher's
+                   ``DispatchResult.binary_outputs`` tuple. Use when a
+                   builder emits multiple ws frames and downstream code
+                   needs to tell them apart (e.g. ``"sam3_subject"`` vs
+                   ``"sam3_mask"``). Stored in the node's ``_meta``
+                   dict, which ComfyUI passes through unchanged.
 
         Returns:
             Node ID (string), but has no outputs (terminal node).
         """
-        return self._add(
+        nid = self._add(
             "SaveImageWebsocket",
             {"images": images_ref},
             node_id,
         )
+        if label is not None:
+            self._nodes[nid]["_meta"] = {"label": str(label)}
+        return nid
 
     def image_scale(self, image_ref, width, height,
                     upscale_method="lanczos", crop="disabled", node_id=None):

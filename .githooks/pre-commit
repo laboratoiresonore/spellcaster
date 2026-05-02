@@ -1,32 +1,44 @@
 #!/bin/bash
-# internal-core/hooks/pre-commit — credential-leak guard
+# .githooks/pre-commit — credential-leak guard
 #
-# Source-of-truth canonical hook for the Spellcaster / Spellcaster /
-# the private downstream distribution / internal-tools lattice. Mirrors the regex used by
-# Spellcaster's .claude/settings.json PreToolUse hook so that:
-#   - Claude Code commits are blocked at PreToolUse time
-#   - Plain `git commit` (terminal, IDE) is blocked at pre-commit time
-#   - Both share the same regex; if you tighten one, tighten the other
+# Blocks commits whose staged diff matches a leak-pattern regex (internal IPs,
+# identity strings, auth tokens). The pattern lives OUTSIDE this repo so the
+# public source contains no embedded PII.
 #
-# Pattern source: internal roadmap §F.6.2 Wk 1 Thu, §10.7.
-# Vendoring: copied verbatim into <repo>/.git/hooks/pre-commit.
-# Once internal-core ships (internal roadmap §C, Wk 5-19), this lives at
-# internal-core/hooks/pre-commit and consumers symlink/install it.
+# Pattern source (first match wins):
+#   1. $SPELLCASTER_LEAK_PATTERN — literal regex string in env
+#   2. $SPELLCASTER_LEAK_PATTERN_FILE — path to a file containing the regex
+#   3. $HOME/.config/spellcaster/leak-pattern — default file location
 #
-# Override (use with care, audit afterwards):
+# If no pattern is configured the hook is a silent no-op: it is a defensive aid
+# for the maintainer, not a hard gate for arbitrary clones.
+#
+# Override (use sparingly; audit afterwards):
 #   SKIP_LEAK_CHECK=1 git commit ...
 #
 # Exit codes: 0 ok, 1 blocked.
 
 set -e
 
-PATTERN='192\.168\.86\.(31|23|77|219)|redacted|redacted|@gmail\.com|ghp_[A-Za-z0-9]'
+# Resolve pattern.
+PATTERN=""
+if [ -n "${SPELLCASTER_LEAK_PATTERN:-}" ]; then
+  PATTERN="$SPELLCASTER_LEAK_PATTERN"
+elif [ -n "${SPELLCASTER_LEAK_PATTERN_FILE:-}" ] && [ -r "${SPELLCASTER_LEAK_PATTERN_FILE}" ]; then
+  PATTERN=$(cat "${SPELLCASTER_LEAK_PATTERN_FILE}")
+elif [ -r "${HOME}/.config/spellcaster/leak-pattern" ]; then
+  PATTERN=$(cat "${HOME}/.config/spellcaster/leak-pattern")
+fi
+
+# Strip trailing newline / whitespace; bail if empty.
+PATTERN=$(printf '%s' "$PATTERN" | tr -d '\r\n')
+[ -z "$PATTERN" ] && exit 0
 
 files=$(git diff --cached --diff-filter=ACMR --name-only 2>/dev/null)
 [ -z "$files" ] && exit 0
 
 # grep only existing regular files; skip symlinks / submodules; skip the
-# hook itself (its source contains the very pattern it scans for).
+# hook itself + its README (in case the configured regex matches them).
 hits=$(printf '%s\n' "$files" | while IFS= read -r f; do
   [ -f "$f" ] || continue
   case "$f" in
@@ -38,11 +50,10 @@ done)
 if [ -n "$hits" ]; then
   echo >&2 ""
   echo >&2 "================================================================"
-  echo >&2 "  pre-commit BLOCKED: personal data in staged files"
+  echo >&2 "  pre-commit BLOCKED: leak pattern matched in staged files"
   echo >&2 "================================================================"
   echo >&2 "$hits" | sed 's/^/  /' >&2
   echo >&2 ""
-  echo >&2 "  Pattern: $PATTERN"
   echo >&2 "  Sanitize before committing. To override (audit later):"
   echo >&2 "    SKIP_LEAK_CHECK=1 git commit ..."
   echo >&2 "================================================================"

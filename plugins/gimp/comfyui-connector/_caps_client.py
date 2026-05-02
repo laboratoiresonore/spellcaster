@@ -1,17 +1,17 @@
-"""the private downstream distribution-side client for the capabilities-server capabilities endpoint.
+"""Capabilities-server client.
 
-Companion to ``private-distro/caps-server/capabilities/`` — the
-server side that composes + serves the document. This module is what
-the private downstream distribution (the GIMP fork) imports to consume it.
+Companion to the server-side capabilities composer/server. This module
+is what the GIMP plug-in (and downstream forks) imports to consume the
+capabilities document.
 
 Usage from the GIMP plug-in:
 
-    from _private_caps_client import (
+    from _caps_client import (
         fetch_capabilities, has_arch, has_feature, current,
         invalidate_cache,
     )
 
-    caps = fetch_capabilities("http://192.168.0.10:8191")
+    caps = fetch_capabilities("http://example.local:8191")
     if has_feature("sam3"):
         # Show the SAM3 button on the inline AI Actions expander
         ...
@@ -53,7 +53,7 @@ from typing import Any, Optional
 # the client, very unlikely in practice).
 _KNOWN_SCHEMA = 1
 
-# Default port — must match caps-server.capabilities.DEFAULT_CAPS_PORT
+# Default port — must match the server's DEFAULT_CAPS_PORT.
 DEFAULT_CAPS_PORT = 8191
 
 # In-process cache — keyed by base URL ("http://host:port"), value is
@@ -61,8 +61,8 @@ DEFAULT_CAPS_PORT = 8191
 # plug-in's mixed thread access (UI thread + dispatch worker thread).
 _CACHE: dict[str, tuple[float, dict]] = {}
 _CACHE_LOCK = threading.Lock()
-_CACHE_TTL_SEC = 60.0    # re-fetch after a minute — the private downstream distribution's
-                          # connection is mostly steady-state
+_CACHE_TTL_SEC = 60.0    # re-fetch after a minute — the connection is
+                          # mostly steady-state
 
 _WARNED_SCHEMA: set[int] = set()
 
@@ -73,9 +73,9 @@ def fetch_capabilities(base_url: str,
                        *,
                        force: bool = False,
                        timeout: float = 5.0) -> Optional[dict]:
-    """Fetch the capabilities document from a capabilities-server server.
+    """Fetch the capabilities document from a capabilities server.
 
-    `base_url` is the caps-server origin — "http://192.168.0.10:8191"
+    `base_url` is the caps-server origin — "http://example.local:8191"
     (NOT the ComfyUI URL on 8190; the caps server is a separate port).
     If the caller has only the ComfyUI URL, use `derive_caps_url(...)`.
 
@@ -96,7 +96,7 @@ def fetch_capabilities(base_url: str,
     try:
         req = urllib.request.Request(
             url,
-            headers={"User-Agent": "private-pipeline-caps-client/1.0",
+            headers={"User-Agent": "spellcaster-caps-client/1.0",
                      "Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             body = resp.read()
@@ -107,7 +107,7 @@ def fetch_capabilities(base_url: str,
         # don't spam stderr on every poll.
         return None
     except (OSError, ValueError) as exc:
-        print(f"[private caps] non-JSON or read error from {url}: {exc}",
+        print(f"[caps] non-JSON or read error from {url}: {exc}",
               file=sys.stderr)
         return None
 
@@ -118,7 +118,7 @@ def fetch_capabilities(base_url: str,
         # Tolerate forward-version drift — log once, still use what we can.
         if isinstance(schema, int) and schema not in _WARNED_SCHEMA:
             _WARNED_SCHEMA.add(schema)
-            print(f"[private caps] schema mismatch (server={schema}, "
+            print(f"[caps] schema mismatch (server={schema}, "
                   f"client={_KNOWN_SCHEMA}); reading best-effort",
                   file=sys.stderr)
 
@@ -227,13 +227,13 @@ def server_summary(caps: Optional[dict]) -> str:
     """One-line human summary for the plug-in's status bar /
     Server Info dialog."""
     if caps is None:
-        return "capabilities-server server unreachable (caps endpoint down)."
+        return "Capabilities server unreachable (caps endpoint down)."
     srv = caps.get("server") or {}
     cv = srv.get("comfyui_version", "?")
     inst = caps.get("instance_id", "?")
     nodes = caps.get("node_count", "?")
     chan = channel(caps)
-    return (f"capabilities-server {inst} · ComfyUI {cv} · {nodes} nodes · "
+    return (f"Caps {inst} · ComfyUI {cv} · {nodes} nodes · "
             f"channel: {chan}")
 
 

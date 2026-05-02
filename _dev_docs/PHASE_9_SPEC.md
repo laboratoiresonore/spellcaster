@@ -123,7 +123,7 @@ Per `CLAUDE.md:33-39`, `spellcaster_core/` is mirrored across **six surfaces**. 
 | 3 | `../ComfyUI-Spellcaster/spellcaster_core/` | Public node repo (`laboratoiresonore/ComfyUI-Spellcaster`) | ❌ OUT OF SYNC |
 | 4 | `../ComfyUI-Spellcaster-NSFW/spellcaster_core/` | Private node repo | ❌ OUT OF SYNC |
 | 5 | `%APPDATA%/GIMP/3.2/plug-ins/comfyui-connector/spellcaster_core/` | Installed copy on this dev machine | ❌ OUT OF SYNC — refreshed by auto-updater on next GIMP launch from #1 once #1 is pushed |
-| 6 | `private-distro/plugin/comfyui-connector/spellcaster_core/` | Portable bundle (gitignored mirror) | ❌ OUT OF SYNC — refresh via distro build pipeline |
+| 6 | `<private-distro>/plugin/comfyui-connector/spellcaster_core/` | Portable bundle (gitignored mirror) | ❌ OUT OF SYNC — refresh via distro build pipeline |
 
 ### 3.1 Mirror plan (deferred — out of scope for this branch)
 
@@ -285,5 +285,5 @@ Mitigation in the wiring commit: pass the kwargs via `**({...} if ws_supported e
 - `_dev_docs/EVAL_LANGGRAPH_COMFYSCRIPT.md:72-76, 116-118, 132-139` — original "ship the lower-risk transport upgrade first" rationale
 - `_dev_docs/ARCHITECTURAL_STUDY_2026-04-30.md` — sprint-1 #3, research-doc PARTIAL items
 - `HANDOFF_SPELLCASTER.md:49-52, 122` — prep-work asks (this doc closes them out as retrospective audit) and the "DO NOT START Phase 9 yet" advisory (overtaken by `b512255` 3 hours after the handoff was written)
-- `INTERNAL_ROADMAP_2026-04-30.md:425-430` — calendar slot Wk 20–21 (delivered Wk 1)
+- internal roadmap (Wk 20–21 calendar slot — delivered Wk 1)
 - `CLAUDE.md:33-39, 65-67, 273, 277, 286-291` — six-surface mirror canon, Phase 9 status row (now stale), cross-interface "rewire" note

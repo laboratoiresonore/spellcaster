@@ -14,7 +14,7 @@ Parallel research dump (2026-04-20) on libraries / node packs / tooling Spellcas
 | 🔎 EVAL | `ComfyScript` (Chaoses-Ib) | entire `spellcaster_core/node_factory.py` (2262 LOC, 129 methods) | ~2300 | MIT | medium (big migration, some workflows may regress) |
 | 🔎 EVAL | `ComfyUI-Manager` HTTP API | custom CN install flow + prerequisite checks | ~100 | GPL-3.0 | low |
 | 🔎 EVAL | `zeroconf` | custom presence broker | ~200 | LGPL-2.1 | medium (multi-subnet + TXT-size gotchas) |
-| ❌ SKIP | `pynsist` | the private downstream distribution FirstRun.bat orchestration | ~80 | MIT | **dormant — no release since 2022** |
+| ❌ SKIP | `pynsist` | downstream-distro FirstRun.bat orchestration | ~80 | MIT | **dormant — no release since 2022** |
 | ❌ SKIP | `briefcase` | per-OS bundle batch files | ~80 | BSD-3 | **5 GB payload is outside happy path** |
 
 ---
@@ -37,7 +37,7 @@ Parallel research dump (2026-04-20) on libraries / node packs / tooling Spellcas
   Keep §26 Layer 3 resolver (`_resolve_cn_paths_in_workflow`) untouched — it matches installed filenames, doesn't care how they got there.
 - **Ship as**: add `huggingface_hub>=1.10` to the pack's `requirements.txt`; bundle builder installs into `python_embedded/`.
 
-## 2. `age` / `pyrage` — ADOPT NOW (the private downstream distribution only)
+## 2. `age` / `pyrage` — ADOPT NOW (private downstream distribution only)
 
 - **URLs**: `FiloSottile/age` (Go CLI, single 4 MB static binary, per-OS) + `woodruffw/pyrage` (Rust-backed Python bindings via `str4d/rage`). BSD-3 + MIT. Format is a C2SP-specified, independently-reviewed standard.
 - **Replaces**: every byte of our custom `.scv` (Spellcaster Encrypted Vault) format — hand-rolled scrypt KDF, header struct, AES-GCM framing in [bundle_passphrase_gate.py](../nsfw/bundle/plugin_tools/bundle_passphrase_gate.py) and the entire [ENCRYPTED_FORMAT_PLAN.md](../nsfw/bundle/docs/ENCRYPTED_FORMAT_PLAN.md) spec.
@@ -119,7 +119,7 @@ Parallel research dump (2026-04-20) on libraries / node packs / tooling Spellcas
 - **URL**: `python-zeroconf/python-zeroconf` · LGPL-2.1 · active.
 - **Replaces**: the register/list/heartbeat/unregister HTTP routes in [presence.py](../comfyui-spellcaster/presence.py) (~200 lines).
 - **Gotchas**:
-  - mDNS is link-local. Multi-subnet ComfyUI setups (user's workstation on WiFi, GPU box on wired LAN) lose discovery that our HTTP broker gets for free via `X-Forwarded-For`. That's a real use case in Spellcaster.
+  - mDNS is link-local. Multi-subnet ComfyUI setups (user's workstation on WiFi, GPU box on wired LAN) lose discovery that our HTTP broker gets for free via `X-Forwarded-For`. That's a real use case for our typical deployments.
   - TXT records cap at ~1300 bytes — tighter than our 2 KB `MAX_META_BYTES`. Capability lists would need to shorten or reshape.
   - LGPL is copyleft; dynamic-link-only is fine for a plugin pack.
 - **Verdict**: evaluate for the SINGLE-SUBNET case (would be a nice win), keep HTTP broker as the cross-subnet fallback. Probably end up running BOTH.
@@ -133,8 +133,8 @@ Parallel research dump (2026-04-20) on libraries / node packs / tooling Spellcas
 
 - Active, good library, but bundling GIMP (~300 MB) + ComfyUI Portable (3–5 GB with models) is outside its happy path.
 - macOS notarisation on a 5 GB .app is painful. AppImage has a practical ~4 GB ceiling on some filesystems.
-- If the private downstream distribution bundles stay Windows-only (current plan), briefcase is overkill for a week of setup.
-- Decision trigger: when macOS + Linux the private downstream distribution becomes a real release goal, revisit.
+- If downstream bundles stay Windows-only (current plan), briefcase is overkill for a week of setup.
+- Decision trigger: when macOS + Linux downstream bundles become a real release goal, revisit.
 
 ---
 
