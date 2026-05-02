@@ -450,7 +450,7 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
                                  mask_expand=sam3_expand,
                                  mask_blur=sam3_blur)
         final_ref = apply_sam3_scope(nf, final_ref, img_ref, _mask)
-    nf.save_image(final_ref, "gimp_comfy", node_id="8")
+    nf.save_image_websocket(final_ref, node_id="8")
 
     # 7. ControlNet injection (optional)
     # ControlNet adds spatial constraints to the diffusion process. It:
@@ -576,7 +576,7 @@ def build_txt2img(preset, prompt_text, negative_text, seed, loras=None,
             arch_key=arch_key, quality=quality, ays_node_base=675,
         )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="6")
-    nf.save_image([dec_id, 0], "gimp_comfy", node_id="7")
+    nf.save_image_websocket([dec_id, 0], node_id="7")
 
     return nf.build()
 
@@ -757,7 +757,7 @@ def build_rembg(image_filename, alpha_matting=False,
     img_id = nf.load_image(image_filename, node_id="1")
     rembg_id = nf.rembg([img_id, 0], model=model,
                          alpha_matting=alpha_matting, node_id="2")
-    nf.save_image([rembg_id, 0], "spellcaster_rembg", node_id="3")
+    nf.save_image_websocket([rembg_id, 0], node_id="3")
     return nf.build()
 
 
@@ -810,7 +810,7 @@ def build_rembg_birefnet(image_filename, model="BiRefNet-general",
         "background":        str(background),
         "background_color":  str(background_color),
     }, node_id="2")
-    nf.save_image([biref_id, 0], "spellcaster_rembg", node_id="3")
+    nf.save_image_websocket([biref_id, 0], node_id="3")
     return nf.build()
 
 
@@ -838,7 +838,7 @@ def build_ddcolor(image_filename, checkpoint="ddcolor_artistic.pth",
         "checkpoint": checkpoint,
         "model_input_size": model_input_size,
     }, node_id="2")
-    nf.save_image([dd_id, 0], "spellcaster_colorize", node_id="3")
+    nf.save_image_websocket([dd_id, 0], node_id="3")
     return nf.build()
 
 
@@ -879,7 +879,7 @@ def build_upscale(image_filename, model_name, upscale_factor=1.0) -> dict:
     up_model_id = nf.upscale_model_loader(model_name, node_id="2")
     up_id = nf.image_upscale_with_model_by_factor(
         [up_model_id, 0], [img_id, 0], upscale_factor, node_id="3")
-    nf.save_image([up_id, 0], "spellcaster_upscale", node_id="4")
+    nf.save_image_websocket([up_id, 0], node_id="4")
     return nf.build()
 
 
@@ -898,7 +898,7 @@ def build_wavespeed_upscale(image_filename, model="SeedVR2", target="2K") -> dic
     img_id = nf.load_image(image_filename, node_id="1")
     up_id = nf.wavespeed_upscale([img_id, 0], model=model,
                                   target=target, node_id="2")
-    nf.save_image([up_id, 0], "spellcaster_upscale", node_id="3")
+    nf.save_image_websocket([up_id, 0], node_id="3")
     return nf.build()
 
 
@@ -935,7 +935,7 @@ def build_normal_map(image_filename, seed=42, max_res=1024,
             upscale_method="lanczos", crop="disabled", node_id="911",
         )
         final_ref = apply_sam3_scope(nf, final_ref, [orig_resized_id, 0], _mask)
-    nf.save_image(final_ref, "spellcaster_normals", node_id="3")
+    nf.save_image_websocket(final_ref, node_id="3")
     return nf.build()
 
 
@@ -995,7 +995,7 @@ def build_lama_remove(image_filename, mask_filename=None,
         raise ValueError("build_lama_remove requires either mask_filename or sam3_prompt")
 
     lama_id = nf.lama_remover([img_id, 0], mask_ref, node_id="3")
-    nf.save_image([lama_id, 0], "spellcaster_lama", node_id="4")
+    nf.save_image_websocket([lama_id, 0], node_id="4")
     return nf.build()
 
 
@@ -1046,7 +1046,7 @@ def build_lut(image_filename, lut_name, strength,
                                  mask_expand=sam3_expand,
                                  mask_blur=sam3_blur)
         final_ref = apply_sam3_scope(nf, final_ref, img_ref, _mask)
-    nf.save_image(final_ref, "spellcaster_lut", node_id="3")
+    nf.save_image_websocket(final_ref, node_id="3")
     return nf.build()
 
 
@@ -1087,7 +1087,7 @@ def build_color_match(source_filename, reference_filename, strength=1.0,
         "method": method,
         "strength": strength,
     }, node_id="3")
-    nf.save_image([match_id, 0], "spellcaster_colormatch", node_id="4")
+    nf.save_image_websocket([match_id, 0], node_id="4")
     return nf.build()
 
 
@@ -1718,7 +1718,7 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
                                  mask_expand=sam3_expand,
                                  mask_blur=sam3_blur)
         final_ref = apply_sam3_scope(nf, final_ref, [scaled_id, 0], _mask)
-    nf.save_image(final_ref, "gimp_klein", node_id="51")
+    nf.save_image_websocket(final_ref, node_id="51")
 
     return nf.build()
 
@@ -1946,7 +1946,7 @@ def build_faceswap(target_filename, source_filename, swap_model="inswapper_128.o
             )
             result_ref = [swap2_id, 0]
 
-    nf.save_image(result_ref, "gimp_faceswap", node_id="10")
+    nf.save_image_websocket(result_ref, node_id="10")
     return nf.build()
 
 
@@ -2025,7 +2025,7 @@ def build_faceswap_model(target_filename, face_model_name,
             )
             result_ref = [swap2_id, 0]
 
-    nf.save_image(result_ref, "gimp_faceswap_model", node_id="10")
+    nf.save_image_websocket(result_ref, node_id="10")
     return nf.build()
 
 
@@ -2061,7 +2061,7 @@ def build_faceswap_mtb(target_filename, source_filename,
         [analysis_id, 0], [swap_model_id, 0],
         faces_index=faces_index, node_id="5",
     )
-    nf.save_image([swap_id, 0], "gimp_faceswap_mtb", node_id="10")
+    nf.save_image_websocket([swap_id, 0], node_id="10")
     return nf.build()
 
 
@@ -2096,7 +2096,7 @@ def build_face_restore(image_filename, model_name, facedetection,
                                  mask_expand=sam3_expand,
                                  mask_blur=sam3_blur)
         final_ref = apply_sam3_scope(nf, final_ref, img_ref, _mask)
-    nf.save_image(final_ref, "spellcaster_facerestore", node_id="3")
+    nf.save_image_websocket(final_ref, node_id="3")
     return nf.build()
 
 
@@ -2182,7 +2182,7 @@ def build_photo_restore(image_filename, upscale_model, face_model,
         [restore_id, 0], sharpen_radius=sharpen_radius,
         sigma=sigma, alpha=alpha, node_id="5",
     )
-    nf.save_image([sharpen_id, 0], "spellcaster_photorestore", node_id="6")
+    nf.save_image_websocket([sharpen_id, 0], node_id="6")
     return nf.build()
 
 
@@ -2350,7 +2350,7 @@ def build_detail_hallucinate(image_filename, upscale_model, preset,
                                  mask_expand=sam3_expand,
                                  mask_blur=sam3_blur)
         final_ref = apply_sam3_scope(nf, final_ref, img_ref, _mask)
-    nf.save_image(final_ref, "spellcaster_hallucinate", node_id="10")
+    nf.save_image_websocket(final_ref, node_id="10")
 
     # ControlNet injection (optional)
     if guide_modes and controlnet and controlnet.get("mode", "Off") != "Off":
@@ -2485,7 +2485,7 @@ def build_colorize(image_filename, preset, prompt_text, negative_text, seed,
                                  mask_expand=sam3_expand,
                                  mask_blur=sam3_blur)
         final_ref = apply_sam3_scope(nf, final_ref, img_ref, _mask)
-    nf.save_image(final_ref, "spellcaster_colorize", node_id="11")
+    nf.save_image_websocket(final_ref, node_id="11")
 
     # Optional second ControlNet (Depth)
     if guide_modes and controlnet_2 and controlnet_2.get("mode", "Off") != "Off":
@@ -2635,7 +2635,7 @@ def build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
             arch_key=arch_key, quality=quality, ays_node_base=510,
         )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="10")
-    nf.save_image([dec_id, 0], "spellcaster_controlnet", node_id="11")
+    nf.save_image_websocket([dec_id, 0], node_id="11")
 
     return nf.build()
 
@@ -2829,7 +2829,7 @@ def build_iclight(image_filename, ckpt_name, prompt, negative, seed,
                                  mask_expand=sam3_expand,
                                  mask_blur=sam3_blur)
         final_ref = apply_sam3_scope(nf, final_ref, [img_id, 0], _mask)
-    nf.save_image(final_ref, "spellcaster_iclight", node_id="9")
+    nf.save_image_websocket(final_ref, node_id="9")
 
     return nf.build()
 
@@ -2968,7 +2968,7 @@ def build_supir(image_filename, supir_model, sdxl_model, prompt, seed,
         [first_id, 0], [sample_id, 0], node_id="50",
     )
 
-    nf.save_image([decode_id, 0], "spellcaster_supir", node_id="60")
+    nf.save_image_websocket([decode_id, 0], node_id="60")
 
     # Optional ControlNet refinement post-pass
     if guide_modes and controlnet and controlnet.get("mode", "Off") != "Off":
@@ -3232,7 +3232,7 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
             "resize_source": False,
         }, node_id="96")
         final_img_ref = [composite_id, 0]
-    nf.save_image(final_img_ref, "gimp_inpaint", node_id="10")
+    nf.save_image_websocket(final_img_ref, node_id="10")
 
     # ControlNet injection (optional)
     if guide_modes and controlnet and controlnet.get("mode", "Off") != "Off":
@@ -3411,7 +3411,7 @@ def build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
         )
 
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="9")
-    nf.save_image([dec_id, 0], "spellcaster_outpaint", node_id="10")
+    nf.save_image_websocket([dec_id, 0], node_id="10")
 
     # ControlNet injection (optional — skipped for Klein which can't use CN)
     if (guide_modes and controlnet and controlnet.get("mode", "Off") != "Off"
@@ -3512,7 +3512,7 @@ def build_faceid_img2img(target_filename, face_ref_filename, preset,
             arch_key=arch_key, quality=quality, ays_node_base=515,
         )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="11")
-    nf.save_image([dec_id, 0], "gimp_faceid", node_id="12")
+    nf.save_image_websocket([dec_id, 0], node_id="12")
 
     return nf.build()
 
@@ -3608,7 +3608,7 @@ def build_pulid_flux(target_filename, face_ref_filename,
     )
 
     dec_id = nf.vae_decode([samp_id, 0], [vae_id, 0], node_id="13")
-    nf.save_image([dec_id, 0], "gimp_pulid_flux", node_id="14")
+    nf.save_image_websocket([dec_id, 0], node_id="14")
 
     return nf.build()
 
@@ -3714,7 +3714,7 @@ def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
     )
 
     dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="50")
-    nf.save_image([dec_id, 0], "gimp_klein_ref", node_id="51")
+    nf.save_image_websocket([dec_id, 0], node_id="51")
 
     return nf.build()
 
@@ -3934,8 +3934,8 @@ def build_klein_headswap(target_filename, source_filename, klein_model_key,
             [sched_id, 0], [tgt_latent_id, 0], node_id="50")
         dec_id = nf.vae_decode(
             [sample_id, 0], [vae_id, 0], node_id="60")
-        nf.save_image(
-            [dec_id, 0], "spellcaster_headswap", node_id="70")
+        nf.save_image_websocket(
+            [dec_id, 0], node_id="70")
         return nf.build()
 
     # ── BRANCH B: Legacy ReActor + Klein refinement path ─────────────
@@ -4015,7 +4015,7 @@ def build_klein_headswap(target_filename, source_filename, klein_model_key,
     )
 
     dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="60")
-    nf.save_image([dec_id, 0], "spellcaster_headswap", node_id="70")
+    nf.save_image_websocket([dec_id, 0], node_id="70")
 
     return nf.build()
 
@@ -5094,7 +5094,7 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
                                  mask_expand=sam3_expand,
                                  mask_blur=sam3_blur)
         final_ref = apply_sam3_scope(nf, final_ref, target_ref, _mask)
-    nf.save_image(final_ref, "spellcaster_style", node_id="11")
+    nf.save_image_websocket(final_ref, node_id="11")
 
     # 6. ControlNet injection (optional)
     if guide_modes and controlnet and controlnet.get("mode", "Off") != "Off":
@@ -5200,7 +5200,7 @@ def build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_t
             arch_key=arch_key, quality=quality, ays_node_base=525,
         )
     dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="9")
-    nf.save_image([dec_id, 0], "spellcaster_seedv2r", node_id="10")
+    nf.save_image_websocket([dec_id, 0], node_id="10")
 
     # 7. ControlNet injection (optional)
     if guide_modes and controlnet and controlnet.get("mode", "Off") != "Off":
@@ -5367,7 +5367,7 @@ def build_photobooth(ref_filename, prompt_text, seed,
         rembg_id = nf.rembg([restore_id, 0], alpha_matting=True, node_id="55")
         final_ref = [rembg_id, 0]
 
-    nf.save_image(final_ref, "photobooth", node_id="60")
+    nf.save_image_websocket(final_ref, node_id="60")
 
     return nf.build()
 
@@ -5463,7 +5463,7 @@ def build_klein_repose(image_filename, klein_model_key, prompt_text, seed,
 
     # Decode and save
     dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="50")
-    nf.save_image([dec_id, 0], "spellcaster_repose", node_id="60")
+    nf.save_image_websocket([dec_id, 0], node_id="60")
 
     return nf.build()
 
@@ -5553,7 +5553,7 @@ def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
     )
 
     dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="50")
-    nf.save_image([dec_id, 0], "spellcaster_blend", node_id="60")
+    nf.save_image_websocket([dec_id, 0], node_id="60")
 
     return nf.build()
 
@@ -5823,7 +5823,7 @@ def build_klein_inpaint(image_filename, mask_filename=None, prompt_text="", seed
     )
 
     dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="50")
-    nf.save_image([dec_id, 0], "spellcaster_klein_inpaint", node_id="60")
+    nf.save_image_websocket([dec_id, 0], node_id="60")
 
     return nf.build()
 
@@ -5995,7 +5995,7 @@ def build_klein_virtual_tryon(face_filename, outfit_filename, prompt_text, seed,
     )
 
     dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="50")
-    nf.save_image([dec_id, 0], "klein_tryon", node_id="51")
+    nf.save_image_websocket([dec_id, 0], node_id="51")
 
     return nf.build()
 
@@ -6068,7 +6068,7 @@ def build_klein_scene_img2img(image_filename, prompt_text, seed,
     )
 
     dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="50")
-    nf.save_image([dec_id, 0], "studio_set", node_id="60")
+    nf.save_image_websocket([dec_id, 0], node_id="60")
 
     return nf.build()
 
@@ -6217,7 +6217,7 @@ def build_klein_refine(image_filename, klein_model_key, prompt_text, seed,
     )
 
     dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="50")
-    nf.save_image([dec_id, 0], "klein_refine", node_id="51")
+    nf.save_image_websocket([dec_id, 0], node_id="51")
 
     return nf.build()
 
@@ -6357,7 +6357,7 @@ def build_klein_auto_inpaint(image_filename, mask_prompt, inpaint_prompt, seed,
     )
 
     dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="50")
-    nf.save_image([dec_id, 0], "klein_auto_inpaint", node_id="51")
+    nf.save_image_websocket([dec_id, 0], node_id="51")
 
     return nf.build()
 
@@ -6412,7 +6412,7 @@ def build_klein_color_match(target_filename, reference_filename,
         "multithread": True,
     }, node_id="10")
 
-    nf.save_image([match_id, 0], "klein_color_match", node_id="20")
+    nf.save_image_websocket([match_id, 0], node_id="20")
 
     return nf.build()
 
@@ -6553,7 +6553,7 @@ def build_sam3_extract(image_filename, prompt="person", confidence=0.6,
         }, node_id="20")
         output_ref = [crop_id, 0]
 
-    nf.save_image(output_ref, "sam3_extracted", node_id="30")
+    nf.save_image_websocket(output_ref, node_id="30")
 
     return nf.build()
 
@@ -6642,7 +6642,7 @@ def build_magic_eraser(image_filename, prompt, confidence=0.6,
     lama_id = nf.lama_remover([img_id, 0], mask_ref,
                               gaussblur_radius=int(gaussblur_radius),
                               node_id="20")
-    nf.save_image([lama_id, 0], "spellcaster_magic_eraser", node_id="30")
+    nf.save_image_websocket([lama_id, 0], node_id="30")
 
     return nf.build()
 
@@ -6896,7 +6896,7 @@ def build_klein_sam3_inpaint(image_filename, segment_prompt, inpaint_prompt, see
         "stitcher": [crop_id, 0],
         "inpainted_image": [dec_id, 0],
     }, node_id="46")
-    nf.save_image([stitch_id, 0], "klein_sam3", node_id="47")
+    nf.save_image_websocket([stitch_id, 0], node_id="47")
 
     return nf.build()
 
@@ -7032,7 +7032,7 @@ def build_klein_face_detail(image_filename, prompt_text, seed,
     }, node_id="30")
 
     # FaceDetailer output slot 0 = refined image
-    nf.save_image([detail_id, 0], "klein_face_detail", node_id="40")
+    nf.save_image_websocket([detail_id, 0], node_id="40")
 
     return nf.build()
 
@@ -7384,7 +7384,7 @@ def build_klein_detail(image_filename, preset_key, prompt_text, seed,
             "sam_mask_hint_threshold": 0.7,
             "sam_mask_hint_use_negative": "False",
         }, node_id="30")
-        nf.save_image([detail_id, 0], "klein_detail", node_id="40")
+        nf.save_image_websocket([detail_id, 0], node_id="40")
 
     else:
         # ── SAM3 path: text-prompted segmentation → Klein inpaint ──
@@ -7449,7 +7449,7 @@ def build_klein_detail(image_filename, preset_key, prompt_text, seed,
         )
 
         dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="36")
-        nf.save_image([dec_id, 0], "klein_detail", node_id="40")
+        nf.save_image_websocket([dec_id, 0], node_id="40")
 
     return nf.build()
 
@@ -7498,7 +7498,7 @@ def build_layer_blend(image_a_filename, image_b_filename, blend_factor=0.5,
     b_id = nf.load_image(image_b_filename, node_id="2")
     blend_id = nf.image_blend([a_id, 0], [b_id, 0], blend_factor, blend_mode,
                                node_id="3")
-    nf.save_image([blend_id, 0], "spellcaster_blend_ratio", node_id="4")
+    nf.save_image_websocket([blend_id, 0], node_id="4")
     return nf.build()
 
 
@@ -7568,7 +7568,7 @@ def build_upscale_blend(image_filename, model_a_name, model_b_name,
     # Blend
     blend_id = nf.image_blend([up_a_img_id, 0], [up_b_img_id, 0],
                                blend_factor, "normal", node_id="30")
-    nf.save_image([blend_id, 0], "spellcaster_upblend", node_id="40")
+    nf.save_image_websocket([blend_id, 0], node_id="40")
 
     return nf.build()
 
@@ -7987,7 +7987,7 @@ def build_qwen_edit(image_filename, unet_name, clip_name, vae_name,
                                  mask_blur=sam3_blur)
         final_ref = apply_sam3_scope(nf, final_ref, img1_ref, _mask)
 
-    nf.save_image(final_ref, "spellcaster_qwen_edit", node_id="12")
+    nf.save_image_websocket(final_ref, node_id="12")
     return nf.build()
 
 
