@@ -1,0 +1,27 @@
+# Greps tracked files for internal project names, PII, and token prefixes.
+# Fails the build on any hit. Self-excludes this file (its own pattern list
+# would otherwise always match).
+name: Leak check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: git grep for forbidden patterns
+        shell: bash
+        run: |
+          set -uo pipefail
+          patterns='Voodoomancer|voodoomancer|Whimweaver|whimweaver|Laborantin|voodoo-core|Beatweaver|whimspider|192\.168\.86|192\.168\.0\.100|lmlgg|leguillaume|@gmail\.com|MASTER_PLAN|ghp_|ghs_|gho_|ghu_'
+          if git grep -nIE "$patterns" -- ':!.github/workflows/leak-check.yml'; then
+            echo "::error::Forbidden pattern detected in tracked files (see hits above)"
+            exit 1
+          fi
+          echo "Scan clean."
