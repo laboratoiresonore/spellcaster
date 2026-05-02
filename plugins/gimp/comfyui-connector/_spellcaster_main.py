@@ -1848,10 +1848,10 @@ _FEATURE_SENTINELS: dict[str, tuple[str, ...]] = {
 def _probe_comfyui_nodes(server_url: str, timeout: float = 3.0) -> set[str]:
     """One-shot GET /object_info → set of class_type names. Empty on failure.
 
-    Also opportunistically refreshes the capabilities-server capabilities cache
+    Also opportunistically refreshes the capabilities cache
     so any future button-render code can ask `has_feature(...)` /
     `has_arch(...)` synchronously without an extra network round-trip.
-    Caps fetch failures are silent — non-capabilities-server ComfyUI installs
+    Caps fetch failures are silent — ComfyUI installs without a caps sidecar
     (no caps server on :8191) stay unaffected.
     """
     try:
@@ -1862,10 +1862,10 @@ def _probe_comfyui_nodes(server_url: str, timeout: float = 3.0) -> set[str]:
         result = set(data.keys()) if isinstance(data, dict) else set()
         # Opportunistic caps probe — sister side-effect, silent on miss.
         try:
-            from . import _private_caps_client as _caps  # type: ignore
+            from . import _caps_client as _caps  # type: ignore
         except ImportError:
             try:
-                import _private_caps_client as _caps  # type: ignore
+                import _caps_client as _caps  # type: ignore
             except ImportError:
                 _caps = None
         if _caps is not None:
@@ -1880,28 +1880,28 @@ def _probe_comfyui_nodes(server_url: str, timeout: float = 3.0) -> set[str]:
         return set()
 
 
-def private_caps(server_url: str) -> "dict | None":
-    """Return the cached capabilities-server capabilities document for this
-    server URL, or None when the caps server isn't reachable (e.g. a
-    non-capabilities-server ComfyUI install).
+def server_caps(server_url: str) -> "dict | None":
+    """Return the cached capabilities document for this server URL, or
+    None when the caps server isn't reachable (e.g. a stock ComfyUI
+    install with no caps-server sidecar).
 
     One-liner gate for any inline AI Actions / button-render code:
 
-        from _spellcaster_main import private_caps
-        from _private_caps_client import has_feature
-        if has_feature(private_caps(srv), "sam3"):
+        from _spellcaster_main import server_caps
+        from _caps_client import has_feature
+        if has_feature(server_caps(srv), "sam3"):
             # render the SAM3 button
             ...
 
-    Permissive default — when caps is None, the `_private_caps_client`
+    Permissive default — when caps is None, the `_caps_client`
     accessors return True so the plug-in stays usable on legacy
     servers without the caps endpoint.
     """
     try:
-        from . import _private_caps_client as _caps  # type: ignore
+        from . import _caps_client as _caps  # type: ignore
     except ImportError:
         try:
-            import _private_caps_client as _caps  # type: ignore
+            import _caps_client as _caps  # type: ignore
         except ImportError:
             return None
     try:
@@ -1918,9 +1918,9 @@ def _caps_preflight_feature(server_url: str, feature: str,
     Returns (allowed, reason). `allowed` is True when:
       * the caps document reports `feature_flags[feature] == True`, OR
       * the caps server is unreachable (permissive default — legacy
-        ComfyUI installs without a capabilities-server caps server stay
-        usable; the handler's existing /object_info probe is the
-        deeper safety net).
+        ComfyUI installs without a caps-server sidecar stay usable;
+        the handler's existing /object_info probe is the deeper
+        safety net).
 
     Returns False ONLY when caps explicitly says the feature is
     absent. `reason` is a friendly user-facing message in that case
@@ -1933,14 +1933,14 @@ def _caps_preflight_feature(server_url: str, feature: str,
             return procedure.new_return_values(
                 Gimp.PDBStatusType.CANCEL, GLib.Error())
     """
-    caps = private_caps(server_url)
+    caps = server_caps(server_url)
     if caps is None:
         return True, ""
     try:
-        from . import _private_caps_client as _caps  # type: ignore
+        from . import _caps_client as _caps  # type: ignore
     except ImportError:
         try:
-            import _private_caps_client as _caps  # type: ignore
+            import _caps_client as _caps  # type: ignore
         except ImportError:
             return True, ""
     if _caps.has_feature(caps, feature):
@@ -1949,7 +1949,7 @@ def _caps_preflight_feature(server_url: str, feature: str,
     summary = _caps.server_summary(caps)
     msg = (
         f"This feature ({friendly_pack}) is not installed on the "
-        f"capabilities-server server you're connected to.\n\n"
+        f"server you're connected to.\n\n"
         f"Server: {summary}\n"
         f"Channel: {chan}\n\n"
         f"To enable it: install the {friendly_pack} via ComfyUI Manager "
@@ -19929,7 +19929,7 @@ class Spellcaster(Gimp.PlugIn):
                                           "Open a floating always-on-top HUD with step progress, VRAM%, and queue depth — keeps progress visible when GIMP isn't focused."),
             "spellcaster-open-dashboard": ("Open Dashboard (web)",
                                             self._run_open_dashboard,
-                                            "Open the telemetry dashboard in the default browser. Shows live node progress, VRAM, CPU+RAM, privacy-gate status, queue, peer list, recent dispatches. Runs on 127.0.0.1:18888 when the the private downstream distribution bundle is active; probes the URL first and surfaces a hint if it's not reachable."),
+                                            "Open the telemetry dashboard in the default browser. Shows live node progress, VRAM, CPU+RAM, privacy-gate status, queue, peer list, recent dispatches. Runs on 127.0.0.1:18888 when a downstream bundle is active; probes the URL first and surfaces a hint if it's not reachable."),
             "spellcaster-magical-zoom": ("🔍 Magical Zoom (AI hallucinate)...",
                                            self._run_magical_zoom,
                                            "Select a region, run Magical Zoom: Spellcaster crops the selection, up-scales it via SeedVR2 with low-denoise img2img hallucination, and opens the result as a new image. Hallucinates detail the original didn't resolve — 'what the selection would look like at 10× closer.' Works on the current selection; if nothing's selected, the whole canvas is zoomed."),
@@ -19979,7 +19979,7 @@ class Spellcaster(Gimp.PlugIn):
 
         label, callback, doc = menu_map[name]
 
-        # ── Themed top-level menus (private / black-magic iconography)
+        # ── Themed top-level menus (occult / black-magic iconography)
         # Split into 9 thematic top-level menus so navigation becomes
         # fun and intuitive. Each category gets its own grimoire-style
         # top entry on GIMP's menu bar — users scan for the theme,
@@ -32514,9 +32514,9 @@ class Spellcaster(Gimp.PlugIn):
         # Preflight: check if SAM3 node pack is installed on the server
         srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
         # Caps-based preflight: cheap (cached), exits early with a richer
-        # error when the capabilities-server server explicitly says SAM3 is missing.
+        # error when the caps server explicitly says SAM3 is missing.
         # Falls through to the legacy /object_info probe below for non-
-        # capabilities-server ComfyUI installs (caps unreachable -> permissive).
+        # ComfyUI installs without a caps sidecar (unreachable -> permissive).
         _caps_ok, _caps_msg = _caps_preflight_feature(
             srv, "sam3", "SAM3 node pack")
         if not _caps_ok:
@@ -32649,9 +32649,9 @@ class Spellcaster(Gimp.PlugIn):
         # Preflight: check if SAM3 node pack is installed on the server
         srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
         # Caps-based preflight: cheap (cached), exits early with a richer
-        # error when the capabilities-server server explicitly says SAM3 is missing.
+        # error when the caps server explicitly says SAM3 is missing.
         # Falls through to the legacy /object_info probe below for non-
-        # capabilities-server ComfyUI installs (caps unreachable -> permissive).
+        # ComfyUI installs without a caps sidecar (unreachable -> permissive).
         _caps_ok, _caps_msg = _caps_preflight_feature(
             srv, "sam3", "SAM3 node pack")
         if not _caps_ok:
@@ -32750,9 +32750,9 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
         # Caps-based preflight: cheap (cached), exits early with a richer
-        # error when the capabilities-server server explicitly says SAM3 is missing.
+        # error when the caps server explicitly says SAM3 is missing.
         # Falls through to the legacy /object_info probe below for non-
-        # capabilities-server ComfyUI installs (caps unreachable -> permissive).
+        # ComfyUI installs without a caps sidecar (unreachable -> permissive).
         _caps_ok, _caps_msg = _caps_preflight_feature(
             srv, "sam3", "SAM3 node pack")
         if not _caps_ok:
@@ -32864,9 +32864,9 @@ class Spellcaster(Gimp.PlugIn):
             return procedure.new_return_values(Gimp.PDBStatusType.CALLING_ERROR, GLib.Error())
         srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
         # Caps-based preflight: cheap (cached), exits early with a richer
-        # error when the capabilities-server server explicitly says SAM3 is missing.
+        # error when the caps server explicitly says SAM3 is missing.
         # Falls through to the legacy /object_info probe below for non-
-        # capabilities-server ComfyUI installs (caps unreachable -> permissive).
+        # ComfyUI installs without a caps sidecar (unreachable -> permissive).
         _caps_ok, _caps_msg = _caps_preflight_feature(
             srv, "sam3", "SAM3 node pack")
         if not _caps_ok:
@@ -34669,9 +34669,9 @@ class Spellcaster(Gimp.PlugIn):
 
         dash_btn = Gtk.Button(label="📊 Dashboard")
         dash_btn.set_tooltip_text(
-            "Open the the private downstream distribution telemetry dashboard in the default "
-            "browser (live node progress, VRAM, CPU+RAM, queue, peer "
-            "list, recent dispatches). Only available when the bundle "
+            "Open the telemetry dashboard in the default browser "
+            "(live node progress, VRAM, CPU+RAM, queue, peer list, "
+            "recent dispatches). Only available when the bundle "
             "launcher is running — otherwise shows a friendly hint.")
         dash_btn.connect("clicked",
                           lambda _b: self._run_open_dashboard(
@@ -34744,11 +34744,11 @@ class Spellcaster(Gimp.PlugIn):
             Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
     def _run_open_dashboard(self, procedure, run_mode, image, drawables, config, data):
-        """Open the the private downstream distribution telemetry dashboard in the default
-        browser. Probes 127.0.0.1:18888 first — when it's not
-        reachable, surfaces a friendly hint that the dashboard only
-        ships with the the private downstream distribution bundle (the launcher starts it
-        automatically). Users who want it outside the bundle can run
+        """Open the telemetry dashboard in the default browser.
+        Probes 127.0.0.1:18888 first — when it's not reachable,
+        surfaces a friendly hint that the dashboard only ships with
+        the downstream bundle (the launcher starts it automatically).
+        Users who want it outside the bundle can run
         ``python nsfw/bundle/dashboard/server.py`` manually.
         """
         if run_mode == Gimp.RunMode.NONINTERACTIVE:
@@ -34768,7 +34768,7 @@ class Spellcaster(Gimp.PlugIn):
                 Gimp.message(
                     f"Dashboard not reachable at {url}.\n\n"
                     f"The telemetry dashboard ships with the "
-                    f"the private downstream distribution portable bundle — its launcher "
+                    f"downstream portable bundle — its launcher "
                     f"starts the dashboard automatically after "
                     f"ComfyUI becomes ready.\n\n"
                     f"To run the dashboard outside the bundle, "

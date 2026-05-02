@@ -131,7 +131,6 @@ dist/
 installer/antenna_build/
 installer/antenna_spec/
 installer/antenna_entry.py
-the private downstream distribution-*.zip
 dist/token.txt
 _embedded_token.py
 
@@ -145,7 +144,6 @@ _embedded_token.py
 /_*.txt
 /oi.json
 /shootout-list.yml
-/private-distro/
 /.playwright-mcp/
 tavern/activity.log
 tavern/shotboard.json
