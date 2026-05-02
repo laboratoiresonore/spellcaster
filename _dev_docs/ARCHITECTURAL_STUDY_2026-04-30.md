@@ -8,14 +8,13 @@
 
 ## 0. Executive summary
 
-Spellcaster is **middleware between ComfyUI and a fan of user-facing AI surfaces** (GIMP, Darktable, Krita, OBS, Photoshop, DaVinci Resolve, Blender, SillyTavern, plus a chat UI called *Wizard Guild* and a privacy-first GIMP fork called *the private downstream distribution*). The codebase enforces a **single source of truth** rule — every piece of shared logic lives in `comfyui-spellcaster/spellcaster_core/` and is mirrored to ~6 surfaces by sync rules described in `CLAUDE.md`.
+Spellcaster is **middleware between ComfyUI and a fan of user-facing AI surfaces** (GIMP, Darktable, Krita, OBS, Photoshop, DaVinci Resolve, Blender, SillyTavern, plus a chat UI called *Wizard Guild*). A separate private downstream distribution bundles Spellcaster with a custom GIMP fork; that distribution is out of scope for this public repo. The codebase enforces a **single source of truth** rule — every piece of shared logic lives in `comfyui-spellcaster/spellcaster_core/` and is mirrored to ~6 surfaces by sync rules described in `CLAUDE.md`.
 
 | Surface | Role |
 |---|---|
 | `comfyui-spellcaster/` | ComfyUI custom-node pack (4 smart nodes + 2 transport routes). **Canonical home of `spellcaster_core/`.** |
 | `tavern/` | Wizard Guild — local HTTP chat server + SPA frontend. Cross-app event bus and asset gallery host. |
 | `plugins/` | GIMP, Darktable, Krita, OBS, Photoshop, Resolve, Blender, SillyTavern integrations. |
-| `private-distro/` | Custom GIMP 3.0.4 fork bundled with Spellcaster + encrypted vault + license/caps server. Gitignored, separate private repo. |
 | `nsfw/` | Build script + patches that produce a parallel NSFW variant. Gitignored. |
 | `installer/` | PyInstaller-built Windows installer with self-update bootstrap, optional remote/antenna mode. |
 | `antenna/` | Lightweight HTTPS agent that runs on the GPU host so clients can install nodes/models remotely. |
@@ -56,15 +55,14 @@ spellcaster/
 ├── scripts/                   — automation (e.g. generate_dependencies_md.py)
 ├── tavern/                    — Wizard Guild server + SPA frontend
 ├── tests/                     — pytest suites (e2e, quality, klein, video, lora)
-├── tools/                     — small helpers (incl. llm_offload.py shim)
-└── private-distro/       — GIMP fork distro (gitignored)
+└── tools/                     — small helpers (incl. llm_offload.py shim)
 ```
 
 ### 1.2 Two parallel git repos visible
 
 The folder is a **multi-repo working tree**:
 - `spellcaster/.git` is the public-repo checkout (`origin = laboratoiresonore/spellcaster`).
-- The same directory also contains `nsfw/nsfw_repo/` (private repo) and `private-distro/.git` (private repo) as nested checkouts.
+- The same directory also contains a private NSFW checkout under `nsfw/` as a nested clone.
 - Branches in the public repo: `main`, `nsfw_main`, `test/e2e-audit`, plus the secondary `nsfw/main` remote.
 
 ---
@@ -288,126 +286,6 @@ Methods: `.load`, `.txt2img`, `.img2img`, `.upscale`, `.rembg`, `.faceswap`, `.f
 
 ---
 
-## 4. the private downstream distribution (`private-distro/` — gitignored)
-
-the private downstream distribution is a **privacy-first custom GIMP 3.0.4 fork** with Spellcaster pre-bundled, end-to-end encryption at every boundary, and a license/capabilities server.
-
-### 4.1 What it is and how it relates to Spellcaster
-
-| | Spellcaster | the private downstream distribution |
-|---|---|---|
-| **Form** | Plug-in for stock GIMP / Darktable / etc. | Bundled Windows distro: GIMP fork + plugin + theme + caps-server server |
-| **Update model** | Auto-update from GitHub on every launch | `auto_update: false` — no outbound calls |
-| **Storage** | Plain temp + privacy cleanup | ChaCha20-Poly1305 vault encryption end-to-end |
-| **Interaction** | Dialog-based menu plug-ins | Inline "✧ AI Actions" expander on every native tool |
-| **Repo** | public `laboratoiresonore/spellcaster` | private `laboratoiresonore/the private downstream distribution` |
-
-Installed layout on a user box:
-
-```
-C:/the private downstream distribution/
-├── the private downstream distribution.exe
-├── the private downstream distribution-Setup.exe
-├── data/gimp_config/        (separate from %APPDATA%/GIMP)
-└── gimp/
-    ├── bin/gimp-3.0.exe + pythonw.exe + MinGW DLLs
-    ├── lib/gimp/3.0/plug-ins/comfyui-connector/
-    └── share/gimp/3.0/      (theme + splashes + icons)
-```
-
-### 4.2 `caps-server/` — management server
-
-Entry: `caps-server/__main__.py`. Umbrella CLI dispatches to subcommands:
-
-| Subcommand | Module | Purpose |
-|---|---|---|
-| `caps` | `caps-server.capabilities.cli` | Inspect `/v1/capabilities`. |
-| `doctor` | `caps-server.doctor` | Health diag (caps + comfy + queue + review). |
-| `review` | `caps-server.review` | Daily generative-method summary. |
-| `diagnose` | `caps-server.diagnostics.get_claude_involved` | Owner-only diag capture. |
-| `activation` | `caps-server.activation_info` | Inspect encrypted `~/.caps-server` cache. |
-
-**HTTP capabilities server** (`caps-server/capabilities/caps_server.py`):
-
-| Route | Behavior |
-|---|---|
-| `GET /v1/capabilities` | Composed JSON, cached 30 s |
-| `GET /v1/capabilities?refresh=1` | Force recompose |
-| `POST /v1/cache-flush` | Drop cache |
-| `GET /healthz` | Aggregate health (200/503) |
-
-Composition (`compose.py`) folds: license channel (sfw/nsfw) + ComfyUI `/object_info` + per-arch availability + feature flags. The `_FEATURE_PROBES` dict maps feature → list of candidate node class_types (any-match, version-tolerant). Cache + lock collapse N concurrent client probes to one upstream call.
-
-**Auth** (`auth/`):
-
-- `LicenseClient` — POSTs to license server with `{license_key, machine_fingerprint, client_version}`; server returns `{token, expires_at, tier, features}`.
-- `SecureStorage` — machine-ID-derived ChaCha20-Poly1305 for `~/.caps-server/license.enc` + `token.enc`.
-- Bandwidth posture: `activate()` = the only network call. `is_activated()` / `cached_result()` = local-only. `refresh_if_due()` only hits the network within a 24 h pre-expiry grace window.
-
-Other modules:
-- `tray/` — Windows system-tray integration (NVIDIA telemetry, HUD overlay, queue status, restart).
-- `installer/` — branded Tk first-run wizard (`caps-server_setup.py`).
-- `admin/` — operator GUI for issuing license keys.
-- `license_server/` — AWS Lambda reference implementation.
-- `backend/` — ComfyUI subprocess control (start/stop/probe).
-- `diagnostics/` — `get_claude_involved.py` Tk dialog for support captures.
-
-### 4.3 `comfyui-private-pipeline/` — server-side privacy pack
-
-Custom node pack that **eliminates plaintext-on-disk windows**:
-
-- `PrivateDecryptLoadImage` — drop-in for `LoadImage`. Accepts wire-encrypted (`V1W`) envelope inline in workflow JSON. Decrypts in RAM. Plaintext PNG never touches `input/`.
-- `PrivateEncryptSaveImage` — drop-in for `SaveImage`. Encrypts before write. On-disk file is AEAD blob.
-- `GET /private-pipeline/version` — capability-detection route. The plugin probes this and transparently swaps `LoadImage`/`SaveImage` when present.
-- HKDF info string `private-wire-v1` distinct from the at-rest `private-at-rest-v1` so wire-key compromise doesn't reveal vault files.
-
-### 4.4 `plugin/comfyui-connector/` — the private downstream distribution's bundled GIMP plugin
-
-Same boot-shim split as the public plugin:
-- `comfyui-connector.py` — 228 lines, immutable.
-- `_spellcaster_main.py` — 37,180 lines (matches public plugin exactly per the canonical-sync rule).
-- `_ai_helper.py` — ~95 KB self-contained subprocess. No imports from `_spellcaster_main`. Handles 15 dispatch categories (`comfy.object_info`, `vault.save_image`, `crypto.selftest`, `sam3.*`, `inpaint.*`, `heal.*`, `lama.*`, `magic_eraser.*`, `gen.*`, `kontext.*`, `aesthetic.*`, `magical.zoom`, `detail.hallucinate`).
-- `private-pipeline_privacy/` — crypto modules:
-  - `at_rest.py` (`V1R\n` magic, `private-at-rest-v1` HKDF info) for vault files.
-  - `wire_envelope.py` (`V1W\n` + KIND, `private-wire-v1`) for IPC payloads.
-  - `transport_aead.py` (`private-transport-v1`) for future network layer.
-  - `_chacha20poly1305_pure.py` — pure-Python fallback (RFC 7539 + RFC 5869).
-
-`_caps_preflight_feature(server_url, feature, friendly_pack) → (allowed, reason)` (`_spellcaster_main.py:2297-2330`) is the API hit by the recent caps-preflight commits (d2d60ab, 8ee5fe2, 0dda01d, a284b64, 6a5916e, 4cdcab2). Permissive default when caps server unreachable; only blocks when caps says feature is explicitly absent.
-
-### 4.5 `upstream/` — GIMP 3.0.4 source tree
-
-Full GIMP source. the private downstream distribution-specific edits live in `private-distro/src/` and are replayed onto `upstream/` by `scripts/apply_patches.py`. Build phases:
-- **Phase 2** (framework): `gimp-ai.c/.h` IPC client to `_ai_helper.py`; `gimp-tool-ai.c/.h` for the tool-options-panel expander builder.
-- **Phase 3** (per-tool AI actions): patches on 11 native tools (Bucket Fill, Eraser, Heal, Fuzzy Select, Free Select, Rectangle Select, Crop, Clone, Move, Paintbrush + 1 more), each registering ~2 AI actions in `class_init`.
-- **Phase 4** (in progress): right-click context menu + `gimpprivatedashboard.c/.h` server-status pill.
-
-### 4.6 `scripts/`
-
-- `apply_patches.py` — replays `src/` patches onto `upstream/`.
-- `generate_integrity_manifest.py` — SHA-256 manifest for Layer-3 version check.
-- `generate_private_icons.py` / `_ai.py` — icon generation.
-- `llm_delegate.py` — token-discipline helper. Defers copy/style/naming/log work to LM Studio on the GPU box (LAN host:1234, configured per dev environment), default model `qwen2.5-14b-instruct`.
-- `private_selftest.py` — boot crypto self-test.
-- `push_to_theo.py`, `fix_execution_error_leaks.py`, `comfy_slim.py`, `bug_patterns.py` — utilities.
-
-### 4.7 Distribution
-
-`dist/the private downstream distribution-3.0.4-win64/` is the packaged output:
-
-```
-dist/the private downstream distribution-3.0.4-win64/
-├── the private downstream distribution.exe          (PyInstaller, never rcedit'd)
-├── the private downstream distribution-Setup.exe
-├── the private downstream distribution-ForceUpdate.bat
-├── data/gimp_config/
-└── gimp/
-```
-
-Bundle config locks the dark-purple-gold theme and AI-optimized canvas templates. `auto_update: false` is the canon.
-
----
-
 ## 5. Plugin layer (`plugins/`)
 
 | Plugin | Lines | Entry | Comfy access | Maturity |
@@ -434,7 +312,7 @@ The shim provides 3-tier recovery (`comfyui-connector.py:50-228`):
 
 **Procedure registration (`do_query_procedures`, ~line 19389-19648):** v3 strategy = denylist (user disabled features in `config.json["disabled_features"]`) + allowlist from probe-cache (`config.json["features_probe"]`, TTL 1 h, populated by hitting ComfyUI `/object_info` once per session). Plus a validation gate (post-2026-04-25): `spellcaster_settings.json["validation"]["broken"]` from the installer's tiny test-workflow runs disables broken capabilities so users never see broken menu entries. Drift guard: SHA-1 of sorted procedure names; if changed, purges pluginrc.
 
-**Caps preflight (`_caps_preflight_feature`, ~line 1913-1960):** in-session cached per-feature gate. Looks up `_FEATURE_SENTINELS` (e.g. `"klein_flux2": ("Flux2KleinRefLatentController", "Flux2KleinTextRefBalance")` — any-match). Plus the the private downstream distribution caps client (`_private_caps_client.py`) for vendor-specific gates. Recent commits (Apr 27-28) wired this into 32 handlers: 15 Klein, 7 video, 5 SAM3, 4 ReActor, 2 LaMa.
+**Caps preflight (`_caps_preflight_feature`, ~line 1913-1960):** in-session cached per-feature gate. Looks up `_FEATURE_SENTINELS` (e.g. `"klein_flux2": ("Flux2KleinRefLatentController", "Flux2KleinTextRefBalance")` — any-match). Plus the capabilities-server client (`_caps_client.py`) for vendor-specific gates. Recent commits (Apr 27-28) wired this into 32 handlers: 15 Klein, 7 video, 5 SAM3, 4 ReActor, 2 LaMa.
 
 **Auto-updater (`spellcaster_core/auto_updater.py`):** primitives for `safe_remainder` path validation, `git_blob_sha1`, `acquire_lock` with 10-min staleness, `fetch_latest_sha`, `fetch_tree` from GitHub. Stages downloads as `*.update` files; the boot shim commits them on next launch. `comfyui-connector.py` is in the protected set.
 
@@ -626,13 +504,13 @@ LoRA shootout matrix (~26 KB) — list of LoRAs × architectures × prompts for 
 | SHA | Subject |
 |---|---|
 | baab417 | gitignore: defensive credential patterns |
-| d2d60ab | plugin: dedup redundant klein_enhancer caps preflight (mirror of private-distro 3b28a30) |
+| d2d60ab | plugin: dedup redundant klein_enhancer caps preflight |
 | 8ee5fe2 | plugin: caps preflight on 2 LaMa-using handlers |
 | 0dda01d | plugin: caps preflight on 4 ReActor handlers |
 | a284b64 | plugin: caps preflight on 7 video handlers |
 | 6a5916e | plugin: caps-based preflight on 15 Klein handlers |
 | 4cdcab2 | plugin: caps-based preflight on 5 SAM3 handlers |
-| 35f3458 | plugin: add capabilities-server capabilities client + helper to SFW canonical |
+| 35f3458 | plugin: add capabilities-server client + helper to SFW canonical |
 | 8a0e4c2 | docs(readme): add self-updating callout |
 | aea5945 | feat(installer): every .exe self-updates from GitHub on every launch |
 | 0fadd44 | fix(installer): six more edge cases |
@@ -683,7 +561,6 @@ The single untracked file is `_dev_docs/EVAL_LANGGRAPH_COMFYSCRIPT.md` (created 
 | Guild server | **stdlib only** (optional `pystray` + `Pillow` for tray) |
 | GIMP plugin | **stdlib only** (must run inside GIMP's bundled Python) |
 | ComfyUI extension (`comfyui-spellcaster/requirements.txt`) | adds `huggingface_hub>=1.10`, `pyrage`, `websockets`, `sseclient-py`, optionally `zeroconf` (per Sprint 1/2 adoption) |
-| the private downstream distribution caps-server | stdlib + `cryptography` (for ChaCha20-Poly1305 if not pure-Python fallback) + `pystray` for tray |
 | ComfyUI itself | torch, transformers, diffusers, insightface, etc. — out of Spellcaster's scope |
 
 ### 9.2 ComfyUI custom-node packs (from `installer/manifest.json`)
@@ -835,7 +712,6 @@ A grep across `comfyui-spellcaster/spellcaster_core/` for `TODO|FIXME|XXX|HACK` 
 - **SillyTavern doesn't heartbeat** (`AUDIT_CROSS_APP_DISCOVERY.md`): everyone sees ST as offline in `/api/interfaces` even when running.
 - **No "intent" metadata on AssetRecord**: receivers can't tell whether to use an asset as a layer, reference, or I2V seed.
 - **Websockets + ETN inline transport unwired** (this doc §11).
-- **the private downstream distribution Phase 4 in progress**: right-click context menu + dashboard pill.
 
 ### 14.3 Architectural debts called out by audits
 - ST/DT/Resolve still depend on Guild for video — Option C.2 routes specced but not implemented.
@@ -857,7 +733,7 @@ User clicks "Filters → Spellcaster → Text to Image"
   └─→ _caps_preflight_feature(server_url, "txt2img_<arch>", "Spellcaster")
         └─→ Hits ComfyUI /object_info (cached, 1 h TTL)
             └─→ Maps required nodes via _FEATURE_SENTINELS
-            └─→ Optionally calls capabilities-server :8191 /v1/capabilities (graceful fallback)
+            └─→ Optionally calls the caps-server sidecar :8191 /v1/capabilities (graceful fallback)
         └─→ Returns (allowed, reason). Permissive default if caps server unreachable.
 
   └─→ build_txt2img(NodeFactory(), preset) [from spellcaster_core.workflows]
@@ -916,7 +792,6 @@ The same path runs on the Guild (substituting "user typed in chat" for "user ope
 | How does the GIMP plugin self-recover? | 3-tier: backup → GitHub fresh → "CRASHED" menu shim |
 | What's the in-flight refactor? | 88 staged files: `from spellcaster_core.X` → `from .X` |
 | What's the next sprint? | Sprint A: python-websockets + ETN inline transport |
-| Where is the private downstream distribution? | `private-distro/` (gitignored, separate repo) |
 | What's in `nsfw/`? | Build script + patches for the NSFW variant (gitignored) |
 
 ---
@@ -928,7 +803,6 @@ The same path runs on the Guild (substituting "user typed in chat" for "user ope
 - `_dev_docs/` — all 9 markdown files
 - `tavern/server.py`, `guild_launcher.py`, `guild_tray.py`, `wizard-guild.spec`, `guild_config.json`, `signal_bridge_config.json`, `shotboard.json`, `activity.log`, all character cards
 - `comfyui-spellcaster/__init__.py`, `presence.py`, `blob_bus.py`, `pyproject.toml`, `requirements.txt`, every file in `spellcaster_core/`
-- `private-distro/CLAUDE.md`, `README.md`, `STATUS.md`, all of `caps-server/`, `comfyui-private-pipeline/`, `plugin/comfyui-connector/`, `scripts/`
 - All eight `plugins/*/` subdirectories
 - `installer/` (install.py, bootstrap.py, manifest.json, manual_update.py, antenna_*)
 - `antenna/` and `launcher.py`

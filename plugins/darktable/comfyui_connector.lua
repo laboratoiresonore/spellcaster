@@ -2387,7 +2387,7 @@ end
 --   Node 2: Image Rembg (background removal)
 --   Node 3: SaveImage (output with alpha channel)
 --
--- Settings are hardcoded from validated Spellcaster pipeline (DO NOT CHANGE):
+-- Settings are hardcoded from a validated pipeline (DO NOT CHANGE):
 --   - transparency: true (output has alpha channel)
 --   - model: "isnet-general-use" (general-purpose, not anime/portrait-specific)
 --   - post_processing: false (no edge smoothing; can cause artifacts)

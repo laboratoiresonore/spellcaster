@@ -976,9 +976,7 @@ _ST_BRANCH = "release"
 # Search paths: relatives of this file, then common user install locations
 _home = os.path.expanduser("~")
 _ST_SEARCH_PATHS = [
-    # ── Relative to this file (tavern/) — spellcaster project layout ──
-    os.path.join(BUNDLE_DIR, '..', '..', 'spellcaster-st'),        # spellcaster sibling
-    os.path.join(BUNDLE_DIR, '..', '..', '..', 'spellcaster-st'),  # parent sibling
+    # ── Relative to this file (tavern/) ──
     os.path.join(BUNDLE_DIR, '..', 'sillytavern'),                 # inside spellcaster
     os.path.join(BUNDLE_DIR, 'sillytavern'),                       # inside tavern
     # ── Common user install locations ──
