@@ -3,9 +3,9 @@
 Thin wrapper around antenna.telemetry.collect_snapshot(cfg). See that
 module's docstring for schema + design notes.
 
-The schema is compatible with Spellcaster's FleetTelemetry consumer
-(antenna_id, timestamp, cpu/ram/gpu/vram, per-service extras) so the
-same dashboard code can ingest both.
+The schema follows the FleetTelemetry shape (antenna_id, timestamp,
+cpu/ram/gpu/vram, per-service extras) so any fleet dashboard can
+ingest it alongside other sources.
 """
 from __future__ import annotations
 

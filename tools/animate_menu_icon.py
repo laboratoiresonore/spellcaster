@@ -44,10 +44,10 @@ _PROMPTS: dict[str, str] = {
                 "pulsing and radiating outward, the neon sparks drifting "
                 "and crackling, subtle rotation, looping mystical energy, "
                 "cinematic volumetric light"),
-    "klein":  ("the wooden private doll idly breathing, the glowing cyan "
+    "klein":  ("the wooden matryoshka doll idly breathing, the glowing cyan "
                 "runes on its surface pulsing softly, the golden number "
                 "2 above slowly rotating, mystical atmosphere"),
-    "masks":  ("the tribal private mask slowly tilting, the glowing "
+    "masks":  ("the tribal ceremonial mask slowly tilting, the glowing "
                 "magenta eyes pulsing and flickering, ambient mystical "
                 "smoke drifting past, cinematic"),
     "sigils": ("the runic pentagram slowly rotating, the cyan runes "

@@ -39,7 +39,6 @@ def find_sillytavern(explicit_dir=None):
     home = Path.home()
     candidates = [
         # Sibling directories
-        REPO_ROOT.parent / "spellcaster-st",
         REPO_ROOT.parent / "SillyTavern",
         REPO_ROOT.parent / "sillytavern",
         REPO_ROOT / "sillytavern",

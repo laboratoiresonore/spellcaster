@@ -258,7 +258,7 @@ def _build_routes(cfg: dict[str, Any]) -> dict[tuple[str, str], Callable]:
               file=sys.stderr)
 
     # R60b: telemetry snapshot (GPU/RAM/queue-depth) for fleet dashboards.
-    # Schema is compatible with Spellcaster's FleetTelemetry consumer.
+    # Schema is compatible with the FleetTelemetry consumer.
     try:
         from .endpoints import telemetry_ep
         routes[("GET", "/telemetry")] = telemetry_ep.snapshot

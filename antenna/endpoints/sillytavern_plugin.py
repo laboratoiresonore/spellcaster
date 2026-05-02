@@ -62,7 +62,6 @@ def _candidate_dirs() -> list[Path]:
     for parent in list(here.parents)[:4]:
         candidates.append(parent.parent / "SillyTavern")
         candidates.append(parent.parent / "sillytavern")
-        candidates.append(parent.parent / "spellcaster-st")
 
     # Dedupe while preserving order
     seen = set()
