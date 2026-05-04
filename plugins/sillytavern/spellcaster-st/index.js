@@ -686,6 +686,50 @@ function registerSlashCommands() {
         helpString: 'Restyle the current character\'s avatar. Original is backed up automatically — use /restyle-undo to revert.',
     }));
 
+    // /restyle-passport [extra-style] — Regen the active char's avatar as a
+    // passport-style portrait (front-facing, plain studio backdrop, soft
+    // light). Vision-LLM (Ollama qwen2.5-vl) reads the existing avatar to
+    // extract appearance facts; Klein 2 photobooth re-photographs at fixed
+    // 1024×1024 with ReferenceLatent identity preservation. Result is the
+    // ideal SOURCE image for downstream PuLID/ReActor face-swap chains.
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'restyle-passport',
+        callback: async (args, value) => {
+            const context = getContext();
+            const char = context.characters[context.characterId];
+            if (!char) return 'No character selected';
+            if (!char.avatar) return 'Character has no avatar';
+
+            toastr.info(`Capturing passport portrait for ${char.name}...`, 'Spellcaster');
+            try {
+                const avatarRes = await fetch(`/characters/${char.avatar}`);
+                const avatarBlob = await avatarRes.blob();
+                const base64 = await blobToBase64(avatarBlob);
+
+                const result = await spellcasterAPI('/restyle-passport', {
+                    image_base64: base64,
+                    extra_style: value || '',
+                });
+
+                if (!result.images?.[0]) return 'Passport regen failed';
+
+                await spellcasterAPI('/save-avatar', {
+                    avatar_filename: char.avatar,
+                    image_base64: result.images[0].base64,
+                });
+
+                const note = result.harvest_ok
+                    ? 'vision-LLM appearance harvest succeeded'
+                    : 'vision-LLM unavailable, used generic passport prompt';
+                toastr.success(`${char.name} re-photographed (${note}). Original backed up — /restyle-undo to revert.`, 'Spellcaster');
+                return `![passport](data:image/png;base64,${result.images[0].base64})`;
+            } catch (e) {
+                return `Error: ${e.message}`;
+            }
+        },
+        helpString: 'Re-photograph the active character\'s avatar as a passport-style portrait (ideal for face-swap source). Optional argument adds a style modifier. Original is backed up — /restyle-undo to revert.',
+    }));
+
     // /restyle-all [style] — Restyle ALL character avatars in current group/chat
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'restyle-all',
