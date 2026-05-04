@@ -21,6 +21,12 @@ let COMFYUI_URL = 'http://127.0.0.1:8188';
 // overridden via the settings endpoint.
 let GUILD_URL = 'http://127.0.0.1:7777';
 
+// Ollama URL — used by /restyle-passport for vision-LLM appearance
+// extraction (qwen2.5-vl-7b describes the avatar's face). The per-
+// request body may pass `ollama_url` to override this default.
+let OLLAMA_URL = 'http://127.0.0.1:11434';
+let OLLAMA_VISION_MODEL = 'qwen2.5-vl-7b';
+
 // Backgrounds directory (SillyTavern stores them here)
 let BG_DIR = '';
 
@@ -541,6 +547,16 @@ function init(router) {
             if (bad) return res.status(400).json({ ...bad, field: 'guild_url' });
             GUILD_URL = raw;
         }
+        if (req.body.ollama_url) {
+            const raw = String(req.body.ollama_url).replace(/\/+$/, '');
+            const bad = _rejectUnsafeUrl(raw);
+            if (bad) return res.status(400).json({ ...bad, field: 'ollama_url' });
+            OLLAMA_URL = raw;
+        }
+        if (req.body.ollama_vision_model) {
+            OLLAMA_VISION_MODEL = String(req.body.ollama_vision_model).trim()
+                || OLLAMA_VISION_MODEL;
+        }
         if (req.body.backgrounds_dir) {
             const d = String(req.body.backgrounds_dir);
             if (!path.isAbsolute(d)) return res.status(400).json({ error: 'backgrounds_dir must be absolute' });
@@ -584,6 +600,8 @@ function init(router) {
             status: 'ok',
             comfyui_url:     COMFYUI_URL,
             guild_url:       GUILD_URL,
+            ollama_url:      OLLAMA_URL,
+            ollama_vision_model: OLLAMA_VISION_MODEL,
             bg_dir:          BG_DIR,
             image_model:     SPELLCASTER_IMAGE_MODEL,
             video_backend:   SPELLCASTER_VIDEO_BACKEND,
@@ -1047,6 +1065,55 @@ function init(router) {
             res.json({
                 status: 'ok',
                 engine: usedEngine,
+                images: result.images.map(i => ({ base64: i.base64, filename: i.filename })),
+            });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    // ── Restyler passport regen ────────────────────────────────────
+    // Re-photograph the active character at passport-photo conditions
+    // (front-facing, plain studio backdrop, even softbox light) so the
+    // result is an ideal SOURCE image for downstream face-swap pipelines.
+    //
+    // Vision LLM (Ollama qwen2.5-vl) reads the existing avatar to
+    // extract structured appearance facts; those facts are templated
+    // into a Klein-friendly passport prompt; Klein 2 generates with
+    // ReferenceLatent identity preservation.
+    router.post('/restyle-passport', async (req, res) => {
+        try {
+            const { image_base64, ollama_url, ollama_vision_model,
+                    extra_style } = req.body || {};
+            if (!image_base64) return res.status(400).json({ error: 'image_base64 required' });
+            const bad = _rejectOversizedB64(image_base64);
+            if (bad) return res.status(413).json(bad);
+
+            // 1. Vision-LLM appearance harvest (graceful fallback).
+            const facts = await harvestAppearance(
+                image_base64, ollama_url, ollama_vision_model,
+            );
+            const harvestOk = !!facts;
+            const promptBase = buildPassportPrompt(facts || {});
+            const prompt = extra_style
+                ? `${promptBase}, ${String(extra_style).trim()}`
+                : promptBase;
+
+            // 2. Upload reference image, build Klein photobooth workflow.
+            const imgBuf = Buffer.from(image_base64, 'base64');
+            const uploadName = `spellcaster_passport_${Date.now()}.png`;
+            await uploadToComfyUI(imgBuf, uploadName);
+            const workflow = buildKleinPhotoboothWorkflow(uploadName, prompt);
+
+            // 3. Dispatch + return. Caller saves over the avatar; we
+            // just return the bytes so the client can preview first.
+            const result = await dispatchWorkflow(workflow);
+            res.json({
+                status: 'ok',
+                engine: 'klein-photobooth',
+                harvested: facts || null,
+                harvest_ok: harvestOk,
+                prompt,
                 images: result.images.map(i => ({ base64: i.base64, filename: i.filename })),
             });
         } catch (e) {
@@ -2203,6 +2270,167 @@ function buildKleinEditWorkflow(imageName, instruction, opts = {}) {
         }},
         "9":  { "class_type": "SaveImage", "inputs": {
             "filename_prefix": "Spellcaster_edit_klein",
+            "images": ["50", 0],
+        }},
+    };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Restyler — passport regen pipeline
+// ═══════════════════════════════════════════════════════════════════
+//  Three-piece flow used by /restyle-passport:
+//    1. harvestAppearance(): vision-LLM (Ollama qwen2.5-vl) reads the
+//       avatar and returns {age, gender, build, skin, hair, eyes,
+//       features}. Mirrors spellcaster_core/vision_harvest.py — keep
+//       PASSPORT_PROMPT_TEMPLATE / _PASSPORT_FIELDS in sync.
+//    2. buildPassportPrompt(): renders the harvest into Klein-friendly
+//       passport text (front-facing, plain backdrop, soft light).
+//    3. buildKleinPhotoboothWorkflow(): Klein 9B + ReferenceLatent at
+//       fixed 1024×1024 with passport guidance. Identity is preserved
+//       by Klein's ReferenceLatent — no ReActor needed for clean input.
+
+const _PASSPORT_FIELDS = ["age","gender","build","skin","hair","eyes","features"];
+const _PASSPORT_DEFAULTS = {
+    age: "30", gender: "person", build: "average", skin: "neutral",
+    hair: "natural", eyes: "expressive eyes", features: "approachable face",
+};
+const _PASSPORT_EXTRACTION_PROMPT =
+    "Look at this person's face and describe their physical appearance in " +
+    "concise comma-separated facts. Return ONLY a JSON object with these " +
+    'keys (no commentary, no markdown): "age", "gender", "build", "skin", ' +
+    '"hair", "eyes", "features". If unsure of a field, give a best-effort ' +
+    "guess from visual context.";
+
+const PASSPORT_PROMPT_TEMPLATE = (f) =>
+    `professional passport photograph of a ${f.age}yo ${f.build} ${f.gender}, ` +
+    `${f.skin} skin, ${f.hair} hair, ${f.eyes}, ${f.features}, neutral expression, ` +
+    `looking directly at camera, plain studio backdrop, even softbox lighting, ` +
+    `sharp focus on face, shoulders visible, photorealistic, 50mm lens, ` +
+    `shallow depth of field`;
+
+/**
+ * Call Ollama vision model to extract appearance facts from an image.
+ * Returns null on any failure (server down, model missing, malformed
+ * response). Defensive at network boundary; never throws.
+ */
+async function harvestAppearance(imageB64, ollamaUrl, model, timeoutMs = 60000) {
+    const url = (ollamaUrl || OLLAMA_URL).replace(/\/+$/, '') + '/api/generate';
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    let raw;
+    try {
+        const r = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: model || OLLAMA_VISION_MODEL,
+                prompt: _PASSPORT_EXTRACTION_PROMPT,
+                images: [imageB64],
+                stream: false,
+                format: 'json',
+            }),
+            signal: ctrl.signal,
+        });
+        if (!r.ok) { console.warn(`harvestAppearance: HTTP ${r.status}`); return null; }
+        raw = await r.json();
+    } catch (e) {
+        console.warn('harvestAppearance: request failed', e.message);
+        return null;
+    } finally { clearTimeout(t); }
+    if (raw.error) { console.warn('harvestAppearance: ollama error', raw.error); return null; }
+    let text = String(raw.response || '').trim();
+    if (text.startsWith('```')) {
+        text = text.replace(/^```[a-zA-Z]*\n?/, '').replace(/\n?```$/, '').trim();
+    }
+    let parsed = null;
+    try { const j = JSON.parse(text); if (j && typeof j === 'object') parsed = j; }
+    catch (e) {
+        // Per-field regex fallback for partially-broken JSON.
+        parsed = {};
+        for (const k of _PASSPORT_FIELDS) {
+            const m = text.match(new RegExp(`"${k}"\\s*:\\s*"([^"]*)"`, 'i'));
+            if (m) parsed[k] = m[1];
+        }
+    }
+    const facts = {};
+    let any = false;
+    for (const k of _PASSPORT_FIELDS) {
+        const v = String(parsed[k] || '').trim();
+        if (v) any = true;
+        facts[k] = v;
+    }
+    if (!any) { console.warn('harvestAppearance: empty facts'); return null; }
+    return facts;
+}
+
+function buildPassportPrompt(facts) {
+    const safe = {};
+    for (const k of _PASSPORT_FIELDS) {
+        safe[k] = (facts && String(facts[k] || '').trim()) || _PASSPORT_DEFAULTS[k];
+    }
+    return PASSPORT_PROMPT_TEMPLATE(safe);
+}
+
+/**
+ * Klein 2 photobooth workflow at fixed 1024×1024 — passport-style.
+ * Identity is preserved by Klein's ReferenceLatent on the input image.
+ * Higher steps + cfg vs the edit workflow because we want a clean
+ * studio portrait, not a subtle remix.
+ */
+function buildKleinPhotoboothWorkflow(imageName, prompt, opts = {}) {
+    const { steps = 24, guidance = 3.5, denoise = 1.0,
+            width = 1024, height = 1024 } = opts;
+    const seed = Math.floor(Math.random() * 2147483647);
+    return {
+        "1":  { "class_type": "UNETLoader", "inputs": {
+            "unet_name": KLEIN_UNET, "weight_dtype": "default",
+        }},
+        "2":  { "class_type": "CLIPLoader", "inputs": {
+            "clip_name": KLEIN_CLIP, "type": "flux2", "device": "default",
+        }},
+        "3":  { "class_type": "VAELoader", "inputs": { "vae_name": FLUX2_VAE }},
+        "4":  { "class_type": "CLIPTextEncode", "inputs": {
+            "text": prompt, "clip": ["2", 0],
+        }},
+        "5":  { "class_type": "ConditioningZeroOut", "inputs": {
+            "conditioning": ["4", 0],
+        }},
+        "10": { "class_type": "LoadImage", "inputs": { "image": imageName }},
+        "11": { "class_type": "ImageScaleToTotalPixels", "inputs": {
+            "image": ["10", 0], "upscale_method": "lanczos", "megapixels": 1.0,
+            "resolution_steps": 1,
+        }},
+        "12": { "class_type": "VAEEncode", "inputs": {
+            "pixels": ["11", 0], "vae": ["3", 0],
+        }},
+        "20": { "class_type": "ReferenceLatent", "inputs": {
+            "conditioning": ["4", 0], "latent": ["12", 0],
+        }},
+        "21": { "class_type": "ReferenceLatent", "inputs": {
+            "conditioning": ["5", 0], "latent": ["12", 0],
+        }},
+        "22": { "class_type": "EmptySD3LatentImage", "inputs": {
+            "width": width, "height": height, "batch_size": 1,
+        }},
+        "30": { "class_type": "CFGGuider", "inputs": {
+            "model": ["1", 0], "positive": ["20", 0], "negative": ["21", 0],
+            "cfg": guidance,
+        }},
+        "31": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "euler" }},
+        "32": { "class_type": "BasicScheduler", "inputs": {
+            "model": ["1", 0], "scheduler": "simple",
+            "steps": steps, "denoise": denoise,
+        }},
+        "33": { "class_type": "RandomNoise", "inputs": { "noise_seed": seed }},
+        "40": { "class_type": "SamplerCustomAdvanced", "inputs": {
+            "noise": ["33", 0], "guider": ["30", 0], "sampler": ["31", 0],
+            "sigmas": ["32", 0], "latent_image": ["22", 0],
+        }},
+        "50": { "class_type": "VAEDecode", "inputs": {
+            "samples": ["40", 0], "vae": ["3", 0],
+        }},
+        "9":  { "class_type": "SaveImage", "inputs": {
+            "filename_prefix": "Spellcaster_passport",
             "images": ["50", 0],
         }},
     };
