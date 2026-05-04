@@ -19,7 +19,7 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          patterns='Voodoomancer|voodoomancer|Whimweaver|whimweaver|Laborantin|voodoo-core|Beatweaver|whimspider|192\.168\.86|192\.168\.0\.100|lmlgg|leguillaume|@gmail\.com|MASTER_PLAN|ghp_|ghs_|gho_|ghu_'
+          patterns='Voodoomancer|voodoomancer|Whimweaver|whimweaver|Laborantin|voodoo-core|Beatweaver|whimspider|\bTheo\b|\btheo\b|192\.168\.86|192\.168\.0\.100|lmlgg|leguillaume|@gmail\.com|MASTER_PLAN|ghp_|ghs_|gho_|ghu_'
           if git grep -nIE "$patterns" -- ':!.github/workflows/leak-check.yml'; then
             echo "::error::Forbidden pattern detected in tracked files (see hits above)"
             exit 1

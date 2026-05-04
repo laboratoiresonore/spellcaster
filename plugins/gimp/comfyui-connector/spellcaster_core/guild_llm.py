@@ -43,7 +43,7 @@ import urllib.error
 _STATUS_LOCK = threading.Lock()
 _STATUS = {
     "backend": None,    # "ollama" | "comfyui" | "kobold" | None
-    "host": None,       # human label — "Local", "Theo", hostname, etc.
+    "host": None,       # human label — "Local", "LAN", hostname, etc.
     "host_url": None,   # raw url (no personal data leaked to UI layer)
     "state": "idle",    # "idle" | "busy" | "reloading" | "unloaded" | "error"
     "model": None,
@@ -91,7 +91,7 @@ def _host_label(url):
         return alias
     if host.replace(".", "").isdigit():
         return "LAN"
-    # Just the first dotted part — "theo.local" → "theo"
+    # Just the first dotted part — "host.local" → "host"
     return host.split(".")[0].capitalize()
 
 

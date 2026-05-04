@@ -16,11 +16,6 @@ on:
 #   * spellcaster-installer-llm     (experimental LLM-enabled installer)
 #   * spellcaster-manual-update     (repair / update tool)
 #   * wizard-guild                  (standalone Wizard Guild launcher)
-#
-# The NSFW build intentionally has no job here — NSFW distribution is
-# handled by the private spellcaster_NSFW repo's own workflow (the
-# build.yml gets copied into the NSFW staging by nsfw/build_nsfw.py
-# and runs from there with NSFW patches already applied to the source).
 
 jobs:
   build-windows:

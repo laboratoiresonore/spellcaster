@@ -675,7 +675,7 @@ async function refreshActiveInterfaces() {
 }
 
 // Per-app control matrix, refreshed alongside interfaces. Shape:
-//   { comfyui: {target:"theo"}, ollama: {target:"local"}, ... }
+//   { comfyui: {target:"server"}, ollama: {target:"local"}, ... }
 // The ⚡ Start button calls /api/app_control/start, which reads this
 // matrix's `target` to pick the host (local subprocess or antenna).
 window.appControlMatrix = window.appControlMatrix || {};
@@ -2917,7 +2917,7 @@ async function checkLlmAndGenerateNames() {
     }
     // Kick off the recurring status poll once chat/probe landed.
     // The poll surfaces live backend transitions (Local:Ollama →
-    // Theo:ComfyUI → "Reloading…") that the one-shot probe can't see.
+    // Server:ComfyUI → "Reloading…") that the one-shot probe can't see.
     _startLlmStatusPoll();
 }
 
