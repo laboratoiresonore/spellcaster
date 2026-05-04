@@ -11648,7 +11648,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
         elif self.path == '/api/llm_status':
             # Live LLM snapshot for the sidebar indicator. Updated by
             # spellcaster_core.guild_llm.chat() on every call so the UI
-            # can show "LLM: Theo:ComfyUI" with state transitions
+            # can show "LLM: Server:ComfyUI" with state transitions
             # (idle → busy → idle, or reloading while a model swap is
             # in flight). See guild_llm.get_status() for field docs.
             try:
@@ -13761,7 +13761,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
 
         elif self.path == '/api/app_control/config' and self.command == 'POST':
             # Persist per-app control settings. Shape:
-            #   {"app_control": {"comfyui": {"target": "theo"}, ...}}
+            #   {"app_control": {"comfyui": {"target": "server"}, ...}}
             # Target is either "local" (Guild spawns via subprocess) or
             # the hostname of a paired antenna (Guild forwards to it).
             # The legacy `auto_start` flag is silently dropped — the
@@ -13772,7 +13772,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
             if not isinstance(new_matrix, dict):
                 return self.end_json(400, {
                     "error": "app_control must be an object",
-                    "hint": '{"app_control": {"comfyui": {"target": "theo"}}}',
+                    "hint": '{"app_control": {"comfyui": {"target": "server"}}}',
                 })
             # R139: allow kobold_rp and kobold_tts here. Without them
             # the bulk-save silently dropped TTS/STT routing — the
@@ -13814,7 +13814,7 @@ class GuildHandler(SimpleHTTPRequestHandler):
         elif self.path == '/api/app_control/start' and self.command == 'POST':
             # Launch an app on its configured target machine. Body:
             #   {"app": "comfyui"}   (uses stored target)
-            #   {"app": "comfyui", "target": "theo"}  (override)
+            #   {"app": "comfyui", "target": "server"}  (override)
             app = (data.get("app") or "").strip().lower()
             if app not in ("comfyui", "ollama", "kobold",
                             "kobold_rp", "kobold_tts"):

@@ -14,7 +14,7 @@ home sees:
   - local: GIMP ●       (heartbeat from their own GIMP plugin)
   - local: Darktable ●
   - remote (<hostname>): ComfyUI ●   (heartbeat from antenna on the LAN)
-  - remote (Theo): Ollama ●
+  - remote (server): Ollama ●
 
 Namespacing
 -----------
