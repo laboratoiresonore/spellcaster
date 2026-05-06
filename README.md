@@ -522,6 +522,18 @@ Spellcaster doesn't reinvent the wheel — it duct-tapes together the best wheel
 
 ---
 
+## Part of the Laboratoire Sonore ecosystem
+
+[Le Laboratoire Sonore](https://github.com/laboratoiresonore) maintains three public projects:
+
+- 🪄 [**Spellcaster**](https://github.com/laboratoiresonore/spellcaster) — this repo. AI image generation hidden behind one menu (GIMP / Darktable / DaVinci Resolve / chat UI).
+- 🔧 [**ComfyUI-Spellcaster**](https://github.com/laboratoiresonore/ComfyUI-Spellcaster) — the four architecture-aware nodes that drive Spellcaster, installable on their own for ComfyUI users who don't want the full menu integration.
+- 🎚️ [**BeatWeaver**](https://github.com/laboratoiresonore/beatweaver) — DJ overlay tool for non-musicians. Detects BPM + key in real time, lets you layer 32 hand-tuned synth presets in the right key on top of any track.
+
+All fully local. Open-source when we can, always local. Talk to us on [r/Spellcaster_Studio](https://www.reddit.com/r/Spellcaster_Studio/).
+
+---
+
 <p align="center">
   <sub>
     Made with unhealthy amounts of coffee, mass delusion, and a GPU that sounds like a jet engine.<br/>
