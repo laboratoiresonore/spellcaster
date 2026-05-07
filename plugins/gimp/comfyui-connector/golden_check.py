@@ -587,7 +587,12 @@ def test_faceid_img2img():
     assert wf["3"]["class_type"] == "LoadImage"  # face reference
     assert wf["4"]["class_type"] == "IPAdapterFaceID"
     assert wf["9"]["class_type"] == "KSampler"
-    assert wf["9"]["inputs"]["model"] == ["4", 0]  # Model from FaceID
+    # Model now flows IPAdapterFaceID(4) -> PerturbedAttentionGuidance(615)
+    # -> KSampler(9). PAG was added as a quality boost between FaceID
+    # and the sampler; the original direct ["4", 0] wire is gone.
+    assert wf["615"]["class_type"] == "PerturbedAttentionGuidance"
+    assert wf["615"]["inputs"]["model"] == ["4", 0]
+    assert wf["9"]["inputs"]["model"] == ["615", 0]
     return True, "faceid_img2img", ""
 
 
@@ -762,19 +767,25 @@ def test_klein_img2img_ref():
 
 
 def test_klein_headswap():
-    """Test build_klein_headswap structure — BasicScheduler for denoise."""
+    """Test build_klein_headswap structure with no face_model -- the
+    ReActor face-swap stage is now CONDITIONAL on a saved face_model
+    being passed; without one, the source image flows directly into
+    Klein refinement (the original "swap then refine" pipeline became
+    "swap optionally, then refine"). This test pins the no-face-model
+    branch; ``test_klein_headswap_face_model`` covers the ReActor
+    branch separately."""
     wf = build_klein_headswap(
         "target.png", "source.png", "Klein 9B",
         "a portrait", 42, denoise=0.35, steps=20,
     )
-    # Face swap stage
+    # Inputs
     assert wf["1"]["class_type"] == "LoadImage"
     assert wf["1"]["inputs"]["image"] == "target.png"
     assert wf["2"]["class_type"] == "LoadImage"
     assert wf["2"]["inputs"]["image"] == "source.png"
-    assert wf["10"]["class_type"] == "ReActorFaceSwapOpt"
-    assert wf["10o"]["class_type"] == "ReActorOptions"
-    assert wf["10b"]["class_type"] == "ReActorFaceBoost"
+    # No ReActor stage when face_model is None -- nodes 10, 10o, 10b
+    # are intentionally absent here.
+    assert "10" not in wf
     # Klein refinement stage
     assert wf["20"]["class_type"] == "UNETLoader"
     assert wf["21"]["class_type"] == "CLIPLoader"
@@ -785,7 +796,7 @@ def test_klein_headswap():
     assert wf["42"]["inputs"]["denoise"] == 0.35
     assert wf["40"]["class_type"] == "CFGGuider"
     assert wf["50"]["class_type"] == "SamplerCustomAdvanced"
-    assert wf["70"]["class_type"] == "SaveImage"
+    assert wf["70"]["class_type"] == "SaveImageWebsocket"
     return True, "klein_headswap", ""
 
 
@@ -913,7 +924,7 @@ def test_wan_video():
     assert wf["83"]["class_type"] == "VHS_VideoCombine"
     assert wf["83"]["inputs"]["frame_rate"] == 64.0  # 16 * 4 (interpolated)
     # Last frame
-    assert wf["86"]["class_type"] == "SaveImage"
+    assert wf["86"]["class_type"] == "SaveImageWebsocket"
     return True, "wan_video", ""
 
 
