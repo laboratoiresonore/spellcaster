@@ -429,9 +429,58 @@ _RAW_BASE      = f"https://raw.githubusercontent.com/{_GITHUB_REPO}/main"
 _GIMP_PLUGIN_PREFIX = "plugins/gimp/comfyui-connector/"
 _CORE_LIB_PREFIX    = "comfyui-spellcaster/spellcaster_core/"
 
+def _spellcaster_load_runtime_github_token():
+    """Read a fresh PAT from the first existing .github_token drop-file.
+
+    Returning None means "no token configured" -- the caller falls back
+    to unauthenticated requests (60 req/hr per IP). With a token the
+    limit jumps to 5000/hr, which is what most Repair Update flows
+    need to avoid 403/rate-limited stalls.
+
+    Lookup order (first hit wins): env var, ComfyUI output folder
+    (Windows + POSIX layouts), plugin dir, home dir.
+    """
+    import os as _os
+    v = _os.environ.get("SPELLCASTER_GITHUB_TOKEN", "")
+    if v.strip():
+        return v.strip()
+    home = _os.path.expanduser("~")
+    candidates = [
+        _os.path.join(home, "ComfyUI", "ComfyUI", "output", ".github_token"),
+        _os.path.join(home, "ComfyUI", "output", ".github_token"),
+        r"C:\ComfyUI\output\.github_token",
+        r"D:\ComfyUI\output\.github_token",
+        _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                       ".github_token"),
+        _os.path.join(home, ".spellcaster_github_token"),
+    ]
+    for p in candidates:
+        try:
+            if _os.path.isfile(p):
+                with open(p, "r", encoding="utf-8-sig") as f:
+                    tok = f.read().strip()
+                if tok and len(tok) >= 30 and (tok.startswith("ghp_") or tok.startswith("github_pat_")):
+                    return tok
+        except Exception:
+            continue
+    return None
+
+
 def _github_headers():
-    """Return HTTP headers for GitHub API/raw requests."""
-    return {"User-Agent": "spellcaster-gimp/2.0"}
+    """Return HTTP headers for GitHub API/raw requests.
+
+    Adds an Authorization header when a runtime-managed PAT is present
+    (see _spellcaster_load_runtime_github_token for the lookup order).
+    Without a token the requests stay unauthenticated, which works for
+    public-repo reads but is capped at 60 req/hr per IP -- a busy
+    Repair Update Now cycle can hit that cap mid-fetch and the dialog
+    hangs at "Fetching file list..." until the GTK redraw catches up.
+    """
+    h = {"User-Agent": "spellcaster-gimp/2.0"}
+    tok = _spellcaster_load_runtime_github_token()
+    if tok:
+        h["Authorization"] = f"token {tok}"
+    return h
 
 # Theme variants — mirror the Wizard Guild's per-architecture palette
 # (ARCH_META in tavern/static/app.js). Each variant rewrites the core
