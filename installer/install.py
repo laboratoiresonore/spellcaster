@@ -3996,7 +3996,44 @@ def step_install_plugins(paths: dict, server_url: str, dry_run: bool = False):
         if gimp_src:
             dest = paths["gimp"] / gimp_src.name
             print(f"  {C_CYAN}Installing GIMP plugin…{C_RESET}")
+
+            # Source-tree sanity: the modern layout is bootstrap (~10 KB)
+            # + _spellcaster_main.py (~2 MB). A monolithic
+            # comfyui-connector.py >50 KB plus no _spellcaster_main.py
+            # means we're shipping a stale pre-bootstrap bundle and the
+            # user will get a working-but-feature-stripped plug-in
+            # (Mini-HUD missing, etc.). Surface it loud.
+            _src_main = gimp_src / "_spellcaster_main.py"
+            _src_boot = gimp_src / "comfyui-connector.py"
+            if not _src_main.exists() and _src_boot.exists():
+                try:
+                    _boot_sz = _src_boot.stat().st_size
+                except OSError:
+                    _boot_sz = 0
+                if _boot_sz > 50_000:
+                    print(f"  {C_YELLOW}WARNING: source bundle is "
+                          f"pre-bootstrap layout (comfyui-connector.py "
+                          f"is {_boot_sz // 1024} KB and "
+                          f"_spellcaster_main.py is missing). Recent "
+                          f"features (Mini-HUD, modern boot shim) will "
+                          f"NOT be delivered. Re-build the installer "
+                          f"from a fresh checkout.{C_RESET}")
+
             copy_plugin(gimp_src, dest, dry_run)
+
+            # Post-copy sanity: confirm _spellcaster_main.py actually
+            # landed. Bootstrap can self-heal on first GIMP launch (it
+            # downloads the file from GitHub if missing) but flagging
+            # the gap up front avoids silent half-installs.
+            if not dry_run and dest.is_dir():
+                _out_main = dest / "_spellcaster_main.py"
+                if not _out_main.exists():
+                    print(f"  {C_YELLOW}WARNING: _spellcaster_main.py "
+                          f"did not land at {dest}. Bootstrap should "
+                          f"self-heal on first GIMP launch -- if the "
+                          f"plug-in features still seem missing, copy "
+                          f"plugins/gimp/comfyui-connector/_spellcaster_"
+                          f"main.py from the repo manually.{C_RESET}")
 
             # Bundle spellcaster_core alongside the plugin so the shim
             # imports resolve without needing the full repo tree.
