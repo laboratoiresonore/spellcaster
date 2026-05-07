@@ -483,10 +483,46 @@ def install_gimp_plugin(gimp_path: Path, server_url: str, dry_run: bool = False)
     gimp_path.mkdir(parents=True, exist_ok=True)
     dest = gimp_path / gimp_src.name
 
+    # Source-tree sanity: the modern layout is bootstrap (~10 KB) +
+    # _spellcaster_main.py (~2 MB). A monolithic comfyui-connector.py
+    # >50 KB plus no _spellcaster_main.py means we're about to deliver
+    # a stale pre-bootstrap layout (regression seen 2026-05-07: user's
+    # rebuild reinstalled without the Mini-HUD because their build
+    # bundle was older than the bootstrap split). Surface it loud
+    # instead of silently shipping a half-broken plug-in.
+    src_main = gimp_src / "_spellcaster_main.py"
+    src_boot = gimp_src / "comfyui-connector.py"
+    if not src_main.exists() and src_boot.exists():
+        try:
+            boot_sz = src_boot.stat().st_size
+        except OSError:
+            boot_sz = 0
+        if boot_sz > 50_000:
+            log_warn(
+                "WARNING: source tree is pre-bootstrap layout "
+                "(comfyui-connector.py is %d KB and _spellcaster_main.py "
+                "is missing). Recent features (Mini-HUD, modern boot "
+                "shim) will not be delivered. Re-clone the repo and "
+                "re-run." % (boot_sz // 1024)
+            )
+
     # Full copy (rmtree + copytree to replace stale files)
     if dest.exists():
         shutil.rmtree(dest)
     shutil.copytree(gimp_src, dest)
+
+    # Post-copy sanity: confirm both parts of the modern layout landed.
+    # If either is missing the GIMP plug-in will load but key features
+    # (HUD, status bar, scaffolds) will silently no-op.
+    out_main = dest / "_spellcaster_main.py"
+    if not out_main.exists():
+        log_warn(
+            "WARNING: _spellcaster_main.py did not land in {} -- "
+            "auto-update should self-heal on first GIMP launch, but "
+            "if features are missing, copy plugins/gimp/comfyui-"
+            "connector/_spellcaster_main.py from the repo manually."
+            .format(dest)
+        )
     log_ok(f"GIMP plugin → {dest}")
 
     # Write config.json with remote server URL
