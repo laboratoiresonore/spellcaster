@@ -192,9 +192,44 @@ if SpellcasterClass is not None:
     # Normal boot — hand off to the real plugin
     Gimp.main(SpellcasterClass.__gtype__, sys.argv)
 else:
-    # All recovery failed — register a visible error so the user
-    # sees "Spellcaster CRASHED" in the Filters menu instead of
-    # the plugin silently vanishing.
+    # ── Recovery: write the error to disk + register a CRASHED menu entry ──
+    #
+    # The menu entry is registered as Gimp.ImageProcedure attached to
+    # <Image>/Filters, which means it's greyed out unless GIMP has at
+    # least one image open. That's a real footgun: a user who launches
+    # GIMP after a crash with no image loaded can SEE "Spellcaster
+    # CRASHED" but can't click it -- exactly the moment they need
+    # diagnostic info the most.
+    #
+    # Mitigation, in order of robustness:
+    #   1. Dump the boot error + recovery hints to ``_boot_error.txt``
+    #      next to the plugin so the user can open it in Notepad and
+    #      send it for support (or read it themselves) without needing
+    #      to fight GIMP's menu sensitivity.
+    #   2. Mirror the same text to stderr (visible in GIMP's Error
+    #      Console window when it's open).
+    #   3. Still register the menu entry for users who do have an
+    #      image open and discover it the natural way.
+    #
+    # We can't switch to Gimp.Procedure (image-independent) here
+    # because GIMP 3's <Image>/Filters menu path is image-context
+    # regardless; the procedure type doesn't override the menu's
+    # sensitivity. So we lean on the on-disk dump + stderr instead.
+    _recovery_msg = (
+        "Spellcaster failed to load:\n\n"
+        f"{_boot_error or 'Unknown error'}\n\n"
+        "Recovery was attempted automatically but failed.\n"
+        "Run spellcaster-manual-update.exe to repair,\n"
+        "or delete the plugin folder and reinstall:\n"
+        f"  {_DIR}\n"
+    )
+    try:
+        (_DIR / "_boot_error.txt").write_text(_recovery_msg, encoding="utf-8")
+    except Exception:
+        pass
+    print("[Spellcaster Shim] " + _recovery_msg.replace("\n", " | "),
+          file=sys.stderr)
+
     class SpellcasterCrashed(Gimp.PlugIn):
         def do_set_i18n(self, name):
             return False
@@ -207,7 +242,7 @@ else:
                 self, name, Gimp.PDBProcType.PLUGIN,
                 self._show_error, None)
             proc.set_menu_label(
-                "!! Spellcaster CRASHED — click for recovery !!")
+                "!! Spellcaster CRASHED — see _boot_error.txt for details !!")
             proc.add_menu_path("<Image>/Filters")
             proc.set_documentation(
                 "Spellcaster failed to load", _boot_error or "Unknown error", name)
@@ -216,13 +251,7 @@ else:
             return proc
 
         def _show_error(self, proc, run_mode, image, drawables, config, data):
-            Gimp.message(
-                f"Spellcaster failed to load:\n\n"
-                f"{_boot_error}\n\n"
-                f"Recovery was attempted automatically but failed.\n"
-                f"Run spellcaster-manual-update.exe to repair,\n"
-                f"or delete the plugin folder and reinstall:\n"
-                f"  {_DIR}\n")
+            Gimp.message(_recovery_msg)
             return proc.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
     Gimp.main(SpellcasterCrashed.__gtype__, sys.argv)
