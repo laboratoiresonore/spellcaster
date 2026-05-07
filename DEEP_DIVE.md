@@ -4,9 +4,7 @@ Everything the [README](README.md) intentionally left out. Architecture, subsyst
 
 > ### 🤖 Working on this codebase with an LLM?
 >
-> An ultra-dense, LLM-optimised orientation file lives at **[ForYourLLMwithLove.md](ForYourLLMwithLove.md)** ([raw download](https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main/ForYourLLMwithLove.md)). Feed it to your model at session start — 24 KB / ~7 K tokens covering the 5-copy sync rule, every `build_*` function, the 3-layer ControlNet resolution system, the GIMP-subprocess quirks, every NSFW / personalisation injection point with file:line refs, the dispatch pipeline, and 10 invariants future contributors must not break. It's deliberately terse — not meant for humans, but makes an LLM productive in one pass.
->
-> Humans get CLAUDE.md (unpublished by design, kept local) for long-form project notes, and this file (DEEP_DIVE.md) for the guided tour below.
+> Feed your model this DEEP_DIVE.md at session start — it's the guided tour through the architecture, every `build_*` function, the 3-layer ControlNet resolution system, the GIMP-subprocess quirks, the dispatch pipeline, and the invariants future contributors must not break.
 
 ---
 
