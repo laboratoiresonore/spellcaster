@@ -511,6 +511,31 @@ def install_gimp_plugin(gimp_path: Path, server_url: str, dry_run: bool = False)
         shutil.rmtree(dest)
     shutil.copytree(gimp_src, dest)
 
+    # Bundle the spellcaster_core package alongside the plugin. The
+    # _spellcaster_main.py + _nodes/_workflows_v2/_architectures shims
+    # all do ``from spellcaster_core.X import ...``; the canonical
+    # source lives at ../comfyui-spellcaster/spellcaster_core/ in the
+    # repo, so it's NOT included by the recursive copytree above.
+    # Without this step the plug-in raises
+    # ``ModuleNotFoundError: spellcaster_core`` at first import and the
+    # bootstrap shim's CRASHED dialog fires (regression observed
+    # 2026-05-07: Mini-HUD missing because this bundling was absent
+    # from install_remote.py while present in install.py).
+    _core_src = install._find_spellcaster_core()
+    if _core_src and _core_src.is_dir():
+        core_dest = dest / "spellcaster_core"
+        if core_dest.exists():
+            shutil.rmtree(core_dest)
+        shutil.copytree(_core_src, core_dest)
+        log_ok(f"spellcaster_core → {core_dest}")
+    else:
+        log_warn(
+            "WARNING: spellcaster_core/ source not found -- the GIMP "
+            "plug-in will crash on first launch. Re-run from a fresh "
+            "checkout (the canonical source lives at "
+            "comfyui-spellcaster/spellcaster_core/)."
+        )
+
     # Post-copy sanity: confirm both parts of the modern layout landed.
     # If either is missing the GIMP plug-in will load but key features
     # (HUD, status bar, scaffolds) will silently no-op.
