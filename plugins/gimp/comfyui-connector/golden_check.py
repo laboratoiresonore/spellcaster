@@ -88,8 +88,8 @@ def test_rembg():
                   "alpha_matting_erode_size": 10,
                   "background_color": "none",
               }},
-        "3": {"class_type": "SaveImage",
-              "inputs": {"images": ["2", 0], "filename_prefix": "spellcaster_rembg"}},
+        "3": {"class_type": "SaveImageWebsocket",
+              "inputs": {"images": ["2", 0]}},
     }
     ok, msg = dict_equal(wf, expected)
     return ok, "rembg", msg
@@ -106,8 +106,8 @@ def test_upscale():
         "3": {"class_type": "Upscale by Factor with Model (WLSH)",
               "inputs": {"upscale_model": ["2", 0], "image": ["1", 0],
                          "factor": 1.5, "upscale_method": "nearest-exact"}},
-        "4": {"class_type": "SaveImage",
-              "inputs": {"images": ["3", 0], "filename_prefix": "spellcaster_upscale"}},
+        "4": {"class_type": "SaveImageWebsocket",
+              "inputs": {"images": ["3", 0]}},
     }
     ok, msg = dict_equal(wf, expected)
     return ok, "upscale", msg
@@ -127,8 +127,8 @@ def test_lama():
               "inputs": {"images": ["1", 0], "masks": ["5", 0],
                          "mask_threshold": 250, "gaussblur_radius": 8,
                          "invert_mask": False}},
-        "4": {"class_type": "SaveImage",
-              "inputs": {"images": ["3", 0], "filename_prefix": "spellcaster_lama"}},
+        "4": {"class_type": "SaveImageWebsocket",
+              "inputs": {"images": ["3", 0]}},
     }
     ok, msg = dict_equal(wf, expected)
     return ok, "lama", msg
@@ -143,10 +143,10 @@ def test_lut():
         "2": {"class_type": "ImageApplyLUT+",
               "inputs": {"image": ["1", 0],
                          "lut_file": "Rec709_Kodak_2383_D65.cube",
-                         "strength": 0.8, "log": False,
-                         "clip_values": True, "gamma_correction": False}},
-        "3": {"class_type": "SaveImage",
-              "inputs": {"images": ["2", 0], "filename_prefix": "spellcaster_lut"}},
+                         "strength": 0.8,
+                         "clip_values": True, "gamma_correction": True}},
+        "3": {"class_type": "SaveImageWebsocket",
+              "inputs": {"images": ["2", 0]}},
     }
     ok, msg = dict_equal(wf, expected)
     return ok, "lut", msg
@@ -232,8 +232,8 @@ def test_klein_img2img():
 
     # Output
     assert wf["50"]["class_type"] == "VAEDecode"
-    assert wf["51"]["class_type"] == "SaveImage"
-    assert wf["51"]["inputs"]["filename_prefix"] == "gimp_klein"
+    assert wf["51"]["class_type"] == "SaveImageWebsocket"
+    # filename_prefix removed: SaveImageWebsocket emits {"images": ref} only
 
     return True, "klein_img2img", ""
 
@@ -321,7 +321,7 @@ def test_faceswap():
     assert wf["5"]["class_type"] == "ReActorFaceBoost"
     assert wf["3"]["inputs"]["options"] == ["4", 0]
     assert wf["3"]["inputs"]["face_boost"] == ["5", 0]
-    assert wf["10"]["class_type"] == "SaveImage"
+    assert wf["10"]["class_type"] == "SaveImageWebsocket"
     assert wf["10"]["inputs"]["images"] == ["3", 0]
     return True, "faceswap", ""
 
@@ -378,7 +378,7 @@ def test_faceswap_mtb():
     assert wf["3"]["class_type"] == "Load Face Analysis Model (mtb)"
     assert wf["4"]["class_type"] == "Load Face Swap Model (mtb)"
     assert wf["5"]["class_type"] == "Face Swap (mtb)"
-    assert wf["10"]["class_type"] == "SaveImage"
+    assert wf["10"]["class_type"] == "SaveImageWebsocket"
     return True, "faceswap_mtb", ""
 
 
@@ -391,8 +391,8 @@ def test_face_restore():
               "inputs": {"image": ["1", 0], "facedetection": "retinaface_resnet50",
                          "model": "codeformer-v0.1.0.pth", "visibility": 1.0,
                          "codeformer_weight": 0.7}},
-        "3": {"class_type": "SaveImage",
-              "inputs": {"images": ["2", 0], "filename_prefix": "spellcaster_facerestore"}},
+        "3": {"class_type": "SaveImageWebsocket",
+              "inputs": {"images": ["2", 0]}},
     }
     ok, msg = dict_equal(wf, expected)
     return ok, "face_restore", msg
@@ -410,7 +410,7 @@ def test_photo_restore():
     assert wf["4"]["inputs"]["image"] == ["3", 0]  # Chains from upscale
     assert wf["5"]["class_type"] == "ImageSharpen"
     assert wf["5"]["inputs"]["image"] == ["4", 0]  # Chains from face restore
-    assert wf["6"]["class_type"] == "SaveImage"
+    assert wf["6"]["class_type"] == "SaveImageWebsocket"
     return True, "photo_restore", ""
 
 
@@ -433,7 +433,7 @@ def test_detail_hallucinate():
     assert wf["4"]["class_type"] == "CheckpointLoaderSimple"
     assert wf["8"]["class_type"] == "KSampler"
     assert wf["8"]["inputs"]["denoise"] == 0.35
-    assert wf["10"]["class_type"] == "SaveImage"
+    assert wf["10"]["class_type"] == "SaveImageWebsocket"
     return True, "detail_hallucinate", ""
 
 
@@ -508,7 +508,7 @@ def test_supir():
     assert wf["30"]["class_type"] == "SUPIR_conditioner"
     assert wf["40"]["class_type"] == "SUPIR_sample"
     assert wf["50"]["class_type"] == "SUPIR_decode"
-    assert wf["60"]["class_type"] == "SaveImage"
+    assert wf["60"]["class_type"] == "SaveImageWebsocket"
     # Verify chain connections
     assert wf["20"]["inputs"]["SUPIR_VAE"] == ["10", 1]
     assert wf["30"]["inputs"]["SUPIR_model"] == ["10", 0]
@@ -534,7 +534,7 @@ def test_inpaint():
     assert wf["7"]["class_type"] == "SetLatentNoiseMask"
     assert wf["8"]["class_type"] == "KSampler"
     assert wf["95"]["class_type"] == "ImageScale"  # Restore to original size
-    assert wf["10"]["class_type"] == "SaveImage"
+    assert wf["10"]["class_type"] == "SaveImageWebsocket"
     return True, "inpaint", ""
 
 
@@ -553,7 +553,7 @@ def test_outpaint():
     assert wf["7"]["class_type"] == "SetLatentNoiseMask"
     assert wf["8"]["class_type"] == "KSampler"
     assert wf["8"]["inputs"]["denoise"] == 0.85
-    assert wf["10"]["class_type"] == "SaveImage"
+    assert wf["10"]["class_type"] == "SaveImageWebsocket"
     return True, "outpaint", ""
 
 
@@ -635,7 +635,7 @@ def test_colorize():
     assert wf["7"]["class_type"] == "ControlNetApplyAdvanced"
     assert wf["9"]["class_type"] == "KSampler"
     assert wf["9"]["inputs"]["positive"] == ["7", 0]  # From ControlNet
-    assert wf["11"]["class_type"] == "SaveImage"
+    assert wf["11"]["class_type"] == "SaveImageWebsocket"
     return True, "colorize", ""
 
 
@@ -654,7 +654,7 @@ def test_img2img_sdxl():
     assert wf["6"]["class_type"] == "KSampler"
     assert wf["6"]["inputs"]["denoise"] == 0.65
     assert wf["7"]["class_type"] == "VAEDecode"
-    assert wf["8"]["class_type"] == "SaveImage"
+    assert wf["8"]["class_type"] == "SaveImageWebsocket"
     return True, "img2img_sdxl", ""
 
 
@@ -684,7 +684,7 @@ def test_style_transfer():
     assert wf["7"]["inputs"]["image"] == "target.png"
     assert wf["9"]["class_type"] == "KSampler"
     assert wf["9"]["inputs"]["denoise"] == 0.6
-    assert wf["11"]["class_type"] == "SaveImage"
+    assert wf["11"]["class_type"] == "SaveImageWebsocket"
     return True, "style_transfer", ""
 
 
@@ -707,7 +707,7 @@ def test_seedv2r():
     assert wf["4"]["class_type"] == "CheckpointLoaderSimple"
     assert wf["8"]["class_type"] == "KSampler"
     assert wf["8"]["inputs"]["denoise"] == 0.4
-    assert wf["10"]["class_type"] == "SaveImage"
+    assert wf["10"]["class_type"] == "SaveImageWebsocket"
     return True, "seedv2r", ""
 
 
@@ -757,7 +757,7 @@ def test_klein_img2img_ref():
     assert wf["31"]["class_type"] == "KSamplerSelect"
     assert wf["32"]["class_type"] == "BasicScheduler"
     assert wf["40"]["class_type"] == "SamplerCustomAdvanced"
-    assert wf["51"]["class_type"] == "SaveImage"
+    assert wf["51"]["class_type"] == "SaveImageWebsocket"
     return True, "klein_img2img_ref", ""
 
 
@@ -822,7 +822,7 @@ def test_video_upscale():
     assert wf["30"]["class_type"] == "CreateVideo"
     assert wf["30"]["inputs"]["fps"] == 24.0
     assert wf["31"]["class_type"] == "SaveVideo"
-    assert wf["32"]["class_type"] == "SaveImage"
+    assert wf["32"]["class_type"] == "SaveImageWebsocket"
     return True, "video_upscale", ""
 
 
@@ -851,7 +851,7 @@ def test_video_reactor():
     # Second swap chains off first
     assert wf["51"]["inputs"]["input_image"] == ["50", 0]
     assert wf["70"]["class_type"] == "CreateVideo"
-    assert wf["72"]["class_type"] == "SaveImage"
+    assert wf["72"]["class_type"] == "SaveImageWebsocket"
     return True, "video_reactor", ""
 
 
@@ -972,7 +972,7 @@ def test_seedvr2_video_upscale():
     assert wf["3"]["inputs"]["batch_size"] == 4
     assert wf["10"]["class_type"] == "VHS_VideoCombine"
     assert wf["10"]["inputs"]["frame_rate"] == 24.0
-    assert wf["11"]["class_type"] == "SaveImage"
+    assert wf["11"]["class_type"] == "SaveImageWebsocket"
     return True, "seedvr2_video_upscale", ""
 
 
@@ -1019,7 +1019,7 @@ def test_photobooth():
     assert wf["50"]["inputs"]["image"] == ["40", 0]
 
     # Output
-    assert wf["60"]["class_type"] == "SaveImage"
+    assert wf["60"]["class_type"] == "SaveImageWebsocket"
     assert wf["60"]["inputs"]["images"] == ["50", 0]
 
     return True, "photobooth", ""
@@ -1061,7 +1061,7 @@ def test_klein_repose():
     # Sampler gets VAEEncode output as latent (img2img path)
     assert wf["40"]["class_type"] == "SamplerCustomAdvanced"
     assert wf["40"]["inputs"]["latent_image"] == ["13", 0]
-    assert wf["60"]["class_type"] == "SaveImage"
+    assert wf["60"]["class_type"] == "SaveImageWebsocket"
     return True, "klein_repose", ""
 
 
@@ -1098,7 +1098,7 @@ def test_klein_blend():
     # BasicScheduler with low denoise
     assert wf["32"]["class_type"] == "BasicScheduler"
     assert wf["32"]["inputs"]["denoise"] == 0.25
-    assert wf["60"]["class_type"] == "SaveImage"
+    assert wf["60"]["class_type"] == "SaveImageWebsocket"
     return True, "klein_blend", ""
 
 
@@ -1127,7 +1127,7 @@ def test_klein_inpaint():
     # Sampler input is masked latent
     assert wf["40"]["class_type"] == "SamplerCustomAdvanced"
     assert wf["40"]["inputs"]["latent_image"] == ["21", 0]
-    assert wf["60"]["class_type"] == "SaveImage"
+    assert wf["60"]["class_type"] == "SaveImageWebsocket"
     return True, "klein_inpaint", ""
 
 
@@ -1177,7 +1177,7 @@ def test_klein_scene_img2img():
     # No ReferenceLatent nodes
     for nid, node in wf.items():
         assert node["class_type"] != "ReferenceLatent", f"Node {nid} is ReferenceLatent — should not be"
-    assert wf["60"]["class_type"] == "SaveImage"
+    assert wf["60"]["class_type"] == "SaveImageWebsocket"
     return True, "klein_scene_img2img", ""
 
 
@@ -1190,7 +1190,7 @@ def test_layer_blend():
     assert wf["3"]["class_type"] == "ImageBlend"
     assert wf["3"]["inputs"]["blend_factor"] == 0.5
     assert wf["3"]["inputs"]["blend_mode"] == "normal"
-    assert wf["4"]["class_type"] == "SaveImage"
+    assert wf["4"]["class_type"] == "SaveImageWebsocket"
     return True, "layer_blend", ""
 
 
@@ -1216,7 +1216,7 @@ def test_upscale_blend():
     assert wf["30"]["inputs"]["image1"] == ["11", 0]
     assert wf["30"]["inputs"]["image2"] == ["21", 0]
     assert wf["30"]["inputs"]["blend_factor"] == 0.6
-    assert wf["40"]["class_type"] == "SaveImage"
+    assert wf["40"]["class_type"] == "SaveImageWebsocket"
     return True, "upscale_blend", ""
 
 
