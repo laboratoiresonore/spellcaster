@@ -144,7 +144,6 @@ def main() -> int:
     lang = lang_match.group(1) if lang_match else "auto"
 
     glance = (
-        f"- **Local path:** `{REPO}`\n"
         f"- **Primary language:** `{lang}`\n"
         f"- **Last analyzed:** `{ts}`\n"
         f"- **Last commit:** `{sha} - {subj}`\n"

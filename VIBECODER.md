@@ -4,7 +4,6 @@
 
 ## Repo at a glance
 <!-- AUTO:glance -->
-- **Local path:** `C:\Users\legui\spellcaster`
 - **Primary language:** `Python`
 - **Last analyzed:** `2026-05-07T09:42:28Z`
 - **Last commit:** `79165a2 - chore(install): sync sanitized bootstrap shim from laboratoiresonore master`
