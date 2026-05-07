@@ -22,7 +22,7 @@ Usage:
 
 Auto-Update Architecture:
     SFW edition pulls from: laboratoiresonore/spellcaster  (public)
-    NSFW edition pulls from: laboratoiresonore/spellcaster_NSFW (private)
+    NSFW edition pulls from: a private downstream variant (env-configured)
 
     The NSFW version is the SFW version PLUS extra content injected
     by build_nsfw.py.  There is no conflict: NSFW extends SFW, never
@@ -79,7 +79,7 @@ if not _GUILD_AUTH_TOKEN:
                 _runtime_token = _tf.read().strip()
             if _runtime_token:
                 _GUILD_AUTH_TOKEN = _runtime_token
-                _GUILD_REPO = "laboratoiresonore/spellcaster_NSFW"
+                _GUILD_REPO = os.environ.get("SPELLCASTER_NSFW_GUILD_REPO", _GUILD_REPO)
                 print(f"  [Guild] NSFW token detected from nsfw/.github_token — switching to NSFW edition")
         except Exception:
             pass

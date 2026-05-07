@@ -67,7 +67,9 @@ NSFW_MODEL_PATTERNS = [
 ]
 # GitHub repos per edition
 SFW_REPO  = "laboratoiresonore/spellcaster"
-NSFW_REPO = "laboratoiresonore/spellcaster_NSFW"
+NSFW_REPO = os.environ.get("SPELLCASTER_NSFW_REPO", "")
+# Empty default = SFW build. NSFW build sets the env var (or patches
+# this line at build time) to point at the private downstream variant.
 
 # ANSI colors
 if sys.stdout and sys.stdout.isatty() and (os.name != "nt" or os.environ.get("WT_SESSION")):
