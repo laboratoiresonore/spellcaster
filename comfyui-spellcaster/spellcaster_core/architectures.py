@@ -60,6 +60,11 @@ IMAGE_METHODS = (
 VIDEO_METHODS = (
     "video_gen", "video_img2video", "video_upscale",
 )
+# `video_animate` is wan-specific (uses the WanAnimateToVideo native
+# conditioning shaper). Other video archs don't have an equivalent —
+# don't add this to VIDEO_METHODS or LTX/CogVideo/etc would falsely
+# advertise support.
+WAN_EXTRA_METHODS = ("video_animate",)
 KLEIN_METHODS = (
     "klein_edit", "klein_headswap", "klein_repose",
     "klein_refine", "klein_inpaint",
@@ -960,7 +965,9 @@ _reg("wan",
      default_resolution=(832, 480),
      default_cfg=3.5, default_steps=30, default_denoise=1.0,
      default_sampler="euler", default_scheduler="simple",
-     supported_methods=VIDEO_METHODS,
+     # WAN supports the standard video methods PLUS `video_animate`
+     # via the native WanAnimateToVideo shaper (build_wan_animate_video).
+     supported_methods=VIDEO_METHODS + WAN_EXTRA_METHODS,
      scene_group="video",
      registered=True)
 
@@ -988,15 +995,108 @@ _reg("seedvr",
      registered=True)
 
 _reg("cogvideo",
-     loader="unet_clip_vae", sampler="ksampler",
-     clip_mode="dual", vae_mode="separate",
+     loader="custom_wrapper", sampler="custom",  # CogVideoSampler (Kijai wrapper)
+     clip_mode="single", vae_mode="separate",  # T5 single CLIP, CogVideoXVAELoader
      supports_negative=True,
      default_resolution=(720, 480),
      default_cfg=6.0, default_steps=50, default_denoise=1.0,
-     default_sampler="dpmpp_2m", default_scheduler="simple",
-     supported_methods=VIDEO_METHODS,
+     default_sampler="CogVideoXDDIM", default_scheduler="simple",
+     # PROMOTED iter 12 (2026-05-06): build_cogvideo_video lands in
+     # workflows.py supporting both T2V (no image) and I2V (with image)
+     # via the optional image_filename arg. Pack source verified.
+     supported_methods=("video_gen", "video_img2video"),
      scene_group="video",
-     registered=False)
+     registered=True)
+
+# FramePack — Hunyuan-based image-to-video, Jan 2026, optimized for low VRAM
+# (6 GB minimum). Wrapper pack: ComfyUI-FramePackWrapper_Plus (Kijai).
+# PROMOTED iter 10 (2026-05-06): all 12 nodes R4-verified live; builder
+# `build_framepack_video` lands in workflows.py same iter using the F1
+# sampler path (FramePackSampler_F1 + FramePackTimestampedTextEncode +
+# DualCLIPLoader[hunyuan_video] + CLIPVisionEncode + VAEDecodeTiled +
+# VHS_VideoCombine).
+_reg("framepack",
+     loader="custom_wrapper", sampler="custom",  # FramePackSampler_F1
+     clip_mode="dual", vae_mode="separate",  # DualCLIPLoader (llama+clip_l)
+     supports_negative=True,
+     default_resolution=(640, 640),
+     default_cfg=1.0, default_steps=30, default_denoise=1.0,
+     default_sampler="unipc_bh1", default_scheduler="simple",
+     # I2V-only by design (FramePack is image-conditioned). Add
+     # "video_gen" later if pure-T2V variant ships.
+     supported_methods=("video_img2video",),
+     scene_group="video",
+     registered=True)
+
+# HunyuanVideo — Tencent's 13B video model (Dec 2024 / 2025 refresh).
+# Wrapper pack: ComfyUI-HunyuanVideoWrapper (Kijai). 25+ HyVideo* nodes
+# including HyVideoSampler, HyVideoTextEncode, HyVideoModelLoader,
+# HyVideoBlockSwap (low-VRAM), HyVideoTeaCache, HyVideoSTG, HyVideoCFG,
+# HyVideoEnhanceAVideo, HyVideoI2VEncode (for I2V variant). Stub until
+# end-to-end smoke verified — Tier 2.3.
+_reg("hunyuan_video",
+     loader="custom_wrapper", sampler="custom",  # HyVideoSampler
+     clip_mode="dual", vae_mode="separate",  # HyVideoTextEncode + HyVideoVAELoader
+     supports_negative=True,
+     default_resolution=(848, 480),
+     default_cfg=6.0, default_steps=30, default_denoise=1.0,
+     default_sampler="dpmpp_2m", default_scheduler="sgm_uniform",
+     # Builder lives at workflows.build_hunyuan_video — supports T2V
+     # (default) and I2V (when image_filename is set).
+     supported_methods=("video_gen", "video_img2video"),
+     scene_group="video",
+     registered=True)
+
+# Mochi-1 — Genmo's 10B Apache-2.0 video model (Oct 2024). Wrapper pack:
+# ComfyUI-MochiWrapper (Kijai). Mochi* nodes: MochiSampler, MochiDecode,
+# MochiTextEncode, MochiModelLoader, MochiVAELoader, MochiSigmaSchedule,
+# MochiDecodeSpatialTiling (low-VRAM decode). Stub until verified — Tier 3.3.
+_reg("mochi",
+     loader="custom_wrapper", sampler="custom",  # MochiSampler
+     clip_mode="single", vae_mode="separate",  # T5-only
+     supports_negative=True,
+     default_resolution=(848, 480),
+     default_cfg=4.5, default_steps=50, default_denoise=1.0,
+     default_sampler="euler", default_scheduler="simple",
+     # Builder lives at workflows.build_mochi_video — T2V only (no native I2V).
+     supported_methods=("video_gen",),
+     scene_group="video",
+     registered=True)
+
+# Hunyuan3D 2.1 — image-to-3D mesh, 2025/2026 (Tencent). Wrapper pack:
+# ComfyUI-Hunyuan3d-2-1. New modality (3D), separate scene_group from
+# video. Two builders: `build_hunyuan_3d_mesh` (geometry only) +
+# `build_hunyuan_3d_textured` (geometry + albedo + MR maps via the
+# Hy3DMultiViewsGenerator + Hy3DBakeMultiViews chain).
+_reg("hunyuan_3d",
+     loader="custom_wrapper", sampler="custom",
+     clip_mode="bundled", vae_mode="bundled",
+     supports_negative=False,
+     default_resolution=(512, 512),  # input image resolution
+     default_cfg=5.0, default_steps=25, default_denoise=1.0,
+     default_sampler="dpmpp_2m", default_scheduler="simple",
+     # NEW METHOD: `mesh_gen` (first 3D modality). `mesh_textured`
+     # is the second method (sibling builder for textured meshes).
+     supported_methods=("mesh_gen", "mesh_textured"),
+     scene_group="three_d",  # new scene group
+     registered=True)
+
+
+# Lumina-Image 2.0 — Alpha-VLLM 2024-12 MMDiT (~2.6B, Apache-2). Native
+# ComfyUI support via `CLIPTextEncodeLumina2`. Standard KSampler path
+# with Flux-style flow matching. Recommended: euler + normal, cfg=4.0,
+# 30 steps. Conditioning encoder is Gemma-2-2B (or Gemma-3 fallback).
+_reg("lumina2",
+     loader="checkpoint", sampler="ksampler",
+     clip_mode="single", vae_mode="bundled",
+     supports_negative=True,
+     default_resolution=(1024, 1024),
+     default_cfg=4.0, default_steps=30, default_denoise=1.0,
+     default_sampler="euler", default_scheduler="normal",
+     # Builder: workflows.build_lumina2_txt2img.
+     supported_methods=("txt2img",),
+     scene_group="lumina",
+     registered=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

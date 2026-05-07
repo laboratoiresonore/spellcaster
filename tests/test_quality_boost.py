@@ -438,9 +438,13 @@ def case_ays_skips_flux1_even_at_max():
 
 
 def case_ays_skips_zit_even_at_max():
+    """ZIT (turbo distill, 4-6 steps) takes its own custom-advanced path
+    with CFGZeroStar + DetailDaemonSamplerNode — NOT AYS. Like the Klein
+    case below, the graph contains SamplerCustomAdvanced but BasicScheduler,
+    never AlignYourStepsScheduler."""
     g = workflows.build_txt2img(ZIT_PRESET, "photo", "", 1, quality="max")
     assert count(g, "AlignYourStepsScheduler") == 0
-    assert _sampler_is_plain_ksampler(g)
+    # ZIT's own SamplerCustomAdvanced (Detail Daemon path) is expected.
 
 
 def case_ays_skips_klein():

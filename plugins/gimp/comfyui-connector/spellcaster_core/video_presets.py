@@ -19,6 +19,9 @@ Public API
 ----------
     detect_wan_preset(comfy_url) -> dict | None
     detect_ltx_preset(comfy_url) -> dict | None
+    detect_hunyuan_video_preset(comfy_url) -> dict | None
+    detect_hunyuan_3d_preset(comfy_url) -> dict | None
+    detect_mochi_preset(comfy_url) -> dict | None
     wan_turbo_kwargs(turbo) -> dict
     ltx_mode_kwargs(mode) -> dict
 
@@ -567,3 +570,221 @@ def ltx_mode_kwargs(mode: str) -> dict:
     default to "distilled" (the safe fast path).
     """
     return dict(_LTX_MODES.get(mode, _LTX_MODES["distilled"]))
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  HunyuanVideo — preset detection (Tencent 13B; ComfyUI-HunyuanVideoWrapper)
+# ══════════════════════════════════════════════════════════════════════════
+
+def detect_hunyuan_video_preset(comfy_url: str) -> Optional[dict]:
+    """Auto-detect HunyuanVideo models on ComfyUI and return kwargs for
+    `workflows.build_hunyuan_video(...)`.
+
+    Returns None when the wrapper pack isn't installed OR the user has no
+    HunyuanVideo weights in their `diffusion_models/` + `vae/` folders.
+
+    Detection rules:
+      * `hy_model` — match `hunyuan_video*` in HyVideoModelLoader.model.
+        Prefer `*_t2v_*` for default; `*_image_to_video_*` is set on
+        `i2v_model` so callers that want I2V can pick it directly.
+      * `vae_name` — match `hunyuan*vae*` in HyVideoVAELoader.model_name.
+        Falls back to any vae with "video" + "vae" if hunyuan-tagged
+        VAE isn't found (some users use the LTX video VAE here, which
+        doesn't actually work — but we surface it for the operator
+        to override).
+      * `quantization` — defaults to `"fp8_e4m3fn"` for ≤16GB GPUs.
+        Set to `"disabled"` if the user has bf16 weights (we can't
+        tell from the filename, so the safer-on-low-VRAM choice is the
+        default).
+    """
+    hy_models = probe_object_info_choices(comfy_url, "HyVideoModelLoader",
+                                          "model")
+    if not hy_models:
+        return None
+
+    t2v = i2v = None
+    for m in hy_models:
+        ml = m.lower()
+        if "hunyuan_video" not in ml and "hunyuan-video" not in ml:
+            continue
+        if "i2v" in ml or "image_to_video" in ml or "image-to-video" in ml:
+            i2v = i2v or m
+        elif "t2v" in ml or "text_to_video" in ml or "text-to-video" in ml:
+            t2v = t2v or m
+        else:
+            t2v = t2v or m  # bare hunyuan_video_*.safetensors → assume T2V
+    if not t2v and not i2v:
+        return None
+
+    vae_choices = probe_object_info_choices(comfy_url, "HyVideoVAELoader",
+                                            "model_name")
+    hy_vae = None
+    # Must explicitly mention BOTH `hunyuan` AND `video` — the user may
+    # also have hunyuan3d-vae-*.ckpt in the same folder, and that's the
+    # 3D VAE, not the video VAE. Don't pick it up.
+    for v in vae_choices:
+        vl = v.lower()
+        if "hunyuan" in vl and "video" in vl and "vae" in vl:
+            hy_vae = v
+            break
+    if not hy_vae:
+        # Last-resort fallback — `hunyuan_vae` (no `video` token) is the
+        # canonical filename for some Hunyuan-Video bundles. Skip 3D
+        # explicitly.
+        for v in vae_choices:
+            vl = v.lower()
+            if "hunyuan" in vl and "vae" in vl and "3d" not in vl:
+                hy_vae = v
+                break
+
+    preset = {
+        "arch":           "hunyuan_video",
+        "hy_model":       t2v or i2v,
+        "i2v_model":      i2v,  # caller picks when image_filename is set
+        "vae_name":       hy_vae,
+        # Sensible 16-GB defaults; caller can flip block_swap on for headroom
+        "base_precision": "bf16",
+        "quantization":   "fp8_e4m3fn",
+        "attention_mode": "sdpa",
+        "use_block_swap": False,  # only flip on for tighter VRAM
+        "use_teacache":   False,
+        "fps":            24,
+    }
+    return preset
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  Hunyuan3D 2.1 — preset detection (Tencent image→3D mesh)
+# ══════════════════════════════════════════════════════════════════════════
+
+def detect_hunyuan_3d_preset(comfy_url: str) -> Optional[dict]:
+    """Auto-detect Hunyuan3D 2.1 mesh-generator + VAE for
+    `workflows.build_hunyuan_3d_mesh(...)`.
+
+    Returns None when the pack isn't installed OR no `hunyuan3d-dit-*` /
+    `Hunyuan3D-vae-*` files are present.
+
+    The pack publishes its own filename convention:
+      * mesh-generator UNET → `hunyuan3d-dit-v2-1-fp16.ckpt` (or fp32 / bf16)
+      * VAE                  → `Hunyuan3D-vae-v2-1-fp16.ckpt`
+    Both live under their respective folder (diffusion_models / vae). The
+    Hy3DMeshGenerator loader exposes `diffusion_models` and the
+    Hy3D21VAELoader loader exposes `vae`, both of which we probe.
+    """
+    mesh_choices = probe_object_info_choices(comfy_url, "Hy3DMeshGenerator",
+                                             "model")
+    vae_choices = probe_object_info_choices(comfy_url, "Hy3D21VAELoader",
+                                            "model_name")
+    if not mesh_choices and not vae_choices:
+        return None
+
+    hy3d_model = None
+    for m in mesh_choices:
+        ml = m.lower()
+        if "hunyuan3d" in ml or "hy3d" in ml:
+            # Prefer fp16 over fp32 over bf16 (small + accurate enough for
+            # mesh extraction).
+            if "fp16" in ml:
+                hy3d_model = m
+                break
+            hy3d_model = hy3d_model or m
+    hy3d_vae = None
+    for v in vae_choices:
+        vl = v.lower()
+        if "hunyuan3d" in vl or "hy3d" in vl:
+            if "fp16" in vl:
+                hy3d_vae = v
+                break
+            hy3d_vae = hy3d_vae or v
+    if not hy3d_model or not hy3d_vae:
+        return None
+
+    return {
+        "arch":              "hunyuan_3d",
+        "hy3d_model":        hy3d_model,
+        "hy3d_vae":          hy3d_vae,
+        "steps":             25,
+        "guidance_scale":    5.0,
+        "attention_mode":    "sdpa",
+        "octree_resolution": 384,
+        "mc_algo":           "dmc",
+        "max_facenum":       200000,
+        "file_format":       "glb",
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  Mochi-1 — preset detection (Genmo 10B Apache T2V; ComfyUI-MochiWrapper)
+# ══════════════════════════════════════════════════════════════════════════
+
+def detect_mochi_preset(comfy_url: str) -> Optional[dict]:
+    """Auto-detect Mochi-1 model + VAE + T5 CLIP for
+    `workflows.build_mochi_video(...)`.
+
+    Returns None when the wrapper pack isn't installed OR the user has no
+    Mochi weights / no T5xxl encoder available.
+
+    Mochi-specifics:
+      * model files are `*mochi*.safetensors` under diffusion_models/
+      * VAE is `*mochi*vae*.safetensors` under vae/
+      * Text encoder is the standard ComfyUI T5xxl loaded via CLIPLoader
+        with `type="sd3"`. We pick the smallest fp8 T5xxl available to
+        respect VRAM.
+    """
+    mochi_models = probe_object_info_choices(comfy_url, "MochiModelLoader",
+                                             "model_name")
+    if not mochi_models:
+        return None
+
+    mochi_model = None
+    for m in mochi_models:
+        ml = m.lower()
+        if "mochi" in ml:
+            mochi_model = m
+            break
+    if not mochi_model:
+        return None
+
+    mochi_vae = None
+    vae_choices = probe_object_info_choices(comfy_url, "MochiVAELoader",
+                                            "model_name")
+    for v in vae_choices:
+        vl = v.lower()
+        if "mochi" in vl:
+            mochi_vae = v
+            break
+
+    # T5xxl from CLIPLoader (Mochi uses type="sd3" per the pack example).
+    t5_clip = None
+    clip_choices = probe_object_info_choices(comfy_url, "CLIPLoader",
+                                             "clip_name")
+    for c in clip_choices:
+        cl = c.lower()
+        # Prefer the fp8 encoder-only T5xxl (smallest VRAM footprint that
+        # still works). Fall back to any t5xxl* that's not the full bf16.
+        if "t5" in cl and "xxl" in cl and ("fp8" in cl or "fp16" in cl):
+            t5_clip = c
+            break
+    if not t5_clip:
+        for c in clip_choices:
+            cl = c.lower()
+            if "t5" in cl and "xxl" in cl:
+                t5_clip = c
+                break
+    if not t5_clip:
+        return None
+    if not mochi_vae:
+        return None
+
+    return {
+        "arch":           "mochi",
+        "mochi_model":    mochi_model,
+        "mochi_vae":      mochi_vae,
+        "t5_clip":        t5_clip,
+        "precision":      "fp8_e4m3fn",
+        "vae_precision":  "bf16",
+        "attention_mode": "sdpa",
+        "steps":          50,
+        "cfg":            4.5,
+        "fps":            24,
+    }

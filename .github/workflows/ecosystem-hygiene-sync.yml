@@ -1,0 +1,91 @@
+name: Ecosystem hygiene auto-sync
+
+# Fires when _DEV_HYGIENE.md or MIRROR_TARGETS.md changes on main of this
+# repo. Dispatches an `ecosystem-hygiene-sync` repository_dispatch event
+# to each sibling repo. Each sibling has its own ecosystem-hygiene-receive
+# workflow that opens a PR with the incoming change.
+#
+# Per UPGRADE_PLAN_2026-05-06.md §13.5 Tier 1.11 — auto-PR propagation
+# closes the gap where ecosystem audit branches required manual sibling
+# merges. Manual sync is still possible via:
+#   python scripts/ecosystem_doctor.py sync <file> --apply
+#
+# Setup: add ECOSYSTEM_SYNC_TOKEN as a repo secret with `repo` scope on
+# the four sibling repos (or fine-grained PAT with contents:write +
+# pull-requests:write on each).
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '_DEV_HYGIENE.md'
+      - 'MIRROR_TARGETS.md'
+  workflow_dispatch:
+    inputs:
+      filename:
+        description: 'Specific file to sync (default: both watched files)'
+        required: false
+        default: ''
+
+jobs:
+  fan-out:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Determine which files changed
+        id: changed
+        run: |
+          set -euo pipefail
+          MANUAL="${{ inputs.filename }}"
+          if [ -n "$MANUAL" ]; then
+            echo "files=$MANUAL" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed=""
+          for f in _DEV_HYGIENE.md MIRROR_TARGETS.md; do
+            if git diff --name-only HEAD~1..HEAD | grep -qx "$f"; then
+              changed="$changed $f"
+            fi
+          done
+          changed="${changed# }"
+          echo "files=$changed" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch hygiene-receive event to each sibling
+        if: steps.changed.outputs.files != ''
+        env:
+          ECOSYSTEM_SYNC_TOKEN: ${{ secrets.ECOSYSTEM_SYNC_TOKEN }}
+          SOURCE_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ECOSYSTEM_SYNC_TOKEN:-}" ]; then
+            echo "::warning::ECOSYSTEM_SYNC_TOKEN secret not set; skipping fan-out"
+            exit 0
+          fi
+          # Side-table of which sibling repos receive each filename.
+          declare -A siblings
+          siblings[_DEV_HYGIENE.md]="laboratoiresonore/spellcaster_NSFW laboratoiresonore/Voodoomancer laboratoiresonore/Laborantin laboratoiresonore/whimweaver"
+          siblings[MIRROR_TARGETS.md]="laboratoiresonore/spellcaster_NSFW"
+          for f in ${{ steps.changed.outputs.files }}; do
+            content_b64=$(base64 -w 0 "$f")
+            for repo in ${siblings[$f]}; do
+              echo "→ dispatching $f to $repo"
+              payload=$(jq -n \
+                --arg src "$SOURCE_REPO" \
+                --arg fn  "$f" \
+                --arg sha "$SOURCE_SHA" \
+                --arg c64 "$content_b64" \
+                '{event_type:"ecosystem-hygiene-sync",
+                  client_payload:{source_repo:$src,filename:$fn,sha:$sha,content_b64:$c64}}')
+              curl -fsSL -X POST \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer $ECOSYSTEM_SYNC_TOKEN" \
+                "https://api.github.com/repos/${repo}/dispatches" \
+                -d "$payload"
+            done
+          done

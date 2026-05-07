@@ -1,0 +1,35 @@
+{
+  "_comment": "ecosystem_doctor config. Declares canonical sources in this repo + their mirrors in other repos. See scripts/ecosystem_doctor.py module docstring for schema. Run `python scripts/ecosystem_doctor.py verify` to drift-check, `sync <source> --apply` to heal.",
+  "canonical": [
+    {
+      "source": "_DEV_HYGIENE.md",
+      "mirrors": [
+        "../spellcaster_NSFW/_DEV_HYGIENE.md",
+        "../Voodoomancer/_DEV_HYGIENE.md",
+        "../LaboratoireSonore/whimweaver/_DEV_HYGIENE.md",
+        "D:/Laborantin/_DEV_HYGIENE.md"
+      ],
+      "verifier": "byte-identical",
+      "notes": "Cross-ecosystem hygiene rules H1-H7. Drift is a bug per Agent 1 audit (iter 3). Voodoomancer and Laborantin have it on chore/claude-md-audit-2026-05-06 branches; merge those to main before drift will resolve."
+    },
+    {
+      "source": "MIRROR_TARGETS.md",
+      "mirrors": [
+        "../spellcaster_NSFW/MIRROR_TARGETS.md"
+      ],
+      "verifier": "byte-identical",
+      "notes": "6-surface enumeration for spellcaster_core/* — extends the in-repo R1 sync rule to its NSFW twin."
+    },
+    {
+      "source": ".github/workflows/ecosystem-hygiene-receive.yml",
+      "mirrors": [
+        "../spellcaster_NSFW/.github/workflows/ecosystem-hygiene-receive.yml",
+        "../Voodoomancer/.github/workflows/ecosystem-hygiene-receive.yml",
+        "../LaboratoireSonore/whimweaver/.github/workflows/ecosystem-hygiene-receive.yml",
+        "D:/Laborantin/.github/workflows/ecosystem-hygiene-receive.yml"
+      ],
+      "verifier": "byte-identical",
+      "notes": "The receive-side of hygiene auto-sync. Each ecosystem repo runs an identical copy. Drift in this workflow is itself caught by the workflow."
+    }
+  ]
+}

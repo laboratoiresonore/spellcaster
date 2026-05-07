@@ -426,6 +426,64 @@ def sample_standard(nf, model_ref, pos_ref, neg_ref, latent_ref,
     )
 
 
+def apply_model_patches(nf, model_ref, *,
+                         arch_key,
+                         enable_sage=False,
+                         enable_cfg_zero=False,
+                         enable_pag=False,
+                         pag_scale=3.0,
+                         node_id_prefix="patch") -> list:
+    """Apply optional model patches (Sage / CFG-zero / PAG) in canonical order.
+
+    Mirrors the WAN/LTX builder pattern: each patch wraps the diffusion
+    model. Returns the (possibly patched) model_ref. Order:
+      Sage  (attention kernel rewrite, RTX 40/50xx 30-50% speedup)
+      CFG-zero  (first-step burn-in fix; safe on all CFG-using archs)
+      PAG  (perturbed attention guidance; detail bump for SD/SDXL/Flux1)
+
+    Arch-aware guarding:
+      * PAG is SKIPPED on Klein and Flux Kontext — Klein uses
+        CFGGuider+SamplerCustomAdvanced (PAG injection breaks it; per
+        node_factory.perturbed_attention_guidance docstring).
+      * Sage + CFG-zero are safe on all archs that go through KSampler;
+        callers should still preflight /object_info on the target server
+        before passing True (R4).
+
+    Each patch is opt-in. Builders forward these flags through their
+    public signature so callers can probe + decide. Returns model_ref
+    unchanged when all flags are False.
+
+    Args:
+        nf: NodeFactory instance
+        model_ref: model reference to wrap, e.g. ["1", 0]
+        arch_key: architecture identifier (e.g. "sdxl"); used for guards
+        enable_sage: wrap with PatchSageAttentionKJ
+        enable_cfg_zero: wrap with CFGZeroStar
+        enable_pag: wrap with PerturbedAttentionGuidance (skipped on
+            Klein / Kontext)
+        pag_scale: PAG strength (default 3.0; lower for SD1.5)
+        node_id_prefix: ID prefix for the patch nodes (avoid collisions)
+
+    Returns:
+        Possibly-patched model_ref (a [node_id, 0] list).
+    """
+    arch = (arch_key or "").lower()
+    pag_unsafe = arch in ("flux2klein", "flux_kontext")
+    if enable_sage:
+        sid = nf.patch_sage_attention_kj(
+            model_ref, node_id=f"{node_id_prefix}_sage")
+        model_ref = [sid, 0]
+    if enable_cfg_zero:
+        cid = nf.cfg_zero_star(
+            model_ref, node_id=f"{node_id_prefix}_cfgzero")
+        model_ref = [cid, 0]
+    if enable_pag and not pag_unsafe:
+        pid = nf.perturbed_attention_guidance(
+            model_ref, scale=pag_scale, node_id=f"{node_id_prefix}_pag")
+        model_ref = [pid, 0]
+    return model_ref
+
+
 def sample_klein(nf, model_ref, pos_ref, neg_ref, latent_ref, seed,
                  steps, guidance=1.0, width_ref=None, height_ref=None,
                  node_id=None) -> list:
