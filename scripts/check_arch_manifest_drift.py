@@ -58,7 +58,7 @@ SUBSUMED_BY_PARENT: dict[str, str] = {
 
 # Methods that are real, registered, and shipping — but the installer
 # doesn't (yet) have an opt-in feature for them. The wrapper packs +
-# weights are installed by the user manually (or via voodoomancer for
+# weights are installed by the user manually (or via the local update flow for
 # NSFW). Update when these graduate to first-class installer features.
 ADVANCED_NO_INSTALLER: set[str] = {
     "video_gen",         # FramePack/CogVideoX/HunyuanVideo/Mochi/LTX/WAN T2V
@@ -202,7 +202,7 @@ def main() -> int:
         for m in methods_advanced:
             owners = sorted(k for k, ms in arch_methods.items() if m in ms)
             print(f"  - method={m!r:24}  archs={owners}")
-        print("  (wrappers/weights installed manually or via voodoomancer; not drift.)")
+        print("  (wrappers/weights installed manually or via the local update flow; not drift.)")
         print()
     if not drift:
         print("[OK] No drift detected.")
