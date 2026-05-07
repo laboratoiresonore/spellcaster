@@ -616,6 +616,11 @@ def build_generate_anything(prompt_text, negative_text, seed, preset,
     Returns:
         dict: ComfyUI workflow with two SaveImage outputs.
     """
+    # R7: Functionally a txt2img variant (with BiRefNet post-process for
+    # transparency). Asserting "txt2img" reuses the existing per-arch
+    # method declaration rather than registering a parallel method name
+    # that every arch would need to opt-into separately.
+    _assert_method_for_preset(preset, "txt2img")
     nf = NodeFactory()
     arch_key = preset.get("arch", "sdxl")
 
@@ -1252,14 +1257,17 @@ def _klein_identity_lock(nf, model_ref, identity_latent_ref,
 # Node-ID tranche for quality boosts: 700-739 (disjoint from the 770-999
 # enhancer tranche). Each builder passes its own node_base_id in that range.
 
-_QUALITY_ARCHES_PAG = {"sdxl", "illustrious", "flux1dev", "chroma", "flux_kontext", "zit"}
+_QUALITY_ARCHES_PAG = {"sdxl", "illustrious", "flux1dev", "chroma", "flux_kontext"}
 _QUALITY_ARCHES_RESCALE = {"sd15", "sdxl", "illustrious"}
 _QUALITY_ARCHES_FREEU = {"sdxl"}  # not illustrious — FreeU hurts anime
-# DiT architectures: Flux 1, Flux Kontext, and Z-Image-Turbo (MMDiT).
-# SLG drops transformer blocks from the guidance branch — only meaningful
-# when the model HAS transformer blocks. SD1/SDXL/Klein use different
-# samplers (or in Klein's case its own enhancer) and don't benefit.
-_QUALITY_ARCHES_SLG = {"flux1dev", "flux_kontext", "zit"}
+# DiT architectures: Flux 1, Flux Kontext. SLG drops transformer blocks from
+# the guidance branch — only meaningful when the model HAS transformer blocks.
+# SD1/SDXL/Klein use different samplers (or in Klein's case its own enhancer)
+# and don't benefit. ZIT is a turbo distill (4-6 steps, cfg 1-2): PAG/SLG hurt
+# at that step budget — they need more iterations to settle. CFGZeroStar still
+# fires on ZIT (designed for distilled samplers), and Detail Daemon wraps the
+# sampler at quality="max" — that's the full ZIT quality stack.
+_QUALITY_ARCHES_SLG = {"flux1dev", "flux_kontext"}
 # CFGZeroStar — cleans up the saturation drift distilled samplers hit
 # when running near cfg=1-2 with 4-8 steps. ZIT is the headline target
 # (always distilled). flux1dev / flux_kontext only benefit when the
@@ -1309,12 +1317,7 @@ def _apply_quality_boost(nf, model_ref, arch_key, *,
         nid += 1
 
     if arch_key in _QUALITY_ARCHES_PAG:
-        # Distilled DiT (zit, ~6 steps, cfg 1-2) is sensitive to high
-        # PAG scale — scale 3.0 (Flux/SDXL default) over-corrects and
-        # can produce washed-out colours. 1.5 keeps the structural
-        # benefit without trampling the distilled prior.
-        pag_scale = 1.5 if arch_key == "zit" else 3.0
-        pag = nf.perturbed_attention_guidance(model_ref, scale=pag_scale,
+        pag = nf.perturbed_attention_guidance(model_ref, scale=3.0,
                                                node_id=str(nid))
         model_ref = [pag, 0]
         nid += 1
@@ -1330,16 +1333,10 @@ def _apply_quality_boost(nf, model_ref, arch_key, *,
         nid += 1
 
     if quality == "max" and arch_key in _QUALITY_ARCHES_SLG:
-        # SLG layer indices vary by architecture. Flux's MMDiT exposes
-        # both double-stream and single-stream blocks 7-9; Z-Image-Turbo's
-        # MMDiT shares the double-stream layout but its later blocks
-        # already handle most of the prompt fidelity, so skipping
-        # blocks 7-9 hits the sweet spot for both. The 0.01-0.15 sampling
-        # window is the empirically-tested distilled range — applying SLG
-        # outside it hurts at low step counts.
-        slg_scale = 2.0 if arch_key == "zit" else 3.0
-        slg = nf.skip_layer_guidance_dit(model_ref,
-                                          scale=slg_scale,
+        # SLG layer indices target Flux's MMDiT blocks 7-9 (skipping in
+        # the guidance branch only). 0.01-0.15 sampling window is the
+        # empirically-tested distilled range.
+        slg = nf.skip_layer_guidance_dit(model_ref, scale=3.0,
                                           node_id=str(nid))
         model_ref = [slg, 0]
         nid += 1
@@ -4929,6 +4926,201 @@ def build_wan22_t2v(preset, prompt_text, negative_text, seed, *,
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  FramePack — Hunyuan-derived I2V optimised for low VRAM (16GB-friendly)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_framepack_video(image_filename, prompt_text, negative_text, seed,
+                           *,
+                           model_name=None,
+                           llama_clip_name=None,
+                           clip_l_name=None,
+                           vae_name=None,
+                           clip_vision_name=None,
+                           base_resolution=640,
+                           total_second_length=5.0,
+                           fps=30,
+                           steps=30,
+                           cfg=1.0,
+                           guidance_scale=10.0,
+                           shift=0.0,
+                           use_teacache=True,
+                           teacache_rel_l1_thresh=0.15,
+                           latent_window_size=9,
+                           gpu_memory_preservation=6.0,
+                           sampler="unipc_bh1",
+                           base_precision="bf16",
+                           quantization="fp8_e4m3fn",
+                           load_device="main_device",
+                           end_image_filename=None,
+                           embed_interpolation="disabled",
+                           start_embed_strength=1.0,
+                           prompt_blend_sections=0,
+                           filename_prefix="spellcaster_framepack") -> dict:
+    """FramePack image-to-video via Kijai's ComfyUI-FramePackWrapper_Plus.
+
+    FramePack (Jan 2026) is a Hunyuan-derived video model optimized for
+    low VRAM (6 GB minimum). On a 16 GB GPU it leaves substantial
+    headroom for ST/Kobold/etc. and supports arbitrarily long videos via
+    section-by-section sampling — `total_second_length` divides into
+    `latent_window_size` chunks; `gpu_memory_preservation` enforces a
+    headroom floor (default 6 GB).
+
+    Pack canonical (R4-verified live 2026-05-06):
+      LoadFramePackModel               -> FramePackMODEL
+      DualCLIPLoader[hunyuan_video]    -> CLIP (llama + clip_l)
+      FramePackTimestampedTextEncode   -> (TIMED_CONDITIONING_WITH_METADATA, CONDITIONING)
+      CLIPVisionLoader + CLIPVisionEncode -> CLIP_VISION_OUTPUT
+      FramePackFindNearestBucket       -> bucket-aligned IMAGE
+      VAEEncode                        -> start_latent
+      FramePackSampler_F1              -> samples LATENT
+      VAEDecodeTiled                   -> IMAGE
+      VHS_VideoCombine                 -> file
+
+    Args (all named after pack-side INPUT_TYPES):
+        image_filename: start frame on the ComfyUI input dir.
+        prompt_text: positive prompt; supports timestamped sections like
+            `[0s: morning light] [3s-5s: golden hour]` per the
+            FramePackTimestampedTextEncode tooltip.
+        negative_text: single non-timed negative (FramePack uses cfg=1
+            so negatives are mostly null, but the param is required).
+        seed: int.
+        model_name: FramePack .safetensors filename. None → caller
+            should pre-resolve via /object_info enum probe; passing
+            None will leave the workflow's "model" field unset.
+            Future: have video_presets.detect_framepack_preset() fill
+            this in (Tier 2.1.1 follow-on).
+        llama_clip_name / clip_l_name: dual CLIPs for hunyuan_video.
+            Typically `llama-3.1-8B-Instruct.safetensors` +
+            `clip_l.safetensors`.
+        vae_name: hunyuan VAE.
+        clip_vision_name: typically `clip_vision_h.safetensors`.
+        base_resolution: 640 is the pack default; pre-bucket alignment.
+        total_second_length: video duration in seconds. FramePack
+            section-samples this; each section is
+            (latent_window_size * 4 - 3) frames at 30 fps.
+        steps: sampler steps per section.
+        cfg, guidance_scale: paired distillation defaults (1.0 + 10.0).
+        use_teacache + teacache_rel_l1_thresh: ~25% speedup neutral
+            quality; pack default.
+        sampler: enum unipc_bh1 (default) or unipc_bh2 (faster, looser).
+        base_precision / quantization: bf16 + fp8_e4m3fn defaults are
+            16-GB-VRAM-friendly; flip to disabled+fp16 if you have
+            >24 GB and want maximum quality.
+        end_image_filename: optional last-frame conditioning. When set,
+            FramePackSampler_F1 interpolates start→end across the video
+            via embed_interpolation mode.
+        prompt_blend_sections: how many sections to blend prompts over
+            on transitions. 0 disables blending.
+
+    Returns:
+        ComfyUI workflow dict; submit via /prompt and read the resulting
+        video file from VHS_VideoCombine's output (filename_prefix +
+        timestamp + counter).
+    """
+    _assert_method_for_preset({"arch": "framepack"}, "video_img2video")
+    nf = NodeFactory()
+
+    # 1. Model
+    model_id = nf._add("LoadFramePackModel", {
+        "model": model_name or "",
+        "base_precision": base_precision,
+        "quantization": quantization,
+        "load_device": load_device,
+    }, node_id="1")
+
+    # 2. Dual CLIP for hunyuan_video text encoders (llama + clip_l)
+    clip_id = nf.dual_clip_loader(
+        llama_clip_name or "",
+        clip_l_name or "",
+        clip_type="hunyuan_video",
+        node_id="2")
+
+    # 3. Timestamped text encode — outputs (timed_pos_data, neg)
+    text_id = nf._add("FramePackTimestampedTextEncode", {
+        "clip": [clip_id, 0],
+        "text": prompt_text,
+        "negative_text": negative_text or "",
+        "total_second_length": float(total_second_length),
+        "latent_window_size": int(latent_window_size),
+        "prompt_blend_sections": int(prompt_blend_sections),
+    }, node_id="3")
+
+    # 4. CLIP vision pipeline for the start frame
+    cv_id = nf.clip_vision_loader(clip_vision_name or "", node_id="4")
+    img_id = nf.load_image(image_filename, node_id="5")
+
+    # 5. Bucket-align (FramePack expects specific aspect-ratio buckets)
+    bucket_id = nf._add("FramePackFindNearestBucket", {
+        "image": [img_id, 0],
+        "base_resolution": int(base_resolution),
+    }, node_id="6")
+    aligned_image = [bucket_id, 0]
+
+    # 6. CLIP-vision encode the aligned start
+    cv_enc_id = nf.clip_vision_encode([cv_id, 0], aligned_image, node_id="7")
+
+    # 7. VAE encode start image to latent
+    vae_id = nf.vae_loader(vae_name or "", node_id="8")
+    enc_id = nf.vae_encode(aligned_image, [vae_id, 0], node_id="9")
+
+    # 8. Optional end-frame conditioning
+    end_latent_ref = None
+    end_embeds_ref = None
+    if end_image_filename:
+        end_img_id = nf.load_image(end_image_filename, node_id="10")
+        end_bucket_id = nf._add("FramePackFindNearestBucket", {
+            "image": [end_img_id, 0],
+            "base_resolution": int(base_resolution),
+        }, node_id="11")
+        end_cv_enc_id = nf.clip_vision_encode([cv_id, 0],
+                                                [end_bucket_id, 0],
+                                                node_id="12")
+        end_enc_id = nf.vae_encode([end_bucket_id, 0], [vae_id, 0],
+                                     node_id="13")
+        end_latent_ref = [end_enc_id, 0]
+        end_embeds_ref = [end_cv_enc_id, 0]
+
+    # 9. FramePackSampler_F1 — F1 variant takes positive_timed_data not
+    #    plain positive (per nodes_F1.py + the canonical example workflow).
+    sampler_kwargs = {
+        "model":                    [model_id, 0],
+        "positive_timed_data":      [text_id, 0],
+        "negative":                 [text_id, 1],
+        "steps":                    int(steps),
+        "use_teacache":             bool(use_teacache),
+        "teacache_rel_l1_thresh":   float(teacache_rel_l1_thresh),
+        "cfg":                      float(cfg),
+        "guidance_scale":           float(guidance_scale),
+        "shift":                    float(shift),
+        "seed":                     int(seed),
+        "gpu_memory_preservation":  float(gpu_memory_preservation),
+        "sampler":                  sampler,
+        # Optional inputs
+        "start_latent":             [enc_id, 0],
+        "start_image_embeds":       [cv_enc_id, 0],
+        "embed_interpolation":      embed_interpolation,
+        "start_embed_strength":     float(start_embed_strength),
+    }
+    if end_latent_ref is not None:
+        sampler_kwargs["end_latent"] = end_latent_ref
+        sampler_kwargs["end_image_embeds"] = end_embeds_ref
+    samp_id = nf._add("FramePackSampler_F1", sampler_kwargs, node_id="20")
+
+    # 10. VAE decode tiled (low-VRAM)
+    dec_id = nf.vae_decode_tiled([samp_id, 0], [vae_id, 0],
+                                   tile_size=512, node_id="21")
+
+    # 11. VHS combine to mp4
+    nf.vhs_video_combine([dec_id, 0],
+                          frame_rate=int(fps),
+                          filename_prefix=filename_prefix,
+                          format_type="video/h264-mp4",
+                          node_id="22")
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  SeedVR2 Video Upscaler
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -7844,6 +8036,1393 @@ def build_wan_video_blockswap(image_filename, wan_model, t5_model, vae_model,
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  HunyuanVideo — Tencent's 13B video model, T2V + I2V (Kijai wrapper)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_hunyuan_video(prompt_text, seed, *,
+                        hy_model,
+                        vae_name,
+                        llm_model="Kijai/llava-llama-3-8b-text-encoder-tokenizer",
+                        clip_model="openai/clip-vit-large-patch14",
+                        image_filename=None,
+                        width=848,
+                        height=480,
+                        num_frames=49,
+                        steps=30,
+                        embedded_guidance_scale=6.0,
+                        flow_shift=9.0,
+                        base_precision="bf16",
+                        quantization="disabled",
+                        load_device="main_device",
+                        attention_mode="sdpa",
+                        text_encoder_precision="bf16",
+                        text_encoder_quant="disabled",
+                        text_encoder_load_device="offload_device",
+                        prompt_template="video",
+                        # Block-swap (low-VRAM)
+                        use_block_swap=False,
+                        double_blocks_to_swap=20,
+                        single_blocks_to_swap=0,
+                        offload_txt_in=False,
+                        offload_img_in=False,
+                        # TeaCache
+                        use_teacache=False,
+                        teacache_rel_l1_thresh=0.15,
+                        teacache_start_step=0,
+                        teacache_end_step=-1,
+                        # Decode
+                        enable_vae_tiling=True,
+                        # Output
+                        fps=24,
+                        crf=19,
+                        filename_prefix="spellcaster_hunyuan") -> dict:
+    """HunyuanVideo (Tencent 13B) text-to-video / image-to-video via Kijai's
+    ComfyUI-HunyuanVideoWrapper.
+
+    Supports both modes via the optional `image_filename`:
+      * T2V (default) — synthesises a video from prompt alone
+      * I2V — when `image_filename` is set, encodes the start frame via
+        HyVideoEncode and passes it as image_cond_latents
+
+    Pack source: ComfyUI-HunyuanVideoWrapper (Kijai). Pipeline:
+      1. HyVideoModelLoader(model, base_precision, quantization,
+         load_device, attention_mode, [block_swap_args])
+         → HYVIDEOMODEL
+      2. DownloadAndLoadHyVideoTextEncoder(llm_model, clip_model,
+         precision, quantization, load_device) → HYVIDTEXTENCODER
+      3. HyVideoTextEncode(text_encoders, prompt, prompt_template)
+         → HYVIDEMBEDS
+      4. HyVideoVAELoader(model_name, precision) → VAE
+      5. (I2V only) LoadImage(image_filename) + HyVideoEncode(vae,
+         image, enable_vae_tiling) → image_cond_latents
+      6. (optional) HyVideoBlockSwap(...) → BLOCKSWAPARGS
+      7. (optional) HyVideoTeaCache(rel_l1_thresh, ...) → TEACACHEARGS
+      8. HyVideoSampler(model, hyvid_embeds, width, height, num_frames,
+         steps, embedded_guidance_scale, flow_shift, seed, force_offload,
+         [image_cond_latents], [teacache_args]) → samples LATENT
+      9. HyVideoDecode(vae, samples, enable_vae_tiling) → IMAGE
+      10. VHS_VideoCombine → file
+
+    Hunyuan-specifics worth noting:
+      * No CFG — Hunyuan is distilled, uses `embedded_guidance_scale`
+        (default 6.0) baked into the model. Negative prompts are
+        achievable via HyVideoCFG node but rarely used.
+      * `flow_shift` is the flow-matching shift parameter (9.0 is the
+        published default; lower for shorter video, higher for longer).
+      * 13B model: at fp8_e4m3fn (`quantization="fp8_e4m3fn"`) it fits
+        in 16 GB; at bf16 it needs ~26 GB or block-swap.
+      * For 16 GB GPUs: pass `quantization="fp8_e4m3fn"` AND
+        `use_block_swap=True` for safety. Or set both to default to
+        try `use_block_swap=False` first and fall back.
+
+    Args:
+        prompt_text: prompt. Use the `prompt_template="video"` mode for
+            the standard llama_video prompt-template (default).
+        seed: sampler seed.
+        hy_model: HyVideoModelLoader filename (e.g. `hunyuan_video_t2v_*.safetensors`).
+        vae_name: HyVideoVAELoader filename.
+        llm_model / clip_model: text-encoder repo ids passed to
+            DownloadAndLoadHyVideoTextEncoder. Defaults are the
+            Kijai-published llava-llama-3-8b + OpenAI clip-vit-large.
+        image_filename: optional start frame; None = T2V.
+        width, height, num_frames: target video shape. Default 848x480x49
+            (~2s at 24fps). Should be multiples of 16 / 4 respectively.
+        steps: sampler steps. 30 default for full path; 6-8 for distilled.
+        embedded_guidance_scale: Hunyuan's distilled guidance (replaces CFG).
+        flow_shift: flow-matching shift, 9.0 default.
+        base_precision / quantization / attention_mode: model loader knobs.
+            For 16 GB hardware, use quantization="fp8_e4m3fn".
+        use_block_swap + per-block knobs: enable to fit 13B on 16 GB.
+        use_teacache + thresh: ~25% speedup at neutral quality.
+        enable_vae_tiling: tiled decode for low VRAM.
+        fps, crf: video encode params.
+        filename_prefix: VHS output prefix.
+
+    Returns:
+        ComfyUI workflow dict.
+
+    R7 method: `video_img2video` if image_filename set, else `video_gen`.
+    """
+    method = "video_img2video" if image_filename else "video_gen"
+    _assert_method_for_preset({"arch": "hunyuan_video"}, method)
+    nf = NodeFactory()
+
+    # 1a. Optional block swap args
+    block_swap_ref = None
+    if use_block_swap:
+        bs_id = nf._add("HyVideoBlockSwap", {
+            "double_blocks_to_swap": int(double_blocks_to_swap),
+            "single_blocks_to_swap": int(single_blocks_to_swap),
+            "offload_txt_in": bool(offload_txt_in),
+            "offload_img_in": bool(offload_img_in),
+        }, node_id="1a")
+        block_swap_ref = [bs_id, 0]
+
+    # 1b. Model
+    model_kwargs = {
+        "model": hy_model,
+        "base_precision": base_precision,
+        "quantization": quantization,
+        "load_device": load_device,
+        "attention_mode": attention_mode,
+    }
+    if block_swap_ref is not None:
+        model_kwargs["block_swap_args"] = block_swap_ref
+    model_id = nf._add("HyVideoModelLoader", model_kwargs, node_id="1")
+
+    # 2. Text encoder (downloads on first use)
+    te_id = nf._add("DownloadAndLoadHyVideoTextEncoder", {
+        "llm_model": llm_model,
+        "clip_model": clip_model,
+        "precision": text_encoder_precision,
+        "quantization": text_encoder_quant,
+        "load_device": text_encoder_load_device,
+    }, node_id="2")
+
+    # 3. Text encode → HYVIDEMBEDS
+    text_id = nf._add("HyVideoTextEncode", {
+        "text_encoders": [te_id, 0],
+        "prompt": prompt_text,
+        "prompt_template": prompt_template,
+    }, node_id="3")
+
+    # 4. VAE
+    vae_id = nf._add("HyVideoVAELoader", {
+        "model_name": vae_name,
+        "precision": base_precision,
+    }, node_id="4")
+
+    # 5. Optional I2V image conditioning
+    image_cond_ref = None
+    if image_filename:
+        img_id = nf.load_image(image_filename, node_id="5")
+        img_enc_id = nf._add("HyVideoEncode", {
+            "vae": [vae_id, 0],
+            "image": [img_id, 0],
+            "enable_vae_tiling": bool(enable_vae_tiling),
+            "temporal_tiling_sample_size": 64,
+            "spatial_tile_sample_min_size": 256,
+            "auto_tile_size": True,
+        }, node_id="6")
+        image_cond_ref = [img_enc_id, 0]
+
+    # 6. Optional TeaCache args
+    teacache_ref = None
+    if use_teacache:
+        tc_id = nf._add("HyVideoTeaCache", {
+            "rel_l1_thresh": float(teacache_rel_l1_thresh),
+            "cache_device": "offload_device",
+            "start_step": int(teacache_start_step),
+            "end_step": int(teacache_end_step),
+        }, node_id="7")
+        teacache_ref = [tc_id, 0]
+
+    # 7. Sampler
+    sampler_kwargs = {
+        "model":                    [model_id, 0],
+        "hyvid_embeds":             [text_id, 0],
+        "width":                    int(width),
+        "height":                   int(height),
+        "num_frames":               int(num_frames),
+        "steps":                    int(steps),
+        "embedded_guidance_scale":  float(embedded_guidance_scale),
+        "flow_shift":               float(flow_shift),
+        "seed":                     int(seed),
+        "force_offload":            True,
+    }
+    if image_cond_ref is not None:
+        sampler_kwargs["image_cond_latents"] = image_cond_ref
+    if teacache_ref is not None:
+        sampler_kwargs["teacache_args"] = teacache_ref
+    samp_id = nf._add("HyVideoSampler", sampler_kwargs, node_id="8")
+
+    # 8. Decode
+    dec_id = nf._add("HyVideoDecode", {
+        "vae": [vae_id, 0],
+        "samples": [samp_id, 0],
+        "enable_vae_tiling": bool(enable_vae_tiling),
+        "temporal_tiling_sample_size": 64,
+        "spatial_tile_sample_min_size": 256,
+        "auto_tile_size": True,
+    }, node_id="9")
+
+    # 9. Video combine
+    nf.update({
+        "10": {"class_type": "VHS_VideoCombine",
+               "inputs": {"images": [dec_id, 0],
+                          "frame_rate": int(fps),
+                          "loop_count": 0,
+                          "filename_prefix": filename_prefix,
+                          "format": "video/h264-mp4",
+                          "save_output": True,
+                          "pix_fmt": "yuv420p",
+                          "crf": int(crf)}},
+    })
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  CogVideoX — 5B/2B image-to-video & text-to-video (THUDM)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_cogvideo_video(prompt_text, negative_text, seed, *,
+                         cog_model,
+                         clip_name,
+                         vae_name,
+                         image_filename=None,
+                         num_frames=49,
+                         steps=50,
+                         cfg=6.0,
+                         scheduler="CogVideoXDDIM",
+                         base_precision="bf16",
+                         quantization="disabled",
+                         load_device="main_device",
+                         attention_mode="sdpa",
+                         enable_vae_tiling=True,
+                         enable_sequential_cpu_offload=False,
+                         use_teacache=False,
+                         teacache_rel_l1_thresh=0.3,
+                         fps=8,
+                         crf=19,
+                         filename_prefix="spellcaster_cogvideo") -> dict:
+    """CogVideoX (THUDM) image-to-video / text-to-video via Kijai's
+    ComfyUI-CogVideoXWrapper.
+
+    Supports both modes via the optional `image_filename`:
+      * I2V — when `image_filename` is set, the start frame is encoded via
+        CogVideoImageEncode and passed to the sampler as
+        `image_cond_latents`. CogVideoX 5B-I2V variants and 2B-img2vid
+        will use the conditioning; T2V models will pass through.
+      * T2V — when `image_filename` is None, no image conditioning is
+        passed and the sampler synthesises from the text prompt alone.
+
+    Pack source: ComfyUI-CogVideoXWrapper (Kijai). Pipeline (R4-verified
+    against pack source 2026-05-06):
+      1. CogVideoXModelLoader(cog_model, base_precision, quantization,
+         load_device, enable_sequential_cpu_offload, attention_mode)
+         → COGVIDEOMODEL
+      2. CLIPLoader(clip_name, type=sd3) → CLIP    [T5 in disguise]
+      3. CogVideoTextEncode(clip, prompt) → (CONDITIONING, CLIP) [pos]
+      4. CogVideoTextEncode(clip, negative) → (CONDITIONING, CLIP) [neg]
+      5. CogVideoXVAELoader(vae_name) → VAE
+      6. (I2V only) LoadImage(image_filename) → IMAGE
+                    CogVideoImageEncode(vae, start_image, enable_tiling)
+                      → image_cond_latents LATENT
+      7. (optional) CogVideoXTeaCache(rel_l1_thresh) → teacache_args
+      8. CogVideoSampler(model, positive, negative, num_frames, steps,
+         cfg, seed, scheduler, [image_cond_latents], [teacache_args])
+         → samples LATENT
+      9. CogVideoDecode(vae, samples, enable_vae_tiling) → IMAGE
+      10. VHS_VideoCombine(images, fps) → file
+
+    Defaults follow CogVideoX 5B canonical: 49 frames at 8 fps (~6s).
+    Step count 50 is the published default; lower (15-20) works for
+    distilled variants.
+
+    Args:
+        prompt_text: positive prompt.
+        negative_text: negative prompt; "" or None gets passed as empty.
+        seed: sampler seed.
+        cog_model: CogVideoXModelLoader filename (e.g.
+            `CogVideoX-5b-I2V_fp16.safetensors`). Picked from
+            `models/diffusion_models/`.
+        clip_name: T5 text encoder filename for CLIPLoader. CogVideoX
+            uses T5 for text conditioning.
+        vae_name: CogVideoXVAELoader filename.
+        image_filename: optional start frame. None = T2V mode.
+        num_frames: total frames. 49 is canonical for 5B I2V.
+        steps: sampler steps. 50 default; some models support fewer.
+        cfg: classifier-free guidance scale. 6.0 is the published default.
+        scheduler: sampler scheduler name. Default `CogVideoXDDIM`.
+        base_precision / quantization: bf16 + disabled defaults match
+            standard 5B inference. Use fp8_e4m3fn quant if VRAM-tight.
+        attention_mode: sdpa default; `sageattn*` variants if SageAttention
+            is installed (50-100% throughput on RTX 40/50xx).
+        enable_vae_tiling: tiles the decode for low-VRAM. Default True.
+        enable_sequential_cpu_offload: per-block offload, slow but fits.
+        use_teacache: enables CogVideoXTeaCache wrapper for ~25% speedup
+            at neutral quality. Off by default.
+        fps, crf: video encode params.
+
+    Returns:
+        ComfyUI workflow dict.
+
+    R7 method: `video_img2video` when `image_filename` is set, else
+    `video_gen`.
+    """
+    method = "video_img2video" if image_filename else "video_gen"
+    _assert_method_for_preset({"arch": "cogvideo"}, method)
+    nf = NodeFactory()
+
+    # 1. Model
+    model_id = nf._add("CogVideoXModelLoader", {
+        "model": cog_model,
+        "base_precision": base_precision,
+        "quantization": quantization,
+        "load_device": load_device,
+        "enable_sequential_cpu_offload": bool(enable_sequential_cpu_offload),
+        "attention_mode": attention_mode,
+    }, node_id="1")
+
+    # 2. T5 text encoder via vanilla CLIPLoader (CogVideo uses sd3-style)
+    clip_id = nf.clip_loader(clip_name, clip_type="sd3", node_id="2")
+
+    # 3. Positive text encode
+    pos_id = nf._add("CogVideoTextEncode", {
+        "clip": [clip_id, 0],
+        "prompt": prompt_text,
+    }, node_id="3")
+
+    # 4. Negative text encode
+    neg_id = nf._add("CogVideoTextEncode", {
+        "clip": [clip_id, 0],
+        "prompt": negative_text or "",
+    }, node_id="4")
+
+    # 5. VAE
+    vae_id = nf._add("CogVideoXVAELoader", {
+        "model_name": vae_name,
+        "precision": base_precision,
+    }, node_id="5")
+
+    # 6. Optional I2V image conditioning
+    image_cond_ref = None
+    if image_filename:
+        img_id = nf.load_image(image_filename, node_id="6")
+        img_enc_id = nf._add("CogVideoImageEncode", {
+            "vae": [vae_id, 0],
+            "start_image": [img_id, 0],
+            "enable_tiling": bool(enable_vae_tiling),
+        }, node_id="7")
+        image_cond_ref = [img_enc_id, 0]
+
+    # 7. Optional TeaCache args
+    teacache_ref = None
+    if use_teacache:
+        tc_id = nf._add("CogVideoXTeaCache", {
+            "rel_l1_thresh": float(teacache_rel_l1_thresh),
+        }, node_id="8")
+        teacache_ref = [tc_id, 0]
+
+    # 8. Sampler
+    sampler_kwargs = {
+        "model":      [model_id, 0],
+        "positive":   [pos_id, 0],
+        "negative":   [neg_id, 0],
+        "num_frames": int(num_frames),
+        "steps":      int(steps),
+        "cfg":        float(cfg),
+        "seed":       int(seed),
+        "scheduler":  scheduler,
+    }
+    if image_cond_ref is not None:
+        sampler_kwargs["image_cond_latents"] = image_cond_ref
+    if teacache_ref is not None:
+        sampler_kwargs["teacache_args"] = teacache_ref
+    samp_id = nf._add("CogVideoSampler", sampler_kwargs, node_id="9")
+
+    # 9. Decode
+    dec_id = nf._add("CogVideoDecode", {
+        "vae": [vae_id, 0],
+        "samples": [samp_id, 0],
+        "enable_vae_tiling": bool(enable_vae_tiling),
+    }, node_id="10")
+
+    # 10. Video combine
+    nf.update({
+        "11": {"class_type": "VHS_VideoCombine",
+               "inputs": {"images": [dec_id, 0],
+                          "frame_rate": int(fps),
+                          "loop_count": 0,
+                          "filename_prefix": filename_prefix,
+                          "format": "video/h264-mp4",
+                          "save_output": True,
+                          "pix_fmt": "yuv420p",
+                          "crf": int(crf)}},
+    })
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Mochi-1 — Genmo's Apache-2.0 10B video model (T2V) via MochiWrapper
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_mochi_video(prompt_text, negative_text, seed, *,
+                      mochi_model,
+                      mochi_vae,
+                      t5_clip,
+                      width=848,
+                      height=480,
+                      num_frames=49,
+                      steps=50,
+                      cfg=4.5,
+                      precision="fp8_e4m3fn",
+                      attention_mode="sdpa",
+                      vae_precision="bf16",
+                      enable_vae_tiling=True,
+                      auto_tile_size=True,
+                      frame_batch_size=6,
+                      tile_sample_min_height=240,
+                      tile_sample_min_width=424,
+                      use_fastercache=False,
+                      fastercache_start=10,
+                      fastercache_hf_step=22,
+                      fastercache_lf_step=28,
+                      fps=24,
+                      crf=19,
+                      filename_prefix="spellcaster_mochi") -> dict:
+    """Mochi-1 (Genmo, Oct 2024) text-to-video via Kijai's ComfyUI-MochiWrapper.
+
+    Mochi is a 10B Apache-2.0 video model. Default-shape 848x480x49 produces
+    ~2s at 24fps. T5xxl-only conditioning (single CLIP). The wrapper exposes
+    fp8_e4m3fn quantisation by default — fits the 10B in 16 GB VRAM at the
+    cost of small precision loss; bf16 needs ~24 GB.
+
+    Pipeline (from examples/mochi_example_49_frames_16GB.json):
+      1. CLIPLoader(t5_clip, type="sd3")           → CLIP
+      2. MochiTextEncode(clip, positive_prompt)    → CONDITIONING (positive)
+      3. MochiTextEncode(clip, negative_prompt)    → CONDITIONING (negative)
+      4. MochiModelLoader(model, precision, attn)  → MOCHIMODEL
+      5. MochiVAELoader(vae, precision)            → MOCHIVAE
+      6. (optional) MochiFasterCache(...)          → FASTERCACHEARGS
+      7. MochiSampler(model, +, -, w, h, frames,
+                      steps, cfg, seed, [fastercache])  → LATENT
+      8. MochiDecode(vae, samples, tiling, ...)    → IMAGE
+      9. VHS_VideoCombine(images, fps, h264-mp4)   → file
+
+    Notes:
+      * Mochi has no native I2V — text-only conditioning. For T2V→I2V hybrid
+        flows, run a separate img2vid model and concatenate.
+      * `cfg=4.5` is the published default; the wrapper additionally supports
+        a `cfg_schedule` override (a list per step) — exposed as a future-knob
+        but not surfaced here yet.
+      * `num_frames` must be `7 + 6n` (downscale factor 6). Default 49 = 7+6*7.
+      * FasterCache trades VRAM for speed (~30% faster, 1-2 GB extra). Skip
+        on tight 16 GB unless you've already enabled fp8.
+
+    Args:
+        prompt_text: positive prompt.
+        negative_text: negative prompt (passed verbatim to MochiTextEncode;
+            empty string is fine).
+        seed: sampler seed.
+        mochi_model: MochiModelLoader filename (under diffusion_models/).
+        mochi_vae: MochiVAELoader filename (under vae/).
+        t5_clip: CLIPLoader filename for the T5xxl encoder (e.g.
+            `t5/google_t5-v1_1-xxl_encoderonly-fp8_e4m3fn.safetensors`).
+            Loaded via the standard Comfy CLIPLoader with type="sd3".
+        width, height, num_frames: target shape. Defaults 848x480x49.
+        steps, cfg: sampler.
+        precision: model precision (fp8_e4m3fn / fp8_e4m3fn_fast / bf16 /
+            fp16 / fp32). fp8_e4m3fn is the 16 GB sweet spot.
+        attention_mode: sdpa / flash_attn / sage_attn / comfy.
+        vae_precision: VAE dtype (bf16 default).
+        enable_vae_tiling + tile knobs: low-VRAM decode.
+        use_fastercache + fastercache_*: optional caching for speed.
+        fps, crf: video encode.
+        filename_prefix: VHS output prefix.
+
+    Returns:
+        ComfyUI workflow dict.
+
+    R7 method: `video_gen` (Mochi has no I2V path).
+    """
+    _assert_method_for_preset({"arch": "mochi"}, "video_gen")
+    nf = NodeFactory()
+
+    # 1. CLIP loader (T5xxl single encoder; type="sd3" per pack example)
+    clip_id = nf._add("CLIPLoader", {
+        "clip_name": t5_clip,
+        "type": "sd3",
+    }, node_id="1")
+
+    # 2. Positive text encode
+    pos_id = nf._add("MochiTextEncode", {
+        "clip": [clip_id, 0],
+        "prompt": prompt_text,
+        "strength": 1.0,
+        "force_offload": True,
+    }, node_id="2")
+
+    # 3. Negative text encode
+    neg_id = nf._add("MochiTextEncode", {
+        "clip": [clip_id, 0],
+        "prompt": negative_text or "",
+        "strength": 1.0,
+        "force_offload": True,
+    }, node_id="3")
+
+    # 4. Model loader
+    model_id = nf._add("MochiModelLoader", {
+        "model_name": mochi_model,
+        "precision": precision,
+        "attention_mode": attention_mode,
+    }, node_id="4")
+
+    # 5. VAE loader
+    vae_id = nf._add("MochiVAELoader", {
+        "model_name": mochi_vae,
+        "precision": vae_precision,
+    }, node_id="5")
+
+    # 6. Optional FasterCache args
+    fastercache_ref = None
+    if use_fastercache:
+        fc_id = nf._add("MochiFasterCache", {
+            "start_step": int(fastercache_start),
+            "hf_step": int(fastercache_hf_step),
+            "lf_step": int(fastercache_lf_step),
+            "cache_device": "main_device",
+        }, node_id="6")
+        fastercache_ref = [fc_id, 0]
+
+    # 7. Sampler
+    sampler_kwargs = {
+        "model":      [model_id, 0],
+        "positive":   [pos_id, 0],
+        "negative":   [neg_id, 0],
+        "width":      int(width),
+        "height":     int(height),
+        "num_frames": int(num_frames),
+        "steps":      int(steps),
+        "cfg":        float(cfg),
+        "seed":       int(seed),
+    }
+    if fastercache_ref is not None:
+        sampler_kwargs["fastercache"] = fastercache_ref
+    samp_id = nf._add("MochiSampler", sampler_kwargs, node_id="7")
+
+    # 8. Decode (tiled when enable_vae_tiling)
+    nf._add("MochiDecode", {
+        "vae": [vae_id, 0],
+        "samples": [samp_id, 0],
+        "enable_vae_tiling": bool(enable_vae_tiling),
+        "auto_tile_size": bool(auto_tile_size),
+        "frame_batch_size": int(frame_batch_size),
+        "tile_sample_min_height": int(tile_sample_min_height),
+        "tile_sample_min_width": int(tile_sample_min_width),
+        "tile_overlap_factor_height": 0.1666,
+        "tile_overlap_factor_width": 0.2,
+    }, node_id="8")
+
+    # 9. Video combine
+    nf.update({
+        "9": {"class_type": "VHS_VideoCombine",
+              "inputs": {"images": ["8", 0],
+                         "frame_rate": int(fps),
+                         "loop_count": 0,
+                         "filename_prefix": filename_prefix,
+                         "format": "video/h264-mp4",
+                         "save_output": True,
+                         "pix_fmt": "yuv420p",
+                         "crf": int(crf)}},
+    })
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Hunyuan3D 2.1 — image-to-3D mesh (Tencent) via ComfyUI-Hunyuan3d-2-1
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_hunyuan_3d_mesh(image_filename, seed, *,
+                          hy3d_model="hunyuan3d-dit-v2-1-fp16.ckpt",
+                          hy3d_vae="Hunyuan3D-vae-v2-1-fp16.ckpt",
+                          steps=25,
+                          guidance_scale=5.0,
+                          attention_mode="sdpa",
+                          # VAE decode (mesh extraction)
+                          box_v=1.01,
+                          octree_resolution=384,
+                          num_chunks=8000,
+                          mc_level=0.0,
+                          mc_algo="dmc",
+                          enable_flash_vdm=True,
+                          force_offload=True,
+                          # Postprocess
+                          remove_floaters=True,
+                          remove_degenerate_faces=True,
+                          reduce_faces=True,
+                          max_facenum=200000,
+                          smooth_normals=False,
+                          # Export
+                          file_format="glb",
+                          save_file=True,
+                          filename_prefix="3D/spellcaster_hy3d") -> dict:
+    """Hunyuan3D 2.1 image-to-3D mesh generation via Tencent's ComfyUI
+    pack (ComfyUI-Hunyuan3d-2-1). NEW MODALITY: this builder produces
+    a textured/untextured 3D mesh (.glb/.obj/.ply) rather than an
+    image or video — first 3D pipeline in Spellcaster.
+
+    Pipeline (from workflow_examples/Mesh_Generation.json):
+      1. Hy3D21LoadImageWithTransparency(image_filename) → IMAGE,
+         MASK, IMAGE_with_alpha. We use the alpha image as input
+         to the mesh generator (handles isolated subjects best).
+      2. Hy3DMeshGenerator(model, image, steps, guidance_scale,
+         seed, attention_mode) → HY3DLATENT
+         The DiT flow-matching pipeline. Default 25 steps + cfg 5.0.
+      3. Hy3D21VAELoader(vae_name) → HY3DVAE
+         Loads the ShapeVAE (default config baked in; override via
+         Hy3D21VAEConfig if needed — not exposed here yet).
+      4. Hy3D21VAEDecode(vae, latents, box_v=1.01, octree=384,
+         num_chunks=8000, mc_level=0, mc_algo="dmc", flash_vdm,
+         force_offload) → TRIMESH
+      5. Hy3D21PostprocessMesh(trimesh, remove_floaters,
+         remove_degenerate_faces, reduce_faces, max_facenum,
+         smooth_normals) → TRIMESH (cleaned)
+      6. Hy3D21ExportMesh(trimesh, filename_prefix, file_format,
+         save_file) → STRING (glb_path)
+
+    Notes:
+      * `mc_algo="dmc"` (Dual-Marching-Cubes) is the higher-quality
+        choice. `"mc"` is faster.
+      * `octree_resolution=384` → ~200K-face mesh at default postproc.
+        Higher (512/768) for very detailed inputs; expensive.
+      * `attention_mode="sageattn"` available if SageAttention is on.
+      * No texturing in the basic path — output is geometry-only.
+        Mesh_Texturing.json in the pack shows how to add albedo/MR
+        passes; that's a future builder (build_hunyuan_3d_textured).
+
+    Args:
+        image_filename: input image already in ComfyUI's input/.
+            Should ideally be transparent/RMBG'd PNG.
+        seed: DiT generator seed.
+        hy3d_model: Hy3DMeshGenerator checkpoint (under diffusion_models/).
+        hy3d_vae: Hy3D21VAELoader checkpoint (under vae/).
+        steps, guidance_scale: DiT flow-matching.
+        attention_mode: sdpa or sageattn.
+        box_v / octree_resolution / num_chunks / mc_level / mc_algo /
+            enable_flash_vdm / force_offload: VAE decoder knobs.
+        remove_* / reduce_faces / max_facenum / smooth_normals: postproc.
+        file_format: glb / obj / ply / stl / 3mf / dae.
+        save_file: write to disk (else just produce in-memory mesh).
+        filename_prefix: output prefix; supports `3D/...` subdir.
+
+    Returns:
+        ComfyUI workflow dict.
+
+    R7 method: `mesh_gen` (new method for the 3D modality).
+    """
+    _assert_method_for_preset({"arch": "hunyuan_3d"}, "mesh_gen")
+    nf = NodeFactory()
+
+    # 1. Load image (use the with-alpha output for best mesh isolation)
+    img_id = nf._add("Hy3D21LoadImageWithTransparency", {
+        "image": image_filename,
+    }, node_id="1")
+
+    # 2. Mesh generator (DiT flow-matching → latents)
+    gen_id = nf._add("Hy3DMeshGenerator", {
+        "model": hy3d_model,
+        "image": [img_id, 2],  # output index 2 = image_with_alpha
+        "steps": int(steps),
+        "guidance_scale": float(guidance_scale),
+        "seed": int(seed),
+        "attention_mode": attention_mode,
+    }, node_id="2")
+
+    # 3. VAE loader
+    vae_id = nf._add("Hy3D21VAELoader", {
+        "model_name": hy3d_vae,
+    }, node_id="3")
+
+    # 4. VAE decode → trimesh
+    dec_id = nf._add("Hy3D21VAEDecode", {
+        "vae": [vae_id, 0],
+        "latents": [gen_id, 0],
+        "box_v": float(box_v),
+        "octree_resolution": int(octree_resolution),
+        "num_chunks": int(num_chunks),
+        "mc_level": float(mc_level),
+        "mc_algo": mc_algo,
+        "enable_flash_vdm": bool(enable_flash_vdm),
+        "force_offload": bool(force_offload),
+    }, node_id="4")
+
+    # 5. Postprocess (clean up + face reduction)
+    post_id = nf._add("Hy3D21PostprocessMesh", {
+        "trimesh": [dec_id, 0],
+        "remove_floaters": bool(remove_floaters),
+        "remove_degenerate_faces": bool(remove_degenerate_faces),
+        "reduce_faces": bool(reduce_faces),
+        "max_facenum": int(max_facenum),
+        "smooth_normals": bool(smooth_normals),
+    }, node_id="5")
+
+    # 6. Export
+    nf._add("Hy3D21ExportMesh", {
+        "trimesh": [post_id, 0],
+        "filename_prefix": filename_prefix,
+        "file_format": file_format,
+        "save_file": bool(save_file),
+    }, node_id="6")
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Hunyuan3D 2.1 textured — geometry + albedo/MR multi-view bake
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_hunyuan_3d_textured(image_filename, seed, *,
+                              hy3d_model="hunyuan3d-dit-v2-1-fp16.ckpt",
+                              hy3d_vae="Hunyuan3D-vae-v2-1-fp16.ckpt",
+                              # Mesh gen
+                              steps=25,
+                              guidance_scale=5.0,
+                              attention_mode="sdpa",
+                              octree_resolution=384,
+                              num_chunks=8000,
+                              mc_level=0.0,
+                              mc_algo="dmc",
+                              enable_flash_vdm=True,
+                              # Postprocess
+                              remove_floaters=True,
+                              remove_degenerate_faces=True,
+                              reduce_faces=True,
+                              max_facenum=80000,
+                              smooth_normals=True,
+                              # Multi-view paint
+                              view_size=512,
+                              texture_size=1024,
+                              paint_steps=10,
+                              paint_guidance=3.0,
+                              unwrap_mesh=True,
+                              # Export
+                              file_format="glb",
+                              save_file=True,
+                              filename_prefix="3D/spellcaster_hy3d_textured") -> dict:
+    """Hunyuan3D 2.1 textured-mesh: geometry + albedo + MR via the
+    `Hy3DMultiViewsGenerator` + `Hy3DBakeMultiViews` chain.
+
+    Sibling to `build_hunyuan_3d_mesh` (geometry only). Steps:
+      1. Hy3D21LoadImageWithTransparency(image)            → IMAGE+alpha
+      2. Hy3DMeshGenerator(model, image, ...)              → HY3DLATENT
+      3. Hy3D21VAELoader(vae)                              → HY3DVAE
+      4. Hy3D21VAEDecode(vae, latents, ...)                → TRIMESH
+      5. Hy3D21PostprocessMesh(trimesh, ...)               → TRIMESH
+      6. Hy3D21CameraConfig                                → HY3D21CAMERA
+      7. Hy3DMultiViewsGenerator(trimesh, camera, image,
+         steps, guidance, view_size, texture_size,
+         unwrap_mesh, seed)
+         → (HY3DPIPELINE, IMAGE×4, HY3D21CAMERA)
+         (the 4 image outputs are albedo / mr / positions / normals;
+         we only forward the first two to the bake step)
+      8. Hy3DBakeMultiViews(pipeline, camera, albedo, mr) → TRIMESH (textured)
+      9. Hy3D21ExportMesh(trimesh, prefix, format)         → glb_path
+
+    The pack typically reduces face count more aggressively (~80k vs
+    200k for the geo-only path) because texture baking onto a million-face
+    mesh is memory-bound. Smooth_normals=True is also the default since
+    most users want a clean shaded surface for renderers downstream.
+
+    R7 method: `mesh_textured`.
+    """
+    _assert_method_for_preset({"arch": "hunyuan_3d"}, "mesh_textured")
+    nf = NodeFactory()
+
+    # 1. Load image (use the with-alpha output)
+    img_id = nf._add("Hy3D21LoadImageWithTransparency", {
+        "image": image_filename,
+    }, node_id="1")
+
+    # 2. Mesh generator
+    gen_id = nf._add("Hy3DMeshGenerator", {
+        "model": hy3d_model,
+        "image": [img_id, 2],
+        "steps": int(steps),
+        "guidance_scale": float(guidance_scale),
+        "seed": int(seed),
+        "attention_mode": attention_mode,
+    }, node_id="2")
+
+    # 3. VAE
+    vae_id = nf._add("Hy3D21VAELoader", {
+        "model_name": hy3d_vae,
+    }, node_id="3")
+
+    # 4. Decode
+    dec_id = nf._add("Hy3D21VAEDecode", {
+        "vae": [vae_id, 0],
+        "latents": [gen_id, 0],
+        "box_v": 1.01,
+        "octree_resolution": int(octree_resolution),
+        "num_chunks": int(num_chunks),
+        "mc_level": float(mc_level),
+        "mc_algo": mc_algo,
+        "enable_flash_vdm": bool(enable_flash_vdm),
+        "force_offload": True,
+    }, node_id="4")
+
+    # 5. Postprocess (texture bake handles tighter face counts well)
+    post_id = nf._add("Hy3D21PostprocessMesh", {
+        "trimesh": [dec_id, 0],
+        "remove_floaters": bool(remove_floaters),
+        "remove_degenerate_faces": bool(remove_degenerate_faces),
+        "reduce_faces": bool(reduce_faces),
+        "max_facenum": int(max_facenum),
+        "smooth_normals": bool(smooth_normals),
+    }, node_id="5")
+
+    # 6. Camera config (defaults from the pack's example workflow)
+    cam_id = nf._add("Hy3D21CameraConfig", {}, node_id="6")
+
+    # 7. Multi-view generator (paint pass)
+    mv_id = nf._add("Hy3DMultiViewsGenerator", {
+        "trimesh":         [post_id, 0],
+        "camera_config":   [cam_id, 0],
+        "view_size":       int(view_size),
+        "image":           [img_id, 2],
+        "steps":           int(paint_steps),
+        "guidance_scale":  float(paint_guidance),
+        "texture_size":    int(texture_size),
+        "unwrap_mesh":     bool(unwrap_mesh),
+        "seed":            int(seed),
+    }, node_id="7")
+
+    # 8. Bake albedo + mr onto the mesh
+    bake_id = nf._add("Hy3DBakeMultiViews", {
+        "pipeline":      [mv_id, 0],
+        "camera_config": [mv_id, 5],  # camera passes through
+        "albedo":        [mv_id, 1],
+        "mr":            [mv_id, 2],
+    }, node_id="8")
+
+    # 9. Export
+    nf._add("Hy3D21ExportMesh", {
+        "trimesh":         [bake_id, 0],
+        "filename_prefix": filename_prefix,
+        "file_format":     file_format,
+        "save_file":       bool(save_file),
+    }, node_id="9")
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Lumina-Image 2.0 — Alpha-VLLM MMDiT (Apache-2.0), native ComfyUI
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_lumina2_txt2img(prompt_text, negative_text, seed, *,
+                          ckpt_name,
+                          clip_name,
+                          vae_name="ae.safetensors",
+                          width=1024,
+                          height=1024,
+                          steps=30,
+                          cfg=4.0,
+                          system_prompt="superior",
+                          sampler_name="euler",
+                          scheduler="normal",
+                          denoise=1.0,
+                          shift=1.73,
+                          batch_size=1,
+                          filename_prefix="spellcaster_lumina2") -> dict:
+    """Lumina-Image 2.0 (Alpha-VLLM, 2024-12) text-to-image.
+
+    Native ComfyUI pipeline (no wrapper pack), keyed off the
+    `CLIPTextEncodeLumina2` node which takes a `system_prompt` enum
+    ("superior" / "alignment") + the user prompt + a Gemma CLIP.
+
+    Pipeline:
+      1. CheckpointLoaderSimple(ckpt_name)             → MODEL, CLIP, VAE
+         (Lumina 2 ships both model + clip + vae together if loaded as
+         a checkpoint; if only the UNET is on disk, callers must pre-pair
+         a CLIPLoader + VAELoader separately — not exposed here)
+      2. CLIPLoader(clip_name, type="lumina2")         → CLIP
+      3. VAELoader(vae_name)                           → VAE
+      4. CLIPTextEncodeLumina2(clip, system_prompt,
+                               positive_prompt)        → CONDITIONING (+)
+      5. CLIPTextEncodeLumina2(clip, system_prompt,
+                               negative_prompt)        → CONDITIONING (-)
+      6. EmptyLatentImage(w, h, batch)                 → LATENT
+      7. ModelSamplingAuraFlow(model, shift=1.73)      → MODEL (flow-matching shift)
+      8. KSampler(model, +, -, latent, steps, cfg,
+                  euler, normal, seed)                 → LATENT
+      9. VAEDecode + SaveImage
+
+    Args:
+      ckpt_name: checkpoint filename (e.g. `Lumina/lumina_2.safetensors`).
+      clip_name: Gemma CLIP filename. Lumina 2 ideally needs Gemma-2-2B;
+                 a Gemma-3 fallback is acceptable (slightly different
+                 tokenizer; quality may regress).
+      vae_name: standard Flux ae VAE works (Lumina 2's VAE is
+                Flux-compatible). Default `ae.safetensors`.
+      system_prompt: "superior" (text-image alignment optimized) or
+                "alignment" (highest-fidelity alignment). Default
+                "superior" tracks the official paper.
+      shift: ModelSamplingAuraFlow flow-matching shift. 1.73 is the
+                Lumina-published default.
+      denoise: passes through to KSampler; 1.0 for clean txt2img.
+    R7 method: `txt2img`.
+    """
+    _assert_method_for_preset({"arch": "lumina2"}, "txt2img")
+    nf = NodeFactory()
+
+    # 1. Checkpoint (model+clip+vae)
+    ckpt_id = nf._add("CheckpointLoaderSimple", {
+        "ckpt_name": ckpt_name,
+    }, node_id="1")
+
+    # 2. Standalone CLIP loader (Gemma) — overrides the bundled CLIP
+    #    because lumina_2.safetensors is sometimes shipped as UNET-only.
+    clip_id = nf._add("CLIPLoader", {
+        "clip_name": clip_name,
+        "type":      "lumina2",
+    }, node_id="2")
+
+    # 3. VAE loader (Flux ae works — Lumina 2 VAE is compatible)
+    vae_id = nf._add("VAELoader", {
+        "vae_name": vae_name,
+    }, node_id="3")
+
+    # 4. Positive conditioning
+    pos_id = nf._add("CLIPTextEncodeLumina2", {
+        "clip":          [clip_id, 0],
+        "system_prompt": system_prompt,
+        "user_prompt":   prompt_text,
+    }, node_id="4")
+
+    # 5. Negative conditioning
+    neg_id = nf._add("CLIPTextEncodeLumina2", {
+        "clip":          [clip_id, 0],
+        "system_prompt": system_prompt,
+        "user_prompt":   negative_text or "",
+    }, node_id="5")
+
+    # 6. Empty latent
+    lat_id = nf._add("EmptyLatentImage", {
+        "width":      int(width),
+        "height":     int(height),
+        "batch_size": int(batch_size),
+    }, node_id="6")
+
+    # 7. Apply flow-matching shift
+    sm_id = nf._add("ModelSamplingAuraFlow", {
+        "model": [ckpt_id, 0],
+        "shift": float(shift),
+    }, node_id="7")
+
+    # 8. Sampler
+    samp_id = nf._add("KSampler", {
+        "model":         [sm_id, 0],
+        "positive":      [pos_id, 0],
+        "negative":      [neg_id, 0],
+        "latent_image":  [lat_id, 0],
+        "seed":          int(seed),
+        "steps":         int(steps),
+        "cfg":           float(cfg),
+        "sampler_name":  sampler_name,
+        "scheduler":     scheduler,
+        "denoise":       float(denoise),
+    }, node_id="8")
+
+    # 9. Decode
+    dec_id = nf._add("VAEDecode", {
+        "samples": [samp_id, 0],
+        "vae":     [vae_id, 0],
+    }, node_id="9")
+
+    # 10. Save
+    nf._add("SaveImage", {
+        "images":          [dec_id, 0],
+        "filename_prefix": filename_prefix,
+    }, node_id="10")
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  WAN 2.2 Animate — character animation via WanAnimateToVideo + ref/pose
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_wan_animate_video(prompt_text, negative_text, seed, *,
+                            wan_model,
+                            t5_clip,
+                            vae_name,
+                            reference_image=None,
+                            pose_video=None,
+                            face_video=None,
+                            background_video=None,
+                            character_mask=None,
+                            clip_vision_name=None,
+                            clip_vision_image=None,
+                            width=832,
+                            height=480,
+                            length=77,
+                            batch_size=1,
+                            steps=20,
+                            cfg=5.5,
+                            sampler_name="euler",
+                            scheduler="simple",
+                            shift=8.0,
+                            continue_motion_max_frames=5,
+                            video_frame_offset=0,
+                            fps=16,
+                            crf=19,
+                            filename_prefix="spellcaster_wan_animate") -> dict:
+    """WAN 2.2 Animate — character animation via the native
+    `WanAnimateToVideo` conditioning shaper.
+
+    The Animate workflow is fundamentally different from regular WAN
+    T2V/I2V: instead of a single CLIP-encoded conditioning, the
+    `WanAnimateToVideo` node consumes a reference image + pose / face /
+    background video tracks + an optional character_mask, and produces
+    a reshaped CONDITIONING+LATENT pair that drives a regular KSampler.
+    Outputs include trim/offset INTs that callers chain together to
+    extend videos beyond a single-window run.
+
+    Pipeline (native — no wrapper pack):
+      1. UNETLoader(wan_model)                           → MODEL
+      2. CLIPLoader(t5_clip, type="wan")                 → CLIP
+      3. VAELoader(vae_name)                             → VAE
+      4. CLIPTextEncode(positive)                        → CONDITIONING
+      5. CLIPTextEncode(negative)                        → CONDITIONING
+      6. (optional) CLIPVisionLoader + CLIPVisionEncode → CLIP_VISION_OUTPUT
+      7. (optional) LoadImage(reference_image)           → IMAGE
+      8. (optional) VHS_LoadVideo(pose|face|bg)          → IMAGE
+      9. WanAnimateToVideo(positive, negative, vae, w, h,
+                            length, batch_size,
+                            continue_motion_max_frames,
+                            video_frame_offset,
+                            [reference_image / face_video /
+                             pose_video / background_video /
+                             character_mask / clip_vision_output /
+                             continue_motion])
+                                          → CONDITIONING+, CONDITIONING-,
+                                              LATENT, INT×3
+      10. ModelSamplingSD3(shift)                        → MODEL (flow shift)
+      11. KSampler(model, +, -, latent, steps, cfg,
+                    euler, simple, seed)                 → LATENT
+      12. VAEDecode                                      → IMAGE
+      13. VHS_VideoCombine                               → file
+
+    Args:
+      reference_image: filename for the rendered subject. Strongly
+                       recommended; without it, WanAnimate falls back to
+                       latent-noise initialisation and quality regresses.
+      pose_video / face_video / background_video: filenames of source
+                       videos for the matching conditioning channels.
+                       Each can be None.
+      character_mask: alpha-mask filename to localise the conditioning
+                       to the subject area.
+      clip_vision_name + clip_vision_image: optional CLIP-Vision encoder
+                       + reference image; passes a CLIP_VISION_OUTPUT
+                       into the shaper for stronger identity lock.
+
+    R7 method: `video_animate` (NEW METHOD — first character-animation
+    modality on the wan arch).
+    """
+    _assert_method_for_preset({"arch": "wan"}, "video_animate")
+    nf = NodeFactory()
+
+    # 1. UNET
+    unet_id = nf._add("UNETLoader", {
+        "unet_name":      wan_model,
+        "weight_dtype":   "default",
+    }, node_id="1")
+
+    # 2. CLIP (T5)
+    clip_id = nf._add("CLIPLoader", {
+        "clip_name": t5_clip,
+        "type":      "wan",
+    }, node_id="2")
+
+    # 3. VAE
+    vae_id = nf._add("VAELoader", {
+        "vae_name": vae_name,
+    }, node_id="3")
+
+    # 4. Positive
+    pos_id = nf._add("CLIPTextEncode", {
+        "clip": [clip_id, 0],
+        "text": prompt_text,
+    }, node_id="4")
+
+    # 5. Negative
+    neg_id = nf._add("CLIPTextEncode", {
+        "clip": [clip_id, 0],
+        "text": negative_text or "",
+    }, node_id="5")
+
+    # 6. Optional CLIP vision
+    clip_vision_ref = None
+    next_id = 10
+    if clip_vision_name and clip_vision_image:
+        cvl_id = nf._add("CLIPVisionLoader", {
+            "clip_name": clip_vision_name,
+        }, node_id=str(next_id)); next_id += 1
+        cvi_id = nf.load_image(clip_vision_image,
+                               node_id=str(next_id)); next_id += 1
+        cve_id = nf._add("CLIPVisionEncode", {
+            "clip_vision": [cvl_id, 0],
+            "image":       [cvi_id, 0],
+            "crop":        "center",
+        }, node_id=str(next_id)); next_id += 1
+        clip_vision_ref = [cve_id, 0]
+
+    # 7. Reference image (LoadImage)
+    ref_image_ref = None
+    if reference_image:
+        ri_id = nf.load_image(reference_image,
+                              node_id=str(next_id)); next_id += 1
+        ref_image_ref = [ri_id, 0]
+
+    # 8. Optional video tracks via VHS_LoadVideoPath (path-based, no
+    #    UI dependency). Each maps to a separate optional input.
+    def _load_video(filename):
+        nonlocal next_id
+        vid = nf._add("VHS_LoadVideoPath", {
+            "video": filename,
+            "force_rate": 0,
+            "custom_width": 0,
+            "custom_height": 0,
+            "frame_load_cap": 0,
+            "skip_first_frames": 0,
+            "select_every_nth": 1,
+        }, node_id=str(next_id)); next_id += 1
+        return [vid, 0]
+
+    pose_ref = _load_video(pose_video) if pose_video else None
+    face_ref = _load_video(face_video) if face_video else None
+    bg_ref   = _load_video(background_video) if background_video else None
+    mask_ref = None
+    if character_mask:
+        mid = nf.load_image(character_mask,
+                            node_id=str(next_id)); next_id += 1
+        # Convert image alpha to mask via ImageToMask if needed; many
+        # mask-shaped PNGs work directly via the IMAGE → MASK shape.
+        mask_ref = [mid, 1]
+
+    # 9. WanAnimateToVideo shaper
+    wat_kwargs = {
+        "positive":   [pos_id, 0],
+        "negative":   [neg_id, 0],
+        "vae":        [vae_id, 0],
+        "width":      int(width),
+        "height":     int(height),
+        "length":     int(length),
+        "batch_size": int(batch_size),
+        "continue_motion_max_frames": int(continue_motion_max_frames),
+        "video_frame_offset":         int(video_frame_offset),
+    }
+    if clip_vision_ref:    wat_kwargs["clip_vision_output"] = clip_vision_ref
+    if ref_image_ref:      wat_kwargs["reference_image"]    = ref_image_ref
+    if face_ref:           wat_kwargs["face_video"]         = face_ref
+    if pose_ref:           wat_kwargs["pose_video"]         = pose_ref
+    if bg_ref:             wat_kwargs["background_video"]   = bg_ref
+    if mask_ref:           wat_kwargs["character_mask"]     = mask_ref
+    wat_id = nf._add("WanAnimateToVideo", wat_kwargs, node_id="6")
+
+    # 10. ModelSamplingSD3 for flow shift
+    sm_id = nf._add("ModelSamplingSD3", {
+        "model": [unet_id, 0],
+        "shift": float(shift),
+    }, node_id="7")
+
+    # 11. Sampler
+    samp_id = nf._add("KSampler", {
+        "model":         [sm_id, 0],
+        "positive":      [wat_id, 0],
+        "negative":      [wat_id, 1],
+        "latent_image":  [wat_id, 2],
+        "seed":          int(seed),
+        "steps":         int(steps),
+        "cfg":           float(cfg),
+        "sampler_name":  sampler_name,
+        "scheduler":     scheduler,
+        "denoise":       1.0,
+    }, node_id="8")
+
+    # 12. Decode
+    dec_id = nf._add("VAEDecode", {
+        "samples": [samp_id, 0],
+        "vae":     [vae_id, 0],
+    }, node_id="9")
+
+    # 13. Combine
+    nf.update({
+        "11": {"class_type": "VHS_VideoCombine",
+               "inputs": {"images": [dec_id, 0],
+                          "frame_rate": int(fps),
+                          "loop_count": 0,
+                          "filename_prefix": filename_prefix,
+                          "format": "video/h264-mp4",
+                          "save_output": True,
+                          "pix_fmt": "yuv420p",
+                          "crf": int(crf)}},
+    })
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  WAN 2.2 T2V — Wrapper-native pipeline with block-swap (low-VRAM T2V)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_wan_video_blockswap_t2v(wan_model, t5_model, vae_model,
+                                   prompt_text, negative_text, seed,
+                                   width=832, height=480, length=81,
+                                   steps=20, cfg=6.0, shift=5.0,
+                                   blocks_to_swap=20,
+                                   offload_img_emb=False, offload_txt_emb=False,
+                                   quantization="fp8_e4m3fn",
+                                   base_precision="bf16",
+                                   attention_mode="sdpa",
+                                   enable_vae_tiling=True,
+                                   fps=16, crf=19,
+                                   filename_prefix="spellcaster_wan_blockswap_t2v") -> dict:
+    """WAN 2.2 T2V via Kijai's WanVideoWrapper with block-swap (low-VRAM path).
+
+    Sibling to `build_wan_video_blockswap` (I2V) — same wrapper-native
+    pipeline, no start image. The I2V path's CLIPVision + ImageToVideoEncode
+    chain is replaced with `WanVideoEmptyEmbeds`, which synthesises a
+    properly-shaped WANVIDIMAGE_EMBEDS dict directly from the target
+    width/height/length without an input image.
+
+    When to use this vs `build_wan22_t2v` (the native-node T2V builder):
+      - `build_wan22_t2v` uses core ComfyUI's `Wan22ImageToVideoLatent` +
+        KSampler. Simpler, no block-swap; suitable when the 14B model
+        plus residents fit in VRAM.
+      - This builder uses Kijai's wrapper end-to-end with block-swap, so
+        a 14B WAN 2.2 T2V model can run on a 12-16 GB GPU at 720p — at
+        the cost of slower per-step inference. Pick this when OOM has
+        bitten the native path.
+
+    Pipeline (same as build_wan_video_blockswap minus the image branch):
+      1. WanVideoBlockSwap(blocks_to_swap) -> BLOCKSWAPARGS
+      2. WanVideoModelLoader(model, base_precision, quantization,
+         block_swap_args) -> WANVIDEOMODEL
+      3. LoadWanVideoT5TextEncoder(t5_model) -> WANTEXTENCODER
+      4. WanVideoVAELoader(vae_model) -> WANVAE
+      5. WanVideoEmptyEmbeds(width, height, num_frames=length)
+         -> WANVIDIMAGE_EMBEDS (T2V latent shape)
+      6. WanVideoTextEncode(positive, negative, t5) -> WANVIDEOTEXTEMBEDS
+      7. WanVideoSampler(model, image_embeds, text_embeds, steps,
+         cfg, shift, seed) -> LATENT
+      8. WanVideoDecode(vae, samples, enable_vae_tiling) -> IMAGE
+      9. VHS_VideoCombine -> video file
+
+    Args (same shape as build_wan_video_blockswap minus image_filename
+    and clip_vision_name; the latter isn't needed without CLIP vision):
+        wan_model: WanVideoModelLoader filename. Should be a T2V variant
+            (`wan2.2_t2v_*.safetensors` or A14B). Native I2V models
+            crash here with the EmptyEmbeds latent shape.
+        t5_model: LoadWanVideoT5TextEncoder dropdown.
+        vae_model: WanVideoVAELoader dropdown.
+        prompt_text, negative_text: text conditioning.
+        seed: sampler seed.
+        width, height, length: target frame size and count. Default
+            832x480x81 (~5s at 16fps).
+        steps, cfg, shift: sampler knobs. Wrapper defaults: 30/6.0/5.0.
+        blocks_to_swap: transformer blocks offloaded to CPU. 14B model
+            has 40 blocks; 20 is the half-and-half starting point.
+        quantization, base_precision, attention_mode, enable_vae_tiling,
+        fps, crf, offload_*: same semantics as I2V sibling.
+
+    Returns:
+        ComfyUI workflow dict.
+
+    Requires: ComfyUI-WanVideoWrapper (Kijai). Verified live 2026-05-06
+    when ComfyUI :8190 is up. Fall back to build_wan22_t2v on a server
+    without the wrapper.
+    """
+    _assert_method_for_preset({"arch": "wan"}, "video_gen")
+    nf = NodeFactory()
+
+    # 1. Block-swap args
+    bs_id = nf._add("WanVideoBlockSwap", {
+        "blocks_to_swap": int(blocks_to_swap),
+        "offload_img_emb": bool(offload_img_emb),
+        "offload_txt_emb": bool(offload_txt_emb),
+    }, node_id="1")
+
+    # 2. Model loader with block-swap
+    model_id = nf._add("WanVideoModelLoader", {
+        "model": wan_model,
+        "base_precision": base_precision,
+        "quantization": quantization,
+        "load_device": "offload_device",
+        "attention_mode": attention_mode,
+        "block_swap_args": [bs_id, 0],
+    }, node_id="2")
+
+    # 3. T5 text encoder
+    t5_id = nf._add("LoadWanVideoT5TextEncoder", {
+        "model_name": t5_model,
+        "precision": base_precision,
+        "load_device": "offload_device",
+        "quantization": "disabled",
+    }, node_id="3")
+
+    # 4. WAN VAE
+    vae_id = nf._add("WanVideoVAELoader", {
+        "model_name": vae_model,
+        "precision": base_precision,
+    }, node_id="4")
+
+    # 5. T2V empty-embeds (the difference from the I2V sibling)
+    img_embeds_id = nf._add("WanVideoEmptyEmbeds", {
+        "width": int(width),
+        "height": int(height),
+        "num_frames": int(length),
+    }, node_id="5")
+
+    # 6. Text encode
+    text_embeds_id = nf._add("WanVideoTextEncode", {
+        "positive_prompt": prompt_text,
+        "negative_prompt": negative_text or "",
+        "t5": [t5_id, 0],
+        "force_offload": True,
+        "model_to_offload": [model_id, 0],
+        "use_disk_cache": False,
+        "device": "gpu",
+    }, node_id="6")
+
+    # 7. Sampler
+    sampler_id = nf._add("WanVideoSampler", {
+        "model": [model_id, 0],
+        "image_embeds": [img_embeds_id, 0],
+        "steps": int(steps),
+        "cfg": float(cfg),
+        "shift": float(shift),
+        "seed": int(seed),
+        "force_offload": True,
+        "scheduler": "unipc",
+        "riflex_freq_index": 0,
+        "text_embeds": [text_embeds_id, 0],
+        "denoise_strength": 1.0,
+        "batched_cfg": False,
+        "rope_function": "comfy",
+    }, node_id="7")
+
+    # 8. Decode
+    decode_id = nf._add("WanVideoDecode", {
+        "vae": [vae_id, 0],
+        "samples": [sampler_id, 0],
+        "enable_vae_tiling": bool(enable_vae_tiling),
+        "tile_x": 272, "tile_y": 272,
+        "tile_stride_x": 144, "tile_stride_y": 128,
+    }, node_id="8")
+
+    # 9. Video combine
+    nf.update({
+        "9": {"class_type": "VHS_VideoCombine",
+              "inputs": {"images": [decode_id, 0],
+                         "frame_rate": int(fps),
+                         "loop_count": 0,
+                         "filename_prefix": filename_prefix,
+                         "format": "video/h264-mp4",
+                         "save_output": True,
+                         "pix_fmt": "yuv420p",
+                         "crf": int(crf)}},
+    })
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  Qwen Image Edit 2509 — instruction-driven image editing
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -8253,10 +9832,21 @@ def build_ltx_video(preset, prompt_text, seed,
         _vae_kwargs["spatial_tiles"] = int(vae_spatial_tiles)
     if vae_temporal_tile_length is not None:
         _vae_kwargs["temporal_tile_length"] = int(vae_temporal_tile_length)
-    if vae_last_frame_fix:
+    # RTX 50xx (Blackwell) auto-overrides: when SPELLCASTER_LTX_RTX_50XX=1
+    # is set in the environment, default vae_working_dtype to "bf16" and
+    # vae_last_frame_fix to True. ComfyUI's "auto" sometimes picks fp32 on
+    # Blackwell, which produces end-frame artifacts. Caller-passed
+    # vae_working_dtype still wins (so users can pass "auto"/"fp16" to
+    # opt out per-call). Set the env var once on each 50xx machine;
+    # non-50xx hardware unaffected.
+    import os as _os_ltx
+    _is_50xx = _os_ltx.environ.get("SPELLCASTER_LTX_RTX_50XX") == "1"
+    if vae_last_frame_fix or _is_50xx:
         _vae_kwargs["last_frame_fix"] = True
     if vae_working_dtype:
         _vae_kwargs["working_dtype"] = vae_working_dtype
+    elif _is_50xx:
+        _vae_kwargs["working_dtype"] = "bf16"
     decode_id = nf.ltxv_spatiotemporal_tiled_vae_decode(
         [vae_id, 0], decode_latent_ref, node_id="40", **_vae_kwargs)
 

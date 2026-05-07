@@ -204,9 +204,21 @@ LORA_NAME_ARCH_HINTS = [
     ("gonzalomozpop", "zit"),
     ("zpop",       "zit"),
     # --- Video models first (unambiguous keywords) ---
+    # WAN acceleration / distillation LoRA family — match BEFORE generic "wan_"
+    # so the specific name wins. All of these are WAN-arch LoRAs.
+    ("lightx2v",   "wan"),
+    ("light_x2v",  "wan"),
+    ("light-x2v",  "wan"),
+    ("wan_accel",  "wan"),
+    ("wan-accel",  "wan"),
+    ("wan_speed",  "wan"),
     ("ltxv",       "ltx"),
     ("ltx-video",  "ltx"),
     ("ltx_video",  "ltx"),
+    # LTX distilled / lightning LoRAs
+    ("ltx_distilled", "ltx"),
+    ("ltx-distilled", "ltx"),
+    ("ltx_lite",      "ltx"),
     ("ltx",        "ltx"),
     ("wan2.2",     "wan"),
     ("wan-2.2",    "wan"),
@@ -218,8 +230,23 @@ LORA_NAME_ARCH_HINTS = [
     ("wan-",       "wan"),
     ("wan_",       "wan"),
     ("seedvr",     "seedvr"),
+    # CogVideoX / FramePack / Mochi — specific keywords first so video LoRAs
+    # don't fall through to image archs.
     ("cogvideo",   "cogvideo"),
-    ("hunyuan",    "hunyuan_dit"),
+    ("cogvideox",  "cogvideo"),
+    ("framepack",  "framepack"),
+    ("mochi",      "mochi"),
+    # Hunyuan family — order: video > 3D > dit (image stub last). The bare
+    # "hunyuan" key still falls through to hunyuan_dit so legacy
+    # hunyuan-image LoRAs keep their classification, but specific tags win.
+    ("hunyuan_video",  "hunyuan_video"),
+    ("hunyuan-video",  "hunyuan_video"),
+    ("hunyuanvideo",   "hunyuan_video"),
+    ("hunyuan3d",      "hunyuan_3d"),
+    ("hunyuan-3d",     "hunyuan_3d"),
+    ("hunyuan_3d",     "hunyuan_3d"),
+    ("hy3d",           "hunyuan_3d"),
+    ("hunyuan",        "hunyuan_dit"),
     # --- Image models ---
     ("flux2klein", "flux2klein"),
     ("flux-2-klein", "flux2klein"),
@@ -286,6 +313,13 @@ LORA_COMPAT_BUCKETS = {
     "wan":          ("wan",),
     "ltx":          ("ltx",),
     "seedvr":       ("seedvr",),
+    # Newly-promoted video / 3D archs — each is its own architecture
+    # family; LoRAs are not cross-compatible with sibling video archs.
+    "framepack":    ("framepack",),
+    "cogvideo":     ("cogvideo",),
+    "hunyuan_video":("hunyuan_video",),
+    "mochi":        ("mochi",),
+    "hunyuan_3d":   ("hunyuan_3d",),
 }
 
 

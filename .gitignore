@@ -168,3 +168,6 @@ tavern/shotboard.json
 **/huggingface*token*
 **/anthropic*key*
 **/openai*key*
+
+# Secret token used by the local dev /v1/dev/* endpoints — never commit
+auth_token
