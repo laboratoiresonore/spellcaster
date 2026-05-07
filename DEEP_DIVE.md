@@ -252,11 +252,11 @@ flowchart TD
 
     CANON -->|cp + git push| NODE_PUB[../ComfyUI-Spellcaster/<br/>spellcaster_core/<br/>public node repo]
 
-    CANON -->|cp + git push| NODE_PRIV[../ComfyUI-Spellcaster-NSFW/<br/>spellcaster_core/<br/>PRIVATE node repo]
+    CANON -->|cp + git push| NODE_PRIV[../a private downstream node mirror/<br/>spellcaster_core/<br/>PRIVATE node repo]
 
     CANON -->|cp| GIMP_INST[%APPDATA%/GIMP/3.2/<br/>plug-ins/comfyui-connector/<br/>spellcaster_core/<br/>installed plugin]
 
-    CANON -->|nsfw/build_nsfw.py<br/>--patch-only --push| NSFW_REPO[spellcaster_NSFW<br/>PRIVATE main repo<br/>staging patched + pushed]
+    CANON -->|nsfw/build_nsfw.py<br/>--patch-only --push| NSFW_REPO[a private downstream variant<br/>PRIVATE main repo<br/>staging patched + pushed]
 
     NODE_PUB -.->|published on| COMFY_MGR[ComfyUI Manager<br/>end-users install from here]
     NODE_PRIV -.->|installer pulls| NSFW_USERS[NSFW variant users]
@@ -276,7 +276,7 @@ vim comfyui-spellcaster/spellcaster_core/CHANGED.py
 for D in \
   plugins/gimp/comfyui-connector/spellcaster_core \
   ../ComfyUI-Spellcaster/spellcaster_core \
-  ../ComfyUI-Spellcaster-NSFW/spellcaster_core \
+  ../a private downstream node mirror/spellcaster_core \
   "$APPDATA/GIMP/3.2/plug-ins/comfyui-connector/spellcaster_core"; do
     cp comfyui-spellcaster/spellcaster_core/CHANGED.py "$D/"
 done
@@ -285,13 +285,13 @@ done
 md5sum comfyui-spellcaster/spellcaster_core/CHANGED.py \
   plugins/gimp/comfyui-connector/spellcaster_core/CHANGED.py \
   ../ComfyUI-Spellcaster/spellcaster_core/CHANGED.py \
-  ../ComfyUI-Spellcaster-NSFW/spellcaster_core/CHANGED.py \
+  ../a private downstream node mirror/spellcaster_core/CHANGED.py \
   "$APPDATA/GIMP/3.2/plug-ins/comfyui-connector/spellcaster_core/CHANGED.py"
 
 # 4. Commit + push in 3 git repos, then patch NSFW:
 (cd . && git add ... && git commit && git push)
 (cd ../ComfyUI-Spellcaster && git add ... && git commit && git push)
-(cd ../ComfyUI-Spellcaster-NSFW && git add ... && git commit && git push)
+(cd ../a private downstream node mirror && git add ... && git commit && git push)
 python nsfw/build_nsfw.py --patch-only --push
 ```
 
@@ -861,7 +861,7 @@ On every GIMP launch, compares the local `.spellcaster_version` SHA against `raw
 
 **NSFW variant**
 
-Auto-update URLs + headers are redirected to `laboratoiresonore/spellcaster_NSFW` (private repo) at NSFW-build time via `nsfw/build_nsfw.py`. The NSFW installer, manual_update, and Wizard Guild launcher all ship with an auth token patched in so they can pull from the private repo. Public Spellcaster users don't see NSFW repo references anywhere in their installed files.
+Auto-update URLs + headers are redirected to `a private downstream variant` (private repo) at NSFW-build time via `nsfw/build_nsfw.py`. The NSFW installer, manual_update, and Wizard Guild launcher all ship with an auth token patched in so they can pull from the private repo. Public Spellcaster users don't see NSFW repo references anywhere in their installed files.
 
 </details>
 
@@ -987,7 +987,7 @@ flowchart LR
     DATA[nsfw/*.json<br/>NSFW-specific content<br/>lora_calibrations_nsfw.json<br/>nsfw_klein_presets.json<br/>nsfw_presets_extras.json<br/>nsfw_loras.json<br/>nsfw_presets_video.json] -->|read| PATCHER[nsfw/build_nsfw.py]
     STAGE --> PATCHER
     PATCHER -->|finds # ── NSFW_*_INJECTION_POINT ──<br/>injects entries above it| PATCHED[nsfw/staging/ patched]
-    PATCHED -->|git push| NSFW_REPO[spellcaster_NSFW<br/>PRIVATE]
+    PATCHED -->|git push| NSFW_REPO[a private downstream variant<br/>PRIVATE]
 
     style DATA fill:#4a1a1a,color:#fff
     style NSFW_REPO fill:#4a1a1a,color:#fff

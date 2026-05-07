@@ -31,7 +31,7 @@
 - Anything that requires understanding the whole repo at once
 - lab-installer bootstrap / self-update logic (sanitized shim is delicate)
 - GitHub auto-fetch flow
-- Anything that crosses spellcaster <-> spellcaster_NSFW boundaries (they share the bootstrap)
+- Anything that crosses spellcaster <-> a private downstream variant boundaries (they share the bootstrap)
 
 ## Hand-off contract
 The orchestrator should:
