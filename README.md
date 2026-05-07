@@ -472,14 +472,12 @@ Because every tool is a spell, every workflow is an incantation, your GPU is a f
 
 - [**Full technical reference →** `DEEP_DIVE.md`](DEEP_DIVE.md) — every tool enumerated, the 27-architecture registry, scaffold state machines, antenna service-mesh endpoints (optional, for advanced multi-machine setups), cross-interface backbone, prompt enhancement chain, privacy + boot safety details, every subsystem explained.
 - [**ComfyUI dependencies** → `DEPENDENCIES.md`](DEPENDENCIES.md) — 24+ custom node packs Spellcaster uses, linked to upstream.
-- [**Mirror topology + cross-repo SSOT** → `MIRROR_TARGETS.md`](MIRROR_TARGETS.md) — file-path-level enumeration of every surface that mirrors `spellcaster_core/`.
-- [**Hygiene & dev rules** → `_DEV_HYGIENE.md`](_DEV_HYGIENE.md) — what `_DEV_HYGIENE.md` itself is for; cross-repo rules.
 
 ---
 
 ## How updates flow (the SSOT topology)
 
-Spellcaster ships as a single canonical Python package — `spellcaster_core/` — that lives in five places at once. End-user installs auto-pull from the upstream surface; dev edits land at the canonical path and propagate outward. This section is the public-facing summary; for the byte-identical file enumeration see [`MIRROR_TARGETS.md`](MIRROR_TARGETS.md).
+Spellcaster ships as a single canonical Python package — `spellcaster_core/` — that lives in five places at once. End-user installs auto-pull from the upstream surface; dev edits land at the canonical path and propagate outward.
 
 **Canonical (the source of truth):**
 
@@ -495,16 +493,15 @@ Every dev edit starts there. Tests run there. CI gates fire there. Once green, t
 
 **What guarantees the mirrors stay in sync:**
 
-- **`MIRROR_TARGETS.md`** is the canonical list. `scripts/ecosystem_doctor.py verify` compares hashes across surfaces and exits non-zero if any drift exists. The pre-commit hook + CI run it.
+- A pre-commit hook + CI hash-compare every mirror against the canonical copy and fail the build on any drift.
 - **`scripts/check_arch_manifest_drift.py`** cross-checks `architectures.py:supported_methods` against `installer/manifest.json:features`. Documented exceptions live in `SUBSUMED_BY_PARENT` / `ADVANCED_NO_INSTALLER` maps inside the script.
-- **`.github/workflows/ecosystem-hygiene-{sync,receive}.yml`** auto-fan-out shared docs (`_DEV_HYGIENE.md`, `MIRROR_TARGETS.md`) across sibling repos via `repository_dispatch`. When a watched file changes on `main`, the receive-side opens (or updates) a PR with the incoming change in each sibling.
 - **`auto_updater.py`** is the client-side updater every end-user runs at first launch — it reads the manifest, downloads the latest pack, and drops it into surface 3.
 
 **End-user perspective (zero work):** install once, then any time you launch GIMP / Darktable / DaVinci, Spellcaster checks for a new pack and silently swaps in the latest `spellcaster_core/`. No reboot. No reinstall.
 
 **Dev perspective (one source of truth):** edit canonical → run tests → commit. CI handles the rest. Drift detection is automated; if you accidentally edit a mirror by hand, the next commit's drift check will fail the build with a list of files that diverged.
 
-**Daily auto-research:** a scheduled cloud agent reviews recent SOTA developments (new model releases, custom_node updates, acceleration LoRAs, attention kernels, emerging architectures) every morning and produces a markdown report. Findings get triaged into the upgrade plan. See `_dev_docs/daily_sweep_<date>.md` once delivered.
+**Daily auto-research:** a scheduled cloud agent reviews recent SOTA developments (new model releases, custom_node updates, acceleration LoRAs, attention kernels, emerging architectures) every morning and produces a markdown report. Findings get triaged into the upgrade plan.
 
 ---
 
