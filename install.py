@@ -3,8 +3,7 @@
 
 This file is identical across every LaboratoireSonore repo. It does
 ONE thing: fetch the latest universal installer from
-laboratoiresonore/main and run it. The full installer (with the
-polished GUI, manifest gate, hero images, etc.) lives at
+laboratoiresonore/main and run it. The full installer lives at
 github.com/laboratoiresonore/laboratoiresonore.
 
 Re-running this shim always uses the latest installer code without
@@ -54,15 +53,13 @@ CACHE_TTL_SEC = 24 * 60 * 60  # refresh once a day at most
 PROTOCOL_FILES = [
     "src/lab_installer.py",
     "src/manifest.py",
-    "src/crypto.py",
     "src/__init__.py",
     "src/actions/__init__.py",
     "src/gui.py",
 ]
 
-# Optional files -- fetched on best-effort, missing-is-fine.
+# Optional files -- best-effort, missing-is-fine.
 PROTOCOL_OPTIONAL = [
-    "src/private_manifest.bin",
     "src/assets/heroes/beatweaver.png",
     "src/assets/heroes/spellcaster.png",
     "src/assets/heroes/comfyui-spellcaster.png",
@@ -150,10 +147,9 @@ def _refresh_cache(target_version: str | None = None) -> bool:
     for rel in PROTOCOL_OPTIONAL:
         url = f"{MASTER_BASE}/{rel}"
         dest = _local_path(rel)
-        # quiet=True: 404 is the expected case for users without the
-        # corresponding asset (e.g. no private_manifest.bin without a
-        # paid release). Surfacing the 404 line confuses end-users
-        # into thinking something's wrong.
+        # quiet=True: optional assets may legitimately 404; that's
+        # fine. Surfacing the line just confuses end-users into
+        # thinking something's wrong.
         _fetch(url, dest, quiet=True)
 
     if target_version:
