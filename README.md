@@ -231,6 +231,18 @@ A real pipeline, all built into the GIMP menu. Generate a scene → AI-select th
 
 ## Install
 
+### One-liner — Universal Installer
+
+If you've got Python 3.10+ around, the fastest path:
+
+```bash
+python install.py
+```
+
+`install.py` in this repo is a thin shim for the [LaboratoireSonore Universal Installer](https://github.com/laboratoiresonore/laboratoiresonore/tree/main/installer). It fetches the latest installer, picks Spellcaster's installer asset for your platform, runs it. Same `spellcaster-installer` you'd download from the buttons below — just one fewer click.
+
+Don't have Python? Skip to "Get the installer" below for the platform-specific downloads.
+
 ### What you need
 
 | You need | What it is | Where to get it |
