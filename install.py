@@ -56,11 +56,16 @@ PROTOCOL_FILES = [
     "src/manifest.py",
     "src/crypto.py",
     "src/__init__.py",
+    "src/actions/__init__.py",
+    "src/gui.py",
 ]
 
 # Optional files -- fetched on best-effort, missing-is-fine.
 PROTOCOL_OPTIONAL = [
     "src/private_manifest.bin",
+    "src/assets/heroes/beatweaver.png",
+    "src/assets/heroes/spellcaster.png",
+    "src/assets/heroes/comfyui-spellcaster.png",
 ]
 
 
@@ -114,27 +119,34 @@ def _read_cached_version() -> str | None:
         return None
 
 
+def _local_path(rel: str) -> Path:
+    """Where a remote file lands locally. Cache mirrors the master
+    under `installer/` so the master's `from installer.src import ...`
+    absolute imports resolve when CACHE_ROOT is on sys.path."""
+    return CACHE_ROOT / "installer" / rel
+
+
 def _cache_complete() -> bool:
     """True iff every PROTOCOL_FILES entry is present in the cache."""
-    return all((CACHE_ROOT / p).exists() for p in PROTOCOL_FILES)
+    return all(_local_path(p).exists() for p in PROTOCOL_FILES)
 
 
 def _refresh_cache(target_version: str | None = None) -> bool:
     """Download every PROTOCOL_FILES entry into the cache. Returns
     True if every required file landed. The optional list is
     best-effort -- failures don't block install."""
-    _say("fetching latest installer…")
+    _say("fetching latest installer...")
 
     for rel in PROTOCOL_FILES:
         url = f"{MASTER_BASE}/{rel}"
-        dest = CACHE_ROOT / rel
+        dest = _local_path(rel)
         if not _fetch(url, dest):
             _say(f"required file missing -- using cached copy if any")
             return False
 
     for rel in PROTOCOL_OPTIONAL:
         url = f"{MASTER_BASE}/{rel}"
-        dest = CACHE_ROOT / rel
+        dest = _local_path(rel)
         _fetch(url, dest)  # best-effort, ignore failures
 
     if target_version:
@@ -157,7 +169,7 @@ def _ensure_cache(skip_update: bool = False) -> bool:
 
     # Don't touch network if cache is fresh enough -- opportunistic
     # offline-friendly default.
-    main_file = cache_dir / "src" / "lab_installer.py"
+    main_file = _local_path("src/lab_installer.py")
     if main_file.exists():
         age = time.time() - main_file.stat().st_mtime
         if age < CACHE_TTL_SEC:
@@ -179,30 +191,21 @@ def _ensure_cache(skip_update: bool = False) -> bool:
 
 
 def _run_cached(argv: list[str]) -> int:
-    """Hand off to the cached installer. We use exec() so the running
-    process becomes the installer (single argv0, single PID, clean
-    process tree on Windows)."""
-    main_file = CACHE_ROOT / "src" / "lab_installer.py"
+    """Hand off to the cached installer via runpy.run_module so the
+    master's `from .` and `from installer.src import ...` imports both
+    resolve. CACHE_ROOT goes on sys.path; `installer/` is the package
+    boundary (namespace-package OK -- no __init__.py required)."""
+    main_file = _local_path("src/lab_installer.py")
     if not main_file.exists():
         _say(f"FATAL: no cached installer at {main_file}")
         _say("Run with network access at least once to populate the cache.")
         return 1
 
-    # Make `from installer.src import …` resolvable when the master's
-    # lab_installer is run as __main__.
-    src_root = (CACHE_ROOT / "src").parent
-    env_pythonpath = os.environ.get("PYTHONPATH", "")
-    new_pythonpath = (
-        str(src_root) + os.pathsep + env_pythonpath if env_pythonpath
-        else str(src_root)
-    )
-    os.environ["PYTHONPATH"] = new_pythonpath
-
-    # Switch to runpy to keep the import system sane for relative imports.
-    import runpy
+    sys.path.insert(0, str(CACHE_ROOT))
     sys.argv = [str(main_file)] + argv
+    import runpy
     try:
-        runpy.run_path(str(main_file), run_name="__main__")
+        runpy.run_module("installer.src.lab_installer", run_name="__main__")
         return 0
     except SystemExit as e:
         return int(e.code) if isinstance(e.code, int) else (1 if e.code else 0)
@@ -218,8 +221,10 @@ def main() -> int:
     parser.add_argument("--clear-cache", action="store_true",
                          help="wipe the local cache and re-download on next run")
     # All other args are passed through to the master installer.
-    parser.add_argument("rest", nargs=argparse.REMAINDER)
-    args = parser.parse_args()
+    # parse_known_args() lets unknown flags (--list, --install, --dry-run,
+    # subcommands like 'install <id>') reach the master without us needing
+    # to keep the shim's parser in sync with the master's CLI surface.
+    args, forwarded = parser.parse_known_args()
 
     if args.clear_cache:
         if CACHE_ROOT.exists():
@@ -231,8 +236,8 @@ def main() -> int:
         _say("cache is empty and refresh failed -- try again with network access")
         return 1
 
-    # Strip the leading '--' separator argparse uses for REMAINDER.
-    forwarded = args.rest
+    # Strip the leading '--' separator if the caller explicitly used it
+    # to separate shim flags from forwarded ones (`install.py -- --list`).
     if forwarded and forwarded[0] == "--":
         forwarded = forwarded[1:]
 
