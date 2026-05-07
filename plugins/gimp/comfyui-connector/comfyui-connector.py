@@ -152,6 +152,28 @@ if _MAIN.exists():
     except Exception:
         pass
 
+def _diagnose_missing_support() -> str | None:
+    """Pre-flight check for the support tree the modern _spellcaster_main
+    needs. Returns a short actionable message if anything's missing,
+    None if the layout looks complete.
+
+    Catches the regression class observed 2026-05-07: a partial install
+    that has _spellcaster_main.py + the bootstrap but is missing
+    spellcaster_core/, _caps_client.py, etc. Without this check the
+    user sees a generic "ModuleNotFoundError: spellcaster_core" with no
+    hint that the rest of the plug-in tree wasn't delivered.
+    """
+    if not (_DIR / "spellcaster_core").is_dir():
+        return ("spellcaster_core/ directory is missing. The plug-in "
+                "install is incomplete -- support modules weren't "
+                "delivered. Re-run the installer (python install.py) "
+                "or the manual updater (manual_update.exe).")
+    if not (_DIR / "_caps_client.py").is_file():
+        return ("_caps_client.py is missing. Same fix: re-run "
+                "installer / manual_update.")
+    return None
+
+
 SpellcasterClass = None
 _boot_error = None
 
@@ -161,6 +183,14 @@ try:
 except Exception as e:
     _boot_error = f"Import failed: {e}"
     print(f"[Spellcaster Shim] {_boot_error}", file=sys.stderr)
+
+    # If the failure is "missing support tree", say so explicitly --
+    # downloading a fresh _spellcaster_main.py won't help when the
+    # surrounding files (spellcaster_core, _caps_client, etc.) are
+    # the actual gap.
+    _missing = _diagnose_missing_support()
+    if _missing:
+        _boot_error = f"Import failed: {e}\n\nDiagnosis: {_missing}"
 
     # ── Attempt 2: rollback to backup ────────────────────────────────
     if _BAK.exists():
@@ -174,7 +204,10 @@ except Exception as e:
             print(f"[Spellcaster Shim] {_boot_error}", file=sys.stderr)
 
     # ── Attempt 3: download from GitHub ──────────────────────────────
-    if SpellcasterClass is None and _download_fresh():
+    # Skip the network round-trip when we know the gap is the support
+    # tree -- a fresh _spellcaster_main.py won't fix a missing
+    # spellcaster_core/ next to it.
+    if SpellcasterClass is None and not _missing and _download_fresh():
         try:
             SpellcasterClass = _try_import()
             _boot_error = None
