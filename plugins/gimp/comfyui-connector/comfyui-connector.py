@@ -176,6 +176,7 @@ def _diagnose_missing_support() -> str | None:
 
 SpellcasterClass = None
 _boot_error = None
+_missing = None
 
 # ── Attempt 1: normal import ─────────────────────────────────────────
 try:
@@ -187,7 +188,10 @@ except Exception as e:
     # If the failure is "missing support tree", say so explicitly --
     # downloading a fresh _spellcaster_main.py won't help when the
     # surrounding files (spellcaster_core, _caps_client, etc.) are
-    # the actual gap.
+    # the actual gap. The diagnosis is hoisted to module scope so
+    # later recovery attempts (Attempt 2 / 3) can preserve it -- a
+    # "Backup also broken" message is technically true but useless
+    # when the real cause was already known after Attempt 1.
     _missing = _diagnose_missing_support()
     if _missing:
         _boot_error = f"Import failed: {e}\n\nDiagnosis: {_missing}"
@@ -200,7 +204,15 @@ except Exception as e:
             _boot_error = None
             print("[Spellcaster Shim] Restored from backup", file=sys.stderr)
         except Exception as e2:
-            _boot_error = f"Backup also broken: {e2}"
+            # Preserve the diagnosis from Attempt 1 if it's still
+            # accurate (the support tree didn't materialise between
+            # attempts). Without this the user just sees "Backup also
+            # broken: <import error>" -- correct but unactionable.
+            if _missing:
+                _boot_error = (f"Backup also broken: {e2}\n\n"
+                                f"Diagnosis: {_missing}")
+            else:
+                _boot_error = f"Backup also broken: {e2}"
             print(f"[Spellcaster Shim] {_boot_error}", file=sys.stderr)
 
     # ── Attempt 3: download from GitHub ──────────────────────────────
@@ -213,7 +225,15 @@ except Exception as e:
             _boot_error = None
             print("[Spellcaster Shim] Self-healed from GitHub", file=sys.stderr)
         except Exception as e3:
-            _boot_error = f"Fresh download also crashed: {e3}"
+            # Re-run the diagnosis after the fresh download in case
+            # the latest _spellcaster_main.py expects something the
+            # local install still doesn't have.
+            _post = _diagnose_missing_support()
+            if _post:
+                _boot_error = (f"Fresh download also crashed: {e3}\n\n"
+                                f"Diagnosis: {_post}")
+            else:
+                _boot_error = f"Fresh download also crashed: {e3}"
             print(f"[Spellcaster Shim] {_boot_error}", file=sys.stderr)
 
 
