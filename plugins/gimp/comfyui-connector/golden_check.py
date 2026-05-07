@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
-"""Golden tests: verify v2 workflow builders produce identical output to originals.
+"""Golden checks: verify v2 workflow builders produce identical output to originals.
 
 Run from the comfyui-connector directory:
-    python test_golden.py
+    python golden_check.py
 
-These tests import the new modular builders and compare their output against
+These checks import the new modular builders and compare their output against
 hardcoded expected workflow dicts captured from the current production code.
-This ensures zero regression during migration.
+
+The functions are still named ``test_*`` because the standalone __main__
+runner at the bottom dispatches by name. The file is named ``golden_check.py``
+(not ``test_golden.py``) so pytest skips it during auto-collection -- mixing
+return-tuple checks with assert-style ones inside a single pytest module
+produces silent false-passes for the former and confusing failures for the
+latter. Run as a script via ``python golden_check.py``.
 """
 
 import sys
@@ -171,7 +177,7 @@ def test_txt2img_sdxl():
     assert wf["5"]["inputs"]["denoise"] == 1.0  # Always 1.0 for txt2img
     assert wf["5"]["inputs"]["steps"] == 25
     assert "6" in wf and wf["6"]["class_type"] == "VAEDecode"
-    assert "7" in wf and wf["7"]["class_type"] == "SaveImage"
+    assert "7" in wf and wf["7"]["class_type"] == "SaveImageWebsocket"
     return True, "txt2img_sdxl", ""
 
 
