@@ -76,9 +76,11 @@ def _say(msg: str) -> None:
     print(f"[lab-installer] {msg}", file=sys.stderr)
 
 
-def _fetch(url: str, dest: Path, *, timeout: float = 10.0) -> bool:
+def _fetch(url: str, dest: Path, *, timeout: float = 10.0,
+           quiet: bool = False) -> bool:
     """Download a single file. Atomic via .partial rename so a torn
-    download can't half-install."""
+    download can't half-install. quiet=True silences the failure log
+    (used for optional files where 404 is expected)."""
     partial = dest.with_suffix(dest.suffix + ".partial")
     try:
         req = urllib.request.Request(
@@ -94,7 +96,8 @@ def _fetch(url: str, dest: Path, *, timeout: float = 10.0) -> bool:
     except (urllib.error.URLError, OSError) as e:
         try: partial.unlink()
         except OSError: pass
-        _say(f"download failed for {url.split('/')[-1]}: {e}")
+        if not quiet:
+            _say(f"download failed for {url.split('/')[-1]}: {e}")
         return False
 
 
@@ -147,7 +150,11 @@ def _refresh_cache(target_version: str | None = None) -> bool:
     for rel in PROTOCOL_OPTIONAL:
         url = f"{MASTER_BASE}/{rel}"
         dest = _local_path(rel)
-        _fetch(url, dest)  # best-effort, ignore failures
+        # quiet=True: 404 is the expected case for users without the
+        # corresponding asset (e.g. no private_manifest.bin without a
+        # paid release). Surfacing the 404 line confuses end-users
+        # into thinking something's wrong.
+        _fetch(url, dest, quiet=True)
 
     if target_version:
         (CACHE_ROOT / "VERSION").write_text(target_version, encoding="utf-8")
