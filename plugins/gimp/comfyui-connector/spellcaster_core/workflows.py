@@ -3354,6 +3354,16 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
         }, node_id="96")
         final_img_ref = [composite_id, 0]
     nf.save_image_websocket(final_img_ref, node_id="10")
+    # Disk-backup save: parallel SaveImage node so a WebSocket drop
+    # mid-result-delivery doesn't lose the inpaint output. The client
+    # can fall back to /history → SaveImage filename → fetch over HTTP
+    # when the ws bytes never arrive. Filename prefix gives the client
+    # a glob to find it. node_id="11" picked to avoid colliding with
+    # any existing IDs in this builder.
+    nf._add("SaveImage", {
+        "images": final_img_ref,
+        "filename_prefix": "spellcaster_inpaint",
+    }, node_id="11")
 
     # ControlNet injection (optional)
     if guide_modes and controlnet and controlnet.get("mode", "Off") != "Off":
