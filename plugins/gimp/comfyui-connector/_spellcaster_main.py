@@ -2950,10 +2950,17 @@ def _add_preset_ui(dialog, box, dialog_key):
 
 
 def _up_refresh(dialog):
-    """Repopulate the preset combo from the in-memory list."""
+    """Repopulate the preset combo from the in-memory list.
+
+    Tolerates malformed entries (no "name", or non-dict) by skipping
+    them rather than KeyErroring — same defensive pattern as the
+    inpaint loras fix (2026-05-09). A preset with no name can't be
+    selected anyway, so dropping it from the dropdown is correct.
+    """
     dialog._up_combo.remove_all()
     for p in dialog._up_presets:
-        dialog._up_combo.append_text(p["name"])
+        if isinstance(p, dict) and p.get("name"):
+            dialog._up_combo.append_text(p["name"])
     if dialog._up_presets:
         dialog._up_combo.set_active(0)
 
@@ -2983,7 +2990,9 @@ def _up_save(dialog):
     name_entry.set_tooltip_text("Name for saving. Use descriptive text like 'my_portrait'.")
     cur_idx = dialog._up_combo.get_active()
     if 0 <= cur_idx < len(dialog._up_presets):
-        name_entry.set_text(dialog._up_presets[cur_idx]["name"])
+        cur = dialog._up_presets[cur_idx]
+        if isinstance(cur, dict):
+            name_entry.set_text(cur.get("name", ""))
     area.pack_start(name_entry, False, False, 0)
     area.show_all()
     resp = dlg.run()
@@ -2993,14 +3002,20 @@ def _up_save(dialog):
         return
     data = dialog._collect_user_preset()
     data["name"] = name
-    existing = next((i for i, p in enumerate(dialog._up_presets) if p["name"] == name), None)
+    existing = next(
+        (i for i, p in enumerate(dialog._up_presets)
+         if isinstance(p, dict) and p.get("name") == name),
+        None)
     if existing is not None:
         dialog._up_presets[existing] = data
     else:
         dialog._up_presets.append(data)
     _save_user_presets(dialog._up_presets, dialog._up_key)
     _up_refresh(dialog)
-    new_idx = next((i for i, p in enumerate(dialog._up_presets) if p["name"] == name), 0)
+    new_idx = next(
+        (i for i, p in enumerate(dialog._up_presets)
+         if isinstance(p, dict) and p.get("name") == name),
+        0)
     dialog._up_combo.set_active(new_idx)
 
 
@@ -3009,7 +3024,12 @@ def _up_delete(dialog):
     idx = dialog._up_combo.get_active()
     if idx < 0 or idx >= len(dialog._up_presets):
         return
-    name = dialog._up_presets[idx]["name"]
+    sel = dialog._up_presets[idx]
+    if not isinstance(sel, dict):
+        return
+    name = sel.get("name", "")
+    if not name:
+        return
     dlg = Gtk.MessageDialog(transient_for=dialog, modal=True,
                             message_type=Gtk.MessageType.QUESTION,
                             buttons=Gtk.ButtonsType.YES_NO,
@@ -14558,7 +14578,8 @@ class PresetDialog(Gtk.Dialog):
     def _refresh_user_preset_combo(self):
         self._user_preset_combo.remove_all()
         for p in self._user_presets:
-            self._user_preset_combo.append_text(p["name"])
+            if isinstance(p, dict) and p.get("name"):
+                self._user_preset_combo.append_text(p["name"])
         if self._user_presets:
             self._user_preset_combo.set_active(0)
 
@@ -14585,11 +14606,16 @@ class PresetDialog(Gtk.Dialog):
         for i, (combo_w, ms, cs) in enumerate(self.lora_rows):
             if i < len(loras):
                 lr = loras[i]
-                if not combo_w.set_active_id(lr["name"]):
-                    combo_w.append(lr["name"], lr["name"])
-                    combo_w.set_active_id(lr["name"])
-                ms.set_value(lr.get("strength_model", 1.0))
-                cs.set_value(lr.get("strength_clip", 1.0))
+                lr_name = lr.get("name") if isinstance(lr, dict) else None
+                if lr_name:
+                    if not combo_w.set_active_id(lr_name):
+                        combo_w.append(lr_name, lr_name)
+                        combo_w.set_active_id(lr_name)
+                    ms.set_value(lr.get("strength_model", 1.0))
+                    cs.set_value(lr.get("strength_clip", 1.0))
+                else:
+                    combo_w.set_active(0)
+                    ms.set_value(1.0); cs.set_value(1.0)
             else:
                 combo_w.set_active(0)
                 ms.set_value(1.0); cs.set_value(1.0)
@@ -14609,7 +14635,9 @@ class PresetDialog(Gtk.Dialog):
         name_entry.set_tooltip_text("Name for saving. Use descriptive text like 'my_portrait'.")
         cur_idx = self._user_preset_combo.get_active()
         if 0 <= cur_idx < len(self._user_presets):
-            name_entry.set_text(self._user_presets[cur_idx]["name"])
+            cur = self._user_presets[cur_idx]
+            if isinstance(cur, dict):
+                name_entry.set_text(cur.get("name", ""))
         area.pack_start(name_entry, False, False, 0)
         area.show_all()
         resp = dlg.run()
@@ -14641,21 +14669,32 @@ class PresetDialog(Gtk.Dialog):
             "loras": loras,
             "runs": int(self._runs_spin.get_value()),
         }
-        existing = next((i for i, p in enumerate(self._user_presets) if p["name"] == name), None)
+        existing = next(
+            (i for i, p in enumerate(self._user_presets)
+             if isinstance(p, dict) and p.get("name") == name),
+            None)
         if existing is not None:
             self._user_presets[existing] = data
         else:
             self._user_presets.append(data)
         _save_user_presets(self._user_presets)
         self._refresh_user_preset_combo()
-        new_idx = next((i for i, p in enumerate(self._user_presets) if p["name"] == name), 0)
+        new_idx = next(
+            (i for i, p in enumerate(self._user_presets)
+             if isinstance(p, dict) and p.get("name") == name),
+            0)
         self._user_preset_combo.set_active(new_idx)
 
     def _on_delete_user_preset(self, _btn):
         idx = self._user_preset_combo.get_active()
         if idx < 0 or idx >= len(self._user_presets):
             return
-        name = self._user_presets[idx]["name"]
+        sel = self._user_presets[idx]
+        if not isinstance(sel, dict):
+            return
+        name = sel.get("name", "")
+        if not name:
+            return
         dlg = Gtk.MessageDialog(transient_for=self, modal=True,
                                 message_type=Gtk.MessageType.QUESTION,
                                 buttons=Gtk.ButtonsType.YES_NO,
@@ -14876,11 +14915,15 @@ class PresetDialog(Gtk.Dialog):
                 prompt_text = (prompt_text + ", " + style_preset["prompt"]) if prompt_text else style_preset["prompt"]
             if style_preset["negative"]:
                 negative_text = (negative_text + ", " + style_preset["negative"]) if negative_text else style_preset["negative"]
-            # Merge style LoRAs with manually selected LoRAs
+            # Merge style LoRAs with manually selected LoRAs.
+            # Defensive: skip malformed LoRA dicts in the existing
+            # list so a stale/corrupt save doesn't KeyError here
+            # (mirror of the _session_to_values fix, 2026-05-09).
             midx = self._preset_idx()
             arch = MODEL_PRESETS[midx]["arch"] if midx >= 0 else "sdxl"
             style_loras = style_preset["loras"].get(arch, [])
-            existing_names = {l["name"] for l in loras}
+            existing_names = {l.get("name") for l in loras
+                              if isinstance(l, dict) and l.get("name")}
             for lora_path, model_str, clip_str in style_loras:
                 if lora_path not in existing_names:
                     loras.append({
