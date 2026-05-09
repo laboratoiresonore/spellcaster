@@ -819,6 +819,66 @@ def build_rembg_birefnet(image_filename, model="BiRefNet-general",
     return nf.build()
 
 
+def build_rembg_v3(image_filename, model="RMBG-2.0",
+                    sensitivity=1.0, process_res=1024,
+                    mask_blur=0, mask_offset=0,
+                    refine_foreground=False,
+                    invert_output=False,
+                    background="Alpha",
+                    background_color="#222222") -> dict:
+    """RMBG-2.0 / INSPYRENET / BEN2 cutout via 1038lab ComfyUI-RMBG pack.
+
+    Newer alternative to ``build_rembg_birefnet``. RMBG-2.0 (Apache-2.0) is
+    the current SOTA portrait/general matter from BRIA — better fine-detail
+    edges (hair, fur, fabric) than BiRefNet at ~equal cost. INSPYRENET and
+    BEN2 are alternates exposed by the same node. Default RMBG-2.0.
+
+    Models (all auto-downloaded by the pack on first use into
+    ``ComfyUI/models/rembg/``):
+      - RMBG-2.0:   Apache-2.0, BRIA — best general/portrait
+      - INSPYRENET: MIT — good for product/object cutouts
+      - BEN:        Apache-2.0
+      - BEN2:       Apache-2.0 — incremental improvement on BEN
+
+    Args:
+        image_filename: Input image
+        model: One of "RMBG-2.0" (default), "INSPYRENET", "BEN", "BEN2"
+        sensitivity: 0.0-1.0; higher = more aggressive foreground detection
+        process_res: 256-2048; processing resolution (higher = sharper edges,
+                     more VRAM)
+        mask_blur: 0-64; edge softening
+        mask_offset: -64..64; expand (+) or shrink (-) the mask
+        refine_foreground: Fast Foreground Colour Estimation for transparency
+        invert_output: Invert image + mask
+        background: "Alpha" (transparent) or "Color"
+        background_color: hex string, e.g. "#222222"
+
+    Returns:
+        dict: ComfyUI workflow
+
+    Note:
+      - Class registered as "RMBG" in ComfyUI-RMBG pack (ltdrdata/1038lab)
+      - For BiRefNet variants, keep using ``build_rembg_birefnet`` — the
+        node exposes a different parameter set there
+    """
+    nf = NodeFactory()
+    img_id = nf.load_image(image_filename, node_id="1")
+    rmbg_id = nf._add("RMBG", {
+        "image":             [img_id, 0],
+        "model":             str(model),
+        "sensitivity":       float(sensitivity),
+        "process_res":       int(process_res),
+        "mask_blur":         int(mask_blur),
+        "mask_offset":       int(mask_offset),
+        "invert_output":     bool(invert_output),
+        "refine_foreground": bool(refine_foreground),
+        "background":        str(background),
+        "background_color":  str(background_color),
+    }, node_id="2")
+    nf.save_image_websocket([rmbg_id, 0], node_id="3")
+    return nf.build()
+
+
 def build_ddcolor(image_filename, checkpoint="ddcolor_artistic.pth",
                   model_input_size=512) -> dict:
     """Colorize B&W photo using DDColor (fast, no diffusion).
@@ -941,6 +1001,70 @@ def build_normal_map(image_filename, seed=42, max_res=1024,
         )
         final_ref = apply_sam3_scope(nf, final_ref, [orig_resized_id, 0], _mask)
     nf.save_image_websocket(final_ref, node_id="3")
+    return nf.build()
+
+
+def build_depth_map_v3(image_filename, model="da3_large.safetensors",
+                        normalization="V2-Style",
+                        sam3_prompt=None, sam3_invert=False,
+                        sam3_confidence=0.6, sam3_expand=4, sam3_blur=4) -> dict:
+    """Generate monocular depth map using ByteDance Depth Anything V3.
+
+    DA3 is the current SOTA single-image depth estimator (~35% lower error
+    than DA2 on standard benchmarks; surpasses VGGT on relative-depth tasks).
+    Useful for ControlNet-Depth guidance, parallax effects, 3D
+    reconstruction, and depth-aware compositing.
+
+    Available models (auto-downloaded by the loader on first use into
+    ``ComfyUI/models/depthanything3/``):
+      - da3_small.safetensors:  fastest, 25M params
+      - da3_base.safetensors:   balanced, 86M params
+      - da3_large.safetensors:  default, 305M params (Apache-2.0, DA3-LARGE-1.1)
+      - da3_giant.safetensors:  highest quality, 1.1B params
+      - da3mono_large.safetensors:    monocular-tuned, better for single shots
+      - da3metric_large.safetensors:  outputs metric depth (real-world units)
+      - da3nested_giant_large.safetensors: nested-attention variant
+
+    Normalization modes:
+      - "Standard":  Original DA3 min-max [0..1] including sky regions
+      - "V2-Style":  Disparity + content-aware contrast (default; best for
+                     ControlNet-Depth guidance)
+      - "Raw":       No normalization, metric depth (3D reconstruction)
+
+    Args:
+        image_filename: Input image
+        model: One of the 7 da3_*.safetensors variants
+        normalization: "V2-Style" (default), "Standard", or "Raw"
+        sam3_prompt: Optional SAM3 mask prompt — if set, the depth map is
+                     composited back onto the original outside the SAM3
+                     region so only the matched subject's depth is shown
+
+    Returns:
+        dict: ComfyUI workflow
+
+    Note:
+      - Pack: PozzettiAndrea/ComfyUI-DepthAnythingV3 (loader node:
+        ``DownloadAndLoadDepthAnythingV3Model``; inference node:
+        ``DepthAnything_V3``)
+      - Output is a depth IMAGE (close=bright, far=dark by default)
+      - For 3D surface NORMAL maps (not depth), keep using
+        ``build_normal_map`` which uses NormalCrafter
+    """
+    nf = NodeFactory()
+    img_id = nf.load_image(image_filename, node_id="1")
+    img_ref = [img_id, 0]
+    da3_model_id = nf.depth_anything_v3_loader(model=model, node_id="2")
+    depth_id = nf.depth_anything_v3([da3_model_id, 0], img_ref,
+                                     normalization=normalization, node_id="3")
+    final_ref = [depth_id, 0]
+    if sam3_prompt:
+        _mask = build_sam3_mask(nf, img_ref, sam3_prompt,
+                                 invert=sam3_invert,
+                                 confidence=sam3_confidence,
+                                 mask_expand=sam3_expand,
+                                 mask_blur=sam3_blur)
+        final_ref = apply_sam3_scope(nf, final_ref, img_ref, _mask)
+    nf.save_image_websocket(final_ref, node_id="4")
     return nf.build()
 
 
@@ -3250,6 +3374,136 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
         nf.patch_input("8", "positive", cn2_pos)
         nf.patch_input("8", "negative", cn2_neg)
 
+    return nf.build()
+
+
+def build_inpaint_fooocus(image_filename, mask_filename, preset, prompt_text,
+                           negative_text, seed, loras=None,
+                           lama_model="Places_512_FullData_G.pth",
+                           fooocus_head="fooocus_inpaint_head.pth",
+                           fooocus_patch="inpaint_v26.fooocus.patch",
+                           prefill_with_lama=True) -> dict:
+    """Fooocus-style inpaint: LaMa pre-fill + Fooocus head LoRA on SDXL.
+
+    Different approach than ``build_inpaint``: rather than relying on
+    diffusion to invent the masked region cold, this:
+
+      1. Loads a raw inpainter (LaMa Places 512 by default) and pre-fills
+         the masked region with a content-aware reconstruction. Result:
+         the sampler starts from a plausible base (no noise, no artifacts
+         where the prompt is silent).
+      2. Loads the Fooocus inpaint head + patch (an SDXL LoRA + input-
+         block hook bundle) and applies it to the model. This biases the
+         entire UNet toward inpainting behavior — far better edge
+         continuity than vanilla SDXL inpainting on the same checkpoint.
+      3. Builds inpaint conditioning via Acly's combined VAE-encode +
+         InpaintModelConditioning helper, emitting both the latent
+         needed by ApplyFooocusInpaint and the latent the sampler runs.
+      4. Samples normally (KSampler).
+      5. Decodes + saves.
+
+    SDXL-only. The Klein / Flux2 path keeps using ``build_inpaint``
+    (Klein has its own enhancer chain).
+
+    Required ComfyUI custom-node pack: ``Acly/comfyui-inpaint-nodes``.
+    Required model files in ``ComfyUI/models/inpaint/``:
+      - ``Places_512_FullData_G.pth`` (LaMa, ~52 MB) — for pre-fill
+      - ``fooocus_inpaint_head.pth`` (~8 MB)
+      - ``inpaint_v26.fooocus.patch`` (~1.3 GB) — the Fooocus inpaint LoRA
+
+    Args:
+        image_filename: Input image
+        mask_filename: Mask image (white = inpaint, black = preserve)
+        preset: Sampling preset (must be SDXL arch)
+        prompt_text: What to generate in masked region
+        negative_text: Things to avoid
+        seed: Random seed
+        loras: Optional additional LoRAs
+        lama_model: Inpaint pre-fill model name
+        fooocus_head / fooocus_patch: Fooocus inpaint head + patch files
+        prefill_with_lama: If False, skip LaMa pre-fill and feed the
+            original masked image straight to the conditioning stage.
+            Useful if you want diffusion to do all the heavy lifting
+            (default True is the recommended Fooocus pipeline).
+
+    Returns:
+        dict: ComfyUI workflow
+
+    When to prefer this over build_inpaint:
+      - Hard occlusions (large objects to remove with no plausible base)
+      - When seam quality matters more than freedom (Fooocus head is
+        trained for inpainting, vanilla SDXL is not)
+      - When the masked region is mostly empty / featureless (pre-fill
+        helps the sampler find a non-degenerate starting point)
+
+    Limitations:
+      - SDXL-only. Pass an SDXL preset; Klein presets are rejected.
+      - Pre-fill adds ~1-3s on the first run (LaMa 256x256 forward pass)
+      - Quality ceiling is bounded by the Fooocus inpaint LoRA — for
+        creative inpaints with heavy prompt drift, plain build_inpaint
+        with a strong CFG may yield more variation
+    """
+    _assert_method_for_preset(preset, "inpaint")
+    arch_key = preset.get("arch", "sdxl")
+    if arch_key != "sdxl":
+        raise ValueError(
+            f"build_inpaint_fooocus requires an SDXL preset (got arch={arch_key!r})"
+        )
+    nf = NodeFactory()
+
+    # Model loading (SDXL → CheckpointLoaderSimple, returns model+clip+vae).
+    model_ref, clip_ref, vae_ref = load_model_stack(nf, preset, "1")
+    model_ref, clip_ref, _trig = inject_lora_chain(
+        nf, loras or [], model_ref, clip_ref, arch_key="sdxl")
+
+    # Load image + mask. The mask comes in as IMAGE; convert via the red
+    # channel and keep the original for the optional composite step.
+    img_id = nf.load_image(image_filename, node_id="2")
+    mask_img_id = nf.load_image(mask_filename, node_id="3")
+    mask_id = nf.image_to_mask([mask_img_id, 0], "red", node_id="4")
+
+    # LaMa / MAT pre-fill (optional — set prefill_with_lama=False to skip).
+    if prefill_with_lama:
+        lama_loader_id = nf.inpaint_load_model(lama_model, node_id="5")
+        prefill_id = nf.inpaint_with_model(
+            [lama_loader_id, 0], [img_id, 0], [mask_id, 0],
+            seed=seed, node_id="6")
+        pixels_ref = [prefill_id, 0]
+    else:
+        pixels_ref = [img_id, 0]
+
+    # Encode prompts.
+    pos_id, neg_id = encode_prompts(nf, "sdxl", clip_ref,
+                                     prompt_text, negative_text,
+                                     pos_id="7", neg_id="8")
+
+    # Combined VAE-encode + inpaint conditioning. Outputs:
+    #   [0]=positive, [1]=negative, [2]=latent_inpaint, [3]=latent
+    inpaint_cond_id = nf.vae_encode_inpaint_conditioning(
+        [pos_id, 0], [neg_id, 0], vae_ref,
+        pixels_ref, [mask_id, 0], node_id="9")
+
+    # Apply Fooocus inpaint patch to the model.
+    fooocus_loader_id = nf.fooocus_inpaint_loader(
+        head=fooocus_head, patch=fooocus_patch, node_id="10")
+    patched_model_id = nf.fooocus_inpaint_apply(
+        model_ref, [fooocus_loader_id, 0],
+        [inpaint_cond_id, 2],  # latent_inpaint
+        node_id="11")
+
+    # Sample with the patched model + the conditioned positive/negative.
+    samp_id = nf.ksampler(
+        [patched_model_id, 0],
+        [inpaint_cond_id, 0], [inpaint_cond_id, 1],
+        [inpaint_cond_id, 3],  # latent (the noise-masked one for sampling)
+        seed, preset["steps"], preset["cfg"],
+        preset.get("sampler", "dpmpp_2m"),
+        preset.get("scheduler", "karras"),
+        preset.get("denoise", 1.0),
+        node_id="12")
+
+    dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="13")
+    nf.save_image_websocket([dec_id, 0], node_id="14")
     return nf.build()
 
 
