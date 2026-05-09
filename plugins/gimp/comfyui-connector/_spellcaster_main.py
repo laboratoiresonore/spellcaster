@@ -2819,7 +2819,16 @@ def _session_to_values(key, image=None):
             negative_text = (negative_text + ", " + style_preset["negative"]) if negative_text else style_preset["negative"]
         arch = preset.get("arch", "sdxl")
         style_loras = style_preset["loras"].get(arch, [])
-        existing_names = {l["name"] for l in loras} if isinstance(loras, list) and loras else set()
+        # Defensive: a saved-session LoRA dict that's missing the
+        # "name" key would KeyError here (observed live on an Inpaint
+        # Selection run from GIMP, 2026-05-09). Tolerate malformed
+        # entries by skipping them — they couldn't be referenced
+        # anyway. Use .get() so a future schema change doesn't crash
+        # the whole flow.
+        existing_names = (
+            {l.get("name") for l in loras
+             if isinstance(l, dict) and l.get("name")}
+            if isinstance(loras, list) and loras else set())
         for lora_path, model_str, clip_str in style_loras:
             if lora_path not in existing_names:
                 loras.append({
