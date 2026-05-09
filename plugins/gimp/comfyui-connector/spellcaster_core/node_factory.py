@@ -446,6 +446,42 @@ class NodeFactory:
             "use_xformers": "auto",
         }, node_id)
 
+    # ── GIMM-VFI frame interpolation ────────────────────────
+    def gimm_vfi_loader(self, model="gimmvfi_r_arb_lpips_fp32.safetensors",
+                         precision="fp32", torch_compile=False,
+                         node_id=None):
+        """DownloadAndLoadGIMMVFIModel — load GIMM-VFI interpolation model.
+
+        GIMM-VFI is the RIFE successor (CVPR 2024). Cleaner motion on
+        large displacements; better quality at the same speed.
+
+        Models (auto-downloaded into ``ComfyUI/models/interpolation/gimm-vfi/``):
+          - gimmvfi_r_arb_lpips_fp32.safetensors:  RAFT flow estimator
+          - gimmvfi_f_arb_lpips_fp32.safetensors:  FlowFormer flow estimator
+        Outputs: [0]=GIMMVIF_MODEL
+        """
+        return self._add("DownloadAndLoadGIMMVFIModel", {
+            "model": model,
+            "precision": precision,
+            "torch_compile": torch_compile,
+        }, node_id)
+
+    def gimm_vfi(self, gimmvfi_model_ref, image_ref,
+                  ds_factor=1.0, interpolation_factor=8, seed=0,
+                  node_id=None):
+        """GIMMVFI_interpolate — frame-interpolate IMAGE batch using GIMM-VFI.
+        ``interpolation_factor`` is the multiplier (e.g. 8 = generate 7 in-between
+        frames for each pair). Outputs: [0]=IMAGE batch
+        """
+        return self._add("GIMMVFI_interpolate", {
+            "gimmvfi_model": gimmvfi_model_ref,
+            "images": image_ref,
+            "ds_factor": float(ds_factor),
+            "interpolation_factor": int(interpolation_factor),
+            "seed": int(seed),
+            "output_flows": False,
+        }, node_id)
+
     # ── WAN Video TeaCache ────────────────────────────────────
     def wan_video_teacache(self, threshold=0.3, start_step=1,
                             end_step=-1, node_id=None):

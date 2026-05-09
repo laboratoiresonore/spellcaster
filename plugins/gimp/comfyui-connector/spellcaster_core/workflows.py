@@ -819,6 +819,66 @@ def build_rembg_birefnet(image_filename, model="BiRefNet-general",
     return nf.build()
 
 
+def build_rembg_v3(image_filename, model="RMBG-2.0",
+                    sensitivity=1.0, process_res=1024,
+                    mask_blur=0, mask_offset=0,
+                    refine_foreground=False,
+                    invert_output=False,
+                    background="Alpha",
+                    background_color="#222222") -> dict:
+    """RMBG-2.0 / INSPYRENET / BEN2 cutout via 1038lab ComfyUI-RMBG pack.
+
+    Newer alternative to ``build_rembg_birefnet``. RMBG-2.0 (Apache-2.0) is
+    the current SOTA portrait/general matter from BRIA — better fine-detail
+    edges (hair, fur, fabric) than BiRefNet at ~equal cost. INSPYRENET and
+    BEN2 are alternates exposed by the same node. Default RMBG-2.0.
+
+    Models (all auto-downloaded by the pack on first use into
+    ``ComfyUI/models/rembg/``):
+      - RMBG-2.0:   Apache-2.0, BRIA — best general/portrait
+      - INSPYRENET: MIT — good for product/object cutouts
+      - BEN:        Apache-2.0
+      - BEN2:       Apache-2.0 — incremental improvement on BEN
+
+    Args:
+        image_filename: Input image
+        model: One of "RMBG-2.0" (default), "INSPYRENET", "BEN", "BEN2"
+        sensitivity: 0.0-1.0; higher = more aggressive foreground detection
+        process_res: 256-2048; processing resolution (higher = sharper edges,
+                     more VRAM)
+        mask_blur: 0-64; edge softening
+        mask_offset: -64..64; expand (+) or shrink (-) the mask
+        refine_foreground: Fast Foreground Colour Estimation for transparency
+        invert_output: Invert image + mask
+        background: "Alpha" (transparent) or "Color"
+        background_color: hex string, e.g. "#222222"
+
+    Returns:
+        dict: ComfyUI workflow
+
+    Note:
+      - Class registered as "RMBG" in ComfyUI-RMBG pack (ltdrdata/1038lab)
+      - For BiRefNet variants, keep using ``build_rembg_birefnet`` — the
+        node exposes a different parameter set there
+    """
+    nf = NodeFactory()
+    img_id = nf.load_image(image_filename, node_id="1")
+    rmbg_id = nf._add("RMBG", {
+        "image":             [img_id, 0],
+        "model":             str(model),
+        "sensitivity":       float(sensitivity),
+        "process_res":       int(process_res),
+        "mask_blur":         int(mask_blur),
+        "mask_offset":       int(mask_offset),
+        "invert_output":     bool(invert_output),
+        "refine_foreground": bool(refine_foreground),
+        "background":        str(background),
+        "background_color":  str(background_color),
+    }, node_id="2")
+    nf.save_image_websocket([rmbg_id, 0], node_id="3")
+    return nf.build()
+
+
 def build_ddcolor(image_filename, checkpoint="ddcolor_artistic.pth",
                   model_input_size=512) -> dict:
     """Colorize B&W photo using DDColor (fast, no diffusion).
@@ -941,6 +1001,70 @@ def build_normal_map(image_filename, seed=42, max_res=1024,
         )
         final_ref = apply_sam3_scope(nf, final_ref, [orig_resized_id, 0], _mask)
     nf.save_image_websocket(final_ref, node_id="3")
+    return nf.build()
+
+
+def build_depth_map_v3(image_filename, model="da3_large.safetensors",
+                        normalization="V2-Style",
+                        sam3_prompt=None, sam3_invert=False,
+                        sam3_confidence=0.6, sam3_expand=4, sam3_blur=4) -> dict:
+    """Generate monocular depth map using ByteDance Depth Anything V3.
+
+    DA3 is the current SOTA single-image depth estimator (~35% lower error
+    than DA2 on standard benchmarks; surpasses VGGT on relative-depth tasks).
+    Useful for ControlNet-Depth guidance, parallax effects, 3D
+    reconstruction, and depth-aware compositing.
+
+    Available models (auto-downloaded by the loader on first use into
+    ``ComfyUI/models/depthanything3/``):
+      - da3_small.safetensors:  fastest, 25M params
+      - da3_base.safetensors:   balanced, 86M params
+      - da3_large.safetensors:  default, 305M params (Apache-2.0, DA3-LARGE-1.1)
+      - da3_giant.safetensors:  highest quality, 1.1B params
+      - da3mono_large.safetensors:    monocular-tuned, better for single shots
+      - da3metric_large.safetensors:  outputs metric depth (real-world units)
+      - da3nested_giant_large.safetensors: nested-attention variant
+
+    Normalization modes:
+      - "Standard":  Original DA3 min-max [0..1] including sky regions
+      - "V2-Style":  Disparity + content-aware contrast (default; best for
+                     ControlNet-Depth guidance)
+      - "Raw":       No normalization, metric depth (3D reconstruction)
+
+    Args:
+        image_filename: Input image
+        model: One of the 7 da3_*.safetensors variants
+        normalization: "V2-Style" (default), "Standard", or "Raw"
+        sam3_prompt: Optional SAM3 mask prompt — if set, the depth map is
+                     composited back onto the original outside the SAM3
+                     region so only the matched subject's depth is shown
+
+    Returns:
+        dict: ComfyUI workflow
+
+    Note:
+      - Pack: PozzettiAndrea/ComfyUI-DepthAnythingV3 (loader node:
+        ``DownloadAndLoadDepthAnythingV3Model``; inference node:
+        ``DepthAnything_V3``)
+      - Output is a depth IMAGE (close=bright, far=dark by default)
+      - For 3D surface NORMAL maps (not depth), keep using
+        ``build_normal_map`` which uses NormalCrafter
+    """
+    nf = NodeFactory()
+    img_id = nf.load_image(image_filename, node_id="1")
+    img_ref = [img_id, 0]
+    da3_model_id = nf.depth_anything_v3_loader(model=model, node_id="2")
+    depth_id = nf.depth_anything_v3([da3_model_id, 0], img_ref,
+                                     normalization=normalization, node_id="3")
+    final_ref = [depth_id, 0]
+    if sam3_prompt:
+        _mask = build_sam3_mask(nf, img_ref, sam3_prompt,
+                                 invert=sam3_invert,
+                                 confidence=sam3_confidence,
+                                 mask_expand=sam3_expand,
+                                 mask_blur=sam3_blur)
+        final_ref = apply_sam3_scope(nf, final_ref, img_ref, _mask)
+    nf.save_image_websocket(final_ref, node_id="4")
     return nf.build()
 
 
