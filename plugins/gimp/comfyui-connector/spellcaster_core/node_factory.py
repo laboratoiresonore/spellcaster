@@ -446,6 +446,72 @@ class NodeFactory:
             "use_xformers": "auto",
         }, node_id)
 
+    # ── Acly inpaint-nodes (LaMa pre-fill + Fooocus head) ──
+    def inpaint_load_model(self, model_name="Places_512_FullData_G.pth",
+                            node_id=None):
+        """INPAINT_LoadInpaintModel — load a raw inpainter (LaMa / MAT).
+        Models live in ``ComfyUI/models/inpaint/``.
+        Outputs: [0]=INPAINT_MODEL
+        """
+        return self._add("INPAINT_LoadInpaintModel", {
+            "model_name": model_name,
+        }, node_id)
+
+    def inpaint_with_model(self, inpaint_model_ref, image_ref, mask_ref,
+                            seed=0, node_id=None):
+        """INPAINT_InpaintWithModel — pre-fill masked region with the
+        loaded LaMa / MAT model. Used as a content-aware base before
+        diffusion sampling.
+        Outputs: [0]=IMAGE (inpainted base)
+        """
+        return self._add("INPAINT_InpaintWithModel", {
+            "inpaint_model": inpaint_model_ref,
+            "image": image_ref,
+            "mask": mask_ref,
+            "seed": int(seed),
+        }, node_id)
+
+    def fooocus_inpaint_loader(self, head="fooocus_inpaint_head.pth",
+                                patch="inpaint_v26.fooocus.patch",
+                                node_id=None):
+        """INPAINT_LoadFooocusInpaint — load Fooocus inpaint head + patch.
+        Both files live in ``ComfyUI/models/inpaint/``.
+        Outputs: [0]=INPAINT_PATCH (head + lora bundle)
+        """
+        return self._add("INPAINT_LoadFooocusInpaint", {
+            "head": head,
+            "patch": patch,
+        }, node_id)
+
+    def fooocus_inpaint_apply(self, model_ref, patch_ref, latent_ref,
+                                node_id=None):
+        """INPAINT_ApplyFooocusInpaint — patch model with Fooocus inpaint
+        LoRA + input-block hook, using the latent's noise_mask.
+        Outputs: [0]=MODEL (patched)
+        """
+        return self._add("INPAINT_ApplyFooocusInpaint", {
+            "model": model_ref,
+            "patch": patch_ref,
+            "latent": latent_ref,
+        }, node_id)
+
+    def vae_encode_inpaint_conditioning(self, positive_ref, negative_ref,
+                                         vae_ref, image_ref, mask_ref,
+                                         node_id=None):
+        """INPAINT_VAEEncodeInpaintConditioning — Acly's combined helper:
+        VAE-encode pixels with mask, build inpaint conditioning, and emit
+        latent_inpaint (for ApplyFooocusInpaint) + latent_samples (for
+        the sampler).
+        Outputs: [0]=positive, [1]=negative, [2]=latent_inpaint, [3]=latent
+        """
+        return self._add("INPAINT_VAEEncodeInpaintConditioning", {
+            "positive": positive_ref,
+            "negative": negative_ref,
+            "vae": vae_ref,
+            "pixels": image_ref,
+            "mask": mask_ref,
+        }, node_id)
+
     # ── GIMM-VFI frame interpolation ────────────────────────
     def gimm_vfi_loader(self, model="gimmvfi_r_arb_lpips_fp32.safetensors",
                          precision="fp32", torch_compile=False,

@@ -3377,6 +3377,136 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
     return nf.build()
 
 
+def build_inpaint_fooocus(image_filename, mask_filename, preset, prompt_text,
+                           negative_text, seed, loras=None,
+                           lama_model="Places_512_FullData_G.pth",
+                           fooocus_head="fooocus_inpaint_head.pth",
+                           fooocus_patch="inpaint_v26.fooocus.patch",
+                           prefill_with_lama=True) -> dict:
+    """Fooocus-style inpaint: LaMa pre-fill + Fooocus head LoRA on SDXL.
+
+    Different approach than ``build_inpaint``: rather than relying on
+    diffusion to invent the masked region cold, this:
+
+      1. Loads a raw inpainter (LaMa Places 512 by default) and pre-fills
+         the masked region with a content-aware reconstruction. Result:
+         the sampler starts from a plausible base (no noise, no artifacts
+         where the prompt is silent).
+      2. Loads the Fooocus inpaint head + patch (an SDXL LoRA + input-
+         block hook bundle) and applies it to the model. This biases the
+         entire UNet toward inpainting behavior — far better edge
+         continuity than vanilla SDXL inpainting on the same checkpoint.
+      3. Builds inpaint conditioning via Acly's combined VAE-encode +
+         InpaintModelConditioning helper, emitting both the latent
+         needed by ApplyFooocusInpaint and the latent the sampler runs.
+      4. Samples normally (KSampler).
+      5. Decodes + saves.
+
+    SDXL-only. The Klein / Flux2 path keeps using ``build_inpaint``
+    (Klein has its own enhancer chain).
+
+    Required ComfyUI custom-node pack: ``Acly/comfyui-inpaint-nodes``.
+    Required model files in ``ComfyUI/models/inpaint/``:
+      - ``Places_512_FullData_G.pth`` (LaMa, ~52 MB) — for pre-fill
+      - ``fooocus_inpaint_head.pth`` (~8 MB)
+      - ``inpaint_v26.fooocus.patch`` (~1.3 GB) — the Fooocus inpaint LoRA
+
+    Args:
+        image_filename: Input image
+        mask_filename: Mask image (white = inpaint, black = preserve)
+        preset: Sampling preset (must be SDXL arch)
+        prompt_text: What to generate in masked region
+        negative_text: Things to avoid
+        seed: Random seed
+        loras: Optional additional LoRAs
+        lama_model: Inpaint pre-fill model name
+        fooocus_head / fooocus_patch: Fooocus inpaint head + patch files
+        prefill_with_lama: If False, skip LaMa pre-fill and feed the
+            original masked image straight to the conditioning stage.
+            Useful if you want diffusion to do all the heavy lifting
+            (default True is the recommended Fooocus pipeline).
+
+    Returns:
+        dict: ComfyUI workflow
+
+    When to prefer this over build_inpaint:
+      - Hard occlusions (large objects to remove with no plausible base)
+      - When seam quality matters more than freedom (Fooocus head is
+        trained for inpainting, vanilla SDXL is not)
+      - When the masked region is mostly empty / featureless (pre-fill
+        helps the sampler find a non-degenerate starting point)
+
+    Limitations:
+      - SDXL-only. Pass an SDXL preset; Klein presets are rejected.
+      - Pre-fill adds ~1-3s on the first run (LaMa 256x256 forward pass)
+      - Quality ceiling is bounded by the Fooocus inpaint LoRA — for
+        creative inpaints with heavy prompt drift, plain build_inpaint
+        with a strong CFG may yield more variation
+    """
+    _assert_method_for_preset(preset, "inpaint")
+    arch_key = preset.get("arch", "sdxl")
+    if arch_key != "sdxl":
+        raise ValueError(
+            f"build_inpaint_fooocus requires an SDXL preset (got arch={arch_key!r})"
+        )
+    nf = NodeFactory()
+
+    # Model loading (SDXL → CheckpointLoaderSimple, returns model+clip+vae).
+    model_ref, clip_ref, vae_ref = load_model_stack(nf, preset, "1")
+    model_ref, clip_ref, _trig = inject_lora_chain(
+        nf, loras or [], model_ref, clip_ref, arch_key="sdxl")
+
+    # Load image + mask. The mask comes in as IMAGE; convert via the red
+    # channel and keep the original for the optional composite step.
+    img_id = nf.load_image(image_filename, node_id="2")
+    mask_img_id = nf.load_image(mask_filename, node_id="3")
+    mask_id = nf.image_to_mask([mask_img_id, 0], "red", node_id="4")
+
+    # LaMa / MAT pre-fill (optional — set prefill_with_lama=False to skip).
+    if prefill_with_lama:
+        lama_loader_id = nf.inpaint_load_model(lama_model, node_id="5")
+        prefill_id = nf.inpaint_with_model(
+            [lama_loader_id, 0], [img_id, 0], [mask_id, 0],
+            seed=seed, node_id="6")
+        pixels_ref = [prefill_id, 0]
+    else:
+        pixels_ref = [img_id, 0]
+
+    # Encode prompts.
+    pos_id, neg_id = encode_prompts(nf, "sdxl", clip_ref,
+                                     prompt_text, negative_text,
+                                     pos_id="7", neg_id="8")
+
+    # Combined VAE-encode + inpaint conditioning. Outputs:
+    #   [0]=positive, [1]=negative, [2]=latent_inpaint, [3]=latent
+    inpaint_cond_id = nf.vae_encode_inpaint_conditioning(
+        [pos_id, 0], [neg_id, 0], vae_ref,
+        pixels_ref, [mask_id, 0], node_id="9")
+
+    # Apply Fooocus inpaint patch to the model.
+    fooocus_loader_id = nf.fooocus_inpaint_loader(
+        head=fooocus_head, patch=fooocus_patch, node_id="10")
+    patched_model_id = nf.fooocus_inpaint_apply(
+        model_ref, [fooocus_loader_id, 0],
+        [inpaint_cond_id, 2],  # latent_inpaint
+        node_id="11")
+
+    # Sample with the patched model + the conditioned positive/negative.
+    samp_id = nf.ksampler(
+        [patched_model_id, 0],
+        [inpaint_cond_id, 0], [inpaint_cond_id, 1],
+        [inpaint_cond_id, 3],  # latent (the noise-masked one for sampling)
+        seed, preset["steps"], preset["cfg"],
+        preset.get("sampler", "dpmpp_2m"),
+        preset.get("scheduler", "karras"),
+        preset.get("denoise", 1.0),
+        node_id="12")
+
+    dec_id = nf.vae_decode([samp_id, 0], vae_ref, node_id="13")
+    nf.save_image_websocket([dec_id, 0], node_id="14")
+    return nf.build()
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  Outpaint — extend canvas
 # ═══════════════════════════════════════════════════════════════════════════
