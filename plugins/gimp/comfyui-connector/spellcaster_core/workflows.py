@@ -3353,7 +3353,8 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
             "resize_source": False,
         }, node_id="96")
         final_img_ref = [composite_id, 0]
-    nf.save_image_websocket(final_img_ref, node_id="10")
+    nf.save_image_websocket(final_img_ref, node_id="10",
+                             disk_prefix="spellcaster_inpaint")
 
     # ControlNet injection (optional)
     if guide_modes and controlnet and controlnet.get("mode", "Off") != "Off":
