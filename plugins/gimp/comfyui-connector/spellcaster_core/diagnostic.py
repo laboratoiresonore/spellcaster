@@ -211,7 +211,7 @@ CAPABILITY_TESTS = [
 #  Main diagnostic runner
 # ═══════════════════════════════════════════════════════════════════════
 
-def _submit_and_wait(server, workflow, timeout=600):
+def _submit_and_wait(server, workflow, timeout=600, return_pid=False):
     """Submit workflow, wait for result. Returns (ok, elapsed, error_msg).
 
     Default timeout is 600 s (10 min) because the first generation on
@@ -221,12 +221,20 @@ def _submit_and_wait(server, workflow, timeout=600):
     every fresh-server diagnostic run (observed live 2026-05-13).
     Callers expecting fast turnaround (subsequent same-arch tests,
     or already-warm models) can pass a shorter timeout explicitly.
+
+    When ``return_pid=True`` the returned tuple includes the
+    prompt_id as a 4th element so the caller can fetch outputs from
+    /history without re-submitting the workflow. The Phase-4
+    test-image generator needs this — previously it re-submitted the
+    workflow and raced a 3 s wait, missing the result on cold-load
+    paths and causing 'Test image generation failed' for every
+    downstream capability test.
     """
     try:
         from .preflight import preflight_workflow
         ok, workflow, report = preflight_workflow(workflow, server)
         if not ok:
-            return False, 0, f"Missing nodes: {report['missing']}"
+            return (False, 0, f"Missing nodes: {report['missing']}", None) if return_pid else (False, 0, f"Missing nodes: {report['missing']}")
     except ImportError:
         pass
 
@@ -244,14 +252,15 @@ def _submit_and_wait(server, workflow, timeout=600):
             for nid, ne in err.get("node_errors", {}).items():
                 for er in ne.get("errors", []):
                     details.append(f"{ne.get('class_type', '?')}: {er.get('details', '')[:60]}")
-            return False, 0, "; ".join(details) or str(e)
+            msg = "; ".join(details) or str(e)
+            return (False, 0, msg, None) if return_pid else (False, 0, msg)
         except Exception:
-            return False, 0, str(e)
+            return (False, 0, str(e), None) if return_pid else (False, 0, str(e))
     except Exception as e:
-        return False, 0, str(e)
+        return (False, 0, str(e), None) if return_pid else (False, 0, str(e))
 
     if not pid:
-        return False, 0, "No prompt_id returned"
+        return (False, 0, "No prompt_id returned", None) if return_pid else (False, 0, "No prompt_id returned")
 
     t0 = time.time()
     while time.time() - t0 < timeout:
@@ -261,14 +270,17 @@ def _submit_and_wait(server, workflow, timeout=600):
             if pid in d:
                 st = d[pid].get("status", {})
                 if st.get("completed"):
-                    return True, time.time() - t0, ""
+                    elapsed = time.time() - t0
+                    return (True, elapsed, "", pid) if return_pid else (True, elapsed, "")
                 for msg in st.get("messages", []):
                     if msg[0] == "execution_error":
-                        return False, time.time() - t0, msg[1].get("exception_message", "?")[:150]
+                        elapsed = time.time() - t0
+                        err = msg[1].get("exception_message", "?")[:150]
+                        return (False, elapsed, err, pid) if return_pid else (False, elapsed, err)
         except Exception:
             pass
         time.sleep(2)
-    return False, timeout, "Timeout"
+    return (False, timeout, "Timeout", pid) if return_pid else (False, timeout, "Timeout")
 
 
 def _get_models(server):
@@ -406,20 +418,18 @@ def run_diagnostic(server, callback=None, interactive=False):
                 # path. Subsequent Phase-5 capability tests get the
                 # default (also 600 s) but typically complete in
                 # seconds because the same arch's models are warm.
-                ok, elapsed, err = _submit_and_wait(server, wf, timeout=600)
+                # return_pid=True lets us fetch outputs from /history
+                # without re-submitting + racing a too-short sleep
+                # (the previous 3 s wait routinely missed cold-load
+                # results and left test_img=None, cascading into
+                # 'No suitable model available' for every downstream
+                # capability test).
+                ok, elapsed, err, pid = _submit_and_wait(
+                    server, wf, timeout=600, return_pid=True)
                 if ok:
-                    # Get the output filename
                     log(f"  Generated test image in {elapsed:.0f}s ({fast_arch})")
-                    # Download and re-upload as input
                     try:
                         import urllib.request as _ur
-                        # Find the prompt_id from the last submission
-                        body = json.dumps({"prompt": wf}).encode()
-                        req = _ur.Request(f"{server}/prompt", data=body,
-                                          headers={"Content-Type": "application/json"})
-                        r = _ur.urlopen(req, timeout=10)
-                        pid = json.loads(r.read()).get("prompt_id")
-                        time.sleep(3)
                         r2 = _ur.urlopen(f"{server}/history/{pid}", timeout=5)
                         hist = json.loads(r2.read()).get(pid, {})
                         for out in hist.get("outputs", {}).values():
@@ -427,15 +437,16 @@ def run_diagnostic(server, callback=None, interactive=False):
                                 fn = out["images"][0]["filename"]
                                 ft = out["images"][0].get("type", "output")
                                 img_data = _ur.urlopen(
-                                    f"{server}/view?filename={fn}&type={ft}", timeout=30).read()
+                                    f"{server}/view?filename={fn}&type={ft}",
+                                    timeout=30).read()
                                 test_img = _upload_test_image(server, img_data)
                                 log(f"  Test image uploaded: {test_img}")
                                 break
-                    except Exception:
-                        pass
+                    except Exception as _img_err:
+                        log(f"  WARNING: test image upload failed: {_img_err}")
                     break
                 else:
-                    log(f"  {fast_arch} failed: {err[:60]}")
+                    log(f"  ATTEMPT {fast_arch}: FAIL ({err[:80]})")
 
     if not test_img:
         log("  WARNING: Could not generate test image")
