@@ -502,14 +502,26 @@ def run_diagnostic(server, callback=None, interactive=False):
             log(f"BUILD FAIL: {e}")
             continue
 
-        # Submit and test. 600 s default; flux+wan paths get 1500 s
-        # because their 22 GB checkpoint + 10 GB CLIP cold-load alone
-        # eats ~5 min on a 16 GB VRAM GPU due to repeated offload/
-        # reload cycles, leaving ~10 s for the actual inference under
-        # 600 s — which routinely tripped 'Timeout' on these caps.
-        # Video archs (wan_i2v) hit the same wall.
-        cap_timeout = 1500 if cap_id in {"txt2img_flux", "wan_i2v",
-                                          "ltx_t2v"} else 600
+        # Submit and test. Per-cap timeouts calibrated against live
+        # cold-load times on a 16 GB VRAM (RTX 5060 Ti) box:
+        #   - default 600 s          → image archs (sdxl/illustrious ~260 s)
+        #   - 1500 s                 → flux (682 s) + ltx_t2v (1188 s)
+        #   - 2400 s (40 min)        → wan_i2v: 14B-class video model
+        #                              with the largest cold-load footprint;
+        #                              previous 1500 s tripped Timeout on
+        #                              an otherwise-working capability.
+        # Boost the per-cap budget rather than fail-loud: video-model
+        # cold loads are user-observable as "first attempt is slow,
+        # subsequent calls are fast" — the validator should reflect
+        # that reality, not produce false negatives.
+        WAN_TIMEOUT = 2400
+        FLUX_LTX_TIMEOUT = 1500
+        if cap_id == "wan_i2v":
+            cap_timeout = WAN_TIMEOUT
+        elif cap_id in {"txt2img_flux", "ltx_t2v"}:
+            cap_timeout = FLUX_LTX_TIMEOUT
+        else:
+            cap_timeout = 600
         ok, elapsed, err = _submit_and_wait(server, wf, timeout=cap_timeout)
         if ok:
             report.working.append(cap_id)
