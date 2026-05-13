@@ -99,6 +99,19 @@ def collect_night_report() -> str:
 
 
 def collect_recent_commits() -> str:
+    """Recent commits in the last 36 h across all sibling repos.
+
+    Tighter than the previous 'last 15 commits' window because the
+    LLM was reading old PRs as 'overnight changes' — fact dump was
+    factually right (top 15 commits) but the briefing system prompt
+    asks for OVERNIGHT, and the LLM had no way to distinguish
+    'today' from 'last week' without dates.
+
+    36 h covers a full work-day overnight while still trimming
+    historical noise. Repos with zero commits in the window get a
+    'no overnight commits' line so the LLM can correctly report
+    health=green-and-quiet.
+    """
     # Sibling-repo names come from env so they aren't baked into
     # tracked code (the leak-check regex blocks the distro-runtime
     # name; per-dev override via DISTRO_REPO_NAME).
@@ -113,9 +126,11 @@ def collect_recent_commits() -> str:
             continue
         try:
             p = subprocess.run(
-                ["git", "-C", str(repo_path), "log", "--oneline", "-15"],
+                ["git", "-C", str(repo_path), "log", "--oneline",
+                 "--since=36 hours ago", "-30"],
                 capture_output=True, text=True, timeout=10, check=True)
-            out_lines.append(f"### {repo_label} ({repo_path})\n```\n{p.stdout.strip()}\n```")
+            body = p.stdout.strip() or "(no commits in last 36 h)"
+            out_lines.append(f"### {repo_label} ({repo_path}) — last 36 h\n```\n{body}\n```")
         except subprocess.CalledProcessError as e:
             out_lines.append(f"### {repo_label}: git failed\n```\n{e.stderr}\n```")
     return "\n\n".join(out_lines) if out_lines else "_(no git repos resolvable)_"
@@ -272,18 +287,24 @@ def llm_summarize(facts_md: str, endpoint: str, model: str) -> str:
         "dump and produce a STRUCTURED briefing under these headings:\n\n"
         "**HEALTH**: green / yellow / red across the stack (Voodoomaster, "
         "distro-runtime, spellcaster).\n\n"
-        "**OVERNIGHT CHANGES**: 3-7 bullets summarizing what happened "
-        "(commits, merged PRs, deploys).\n\n"
-        "**STILL BROKEN OR IN FLIGHT**: open PRs, failing tests, "
-        "unresolved log errors — be specific about which file / which "
-        "PR / which timestamp.\n\n"
+        "**OVERNIGHT CHANGES (last 36 h)**: 3-7 bullets summarizing what "
+        "happened. The 'Recent commits' section in the fact dump is "
+        "already date-filtered to the last 36 h — if a repo shows '(no "
+        "commits in last 36 h)' just say 'quiet'. Do NOT list every "
+        "commit ID; aggregate (e.g. '5 sync PRs landed', "
+        "'auto-patch tool added').\n\n"
+        "**STILL BROKEN OR IN FLIGHT**: open PRs (from the fact dump's "
+        "'Open PRs' section — those are CURRENT, regardless of age), "
+        "failing tests, unresolved log errors — be specific about which "
+        "file / which PR / which timestamp.\n\n"
         "**WHERE CLAUDE'S ATTENTION IS NEEDED**: 2-5 concrete tasks the "
         "incoming Claude session should consider taking. Prefer "
         "specifics over generalities.\n\n"
         "**OPEN QUESTIONS**: things only a human can answer — flag "
         "them so Claude knows to ask.\n\n"
         "Be concise (under 500 words total). Use file paths verbatim. "
-        "Do NOT speculate or pad."
+        "Do NOT speculate or pad. Do NOT list raw commit IDs unless "
+        "they're actually referenced elsewhere in the briefing."
     )
     user = f"FACT DUMP\n\n{facts_md}"
     body = json.dumps({
