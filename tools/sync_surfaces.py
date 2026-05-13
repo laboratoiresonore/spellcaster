@@ -149,8 +149,12 @@ def _sync_surface(label: str, sibling_root: Path, surface_rel: Path,
     print(f"  {GREEN}✓ copied {len(plan)} file(s) canon → surface {label}{RESET}")
 
     # 2. Create branch + commit
+    # Per-minute stamp so multiple runs in the same day don't collide
+    # on the same branch name (which fails with 'stale info' once the
+    # previous run's branch has been merged + deleted server-side).
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    branch = f"sync/auto-canon-{stamp}"
+    minute_stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
+    branch = f"sync/auto-canon-{minute_stamp}"
     # If branch exists locally, reuse it; otherwise create from origin/main
     rc, _, _ = _run(["git", "fetch", "origin", "--quiet"], sibling_root)
     rc, out, err = _run(["git", "checkout", "-B", branch, "origin/main"], sibling_root)
