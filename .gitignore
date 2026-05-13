@@ -94,6 +94,7 @@ tests/*
 !tests/e2e_audit.py
 !tests/e2e_report.md
 !tests/installer_audit.py
+!tests/mirror_drift.py
 !tests/test_klein_enhancer.py
 !tests/test_quality_boost.py
 !tests/test_model_prompt_profiles.py
