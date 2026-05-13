@@ -92,7 +92,32 @@ CKPT_ARCH_RULES = [
     ("illu",        "illustrious"),
     ("pony",        "pony"),
     ("flux",        "flux1dev"),
-    # fallthrough → "sd15"
+    # Video / non-SD1.5 packs that historically fell through to sd15
+    # and broke the diagnostic with "clip input is invalid: None" when
+    # tested as an SD-1.5 txt2img workflow (LTX / Lumina / SUPIR /
+    # Wan checkpoints don't embed the standard SD-1.5 CLIP).
+    ("ltx",         "ltx"),
+    ("ltx-",        "ltx"),
+    ("lumina",      "lumina2"),
+    ("lumina2",     "lumina2"),
+    ("supir",       "supir"),
+    ("wan22",       "wan"),
+    ("wan_",        "wan"),
+    ("wan-",        "wan"),
+    ("cogvideo",    "cogvideo"),
+    ("framepack",   "framepack"),
+    ("hunyuan_video", "hunyuan_video"),
+    ("hunyuanvideo", "hunyuan_video"),
+    ("mochi",       "mochi"),
+    # SD-1.5 explicit catches BEFORE the fallthrough (older naming
+    # conventions). Without these, classification still works via the
+    # fallthrough; included for symmetry + explicit-is-better.
+    ("sd-1.5",      "sd15"),
+    ("sd_1_5",      "sd15"),
+    ("sd15",        "sd15"),
+    ("v1-5",        "sd15"),
+    # fallthrough → "sd15" (legacy; only safe when other detectors
+    # have already excluded video / non-standard archs above)
 ]
 
 # ── Best-model priority (highest first) ──
