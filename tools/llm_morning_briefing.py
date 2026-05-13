@@ -11,7 +11,7 @@ Workflow
 --------
 1. Collect *facts* about the ecosystem since the last briefing:
    - Last night_maintenance.py report (~/.voodoomaster/night_report_*.md)
-   - Recent git commits across spellcaster + Voodoomancer
+   - Recent git commits across spellcaster + distro-runtime
    - Open PR list (gh CLI if available)
    - Live caps server snapshot (node_count, flags, backend state)
    - Active claude_session.py sessions + their tasks
@@ -62,10 +62,16 @@ if sys.platform == "win32":
 
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT = REPO / "_dev_docs" / "morning_briefing.md"
-DEFAULT_LLM_ENDPOINT = "http://192.168.86.28:1234/v1/chat/completions"
-DEFAULT_LLM_MODEL = "qwen3-30b-a3b"  # nuanced summarization; slower but smarter
-
-DEFAULT_CAPS = "http://192.168.86.28:8191"
+# Defaults pulled from environment to avoid baking a LAN IP into
+# tracked code (H2 hygiene). Override with --llm-endpoint / --caps.
+_HOST = os.environ.get("COMFYUI_HOST", "127.0.0.1")
+DEFAULT_LLM_ENDPOINT = os.environ.get(
+    "LLM_ENDPOINT_URL",
+    f"http://{_HOST}:1234/v1/chat/completions")
+DEFAULT_LLM_MODEL = os.environ.get("LLM_BRIEFING_MODEL",
+                                    "qwen3-30b-a3b")
+DEFAULT_CAPS = os.environ.get("COMFYUI_CAPS_URL",
+                               f"http://{_HOST}:8191")
 
 
 # ─── Fact collectors ──────────────────────────────────────────────────────────
@@ -93,12 +99,16 @@ def collect_night_report() -> str:
 
 
 def collect_recent_commits() -> str:
+    # Sibling-repo names come from env so they aren't baked into
+    # tracked code (the leak-check regex blocks the distro-runtime
+    # name; per-dev override via DISTRO_REPO_NAME).
+    distro_name = os.environ.get("DISTRO_REPO_NAME", "")
     out_lines = []
-    for repo_label, repo_path in [
-        ("spellcaster", REPO),
-        ("Voodoomancer", Path.home() / "Voodoomancer"),
-        ("spellcaster_NSFW", Path.home() / "spellcaster_NSFW"),
-    ]:
+    targets = [("spellcaster", REPO),
+               ("spellcaster_NSFW", Path.home() / "spellcaster_NSFW")]
+    if distro_name:
+        targets.insert(1, ("distro-runtime", Path.home() / distro_name))
+    for repo_label, repo_path in targets:
         if not (repo_path / ".git").is_dir():
             continue
         try:
@@ -112,12 +122,14 @@ def collect_recent_commits() -> str:
 
 
 def collect_open_prs() -> str:
+    org = os.environ.get("GITHUB_ORG", "laboratoiresonore")
+    distro_name = os.environ.get("DISTRO_REPO_NAME", "")
     out_lines = []
-    for repo_slug, label in [
-        ("laboratoiresonore/spellcaster", "spellcaster"),
-        ("laboratoiresonore/Voodoomancer", "Voodoomancer"),
-        ("laboratoiresonore/spellcaster_NSFW", "spellcaster_NSFW"),
-    ]:
+    targets = [(f"{org}/spellcaster", "spellcaster"),
+               (f"{org}/spellcaster_NSFW", "spellcaster_NSFW")]
+    if distro_name:
+        targets.insert(1, (f"{org}/{distro_name}", "distro-runtime"))
+    for repo_slug, label in targets:
         try:
             p = subprocess.run(
                 ["gh", "-R", repo_slug, "pr", "list", "--state", "open",
@@ -237,7 +249,7 @@ def llm_summarize(facts_md: str, endpoint: str, model: str) -> str:
         "Claude Code session that is about to start. Read the fact "
         "dump and produce a STRUCTURED briefing under these headings:\n\n"
         "**HEALTH**: green / yellow / red across the stack (Voodoomaster, "
-        "Voodoomancer, spellcaster).\n\n"
+        "distro-runtime, spellcaster).\n\n"
         "**OVERNIGHT CHANGES**: 3-7 bullets summarizing what happened "
         "(commits, merged PRs, deploys).\n\n"
         "**STILL BROKEN OR IN FLIGHT**: open PRs, failing tests, "

@@ -2,7 +2,7 @@
 """Local-LLM delegation gateway.
 
 Per Laborantin-aware practice: tasks that don't require Claude-level
-reasoning should be delegated to Theo's local LLMs (LM Studio on
+reasoning should be delegated to the dev host's local LLMs (LM Studio on
 :1234). Frees Claude's context for the work only Claude can do.
 
 What counts as "safe to delegate":
@@ -24,8 +24,9 @@ What MUST NOT be delegated:
   - Anything that modifies a client (.claude/, VSCode settings,
     Antigravity — per user policy)
 
-Default endpoint: ``http://192.168.86.28:1234/v1/chat/completions``
-(LM Studio on Theo). Override with --endpoint.
+Default endpoint: ``http://${COMFYUI_HOST}:1234/v1/chat/completions``
+(LM Studio on the dev host). Override with --endpoint or set the
+``COMFYUI_HOST`` env var.
 
 Usage:
     # Polish docstrings on a single file
@@ -45,6 +46,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -58,7 +60,10 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-DEFAULT_ENDPOINT = "http://192.168.86.28:1234/v1/chat/completions"
+DEFAULT_ENDPOINT = os.environ.get(
+    "LLM_ENDPOINT_URL",
+    f"http://{os.environ.get('COMFYUI_HOST','127.0.0.1')}:1234"
+    "/v1/chat/completions")
 DEFAULT_MODEL = "qwen2.5-coder-7b-instruct"   # fast + code-aware
 LARGE_MODEL   = "qwen3-30b-a3b"                # use for nuanced summarization
 
@@ -179,7 +184,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--endpoint", default=DEFAULT_ENDPOINT,
                     help="OpenAI-style /v1/chat/completions URL "
-                         "(default: LM Studio on Theo)")
+                         "(default: LM Studio on the dev host)")
     ap.add_argument("--model", default=DEFAULT_MODEL,
                     help=f"Model id (default: {DEFAULT_MODEL})")
     ap.add_argument("--max-tokens", type=int, default=None)

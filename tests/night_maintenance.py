@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Night maintenance — composite verification across the ecosystem.
 
-Designed to be invoked by a Theo nightly cron (or a Voodoomaster
-dev-endpoint heartbeat) so the codebase + servers are continuously
-verified without operator action. Writes a dated report file the
-next morning's claude session reads to know what changed.
+Designed to be invoked by a nightly cron on the dev host (or a
+distro-runtime dev-endpoint heartbeat) so the codebase + servers are
+continuously verified without operator action. Writes a dated report
+file the next morning's claude session reads to know what changed.
 
 Checks (all non-destructive — no writes outside the report file):
 
@@ -12,7 +12,7 @@ Checks (all non-destructive — no writes outside the report file):
 2. tests/installer_audit.py         — installer functions vs live server
 3. live ComfyUI capability shape    — node count, feature flags, license
 4. extra_model_paths.yaml integrity — D: primary still has the expected dirs
-5. Voodoomaster caps server health  — backend.state=ready, license valid
+5. distro-runtime caps server health — backend.state=ready, license valid
 6. Recent error scan                — comfyui.log / launcher.log / dev_audit.log
 
 Usage:
@@ -26,10 +26,10 @@ Output:
     - Markdown report at --report path (default:
       ~/.voodoomaster/night_report_YYYYMMDD.md)
 
-Per Laborantin-aware practice (CLAUDE.md): the local LLM on Theo (LM
-Studio on :1234) can run this on a cron and the next claude session
-finds the night-report file ready to read instead of re-discovering
-everything from scratch.
+Per the local-LLM-aware delegation policy (CLAUDE.md): the local LLM
+on the dev host (LM Studio on :1234) can run this on a cron and the
+next claude session finds the night-report file ready to read instead
+of re-discovering everything from scratch.
 """
 from __future__ import annotations
 
@@ -53,8 +53,13 @@ if sys.platform == "win32":
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 
-DEFAULT_SERVER = "http://192.168.86.28:8190"
-DEFAULT_CAPS   = "http://192.168.86.28:8191"
+# Defaults come from environment so we never bake a LAN IP into
+# tracked code (H2 hygiene). Override with --server / --caps.
+_HOST = os.environ.get("COMFYUI_HOST", "127.0.0.1")
+DEFAULT_SERVER = os.environ.get("COMFYUI_AUDIT_URL",
+                                f"http://{_HOST}:8190")
+DEFAULT_CAPS   = os.environ.get("COMFYUI_CAPS_URL",
+                                f"http://{_HOST}:8191")
 
 
 def _default_report_path() -> Path:
@@ -151,7 +156,7 @@ def check_capabilities(caps_url: str) -> tuple[bool, list[str]]:
 
 def check_extra_model_paths() -> tuple[bool, list[str]]:
     """Verify D: primary still has the expected model categories."""
-    # Theo-specific layout: D:/AI/ComfyUI-models/<cat>/
+    # Dev-host layout convention: D:/AI/ComfyUI-models/<cat>/
     primary = Path("D:/AI/ComfyUI-models")
     if not primary.is_dir():
         return False, [f"primary model root missing: {primary}"]

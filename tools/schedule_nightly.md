@@ -1,10 +1,10 @@
 # Nightly scheduling for `llm_morning_briefing.py` + `night_maintenance.py`
 
-Run this once on the Theo host (or any machine that should host the
+Run this once on the the dev host host (or any machine that should host the
 nightly cycle). Both scripts are best-effort — failures degrade
 gracefully — so a missed run is recoverable.
 
-## Windows Task Scheduler (Theo)
+## Windows Task Scheduler (the dev host)
 
 Per `~/.claude/projects/c--Users-legui/memory/feedback_taskscheduler_redirection.md`:
 Windows Task Scheduler does NOT shell-eval the Arguments field. Wrap
@@ -42,7 +42,7 @@ Reads the 03:00 night_report + recent commits + open PRs + live caps
 writes `<repo>/_dev_docs/morning_briefing.md` for the next Claude
 session to read at startup.
 
-The 1-hour gap between the two jobs gives Theo time to settle if the
+The 1-hour gap between the two jobs gives the dev host time to settle if the
 maintenance run hits any restart.
 
 ### Verify

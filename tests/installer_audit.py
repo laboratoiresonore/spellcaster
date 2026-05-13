@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Audit harness — systematic live-server testing of the installer suite.
 
-Runs against a real ComfyUI instance (default: Theo on the LAN) and
-exercises every installer function whose correctness can be verified
-without writing to disk. Each check prints PASS / FAIL / SKIP with
-the relevant evidence so regressions are caught BEFORE they ship.
+Runs against a real ComfyUI instance (default: ``${COMFYUI_HOST}``
+on the LAN) and exercises every installer function whose correctness
+can be verified without writing to disk. Each check prints
+PASS / FAIL / SKIP with the relevant evidence so regressions are
+caught BEFORE they ship.
 
 Usage:
-    python audit_installer.py
-    python audit_installer.py --server http://192.168.86.28:8190
-    python audit_installer.py --server http://user:pass@host:8190 --auth
+    python installer_audit.py
+    python installer_audit.py --server http://${COMFYUI_HOST}:8190
+    python installer_audit.py --server http://user:pass@host:8190 --auth
 
 Exit code 0 = all checks passed; 1 = any failure (CI-friendly).
 
@@ -35,6 +36,7 @@ import argparse
 import importlib
 import io
 import json
+import os
 import re
 import sys
 import urllib.error
@@ -250,9 +252,10 @@ def check_nsfw_detect(install_remote, server_info) -> None:
         _record("SKIP", "detect_nsfw_mode", "no server_info")
         return
     is_nsfw = install_remote.detect_nsfw_mode(server_info)
-    # On Theo we know there's at least one NSFW LoRA — expect True there.
-    # On a clean SFW server expect False. Either is acceptable; we just
-    # want to confirm the function runs and returns a bool.
+    # On the NSFW edition dev box we know there's at least one
+    # adult-only LoRA — expect True there. On a clean SFW server
+    # expect False. Either is acceptable; we just want to confirm
+    # the function runs and returns a bool.
     _record("PASS", f"detect_nsfw_mode = {is_nsfw}",
             "(boolean returned without raising)")
 
@@ -346,8 +349,16 @@ def check_build_installer_bundle_pack() -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--server", default="http://192.168.86.28:8190",
-                        help="ComfyUI URL for live probe (default: Theo)")
+    # Default server resolves from environment, falling back to a
+    # sensible localhost guess. Set COMFYUI_HOST in the dev environment
+    # (or pass --server) to point at the LAN host. We intentionally
+    # avoid baking a private LAN IP into tracked code (H2 hygiene).
+    _default_server = os.environ.get(
+        "COMFYUI_AUDIT_URL",
+        f"http://{os.environ.get('COMFYUI_HOST','127.0.0.1')}:8190")
+    parser.add_argument("--server", default=_default_server,
+                        help="ComfyUI URL for live probe (default: "
+                             "$COMFYUI_AUDIT_URL or http://$COMFYUI_HOST:8190)")
     parser.add_argument("--auth", action="store_true",
                         help="treat --server as containing user:pass@ "
                              "(exercises the auth split path)")

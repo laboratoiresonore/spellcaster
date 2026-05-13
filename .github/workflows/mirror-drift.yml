@@ -11,9 +11,9 @@ name: 6-surface mirror drift
 # silently overwrite surfaces 5 + 6 from a stale C.
 #
 # Cross-repo surfaces (2 = ComfyUI-Spellcaster, 3 = -NSFW, 5 =
-# Voodoomancer plugin, 6 = spellcaster_NSFW) are kept in sync by the
-# auto-patch bot; their drift surfaces here only when a developer
-# directly edits surface C / 1 inconsistently.
+# distro plugin, 6 = NSFW pack) are kept in sync by the auto-patch
+# bot; their drift surfaces here only when a developer directly
+# edits surface C / 1 inconsistently.
 
 on:
   pull_request:
