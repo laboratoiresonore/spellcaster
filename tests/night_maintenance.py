@@ -137,15 +137,24 @@ def check_cross_repo_drift() -> tuple[bool, list[str]]:
 
 
 def check_installer_audit(server: str) -> tuple[bool, list[str]]:
-    """Wrapper around tests/installer_audit.py."""
+    """Wrapper around tests/installer_audit.py.
+
+    Forces UTF-8 + errors=replace because installer_audit.py prints
+    Unicode glyphs (✓, ✗, ═, …) and Windows' default cp1252 codec
+    crashes the subprocess reader thread on them, leaving p.stdout as
+    None and exploding downstream with AttributeError on .splitlines().
+    """
     p = subprocess.run(
         [sys.executable, str(HERE / "installer_audit.py"),
          "--server", server],
-        capture_output=True, text=True, timeout=120)
+        capture_output=True, text=True, timeout=120,
+        encoding="utf-8", errors="replace")
     ok = (p.returncode == 0)
-    # Extract the PASS/FAIL/SKIP summary line
+    # Extract the PASS/FAIL/SKIP summary line. Defensive against
+    # empty/None stdout for the same Windows-codec failure class.
+    stdout = p.stdout or ""
     summary_line = next(
-        (ln for ln in p.stdout.splitlines()
+        (ln for ln in stdout.splitlines()
          if "PASS" in ln and "/" in ln),
         "no summary line found")
     return ok, [f"installer_audit: {summary_line.strip()}"]
@@ -240,6 +249,37 @@ def check_log_errors() -> tuple[bool, list[str]]:
                      if any(kw in ln for kw in ("ERROR ", "Traceback",
                                                    "watchdog-gave-up",
                                                    "crashed-detected"))]
+        # Filter out well-understood benign noise:
+        # - Custom-node import failures (FileNotFoundError on
+        #   __init__.py) happen when a node pack was partially uninstalled.
+        #   Per-pack issue, not a system fault.
+        # - Workflow validation failures ("checkpoint does not contain a
+        #   valid clip") are caller errors — the SUBMITTED workflow asked
+        #   for an arch with no checkpoint. Not a server health issue.
+        BENIGN_MARKERS = (
+            "Cannot import",       # custom_node load failure (per-pack)
+            "does not contain a valid clip",  # workflow input error
+            "does not contain a valid text encoder",
+        )
+        # Find blocks: each Traceback is followed by lines until a blank or
+        # non-indented line. If ANY line in the block contains a benign
+        # marker, suppress the whole block.
+        def _is_benign(idx):
+            for j in range(idx, min(idx + 30, len(unresolved))):
+                if any(m in unresolved[j] for m in BENIGN_MARKERS):
+                    return True
+            return False
+
+        filtered = []
+        for ln in err_lines:
+            # Locate this line's index in unresolved + check surrounding context
+            try:
+                idx = unresolved.index(ln)
+            except ValueError:
+                filtered.append(ln); continue
+            if not _is_benign(idx):
+                filtered.append(ln)
+        err_lines = filtered
         if err_lines:
             findings.append(f"{name}: {len(err_lines)} unrecovered "
                            f"error(s) in last 200 — latest: "
