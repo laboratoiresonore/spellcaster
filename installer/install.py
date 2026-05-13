@@ -1272,14 +1272,29 @@ def git_clone(repo_url: str, dest: Path, dry_run: bool = False) -> bool:
         print(f"  {C_DIM}[dry-run] Would clone: {repo_url} → {dest}{C_RESET}")
         return True
     if dest.exists():
+        # Pull-or-print: report the user-visible status AFTER we know
+        # whether the pull succeeded. Previously we printed "✓ Updated"
+        # before catching the error and still returning True, so users
+        # on slow / detached / dirty trees got "✓ Updated" on a stale
+        # checkout (no actual update happened).
         print(f"  {C_YELLOW}Already exists:{C_RESET} {dest.name} — pulling latest…")
         try:
             subprocess.run(["git", "-C", str(dest), "pull", "--ff-only"],
                            capture_output=True, check=True, timeout=120)
             print(f"  {C_GREEN}✓ Updated {dest.name}{C_RESET}")
             return True
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            return True  # pull failed but the repo exists — treat as success
+        except subprocess.CalledProcessError as _e:
+            stderr = _e.stderr.decode(errors='replace') if _e.stderr else ""
+            print(f"  {C_YELLOW}⚠ Pull failed — using existing checkout"
+                  f"{C_RESET}  {C_DIM}({stderr.splitlines()[0] if stderr else _e}){C_RESET}")
+            return True  # repo exists — install can proceed against current state
+        except FileNotFoundError:
+            # git binary missing entirely — current checkout is the
+            # best we can do; still report success so the install
+            # continues, but be honest about NOT updating.
+            print(f"  {C_YELLOW}⚠ git not installed — keeping existing checkout"
+                  f"{C_RESET}")
+            return True
     print(f"  {C_CYAN}Cloning:{C_RESET} {dest.name}")
     print(f"  {C_DIM}From: {repo_url}{C_RESET}")
     try:
@@ -3380,8 +3395,16 @@ def _find_spellcaster_core() -> Path | None:
 
     Searched in the comfyui-spellcaster folder relative to the installer
     or repo root.  Returns the directory path if found, else None.
+
+    When frozen (PyInstaller), looks inside ``BUNDLE_DIR`` (= ``_MEIPASS``)
+    so the comfyui-spellcaster/ tree bundled via build_installer.py's
+    ``--add-data`` flag is visible. Without this search root, the
+    self-update bootstrap path runs install.py from a temp fetch dir
+    whose parent has no comfyui-spellcaster/ — the pre-bootstrap
+    regression the May-7 1c0f035 fix tried to close.
     """
     search_roots = [
+        BUNDLE_DIR,                  # frozen: _MEIPASS root (PyInstaller bundle)
         SCRIPT_DIR.parent,           # repo root (installer/ is one level down)
         SCRIPT_DIR,                  # in case we're in the repo root
         SCRIPT_DIR.parent.parent,    # two levels up (dev layouts)
@@ -5064,6 +5087,10 @@ def main():
     happen here — the historic `if __name__ == "__main__"` block at the
     bottom of this file never fires under bootstrap.
     """
+    # bootstrap.py injects `--bootstrapped` into sys.argv so a subprocess
+    # re-exec (rare) can skip the fetch. Our own argparser doesn't know
+    # about that flag — strip it here so argparse doesn't reject it.
+    sys.argv = [a for a in sys.argv if a != "--bootstrapped"]
     args = build_arg_parser().parse_args()
 
     is_frozen = getattr(sys, 'frozen', False)

@@ -1,0 +1,40 @@
+name: 6-surface mirror drift
+
+# Per MIRROR_TARGETS.md, every `spellcaster_core/` module must be
+# byte-identical across surface C (`comfyui-spellcaster/`) and surface
+# 1 (`plugins/gimp/comfyui-connector/`) in this repo. Drift between
+# them is the recurring root cause for PRs that ship a fix to one
+# surface and forget the others — see PR #20 for the latest example.
+#
+# This job fails the build when any tracked file drifts, so the PR
+# author resolves it BEFORE the auto-patch bot has a chance to
+# silently overwrite surfaces 5 + 6 from a stale C.
+#
+# Cross-repo surfaces (2 = ComfyUI-Spellcaster, 3 = -NSFW, 5 =
+# distro plugin, 6 = NSFW pack) are kept in sync by the auto-patch
+# bot; their drift surfaces here only when a developer directly
+# edits surface C / 1 inconsistently.
+
+on:
+  pull_request:
+    paths:
+      - "comfyui-spellcaster/spellcaster_core/**"
+      - "plugins/gimp/comfyui-connector/spellcaster_core/**"
+      - "tests/mirror_drift.py"
+      - "MIRROR_TARGETS.md"
+  push:
+    branches: [main]
+    paths:
+      - "comfyui-spellcaster/spellcaster_core/**"
+      - "plugins/gimp/comfyui-connector/spellcaster_core/**"
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 6-surface mirror drift
+        run: python tests/mirror_drift.py

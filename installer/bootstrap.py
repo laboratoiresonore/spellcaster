@@ -453,16 +453,19 @@ def _crashlog_dir() -> Path:
 
 def _write_crashlog(exc: BaseException) -> Path | None:
     import traceback as _tb
-    from datetime import datetime as _dt
+    from datetime import datetime as _dt, timezone as _tz
     try:
         d = _crashlog_dir()
         d.mkdir(parents=True, exist_ok=True)
-        stamp = _dt.now().strftime("%Y%m%d_%H%M%S")
+        # Use UTC (H3 hygiene): naive datetimes are ambiguous when crash
+        # logs are sent for triage across timezones.
+        _now = _dt.now(_tz.utc)
+        stamp = _now.strftime("%Y%m%d_%H%M%S")
         path = d / f"installer_crash_{stamp}.log"
         body = [
             "Spellcaster installer crash report",
             "=" * 60,
-            f"Time:       {_dt.now().isoformat(timespec='seconds')}",
+            f"Time:       {_now.isoformat(timespec='seconds')}",
             f"Python:     {sys.version.splitlines()[0]}",
             f"Platform:   {sys.platform}  {os.name}",
             f"Frozen:     {getattr(sys, 'frozen', False)}",

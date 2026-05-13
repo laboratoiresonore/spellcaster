@@ -86,6 +86,11 @@ def build(target_platform: str, onedir: bool = False):
         "--add-data", f"manifest.json{sep}.",       # install manifest (offline fallback)
         "--add-data", f"installer_gui.py{sep}.",    # GUI source (offline fallback)
         "--add-data", f"{REPO_ROOT / 'plugins'}{sep}plugins",  # plugin directory tree (repo root)
+        # comfyui-spellcaster pack: _find_spellcaster_core() in install.py
+        # looks here under BUNDLE_DIR (= _MEIPASS when frozen). Without
+        # this, every fresh install ships a non-functional GIMP plug-in
+        # because the spellcaster_core sibling tree is missing.
+        "--add-data", f"{REPO_ROOT / 'comfyui-spellcaster'}{sep}comfyui-spellcaster",
         "--distpath", str(REPO_ROOT / "dist"),      # output to repo-root dist/
         "--workpath", str(REPO_ROOT / "build"),     # build artefacts in repo-root build/
     ]
@@ -256,6 +261,9 @@ def build_validate(target_platform: str):
         # diagnostic.py + its sibling spellcaster_core modules ship inside
         # the bundled GIMP plugin tree.
         "--add-data", f"{REPO_ROOT / 'plugins'}{sep}plugins",
+        # comfyui-spellcaster pack — validate_install.py imports the same
+        # _find_spellcaster_core path; same regression closes here.
+        "--add-data", f"{REPO_ROOT / 'comfyui-spellcaster'}{sep}comfyui-spellcaster",
         "--distpath", str(REPO_ROOT / "dist"),
         "--workpath", str(REPO_ROOT / "build"),
     ]
@@ -326,6 +334,9 @@ def build_llm_variant(target_platform: str):
         "--add-data", f"install_with_llm.py{sep}.",
         "--add-data", f"installer_gui.py{sep}.",
         "--add-data", f"{REPO_ROOT / 'plugins'}{sep}plugins",
+        # comfyui-spellcaster pack — LLM variant runs the same install.py
+        # pipeline, same _find_spellcaster_core regression closes here.
+        "--add-data", f"{REPO_ROOT / 'comfyui-spellcaster'}{sep}comfyui-spellcaster",
         "--distpath", str(REPO_ROOT / "dist"),
         "--workpath", str(REPO_ROOT / "build"),
     ]
@@ -406,6 +417,9 @@ def build_remote_installer(target_platform: str):
         "--add-data", f"install_remote.py{sep}.",
         "--add-data", f"manifest.json{sep}.",
         "--add-data", f"{REPO_ROOT / 'plugins'}{sep}plugins",
+        # comfyui-spellcaster pack — install_remote.py also pulls
+        # spellcaster_core when bundling the GIMP plug-in (commit 1c0f035).
+        "--add-data", f"{REPO_ROOT / 'comfyui-spellcaster'}{sep}comfyui-spellcaster",
         "--distpath", str(REPO_ROOT / "dist"),
         "--workpath", str(REPO_ROOT / "build"),
     ]

@@ -73,6 +73,9 @@ def main() -> int:
                              "human-readable progress).")
     parser.add_argument("--no-save", action="store_true",
                         help="Do not persist the report to disk; stdout only.")
+    # Strip bootstrap.py's --bootstrapped flag (recursion guard for
+    # re-exec) so this parser doesn't reject it.
+    sys.argv = [a for a in sys.argv if a != "--bootstrapped"]
     args = parser.parse_args()
 
     server_url = (args.server_url
