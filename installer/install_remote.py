@@ -1019,6 +1019,12 @@ def build_arg_parser():
 
 
 def main():
+    # bootstrap.py injects `--bootstrapped` into sys.argv so a subprocess
+    # re-exec can skip the fetch. Our argparser doesn't know about that
+    # flag — strip it here so argparse doesn't reject it (manifested as
+    # "unrecognized arguments: --bootstrapped" when the frozen .exe ran
+    # post-bootstrap, before 6b9ee5e).
+    sys.argv = [a for a in sys.argv if a != "--bootstrapped"]
     args = build_arg_parser().parse_args()
 
     banner()

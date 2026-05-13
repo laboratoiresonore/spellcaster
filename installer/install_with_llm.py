@@ -546,6 +546,10 @@ def _install_comfyui_native(args, comfyui_root, paths, server_url):
 
 
 def main():
+    # bootstrap.py injects `--bootstrapped` into sys.argv (recursion
+    # guard for re-exec'd subprocesses). Strip it before argparse —
+    # the parser doesn't know it and would reject every frozen run.
+    sys.argv = [a for a in sys.argv if a != "--bootstrapped"]
     args = install.build_arg_parser().parse_args()
     banner()
 

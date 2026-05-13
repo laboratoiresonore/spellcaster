@@ -5087,6 +5087,10 @@ def main():
     happen here — the historic `if __name__ == "__main__"` block at the
     bottom of this file never fires under bootstrap.
     """
+    # bootstrap.py injects `--bootstrapped` into sys.argv so a subprocess
+    # re-exec (rare) can skip the fetch. Our own argparser doesn't know
+    # about that flag — strip it here so argparse doesn't reject it.
+    sys.argv = [a for a in sys.argv if a != "--bootstrapped"]
     args = build_arg_parser().parse_args()
 
     is_frozen = getattr(sys, 'frozen', False)
