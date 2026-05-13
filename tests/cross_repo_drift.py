@@ -109,6 +109,33 @@ MIRROR_FILES = [
 SURFACE_5_REL = Path("plugin") / "comfyui-connector" / "spellcaster_core"
 SURFACE_6_REL = Path("comfyui-spellcaster") / "spellcaster_core"
 
+# Files where per-surface divergence is intentional + accepted.
+# Drift on these files is reported as INFO (not DRIFT) and does NOT
+# fail the exit code. Every entry represents a deliberate
+# architectural decision (see commit history of this file for the
+# trail of reasoning).
+#
+# Surface-5 (distro plugin): currently zero legitimate divergence.
+# The distro plugin is a thin wrapper around canon, so anything that
+# diverges should be promoted to canon (see spellcaster#24 for the
+# precedent — LMStudio + auth-token promotions).
+#
+# Surface-6 (NSFW pack):
+#   - guild_llm.py    : host-label comment tweaks reflecting the
+#                       NSFW dev host. Comments only; no behavior
+#                       difference. Cannot live on canon because the
+#                       leak-check regex blocks the host name.
+#   - privacy.py      : NSFW-specific cleanup additions. Per H6
+#                       hygiene these should eventually move to a
+#                       privacy_nsfw.py companion module; not yet
+#                       scheduled.
+#   - lora_knowledge.py : NSFW catalogue extras. Same deferred
+#                       refactor as privacy.py.
+KNOWN_DIVERGENT: dict[str, set[str]] = {
+    "5": set(),
+    "6": {"guild_llm.py", "privacy.py", "lora_knowledge.py"},
+}
+
 
 def _md5(p: Path) -> str:
     h = hashlib.md5()
@@ -139,12 +166,18 @@ def _clone(org: str, repo_name: str, into: Path) -> Path | None:
 
 def _compare_surface(label: str, c_dir: Path, other_dir: Path,
                      allow_nsfw_extras: bool = False) -> tuple[int, int, int]:
-    """Return (ok, drift, missing) tuple for one surface comparison."""
-    ok = drift = missing = 0
+    """Return (ok, drift, missing) tuple for one surface comparison.
+
+    Files listed in ``KNOWN_DIVERGENT[label]`` are reported as
+    informational drift (not counted toward the failure total).
+    """
+    ok = drift = missing = info = 0
+    known = KNOWN_DIVERGENT.get(label, set())
     print(f"{BOLD}── surface {label} ──{RESET}")
     print(f"   C:        {c_dir}")
     print(f"   {label}: {other_dir}")
     drift_files: list[str] = []
+    info_files: list[str] = []
     for rel in MIRROR_FILES:
         c = c_dir / rel
         o = other_dir / rel
@@ -159,12 +192,21 @@ def _compare_surface(label: str, c_dir: Path, other_dir: Path,
         hc, ho = _md5(c), _md5(o)
         if hc == ho:
             ok += 1
+        elif rel in known:
+            info += 1
+            info_files.append(rel)
+            print(f"  {DIM}~ {rel}  C={hc[:8]}  {label}={ho[:8]}  "
+                  f"(known intentional divergence){RESET}")
         else:
             drift += 1
             drift_files.append(rel)
             print(f"  {RED}✗{RESET} {rel}  C={hc[:8]}  {label}={ho[:8]}")
     if not drift and not missing:
-        print(f"  {GREEN}✓ all {ok} files byte-identical{RESET}")
+        msg = f"  {GREEN}✓ {ok} files byte-identical"
+        if info:
+            msg += f", {info} known-divergent ({', '.join(info_files)})"
+        msg += RESET
+        print(msg)
     elif drift:
         print(f"\n  {RED}{BOLD}DRIFT{RESET}: {drift} file(s) — {', '.join(drift_files[:5])}"
               + ("…" if drift > 5 else ""))
