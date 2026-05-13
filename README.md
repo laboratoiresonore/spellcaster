@@ -43,12 +43,12 @@
 
 <div align="center">
 
-<strong>📣 Status — April 2026</strong>
+<strong>📣 Status — May 2026</strong>
 
 <table>
-<tr><td><strong>🆕 News</strong></td><td>DaVinci Resolve plugin is out — test it and report all bugs!</td></tr>
-<tr><td><strong>✅ What works</strong></td><td>GIMP plugin is a powerhouse and a far better interface than ComfyUI for anything related to images</td></tr>
-<tr><td><strong>🔧 Current focus</strong></td><td>Global debugging and optimizing</td></tr>
+<tr><td><strong>🆕 News</strong></td><td>Self-healing installer + honest diagnostic validator landed. Local-LLM (LM Studio) prompt-enhancement promoted to canon, optional bearer-token auth across the HTTP surfaces, automated 6-surface mirror sync. DaVinci Resolve plugin is still in test — bug reports welcome.</td></tr>
+<tr><td><strong>✅ What works</strong></td><td>GIMP plugin is a powerhouse and a far better interface than ComfyUI for anything related to images. Diagnostic validator now distinguishes real failures from false positives (cold-load timeouts, outdated node names, model classifier fall-through).</td></tr>
+<tr><td><strong>🔧 Current focus</strong></td><td>Correctness hardening — installer edge cases, validator accuracy, cross-repo mirror automation. Nightly LLM briefing summarizes what changed overnight.</td></tr>
 <tr><td><strong>⏭ Next</strong></td><td>Signal bridge &nbsp;·&nbsp; Moar plugins / frontends (<a href="https://github.com/laboratoiresonore/spellcaster/issues/new">make a request</a>)</td></tr>
 </table>
 
