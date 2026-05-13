@@ -1424,7 +1424,9 @@ class NodeFactory:
             self._nodes[nid]["_meta"] = {"label": str(label)}
         return nid
 
-    def save_image_websocket(self, images_ref, *, label=None, node_id=None):
+    def save_image_websocket(self, images_ref, *, label=None,
+                              disk_backup=True, disk_prefix="spellcaster",
+                              node_id=None):
         """SaveImageWebsocket — return image via ws binary frame
         (ComfyUI core class -- no sibling pack required).
 
@@ -1441,9 +1443,25 @@ class NodeFactory:
                    needs to tell them apart (e.g. ``"sam3_subject"`` vs
                    ``"sam3_mask"``). Stored in the node's ``_meta``
                    dict, which ComfyUI passes through unchanged.
+            disk_backup: If True (default), ALSO add a parallel
+                ``SaveImage`` node so the result lands on disk in
+                addition to the ws stream. dispatch.py's poll-fallback
+                path reads SaveImage outputs from ``/history``, so
+                when the ws connection dies mid-delivery (observed
+                live 2026-05-09 when ComfyUI's accept loop crashed
+                right after a successful inpaint), the client can
+                still recover the result. Tiny disk write cost
+                (~1 MB PNG) for a major resilience win.
+                Pass disk_backup=False on internal/intermediate ws
+                emits where disk persistence isn't desired (the SAM3
+                mask/subject paths, for instance).
+            disk_prefix: filename_prefix for the SaveImage node — the
+                client globs for these in ``/output/`` when polling
+                /history.
 
         Returns:
-            Node ID (string), but has no outputs (terminal node).
+            Node ID (string) of the SaveImageWebsocket node.
+            (Terminal — no outputs.)
         """
         nid = self._add(
             "SaveImageWebsocket",
@@ -1452,6 +1470,14 @@ class NodeFactory:
         )
         if label is not None:
             self._nodes[nid]["_meta"] = {"label": str(label)}
+        if disk_backup:
+            # node_id auto-allocated; the ws node already has its id.
+            self._add(
+                "SaveImage",
+                {"images": images_ref,
+                 "filename_prefix": str(disk_prefix)},
+                None,
+            )
         return nid
 
     def image_scale(self, image_ref, width, height,
