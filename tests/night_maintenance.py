@@ -166,7 +166,15 @@ def check_extra_model_paths() -> tuple[bool, list[str]]:
 
 
 def check_log_errors() -> tuple[bool, list[str]]:
-    """Scan recent Voodoomaster + ComfyUI logs for fresh errors."""
+    """Scan recent Voodoomaster + ComfyUI logs for UNRECOVERED errors.
+
+    The watchdog soft-crash + auto-restart flow tags both the crash
+    detection AND the successful recovery — we only want to alert when
+    a crash was NOT followed by a ``restart-ok`` within the same log
+    window. Otherwise every transient ComfyUI accept-loop death (a
+    routine occurrence under heavy IO load) flags as a failure even
+    though the system self-healed.
+    """
     log_dir = Path.home() / ".voodoomaster"
     if not log_dir.is_dir():
         return True, [f"log dir absent ({log_dir}) — skip"]
@@ -180,13 +188,21 @@ def check_log_errors() -> tuple[bool, list[str]]:
         except OSError:
             continue
         tail = text.splitlines()[-200:]  # last 200 lines
-        err_lines = [ln for ln in tail
+        # Find the index of the latest "restart-ok" — any error event
+        # BEFORE that has been resolved (the system recovered). Only
+        # error events AFTER are unresolved and worth surfacing.
+        last_ok_idx = -1
+        for i, ln in enumerate(tail):
+            if "restart-ok" in ln or "boot start" in ln:
+                last_ok_idx = i
+        unresolved = tail[last_ok_idx + 1:] if last_ok_idx >= 0 else tail
+        err_lines = [ln for ln in unresolved
                      if any(kw in ln for kw in ("ERROR ", "Traceback",
                                                    "watchdog-gave-up",
                                                    "crashed-detected"))]
         if err_lines:
-            findings.append(f"{name}: {len(err_lines)} error-tagged "
-                           f"line(s) in last 200 — latest: "
+            findings.append(f"{name}: {len(err_lines)} unrecovered "
+                           f"error(s) in last 200 — latest: "
                            f"{err_lines[-1].strip()[:160]}")
     if findings:
         return False, ["log scan:"] + [f"  · {x}" for x in findings]
