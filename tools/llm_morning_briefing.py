@@ -197,6 +197,14 @@ def collect_active_sessions() -> str:
 
 
 def collect_log_tail() -> str:
+    """Collect log slices for the LLM, filtering pre-recovered errors.
+
+    Same logic as ``night_maintenance.check_log_errors``: only show
+    entries AFTER the latest ``restart-ok`` / ``boot start`` —
+    everything before that has been resolved by the watchdog and
+    just confuses the LLM into worrying about historical crashes
+    that already self-healed.
+    """
     out_lines = []
     log_dir = Path.home() / ".voodoomaster"
     for name in ("launcher.log", "comfyui.log"):
@@ -204,10 +212,24 @@ def collect_log_tail() -> str:
         if not path.is_file():
             continue
         try:
-            tail = path.read_text(encoding="utf-8", errors="replace").splitlines()[-20:]
+            full = path.read_text(encoding="utf-8", errors="replace").splitlines()
         except OSError:
             continue
-        out_lines.append(f"### {name} (last 20 lines)\n```\n" + "\n".join(tail) + "\n```")
+        # Find the latest recovery marker. Anything before it is resolved.
+        last_ok_idx = -1
+        scan_window = full[-500:]  # bound the scan
+        for i, ln in enumerate(scan_window):
+            if "restart-ok" in ln or "boot start" in ln:
+                last_ok_idx = i
+        unresolved = scan_window[last_ok_idx + 1:] if last_ok_idx >= 0 else scan_window
+        # Cap the slice the LLM sees
+        slice_ = unresolved[-20:] if unresolved else []
+        if not slice_:
+            out_lines.append(f"### {name}\n_(no unresolved entries since last recovery)_")
+        else:
+            label = (f"### {name} (last 20 unresolved lines since "
+                     f"{'recovery' if last_ok_idx >= 0 else 'log start'})")
+            out_lines.append(f"{label}\n```\n" + "\n".join(slice_) + "\n```")
     return "\n\n".join(out_lines) if out_lines else "_(no log files in ~/.voodoomaster/)_"
 
 
