@@ -502,12 +502,15 @@ def run_diagnostic(server, callback=None, interactive=False):
             log(f"BUILD FAIL: {e}")
             continue
 
-        # Submit and test
-        # 600 s: each capability test that COLD-loads a different arch
-        # checkpoint (txt2img_sdxl after txt2img_sd15 etc.) needs 5-9 min
-        # to finish the first generation. 180 s here was producing
-        # false Timeout reports for every uncommon arch.
-        ok, elapsed, err = _submit_and_wait(server, wf, timeout=600)
+        # Submit and test. 600 s default; flux+wan paths get 1500 s
+        # because their 22 GB checkpoint + 10 GB CLIP cold-load alone
+        # eats ~5 min on a 16 GB VRAM GPU due to repeated offload/
+        # reload cycles, leaving ~10 s for the actual inference under
+        # 600 s — which routinely tripped 'Timeout' on these caps.
+        # Video archs (wan_i2v) hit the same wall.
+        cap_timeout = 1500 if cap_id in {"txt2img_flux", "wan_i2v",
+                                          "ltx_t2v"} else 600
+        ok, elapsed, err = _submit_and_wait(server, wf, timeout=cap_timeout)
         if ok:
             report.working.append(cap_id)
             report.timings[cap_id] = elapsed
@@ -570,11 +573,22 @@ def _build_ltx_test(models, server):
     unets = _opts("UnetLoaderGGUF", "unet_name")
     clips = _opts("CLIPLoaderGGUF", "clip_name")
     vaes = _opts("VAELoader", "vae_name")
+    # LTXAVTextEncoderLoader has its OWN option pools for both its
+    # `text_encoder` (Gemma model) and `ckpt_name` (embeddings
+    # connector — yes, the param is poorly named) inputs. These pools
+    # are NOT identical to CLIPLoaderGGUF's clip_name pool; the
+    # validator was emitting names from clip_name that LTXAV rejected.
+    ltxav_te_pool = _opts("LTXAVTextEncoderLoader", "text_encoder")
+    ltxav_ck_pool = _opts("LTXAVTextEncoderLoader", "ckpt_name")
 
     ltx_unet = next((u for u in unets if "ltx" in u.lower()), "")
-    ltx_te = next((c for c in clips if "gemma" in c.lower()), "")
+    # Prefer LTXAV's own pools; fall back to CLIPLoaderGGUF for
+    # pack-version compatibility (older pack only exposed clip_name).
+    ltx_te = (next((c for c in ltxav_te_pool if "gemma" in c.lower()), "")
+              or next((c for c in clips if "gemma" in c.lower()), ""))
     ltx_vae = next((v for v in vaes if "ltx" in v.lower() and "video" in v.lower()), "")
-    ltx_conn = next((c for c in clips if "embeddings_connector" in c.lower()), "")
+    ltx_conn = (next((c for c in ltxav_ck_pool if "embeddings_connector" in c.lower()), "")
+                or next((c for c in clips if "embeddings_connector" in c.lower()), ""))
 
     if not ltx_unet or not ltx_te or not ltx_vae:
         return None
