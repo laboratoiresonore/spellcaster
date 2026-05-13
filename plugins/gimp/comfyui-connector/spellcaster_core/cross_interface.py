@@ -38,6 +38,15 @@ import urllib.request
 from typing import Callable, Iterator, Optional
 
 
+# ── auth-token injection (optional; no-op if spellcaster_core.auth_token absent) ──
+def _sct_auth_headers() -> dict:
+    try:
+        from spellcaster_core.auth_token import auth_headers as _ah
+        return _ah() or {}
+    except Exception:
+        return {}
+
+
 _DEFAULT_GUILD_URL = "http://127.0.0.1:7777"
 _HEARTBEAT_INTERVAL_S = 10.0
 
@@ -82,6 +91,7 @@ def _http_json(method: str, url: str, payload: Optional[dict] = None,
     if payload is not None:
         body = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
+    headers.update(_sct_auth_headers())
     req = urllib.request.Request(url, data=body, method=method, headers=headers)
     for attempt in range(2):
         try:
@@ -213,8 +223,9 @@ class CrossInterfaceClient:
         qs = f"?{urllib.parse.urlencode(params)}" if params else ""
         url = f"{self.base_url}/api/events/stream{qs}"
         try:
-            req = urllib.request.Request(
-                url, headers={"Accept": "text/event-stream"})
+            _sse_headers = {"Accept": "text/event-stream"}
+            _sse_headers.update(_sct_auth_headers())
+            req = urllib.request.Request(url, headers=_sse_headers)
             resp = urllib.request.urlopen(req, timeout=timeout or 30.0)
         except Exception:
             return
@@ -312,7 +323,7 @@ class CrossInterfaceClient:
 
     def download_asset(self, h: str) -> Optional[bytes]:
         try:
-            req = urllib.request.Request(f"{self.base_url}/api/assets/{h}")
+            req = urllib.request.Request(f"{self.base_url}/api/assets/{h}", headers=_sct_auth_headers())
             with urllib.request.urlopen(req, timeout=10.0) as resp:
                 return resp.read()
         except Exception:
@@ -396,7 +407,7 @@ class CrossInterfaceClient:
         pattern matches ``_http_json`` and the sender-side uploaders."""
         if not url:
             return None
-        req = urllib.request.Request(url)
+        req = urllib.request.Request(url, headers=_sct_auth_headers())
         for attempt in range(2):
             try:
                 with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -420,7 +431,7 @@ class CrossInterfaceClient:
             return []
         url = f"{comfy_url.rstrip('/')}/spellcaster/blob/list"
         try:
-            req = urllib.request.Request(url)
+            req = urllib.request.Request(url, headers=_sct_auth_headers())
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
             if isinstance(data, dict):

@@ -518,7 +518,8 @@ def _resolve_method_profile(method):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
-                   comfy_url=None, model_name=None, method="scene"):
+                   comfy_url=None, model_name=None, method="scene",
+                   lmstudio_url=None, lmstudio_model=None, lmstudio_ttl=5):
     """Expand a terse user prompt into an architecture-optimised description.
 
     Tries ComfyUI LLM nodes first (if comfy_url provided), then falls back
@@ -663,6 +664,8 @@ def enhance_prompt(prompt_text, arch_key, kobold_url=None, is_negative=False,
         enhanced = guild_llm.chat(
             message=user_msg, system_prompt=system_msg,
             server=comfy_url, kobold_url=kobold_url,
+            lmstudio_url=lmstudio_url, lmstudio_model=lmstudio_model,
+            lmstudio_ttl=lmstudio_ttl,
             max_tokens=int(sampling.get("max_tokens", 300)),
             temperature=float(sampling.get("temperature", 0.3)),
             purpose="enhance",
