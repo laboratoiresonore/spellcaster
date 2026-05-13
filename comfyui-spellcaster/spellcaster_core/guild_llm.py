@@ -240,7 +240,7 @@ def chat(message, system_prompt="", server=None, kobold_url=None,
             ("kobold", kobold_url, try_kobold),
         ]
     else:  # 'enhance'
-        # When a Voodoomancer-style LM Studio endpoint is configured
+        # When a local-LLM (LM Studio) endpoint is configured
         # (typically the same box as ComfyUI), prefer it: the ttl param
         # auto-unloads the LLM after `lmstudio_ttl` seconds idle, freeing
         # VRAM for the diffusion model. Cycle: load → enhance → unload
