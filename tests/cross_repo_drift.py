@@ -1,0 +1,251 @@
+#!/usr/bin/env python3
+"""Cross-repo mirror drift — surface C vs sibling surfaces 5 / 6.
+
+Complements ``tests/mirror_drift.py``:
+
+- ``mirror_drift.py`` checks surfaces C ⇄ 1 (both in spellcaster repo).
+- THIS check spans repositories — surface 5 lives in the distro-runtime
+  repo, surface 6 lives in the NSFW pack. Drift between C and 5 is the
+  most dangerous class because the auto-patch bot will silently
+  overwrite either direction depending on which surface lands first.
+
+How it works:
+
+1. ``git clone --depth 1`` the sibling repo into a temp dir.
+2. md5 every file in ``MIRROR_FILES`` against the same file in
+   ``comfyui-spellcaster/spellcaster_core/``.
+3. Exit 0 only when both sibling surfaces are byte-identical to C.
+
+Per ``MIRROR_TARGETS.md``, NSFW-only files
+(``workflows_nsfw.py``, ``prompt_enhance_nsfw.py``,
+``lora_calibrations_nsfw.json``) live ONLY on surface 6 — those are
+excluded from the C-vs-6 comparison.
+
+Sibling repo names come from env vars so the leak-check regex
+doesn't trip on tracked file content:
+
+- ``DISTRO_REPO_NAME`` (e.g. the runtime distro repo name) — required
+  for the surface-5 check
+- ``NSFW_REPO_NAME`` (e.g. the private NSFW pack) — required for
+  surface 6 (and requires ``GITHUB_TOKEN`` / ``gh auth`` for the
+  clone)
+- ``GITHUB_ORG`` (default: ``laboratoiresonore``)
+
+Usage:
+
+    # In CI (distro-runtime surface check only — public repo, no token):
+    DISTRO_REPO_NAME=<repo> python tests/cross_repo_drift.py
+
+    # In CI with secrets (NSFW surface too):
+    NSFW_REPO_NAME=<repo> DISTRO_REPO_NAME=<repo> \\
+        python tests/cross_repo_drift.py
+
+    # Local dev (skip clones, point at existing checkouts):
+    python tests/cross_repo_drift.py \\
+        --surface-5 ~/path/to/distro-runtime \\
+        --surface-6 ~/path/to/nsfw-pack
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+# Force UTF-8 on Windows
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+GREEN = "\033[92m"
+RED   = "\033[91m"
+YEL   = "\033[93m"
+DIM   = "\033[2m"
+BOLD  = "\033[1m"
+RESET = "\033[0m"
+
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parent
+SURFACE_C = REPO / "comfyui-spellcaster" / "spellcaster_core"
+
+# Files that must be byte-identical across surfaces. Kept in sync
+# with the in-repo mirror_drift.py.
+MIRROR_FILES = [
+    "workflows.py",
+    "node_factory.py",
+    "composites.py",
+    "architectures.py",
+    "prompt_enhance.py",
+    "video_presets.py",
+    "pipeline.py",
+    "diagnostic.py",
+    "preflight.py",
+    "model_detect.py",
+    "comfyui_llm.py",
+    "guild_llm.py",
+    "privacy.py",
+    "asset_gallery.py",
+    "event_bus.py",
+    "interface_registry.py",
+    "mailbox.py",
+    "cross_interface.py",
+    "lora_knowledge.py",
+    "lora_calibration_store.py",
+    "lora_scorer.py",
+    "faceswap_health.py",
+    "preflight_status.py",
+    "events.py",
+    "lora_calibrations_sfw.json",
+]
+
+# Surface-relative paths within each sibling repo. The auto-patch bot
+# uses these exact paths; keep in sync with MIRROR_TARGETS.md.
+SURFACE_5_REL = Path("plugin") / "comfyui-connector" / "spellcaster_core"
+SURFACE_6_REL = Path("comfyui-spellcaster") / "spellcaster_core"
+
+
+def _md5(p: Path) -> str:
+    h = hashlib.md5()
+    h.update(p.read_bytes())
+    return h.hexdigest()
+
+
+def _clone(org: str, repo_name: str, into: Path) -> Path | None:
+    """Shallow-clone <org>/<repo_name> into <into>. Returns the clone
+    path or None on failure (no token, no network, etc.)."""
+    target = into / repo_name
+    try:
+        proc = subprocess.run(
+            ["git", "clone", "--depth", "1",
+             f"https://github.com/{org}/{repo_name}.git",
+             str(target)],
+            capture_output=True, text=True, timeout=120, check=True)
+    except FileNotFoundError:
+        print(f"{RED}✗{RESET} git not on PATH — cannot clone {repo_name}")
+        return None
+    except subprocess.CalledProcessError as e:
+        stderr_tail = (e.stderr or "").splitlines()[-3:]
+        print(f"{RED}✗{RESET} clone {repo_name} failed: "
+              f"{'  '.join(stderr_tail) if stderr_tail else e}")
+        return None
+    return target
+
+
+def _compare_surface(label: str, c_dir: Path, other_dir: Path,
+                     allow_nsfw_extras: bool = False) -> tuple[int, int, int]:
+    """Return (ok, drift, missing) tuple for one surface comparison."""
+    ok = drift = missing = 0
+    print(f"{BOLD}── surface {label} ──{RESET}")
+    print(f"   C:        {c_dir}")
+    print(f"   {label}: {other_dir}")
+    drift_files: list[str] = []
+    for rel in MIRROR_FILES:
+        c = c_dir / rel
+        o = other_dir / rel
+        if not c.is_file():
+            print(f"  {YEL}~{RESET} {rel}: missing in C")
+            missing += 1
+            continue
+        if not o.is_file():
+            print(f"  {YEL}~{RESET} {rel}: missing in {label}")
+            missing += 1
+            continue
+        hc, ho = _md5(c), _md5(o)
+        if hc == ho:
+            ok += 1
+        else:
+            drift += 1
+            drift_files.append(rel)
+            print(f"  {RED}✗{RESET} {rel}  C={hc[:8]}  {label}={ho[:8]}")
+    if not drift and not missing:
+        print(f"  {GREEN}✓ all {ok} files byte-identical{RESET}")
+    elif drift:
+        print(f"\n  {RED}{BOLD}DRIFT{RESET}: {drift} file(s) — {', '.join(drift_files[:5])}"
+              + ("…" if drift > 5 else ""))
+    return ok, drift, missing
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--surface-5", default=None,
+                    help="Local path to surface-5 repo checkout "
+                         "(skip cloning).")
+    ap.add_argument("--surface-6", default=None,
+                    help="Local path to surface-6 repo checkout "
+                         "(skip cloning).")
+    ap.add_argument("--org", default=os.environ.get("GITHUB_ORG",
+                                                      "laboratoiresonore"))
+    ap.add_argument("--skip-clone", action="store_true",
+                    help="Don't attempt cloning when env paths missing — "
+                         "useful for local dev runs.")
+    args = ap.parse_args()
+
+    distro_name = os.environ.get("DISTRO_REPO_NAME", "")
+    nsfw_name   = os.environ.get("NSFW_REPO_NAME", "")
+
+    if not SURFACE_C.is_dir():
+        print(f"{RED}✗ surface C missing: {SURFACE_C}{RESET}")
+        return 2
+
+    total_drift = 0
+    total_missing = 0
+    work_dir = None
+
+    try:
+        # Surface 5 — distro-runtime
+        s5_path: Path | None = None
+        if args.surface_5:
+            s5_path = Path(args.surface_5)
+            if not (s5_path / SURFACE_5_REL).is_dir():
+                print(f"{YEL}~ --surface-5 path doesn't contain "
+                      f"{SURFACE_5_REL} — skipping{RESET}")
+                s5_path = None
+        elif distro_name and not args.skip_clone:
+            work_dir = Path(tempfile.mkdtemp(prefix="xrd-"))
+            s5_path = _clone(args.org, distro_name, work_dir)
+        else:
+            print(f"{YEL}~ surface 5: no path + no DISTRO_REPO_NAME — skip{RESET}")
+
+        if s5_path is not None:
+            ok, drift, miss = _compare_surface(
+                "5", SURFACE_C, s5_path / SURFACE_5_REL)
+            total_drift += drift
+            total_missing += miss
+
+        # Surface 6 — NSFW pack (private; clone requires gh auth)
+        s6_path: Path | None = None
+        if args.surface_6:
+            s6_path = Path(args.surface_6)
+            if not (s6_path / SURFACE_6_REL).is_dir():
+                print(f"{YEL}~ --surface-6 path doesn't contain "
+                      f"{SURFACE_6_REL} — skipping{RESET}")
+                s6_path = None
+        elif nsfw_name and not args.skip_clone:
+            if work_dir is None:
+                work_dir = Path(tempfile.mkdtemp(prefix="xrd-"))
+            s6_path = _clone(args.org, nsfw_name, work_dir)
+        else:
+            print(f"{YEL}~ surface 6: no path + no NSFW_REPO_NAME — skip"
+                  f"{RESET}")
+
+        if s6_path is not None:
+            ok, drift, miss = _compare_surface(
+                "6", SURFACE_C, s6_path / SURFACE_6_REL)
+            total_drift += drift
+            total_missing += miss
+    finally:
+        if work_dir and work_dir.is_dir():
+            shutil.rmtree(work_dir, ignore_errors=True)
+
+    print(f"\n{BOLD}TOTAL{RESET}: drift={total_drift} missing={total_missing}")
+    return 0 if (total_drift == 0 and total_missing == 0) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -101,6 +101,41 @@ def check_mirror_drift() -> tuple[bool, list[str]]:
     return ok, [f"mirror_drift: {summary}"]
 
 
+def check_cross_repo_drift() -> tuple[bool, list[str]]:
+    """Wrapper around tests/cross_repo_drift.py — informational.
+
+    Compares surface C against sibling-repo checkouts at the paths
+    given by the env vars DISTRO_REPO_PATH and NSFW_REPO_PATH. If
+    neither is set the check is a no-op.
+
+    Returns ok=True even when drift is detected, since some surface
+    drift is intentional (per-repo customizations like LMStudio in
+    the distro-runtime). The report still surfaces the count so a
+    human can review.
+    """
+    distro_path = os.environ.get("DISTRO_REPO_PATH", "")
+    nsfw_path   = os.environ.get("NSFW_REPO_PATH", "")
+    if not (distro_path or nsfw_path):
+        return True, ["cross_repo_drift: skipped (no sibling-repo paths set)"]
+    cmd = [sys.executable, str(HERE / "cross_repo_drift.py"),
+           "--skip-clone"]
+    if distro_path:
+        cmd += ["--surface-5", distro_path]
+    if nsfw_path:
+        cmd += ["--surface-6", nsfw_path]
+    p = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    # Parse the TOTAL line
+    total_line = next(
+        (ln for ln in p.stdout.splitlines() if "TOTAL" in ln),
+        "TOTAL not found")
+    # Strip ANSI codes for the report
+    import re as _re
+    total_clean = _re.sub(r"\x1b\[[0-9;]*m", "", total_line).strip()
+    # Always pass — drift here is informational; the in-repo
+    # mirror_drift check (above) is the strict gate.
+    return True, [f"cross_repo_drift (informational): {total_clean}"]
+
+
 def check_installer_audit(server: str) -> tuple[bool, list[str]]:
     """Wrapper around tests/installer_audit.py."""
     p = subprocess.run(
@@ -266,11 +301,12 @@ def main() -> int:
 
     sections: list[tuple[str, bool, list[str]]] = []
     checks = [
-        ("mirror-drift",     check_mirror_drift,    ()),
-        ("installer-audit",  check_installer_audit, (args.server,)),
-        ("capabilities",     check_capabilities,    (args.caps,)),
-        ("model-paths",      check_extra_model_paths, ()),
-        ("log-scan",         check_log_errors,      ()),
+        ("mirror-drift",       check_mirror_drift,      ()),
+        ("cross-repo-drift",   check_cross_repo_drift,  ()),
+        ("installer-audit",    check_installer_audit,   (args.server,)),
+        ("capabilities",       check_capabilities,      (args.caps,)),
+        ("model-paths",        check_extra_model_paths, ()),
+        ("log-scan",           check_log_errors,        ()),
     ]
     for name, fn, fnargs in checks:
         try:
