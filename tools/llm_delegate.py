@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Local-LLM delegation gateway.
 
-Per Laborantin-aware practice: tasks that don't require Claude-level
-reasoning should be delegated to the dev host's local LLMs (LM Studio on
+Per the local-LLM-aware delegation policy: tasks that don't require
+Claude-level reasoning should be delegated to the dev host's local
+LLMs (LM Studio on
 :1234). Frees Claude's context for the work only Claude can do.
 
 What counts as "safe to delegate":
