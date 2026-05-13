@@ -174,7 +174,12 @@ CAPABILITY_TESTS = [
 
     ("rembg", "Background Removal",
      lambda m, s, i: build_rembg(i) if i else None,
-     ["ImageRembg"],
+     # Modern rembg packs ship under different node names. The tuple
+     # signals "ANY of these is sufficient" (vs a list which is
+     # "ALL of these required"). See _node_present() below.
+     [("RMBG", "BiRefNetRMBG", "ImageRembg",
+       "Image Rembg (Remove Background)",
+       "LayerMask: RemBgUltra V2")],
      ["studio_erasex"]),
 
     ("face_restore", "Face Restore (CodeFormer)",
@@ -195,7 +200,9 @@ CAPABILITY_TESTS = [
 
     ("ltx_t2v", "LTX T2V Video",
      None,  # Built dynamically
-     ["LTXVLoader"],
+     # LTXVLoader was the old pack's name; current pack ships
+     # LTXVImgToVideo + LTXVScheduler. Tuple = ANY of these.
+     [("LTXVImgToVideo", "LTXVLoader", "LTXVScheduler")],
      ["studio_videomancer", "model_ltx2"]),
 ]
 
@@ -204,8 +211,17 @@ CAPABILITY_TESTS = [
 #  Main diagnostic runner
 # ═══════════════════════════════════════════════════════════════════════
 
-def _submit_and_wait(server, workflow, timeout=120):
-    """Submit workflow, wait for result. Returns (ok, elapsed, error_msg)."""
+def _submit_and_wait(server, workflow, timeout=600):
+    """Submit workflow, wait for result. Returns (ok, elapsed, error_msg).
+
+    Default timeout is 600 s (10 min) because the first generation on
+    a freshly-booted ComfyUI cold-loads the checkpoint + CLIP + VAE
+    from disk, which takes 5–9 minutes on the RTX 5060 Ti / SD-1.5
+    path. A 120 s default was producing false 'Timeout' results on
+    every fresh-server diagnostic run (observed live 2026-05-13).
+    Callers expecting fast turnaround (subsequent same-arch tests,
+    or already-warm models) can pass a shorter timeout explicitly.
+    """
     try:
         from .preflight import preflight_workflow
         ok, workflow, report = preflight_workflow(workflow, server)
@@ -333,7 +349,14 @@ def run_diagnostic(server, callback=None, interactive=False):
     report.node_count = len(nodes)
     log(f"  {len(nodes)} nodes available")
 
-    critical = {
+    # Each entry is either a single node name (str) or a tuple of
+    # alternates. The capability is considered present if ANY of the
+    # alternates is installed. This handles upstream packs renaming
+    # nodes between versions — e.g. older rembg packs shipped
+    # ``ImageRembg`` (no longer in current Manager builds), modern
+    # alternatives include ``RMBG`` / ``BiRefNetRMBG`` / the labeled
+    # node ``Image Rembg (Remove Background)`` from rembg-comfy.
+    critical: dict[str | tuple[str, ...], str] = {
         "CheckpointLoaderSimple": "Model loading",
         "KSampler": "Standard sampling",
         "SaveImage": "Image saving",
@@ -341,14 +364,21 @@ def run_diagnostic(server, callback=None, interactive=False):
         "ImageUpscaleWithModel": "AI upscaling",
         "VHS_VideoCombine": "Video assembly",
         "ReActorFaceSwapOpt": "Face swap",
-        "ImageRembg": "Background removal",
+        ("RMBG", "BiRefNetRMBG", "ImageRembg",
+         "Image Rembg (Remove Background)",
+         "LayerMask: RemBgUltra V2"): "Background removal",
         "WanImageToVideo": "WAN I2V",
         "UnetLoaderGGUF": "GGUF model loading",
+        ("LTXVImgToVideo", "LTXVLoader",
+         "LTXVScheduler"): "LTX video loading",
     }
-    for ct, desc in critical.items():
-        if ct not in nodes:
-            report.missing_nodes.append(ct)
-            log(f"  MISSING: {ct} ({desc})")
+    for key, desc in critical.items():
+        names = (key,) if isinstance(key, str) else key
+        if not any(n in nodes for n in names):
+            # Report the primary (first) name as the canonical
+            # "missing" so downstream consumers don't see a tuple.
+            report.missing_nodes.append(names[0])
+            log(f"  MISSING: {' / '.join(names)} ({desc})")
 
     # Phase 3: Model inventory
     log("\nPhase 3: Model inventory")
@@ -370,7 +400,13 @@ def run_diagnostic(server, callback=None, interactive=False):
         if fast_arch in models:
             wf = _build_txt2img_test(fast_arch, models, server, None)
             if wf:
-                ok, elapsed, err = _submit_and_wait(server, wf, timeout=60)
+                # 600 s: this is the first-ever workflow on a freshly
+                # booted ComfyUI; cold-loading checkpoint + CLIP + VAE
+                # from disk takes 5-9 min on the RTX 5060 Ti SD-1.5
+                # path. Subsequent Phase-5 capability tests get the
+                # default (also 600 s) but typically complete in
+                # seconds because the same arch's models are warm.
+                ok, elapsed, err = _submit_and_wait(server, wf, timeout=600)
                 if ok:
                     # Get the output filename
                     log(f"  Generated test image in {elapsed:.0f}s ({fast_arch})")
@@ -407,11 +443,24 @@ def run_diagnostic(server, callback=None, interactive=False):
 
     # Phase 5: Capability tests
     log("\nPhase 5: Testing capabilities")
+    def _node_present(item, installed):
+        """An item is either a single node name (str — required) or a
+        tuple of alternates (any-of). Returns True when the
+        capability is satisfied."""
+        names = (item,) if isinstance(item, str) else item
+        return any(n in installed for n in names)
+
     for cap_id, cap_name, build_fn, required_nodes, related_wizards in CAPABILITY_TESTS:
         log(f"  {cap_name}...", end=" ")
 
-        # Check required nodes
-        missing = [n for n in required_nodes if n not in nodes]
+        # Check required nodes: each list entry is a single name (str)
+        # or a tuple of alternates. A missing entry is reported by its
+        # primary (first) name.
+        missing = []
+        for item in required_nodes:
+            if not _node_present(item, nodes):
+                primary = item if isinstance(item, str) else item[0]
+                missing.append(primary)
         if missing:
             report.broken.append((cap_id, f"Missing nodes: {', '.join(missing)}"))
             report.banish_wizards.extend(related_wizards)
@@ -443,7 +492,11 @@ def run_diagnostic(server, callback=None, interactive=False):
             continue
 
         # Submit and test
-        ok, elapsed, err = _submit_and_wait(server, wf, timeout=180)
+        # 600 s: each capability test that COLD-loads a different arch
+        # checkpoint (txt2img_sdxl after txt2img_sd15 etc.) needs 5-9 min
+        # to finish the first generation. 180 s here was producing
+        # false Timeout reports for every uncommon arch.
+        ok, elapsed, err = _submit_and_wait(server, wf, timeout=600)
         if ok:
             report.working.append(cap_id)
             report.timings[cap_id] = elapsed
