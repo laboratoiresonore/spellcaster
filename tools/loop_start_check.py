@@ -66,15 +66,29 @@ if _NSFW and Path(_NSFW).is_dir():
 
 
 def _coord_json(subcmd: str) -> dict:
+    """Call ``tools/claude_session.py <subcmd>`` and parse the JSON output.
+
+    Returns a dict that always carries ``_status``:
+      - 'ok'       → coord tool present + responded with valid JSON
+      - 'absent'   → coord tool not installed in this repo
+      - 'failed'   → coord tool ran but errored / produced non-JSON
+    Callers can distinguish 'no sessions registered' (legitimate quiet
+    state) from 'coord tool is broken' (alarming) without silently
+    treating both as empty dicts.
+    """
     if not COORD.is_file():
-        return {}
+        return {"_status": "absent"}
     try:
         p = subprocess.run([sys.executable, str(COORD), subcmd],
                            capture_output=True, text=True, timeout=10)
-        return json.loads(p.stdout or "{}")
+        data = json.loads(p.stdout or "{}")
+        if isinstance(data, dict):
+            data.setdefault("_status", "ok")
+            return data
+        return {"_status": "ok", "_raw": data}
     except (subprocess.CalledProcessError,
-            json.JSONDecodeError, FileNotFoundError):
-        return {}
+            json.JSONDecodeError, FileNotFoundError) as e:
+        return {"_status": "failed", "_error": f"{type(e).__name__}: {e}"}
 
 
 def _git_status(path: Path) -> list[str]:
@@ -111,8 +125,11 @@ def main() -> int:
                          "Exit 1 on collision with another session's lock.")
     args = ap.parse_args()
 
-    sessions = _coord_json("list").get("sessions", [])
-    locks    = _coord_json("locks").get("locks", [])
+    sessions_resp = _coord_json("list")
+    locks_resp    = _coord_json("locks")
+    coord_health = sessions_resp.get("_status", "ok")
+    sessions = sessions_resp.get("sessions", [])
+    locks    = locks_resp.get("locks", [])
 
     # Build a path → owning-session map from lock dicts. The coord
     # module's lock entries look like
@@ -143,6 +160,7 @@ def main() -> int:
         }
 
     summary = {
+        "coord_health": coord_health,
         "active_sessions": sessions,
         "locks": locks,
         "collisions": collisions,
@@ -155,6 +173,10 @@ def main() -> int:
 
     # Human-readable
     print(f"{BOLD}── loop start: parallel-session check ──{RESET}")
+    if coord_health != "ok":
+        print(f"  {YEL}~ coord tool: {coord_health}{RESET}")
+        if "_error" in sessions_resp:
+            print(f"    {DIM}{sessions_resp['_error'][:160]}{RESET}")
     print(f"  active sessions: {len(sessions)}")
     for s in sessions[:10]:
         if not isinstance(s, dict):

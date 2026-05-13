@@ -326,7 +326,15 @@ def llm_summarize(facts_md: str, endpoint: str, model: str) -> str:
     )
     with urllib.request.urlopen(req, timeout=300) as r:
         payload = json.loads(r.read().decode("utf-8"))
-    return payload["choices"][0]["message"]["content"]
+    # Defensive: a malformed LLM response (rate-limit, model-unloaded,
+    # truncated chunk) can produce an empty 'choices' array. Bubble
+    # up a clean error rather than an opaque IndexError.
+    choices = payload.get("choices") or []
+    if not choices:
+        raise RuntimeError(f"LLM returned no choices "
+                            f"(model={payload.get('model','?')}); "
+                            f"raw payload keys: {list(payload.keys())}")
+    return choices[0]["message"]["content"]
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────

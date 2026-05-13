@@ -155,8 +155,14 @@ def _sync_surface(label: str, sibling_root: Path, surface_rel: Path,
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     minute_stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
     branch = f"sync/auto-canon-{minute_stamp}"
-    # If branch exists locally, reuse it; otherwise create from origin/main
-    rc, _, _ = _run(["git", "fetch", "origin", "--quiet"], sibling_root)
+    # If branch exists locally, reuse it; otherwise create from origin/main.
+    # Surface a fetch failure loudly — silently proceeding to checkout off
+    # a stale origin/main produces a sync PR against the wrong base and
+    # turns the next round of cross_repo_drift into a confused mess.
+    rc_fetch, _, err_fetch = _run(["git", "fetch", "origin", "--quiet"], sibling_root)
+    if rc_fetch != 0:
+        print(f"  {YEL}~ git fetch returned {rc_fetch}: {err_fetch.strip()[:160]}{RESET}")
+        print(f"  {YEL}  continuing against possibly-stale origin/main{RESET}")
     rc, out, err = _run(["git", "checkout", "-B", branch, "origin/main"], sibling_root)
     if rc != 0:
         print(f"  {RED}✗ branch checkout failed: {err.strip()[:200]}{RESET}")
