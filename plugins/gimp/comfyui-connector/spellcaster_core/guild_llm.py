@@ -150,7 +150,8 @@ RECOMMENDED_LLM = {
 
 def chat(message, system_prompt="", server=None, kobold_url=None,
          model=None, max_tokens=512, temperature=0.7, purpose="chat",
-         arch_key=None, method=None):
+         arch_key=None, method=None,
+         lmstudio_url=None, lmstudio_model=None, lmstudio_ttl=5):
     """THE single LLM entry point for every surface (Guild, GIMP, Darktable,
     ComfyUI nodes, scaffolding). Do not implement parallel LLM paths
     elsewhere — everything goes through this function.
@@ -203,6 +204,8 @@ def chat(message, system_prompt="", server=None, kobold_url=None,
         server = None
     if kobold_url is not None and not _valid_backend_url(kobold_url):
         kobold_url = None
+    if lmstudio_url is not None and not _valid_backend_url(lmstudio_url):
+        lmstudio_url = None
 
     # Build the backend sequence based on purpose.
     def try_ollama():
@@ -222,14 +225,28 @@ def chat(message, system_prompt="", server=None, kobold_url=None,
         return _chat_kobold(message, system_prompt, kobold_url,
                             max_tokens, temperature)
 
+    def try_lmstudio():
+        if not lmstudio_url:
+            return None
+        return _chat_lmstudio(message, system_prompt, lmstudio_url,
+                              lmstudio_model, max_tokens, temperature,
+                              ttl=lmstudio_ttl)
+
     if purpose == "chat":
         chain = [
             ("ollama", "http://127.0.0.1:11434", try_ollama),
             ("comfyui", server, try_comfyui),
+            ("lmstudio", lmstudio_url, try_lmstudio),
             ("kobold", kobold_url, try_kobold),
         ]
     else:  # 'enhance'
+        # When a local-LLM (LM Studio) endpoint is configured
+        # (typically the same box as ComfyUI), prefer it: the ttl param
+        # auto-unloads the LLM after `lmstudio_ttl` seconds idle, freeing
+        # VRAM for the diffusion model. Cycle: load → enhance → unload
+        # (ttl) → ComfyUI generation → JIT-reload on next enhance.
         chain = [
+            ("lmstudio", lmstudio_url, try_lmstudio),
             ("comfyui", server, try_comfyui),
             ("ollama", "http://127.0.0.1:11434", try_ollama),
             ("kobold", kobold_url, try_kobold),
@@ -277,6 +294,46 @@ def _chat_comfyui(message, system_prompt, server, model, max_tokens,
             server, prompt=message, system_prompt=system_prompt,
             model=model, max_tokens=max_tokens, temperature=temperature,
             arch_key=arch_key, method=method)
+    except Exception:
+        return None
+
+
+def _chat_lmstudio(message, system_prompt, url, model, max_tokens,
+                   temperature, ttl=5):
+    """Chat via LM Studio's OpenAI-compatible API.
+
+    `ttl` (seconds) tells LM Studio to unload the model after that
+    many seconds of inactivity. Default 5s — short enough that a
+    ComfyUI generation kicked off right after the enhance returns
+    finds the VRAM free. Set ttl=0 to keep the model resident across
+    many calls (when ComfyUI isn't sharing the box).
+    """
+    if not url:
+        return None
+    try:
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": message})
+        payload = {
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "stream": False,
+        }
+        if model:
+            payload["model"] = model
+        if ttl is not None and ttl > 0:
+            payload["ttl"] = int(ttl)
+        body = json.dumps(payload).encode()
+        req = urllib.request.Request(
+            f"{url.rstrip('/')}/v1/chat/completions",
+            data=body, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read())
+            if "error" in data:
+                return None
+            return data["choices"][0]["message"]["content"]
     except Exception:
         return None
 
