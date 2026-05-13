@@ -188,7 +188,13 @@ def scan_network_for_comfyui(port: int = 8188, timeout: float = 0.5) -> list[str
 
 
 def probe_server(server_url: str) -> dict:
-    """Probe a ComfyUI server — mirrors install.py step_probe_server()."""
+    """Probe a ComfyUI server — mirrors install.py step_probe_server().
+
+    Honors HTTP basic auth credentials embedded in the URL
+    (``user:pass@host``). Without this, every authed server returns
+    401 and the installer reports "unreachable" with no actionable
+    message. See install.py:_split_url_credentials for the helper.
+    """
     section("Probing Remote ComfyUI")
 
     result: dict[str, Any] = {
@@ -204,11 +210,21 @@ def probe_server(server_url: str) -> dict:
         "gpu_name": "",
     }
 
-    log_info(f"Connecting to {C_CYAN}{server_url}{C_RESET}...")
+    # Split credentials ONCE; only `clean_url` ever appears in log
+    # output, persisted settings, or .bat/.lnk shortcuts — keeps
+    # passwords out of screenshots, support tickets, and shell history.
+    clean_url, auth_header = _split_url_credentials(server_url)
+
+    def _auth(req):
+        if auth_header:
+            req.add_header("Authorization", auth_header)
+        return req
+
+    log_info(f"Connecting to {C_CYAN}{clean_url}{C_RESET}...")
 
     # Test connectivity via /system_stats
     try:
-        req = urllib.request.Request(f"{server_url}/system_stats")
+        req = _auth(urllib.request.Request(f"{clean_url}/system_stats"))
         with urllib.request.urlopen(req, timeout=10) as resp:
             stats = json.loads(resp.read().decode("utf-8"))
             device = stats.get("devices", [{}])[0]
@@ -222,12 +238,12 @@ def probe_server(server_url: str) -> dict:
                 log_info(f"Remote GPU: {gpu_name} — {vram_gb:.1f} GB VRAM")
         result["reachable"] = True
     except Exception as e:
-        log_err(f"Cannot reach ComfyUI at {server_url}: {e}")
+        log_err(f"Cannot reach ComfyUI at {clean_url}: {e}")
         return result
 
     # Fetch installed nodes
     try:
-        req = urllib.request.Request(f"{server_url}/object_info")
+        req = _auth(urllib.request.Request(f"{clean_url}/object_info"))
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             result["available_nodes"] = set(data.keys())
@@ -244,7 +260,7 @@ def probe_server(server_url: str) -> dict:
     }
     for key, (node_type, param_name) in MODEL_QUERIES.items():
         try:
-            req = urllib.request.Request(f"{server_url}/object_info/{node_type}")
+            req = _auth(urllib.request.Request(f"{clean_url}/object_info/{node_type}"))
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 items = (data.get(node_type, {})
@@ -260,7 +276,7 @@ def probe_server(server_url: str) -> dict:
     for node_type in ["UNETLoader", "UnetLoaderGGUF"]:
         if node_type in result["available_nodes"]:
             try:
-                req = urllib.request.Request(f"{server_url}/object_info/{node_type}")
+                req = _auth(urllib.request.Request(f"{clean_url}/object_info/{node_type}"))
                 with urllib.request.urlopen(req, timeout=10) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
                     items = (data.get(node_type, {})
@@ -277,7 +293,7 @@ def probe_server(server_url: str) -> dict:
     for node_type in ["CLIPLoader", "DualCLIPLoader"]:
         if node_type in result["available_nodes"]:
             try:
-                req = urllib.request.Request(f"{server_url}/object_info/{node_type}")
+                req = _auth(urllib.request.Request(f"{clean_url}/object_info/{node_type}"))
                 with urllib.request.urlopen(req, timeout=10) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
                     for pname in ["clip_name", "clip_name1"]:
@@ -401,12 +417,14 @@ def detect_nsfw_mode(server_info: dict) -> bool:
 _scan_gimp_versions       = install._scan_gimp_versions
 _win_registry_gimp        = install._win_registry_gimp
 find_default_gimp         = install.find_default_gimp
+find_all_gimp_dirs        = install.find_all_gimp_dirs
 find_default_darktable    = install.find_default_darktable
 _find_gimp_plugin_src     = install._find_gimp_plugin_src
 _find_darktable_plugin_src = install._find_darktable_plugin_src
 _find_tavern_src          = install._find_tavern_src
 _find_scaffold_src        = install._find_scaffold_src
 _classify_server_loras    = install._classify_server_loras
+_split_url_credentials    = install._split_url_credentials
 
 
 # ─── Settings writer ─────────────────────────────────────────────────────────
@@ -414,7 +432,14 @@ _classify_server_loras    = install._classify_server_loras
 def write_settings(paths: dict, server_url: str, llm_url: str,
                    server_info: dict, nsfw_mode: bool = False,
                    dry_run: bool = False) -> dict:
-    """Write spellcaster_settings.json — shared config all plugins read."""
+    """Write spellcaster_settings.json — shared config all plugins read.
+
+    HTTP basic auth credentials embedded in ``server_url`` are stripped
+    and stored in ``comfyui_auth_header`` instead so the user:pass
+    pair doesn't end up plain-text in a file the user might screenshot
+    or share. Plugin runtime sends the header as ``Authorization``
+    on every ComfyUI request.
+    """
     section("Writing Settings")
 
     lora_archs = {}
@@ -424,9 +449,10 @@ def write_settings(paths: dict, server_url: str, llm_url: str,
         except Exception as e:
             log_warn(f"LoRA classification failed: {e}")
 
+    clean_url, auth_header = _split_url_credentials(server_url)
     settings = {
         "version": VERSION,
-        "comfyui_url": server_url,
+        "comfyui_url": clean_url,
         "llm_url": llm_url,
         "server_reachable": server_info.get("reachable", False),
         "remote_install": True,
@@ -442,6 +468,8 @@ def write_settings(paths: dict, server_url: str, llm_url: str,
         },
         "lora_architectures": lora_archs,
     }
+    if auth_header:
+        settings["comfyui_auth_header"] = auth_header
 
     if dry_run:
         log_dim("[dry-run] Would write spellcaster_settings.json")
@@ -550,11 +578,21 @@ def install_gimp_plugin(gimp_path: Path, server_url: str, dry_run: bool = False)
         )
     log_ok(f"GIMP plugin → {dest}")
 
-    # Write config.json with remote server URL
+    # Write config.json with remote server URL. Strip any HTTP-basic-auth
+    # credentials and stash them in server_auth_header — keeps the
+    # password out of the on-disk config the user might screenshot.
+    # Mirrors install.py:4061-4071.
     config_path = dest / "config.json"
-    config_path.write_text(json.dumps({"server_url": server_url}, indent=4),
-                           encoding="utf-8")
-    log_ok("Wrote config.json")
+    clean_url, auth_header = _split_url_credentials(server_url)
+    cfg = {"server_url": clean_url}
+    if auth_header:
+        cfg["server_auth_header"] = auth_header
+        cfg["_note"] = ("server_auth_header was extracted from the URL "
+                        "you provided. The plugin sends it as the "
+                        "Authorization header on every ComfyUI request.")
+    config_path.write_text(json.dumps(cfg, indent=4), encoding="utf-8")
+    log_ok("Wrote config.json"
+           + (" (with basic auth header)" if auth_header else ""))
 
     # Unix: make executable
     if os.name != "nt":
@@ -707,18 +745,23 @@ def install_wizard_guild(server_url: str, llm_url: str,
         log_dim("Wizard Guild will run in SFW mode without the token.")
         log_dim("Use --nsfw-token <PAT> to enable NSFW auto-updates.")
 
-    # Write guild config
+    # Write guild config. Strip HTTP-basic-auth so the password isn't
+    # plain-text in guild_config.json (which gets distributed with the
+    # Wizard Guild folder). Auth lives in comfyui_auth_header instead.
+    clean_url, auth_header = _split_url_credentials(server_url)
     guild_config = dest / "guild_config.json"
     config_data = {
-        "comfyui_url": server_url,
+        "comfyui_url": clean_url,
         "kobold_url": llm_url or "http://127.0.0.1:5001",
         "prompt_enhance": bool(llm_url),
         "auto_update": True,
     }
+    if auth_header:
+        config_data["comfyui_auth_header"] = auth_header
     if not guild_config.exists():
         guild_config.write_text(json.dumps(config_data, indent=2),
                                 encoding="utf-8")
-        log_ok(f"Wrote guild_config.json (ComfyUI: {server_url})")
+        log_ok(f"Wrote guild_config.json (ComfyUI: {clean_url})")
     else:
         log_ok("guild_config.json preserved (existing)")
 
@@ -727,19 +770,22 @@ def install_wizard_guild(server_url: str, llm_url: str,
         for py in dest.glob("*.py"):
             py.chmod(0o755)
 
-    # Create launcher script
+    # Create launcher script. Pass clean_url on the command line — the
+    # launcher reads auth_header from guild_config.json so credentials
+    # never appear in .bat / .sh contents (which users sometimes share
+    # for screen-recording demos).
     launcher_path = dest / "guild_launcher.py"
     if sys.platform == "win32":
         bat_path = dest.parent / "wizard-guild.bat"
         bat_path.write_text(
-            f'@echo off\r\npython "{launcher_path}" --comfyui {server_url} %*\r\n',
+            f'@echo off\r\npython "{launcher_path}" --comfyui {clean_url} %*\r\n',
             encoding="utf-8"
         )
         log_ok(f"Launcher: {bat_path}")
     else:
         sh_path = dest.parent / "wizard-guild"
         sh_path.write_text(
-            f'#!/bin/sh\npython3 "{launcher_path}" --comfyui {server_url} "$@"\n',
+            f'#!/bin/sh\npython3 "{launcher_path}" --comfyui {clean_url} "$@"\n',
             encoding="utf-8"
         )
         sh_path.chmod(0o755)
@@ -751,7 +797,12 @@ def install_wizard_guild(server_url: str, llm_url: str,
 # ─── Desktop shortcuts ────────────────────────────────────────────────────────
 
 def create_shortcuts(launcher_path: Path, server_url: str, dry_run: bool = False):
-    """Create desktop shortcuts pointing at the remote ComfyUI."""
+    """Create desktop shortcuts pointing at the remote ComfyUI.
+
+    Strips any user:pass@ from the server URL before passing it into
+    .bat / .lnk / .desktop launchers — credentials live in the
+    plugin's config.json, not in shortcut metadata users might share.
+    """
     if not launcher_path or not launcher_path.exists():
         return
 
@@ -760,6 +811,11 @@ def create_shortcuts(launcher_path: Path, server_url: str, dry_run: bool = False
     if dry_run:
         log_dim("[dry-run] Would create desktop shortcuts")
         return
+
+    # Single split for every downstream shortcut writer. The launcher
+    # script reads config.json for the Authorization header, so the
+    # command-line argument only needs the bare URL.
+    server_url, _auth_unused = _split_url_credentials(server_url)
 
     icon_path = launcher_path.parent / "static" / "favicon.ico"
     if not icon_path.exists():
@@ -872,9 +928,13 @@ def print_summary(server_url: str, llm_url: str, paths: dict,
                   nsfw_mode: bool = False):
     section("INSTALLATION COMPLETE")
 
+    # Strip user:pass@ before displaying — terminal logs often go into
+    # screenshots / support tickets / shell history. The credential
+    # already lives in the plug-in's config.json (comfyui_auth_header).
+    display_url, _auth_unused = _split_url_credentials(server_url)
     edition = f"{C_RED}NSFW{C_RESET}" if nsfw_mode else f"{C_GREEN}SFW{C_RESET}"
     print(f"  {C_BOLD}Edition:{C_RESET}        {edition}")
-    print(f"  {C_BOLD}Remote ComfyUI:{C_RESET} {server_url}")
+    print(f"  {C_BOLD}Remote ComfyUI:{C_RESET} {display_url}")
     if llm_url:
         print(f"  {C_BOLD}LLM server:{C_RESET}     {llm_url}")
 
@@ -895,7 +955,7 @@ def print_summary(server_url: str, llm_url: str, paths: dict,
             print(f"    {C_DIM}... and {len(features) - 15} more{C_RESET}")
 
     print(f"\n  {C_BOLD}Next steps:{C_RESET}")
-    print(f"    1. Make sure ComfyUI is running on {server_url}")
+    print(f"    1. Make sure ComfyUI is running on {display_url}")
     if paths.get("gimp"):
         print(f"    2. Open GIMP 3 → Filters → Spellcaster")
     if paths.get("darktable"):
@@ -1035,7 +1095,13 @@ def main():
 
     paths: dict[str, Any] = {"gimp": None, "darktable": None, "tavern": None}
 
-    # GIMP
+    # GIMP — primary + multi-version enumeration
+    # Mirrors install.py:3957-3975. When GIMP 3.0 and 3.2 are installed
+    # side-by-side, both have their own plug-ins/ + pluginrc cache;
+    # remote-installed users used to get the plug-in into ONE version
+    # and silent emptiness in the other. The extra_gimp_dirs loop
+    # below the primary install fixes that.
+    extra_gimp_dirs: list[Path] = []
     if not args.skip_gimp:
         if args.gimp:
             gimp_path = Path(args.gimp).expanduser().resolve()
@@ -1053,6 +1119,32 @@ def main():
                     raw = input(f"    Enter GIMP plug-ins path (or Enter to skip): ").strip()
                     if raw:
                         paths["gimp"] = Path(raw).expanduser().resolve()
+        # Multi-GIMP detection (3.0 + 3.2 side-by-side, etc.).
+        # Runs even under --dry-run because this is pure enumeration
+        # (no disk writes); the dry-run output should still list every
+        # GIMP the real install would touch so users can verify the
+        # plan before committing.
+        if paths["gimp"]:
+            try:
+                primary_resolved = paths["gimp"].resolve()
+            except OSError:
+                primary_resolved = paths["gimp"]
+            try:
+                for d in find_all_gimp_dirs():
+                    try:
+                        rp = d.resolve()
+                    except OSError:
+                        rp = d
+                    if rp != primary_resolved and (rp.is_dir() or rp.parent.is_dir()):
+                        extra_gimp_dirs.append(d)
+                if extra_gimp_dirs:
+                    log_info(f"Detected {len(extra_gimp_dirs) + 1} GIMP "
+                             f"version(s) — will install plugin to all of them:")
+                    log_dim(f"  {paths['gimp']}")
+                    for d in extra_gimp_dirs:
+                        log_dim(f"  {d}")
+            except Exception:  # noqa: BLE001 — multi-detect is a nicety
+                extra_gimp_dirs = []
     else:
         log_dim("GIMP plugin: skipped (--skip-gimp)")
 
@@ -1078,6 +1170,12 @@ def main():
 
     if paths["gimp"]:
         install_gimp_plugin(paths["gimp"], server_url, args.dry_run)
+        # Mirror to every additional GIMP version detected. Each version
+        # has its own plug-ins/ folder; without this loop GIMP 3.0 users
+        # silently miss the plug-in when GIMP 3.2 is also installed.
+        for extra_dir in extra_gimp_dirs:
+            log_info(f"Mirroring plugin to: {extra_dir}")
+            install_gimp_plugin(extra_dir, server_url, args.dry_run)
 
     if paths["darktable"]:
         install_darktable_plugin(paths["darktable"], server_url, args.dry_run)
