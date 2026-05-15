@@ -93,6 +93,7 @@ tests/*
 # ignored; whitelist the files that should travel with the repo)
 !tests/e2e_audit.py
 !tests/e2e_report.md
+!tests/builders_manifest_drift.py
 !tests/cross_repo_drift.py
 !tests/installer_audit.py
 !tests/mirror_drift.py

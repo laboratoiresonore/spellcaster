@@ -38,3 +38,11 @@ jobs:
           python-version: "3.11"
       - name: 6-surface mirror drift
         run: python tests/mirror_drift.py
+      - name: builders_manifest.json freshness
+        # Fails when comfyui-spellcaster/spellcaster_core/builders_manifest.json
+        # is stale relative to workflows.py. The author must run
+        # `python tools/build_builders_manifest.py` and re-commit. The
+        # manifest is the canonical Voodoomaster /v1/capabilities.methods
+        # source and the Voodoomancer C-side method-gate input — staying
+        # in sync with the Python builders is non-negotiable.
+        run: python tests/builders_manifest_drift.py
