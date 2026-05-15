@@ -263,18 +263,121 @@ def _bucket_for(name: str) -> str:
 # override here AND verifying _infer_target_class() agrees (the
 # generator's CI mode flags drift between the two).
 
+# ---------------------------------------------------------------------------
+# Override table contract — read before adding entries
+# ---------------------------------------------------------------------------
+#
+# Each builder gets ONE workhorse class — the most distinctive ComfyUI
+# class_type whose absence on the user's install means this builder
+# cannot produce useful output. The C-side gate (
+# gimp_ai_comfy_method_target_class() in Voodoomancer) checks
+# /object_info for this class_type to decide whether to advertise the
+# method to GIMP at startup.
+#
+# Picking the right class for a multi-stage builder:
+#   1. SINGLE-WORKHORSE pipelines (rembg, lama_remove, supir, iclight,
+#      faceswap...) — pick the dominant operation node, NOT a generic
+#      loader (CheckpointLoaderSimple, SaveImage, VAEDecode etc.).
+#   2. MULTI-STAGE WITH SPECIFIC NODES (photobooth, magic_eraser,
+#      detail_hallucinate...) — pick the rarest custom-pack class in
+#      the pipeline (it's the most likely to be missing).
+#   3. GENERIC ARCH-UNIVERSAL (txt2img, img2img, klein_img2img,
+#      detail_hallucinate without upscale, klein_inpaint...) — these
+#      run on any sdxl/flux/klein arch and the only "gate" is the
+#      MODEL FILE not a node class. Leave null + document below; the
+#      C-side falls back to its hand-coded handler (Case-C).
+#   4. WRONG AUTO-INFERENCES — when _infer_target_class() walks a
+#      builder and surfaces the LAST `_add("X", ...)` call that
+#      happens to be GrowMaskWithBlur / SaveImage / ImageCropByMask /
+#      EmptyLatentImage / similar tail-of-graph node, add an override
+#      here pointing to the actual workhorse. The AST heuristic is
+#      good for 3-node graphs (rembg, depth_map_v3, color_match) but
+#      blind for anything with optional branches.
+#
+# Methods deliberately LEFT NULL — read these before re-adding any:
+#
+#   txt2img, img2img — arch-universal generic diffusion; gate is the
+#      model file, not a node class. C-side handles via Case-C.
+#   klein_img2img, klein_img2img_ref, klein_scene_img2img,
+#      klein_refine — pure Klein-flavored generic flux2 pipelines.
+#      The Klein-specific nodes (Flux2KleinEnhancer family) are only
+#      wired when `enhance=True`; the workhorse classes
+#      (SamplerCustomAdvanced / ReferenceLatent / CFGGuider) are
+#      shared with every other Flux/SDXL builder. Gate is the
+#      Klein model checkpoint file presence, not a node class.
+#   klein_inpaint — Klein-flavored inpaint; same arch-gating story.
+#      The distinguishing node (DifferentialDiffusion) is OPTIONAL.
+#   detail_hallucinate, seedv2r, colorize — multi-stage img2img with
+#      optional pre/post stages but the sampler core is the same
+#      generic Flux/SDXL pipeline. The optional nodes
+#      (UpscaleModelLoader for detail_hallucinate, LineArtPreprocessor
+#      for colorize) ARE relevant gates but only fire conditionally,
+#      so the manifest can't truthfully advertise them.
+#   pulid_flux — bifurcates between Flux1's ApplyPulidFlux and Flux2's
+#      ApplyPuLIDFlux2 at runtime based on the model arg. Without
+#      knowing which the caller will request, neither is a safe gate.
+#      C-side falls back to Case-C and the helper subprocess probes.
+
 _TARGET_CLASS_OVERRIDES: dict[str, str] = {
-    # Dispatcher-relevant single-class detect/generic builders. These are
-    # the methods Voodoomancer's manifest_node_map[] dispatches via the
-    # generic LoadImage -> Builder -> SaveImage path (PoC scope).
-    "color_match":      "ColorMatch",
-    "depth_map_v3":     "DepthAnything_V3",
-    "normal_map":       "NormalCrafterNode",
-    "rembg":            "Image Rembg (Remove Background)",
-    "rembg_birefnet":   "BiRefNetRMBG",
-    "rembg_v3":         "RMBG",
-    "ddcolor":          "DDColor_Colorize",
-    "lut":              "ImageApplyLUT+",
+    # ── Detect-family single-class builders (Wave 4 baseline) ───────────
+    "color_match":              "ColorMatch",
+    "depth_map_v3":             "DepthAnything_V3",
+    "normal_map":               "NormalCrafterNode",
+    "rembg":                    "Image Rembg (Remove Background)",
+    "rembg_birefnet":           "BiRefNetRMBG",
+    "rembg_v3":                 "RMBG",
+    "ddcolor":                  "DDColor_Colorize",
+    "lut":                      "ImageApplyLUT+",
+
+    # ── Wave 5 backfill: single-workhorse multi-stage builders ──────────
+    "controlnet_gen":           "ControlNetApplyAdvanced",
+    "face_restore":             "ReActorRestoreFace",
+    "faceid_img2img":           "IPAdapterFaceID",
+    "faceswap":                 "ReActorFaceSwapOpt",
+    "faceswap_model":           "ReActorFaceSwapOpt",
+    "faceswap_mtb":             "Face Swap (mtb)",
+    "frame_assembly":           "VHS_VideoCombine",
+    "iclight":                  "LoadAndApplyICLightUnet",
+    "inpaint_fooocus":          "INPAINT_ApplyFooocusInpaint",
+    "klein_headswap":           "IdentityFeatureTransfer",
+    "klein_repose":             "IdentityFeatureTransfer",
+    "lama_remove":              "LamaRemover",
+    "layer_blend":              "ImageBlend",
+    "outpaint":                 "ImagePadForOutpaint",
+    "photo_restore":            "ReActorRestoreFace",
+    "photobooth":               "ReActorFaceSwapOpt",
+    "save_face_model":          "ReActorSaveFaceModel",
+    "seedvr2_video_upscale":    "SeedVR2VideoUpscaler",
+    "style_transfer":           "IPAdapterAdvanced",
+    "supir":                    "SUPIR_sample",
+    "upscale":                  "UpscaleModelLoader",
+    "upscale_blend":            "UpscaleModelLoader",
+    "video_reactor":            "ReActorFaceSwapOpt",
+    "video_upscale":            "TS_Video_Upscale_With_Model",
+    "wan22_t2v":                "Wan22ImageToVideoLatent",
+    "wan_flf":                  "WanFirstLastFrameToVideo",
+    "wavespeed_upscale":        "WavespeedImageUpscaleNode",
+
+    # ── Wave 5 cleanup: fix wrong AST auto-inferences ───────────────────
+    # _infer_target_class() walks every _add() in textual order and
+    # returns the LAST hit. For builders with optional tail nodes
+    # (GrowMaskWithBlur, ImageCropByMask, SaveImage) the AST surfaces
+    # the wrong workhorse. Hand-corrected against live workflows.py.
+    "inpaint":                  "SetLatentNoiseMask",
+    "klein_batch_variations":   "Flux2KleinEnhancer",
+    "klein_detail":             "FaceDetailer",
+    "klein_face_detail":        "FaceDetailer",
+    "klein_generate_object":    "BiRefNetRMBG",
+    "klein_sam3_inpaint":       "SAM3Segment",
+    "klein_virtual_tryon":      "ReferenceLatent",
+    "ltx_video":                "LTXVBaseSampler",
+    "lumina2_txt2img":          "CLIPTextEncodeLumina2",
+    "magic_eraser":             "LamaRemover",
+    "qwen_edit":                "TextEncodeQwenImageEditPlus",
+    "sam3_extract":             "BiRefNetRMBG",
+    "sam3_segment":             "SAM3Segment",
+    "wan_animate_video":        "WanAnimateToVideo",
+    "wan_video":                "WanImageToVideo",
 }
 
 

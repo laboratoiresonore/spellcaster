@@ -271,6 +271,7 @@
       "label": "Text-to-image generation with ControlNet spatial constraint",
       "kind": "other",
       "model_family": "sdxl",
+      "target_class": "ControlNetApplyAdvanced",
       "input_slots": [
         "image_filename"
       ],
@@ -551,6 +552,7 @@
       "label": "Restore faces. Drop-in for _build_face_restore()",
       "kind": "image",
       "model_family": "detect",
+      "target_class": "ReActorRestoreFace",
       "input_slots": [
         "image_filename"
       ],
@@ -610,6 +612,7 @@
       "label": "IPAdapter FaceID img2img. Drop-in for _build_faceid_img2img()",
       "kind": "image",
       "model_family": "sdxl",
+      "target_class": "IPAdapterFaceID",
       "input_slots": [
         "target_filename",
         "face_ref_filename"
@@ -700,6 +703,7 @@
       "label": "Faceswap",
       "kind": "image",
       "model_family": "detect",
+      "target_class": "ReActorFaceSwapOpt",
       "input_slots": [
         "target_filename",
         "source_filename"
@@ -774,6 +778,7 @@
       "label": "ReActor face swap using a saved face model. Drop-in for _build_faceswap_model()",
       "kind": "image",
       "model_family": "detect",
+      "target_class": "ReActorFaceSwapOpt",
       "input_slots": [
         "target_filename"
       ],
@@ -846,6 +851,7 @@
       "label": "Face swap using mtb facetools. Drop-in for _build_faceswap_mtb()",
       "kind": "image",
       "model_family": "detect",
+      "target_class": "Face Swap (mtb)",
       "input_slots": [
         "target_filename",
         "source_filename"
@@ -885,6 +891,7 @@
       "label": "Assemble a list of uploaded frame images into a single MP4 video",
       "kind": "other",
       "model_family": "video",
+      "target_class": "VHS_VideoCombine",
       "input_slots": [
         "frame_filenames"
       ],
@@ -1571,6 +1578,7 @@
       "label": "IC-Light relighting: adjust light sources and illumination",
       "kind": "image",
       "model_family": "sdxl",
+      "target_class": "LoadAndApplyICLightUnet",
       "input_slots": [
         "image_filename"
       ],
@@ -1769,7 +1777,7 @@
       "label": "Inpainting: regenerate masked region using diffusion",
       "kind": "image",
       "model_family": "generic",
-      "target_class": "ImageCompositeMasked",
+      "target_class": "SetLatentNoiseMask",
       "input_slots": [
         "image_filename",
         "mask_filename"
@@ -1870,6 +1878,7 @@
       "label": "Fooocus-style inpaint: LaMa pre-fill + Fooocus head LoRA on SDXL",
       "kind": "image",
       "model_family": "sdxl",
+      "target_class": "INPAINT_ApplyFooocusInpaint",
       "input_slots": [
         "image_filename",
         "mask_filename"
@@ -2016,7 +2025,7 @@
       "label": "Klein batch variations — N Klein renders from one reference in a single pass",
       "kind": "image",
       "model_family": "klein",
-      "target_class": "ImageFromBatch",
+      "target_class": "Flux2KleinEnhancer",
       "input_slots": [
         "image_filename"
       ],
@@ -2215,7 +2224,7 @@
       "label": "Klein Detail Enhancer — detect ANY region and re-generate at high detail",
       "kind": "image",
       "model_family": "klein",
-      "target_class": "GrowMaskWithBlur",
+      "target_class": "FaceDetailer",
       "input_slots": [
         "image_filename"
       ],
@@ -2472,6 +2481,7 @@
       "label": "Head swap with Klein Flux2 refinement",
       "kind": "image",
       "model_family": "klein",
+      "target_class": "IdentityFeatureTransfer",
       "input_slots": [
         "target_filename",
         "source_filename"
@@ -3029,6 +3039,7 @@
       "label": "Klein Re-poser: change character pose using ReferenceLatent + BasicScheduler",
       "kind": "image",
       "model_family": "klein",
+      "target_class": "IdentityFeatureTransfer",
       "input_slots": [
         "image_filename"
       ],
@@ -3114,7 +3125,7 @@
       "label": "Klein SAM3 Inpaint — detect a region by text and inpaint it",
       "kind": "detect",
       "model_family": "klein",
-      "target_class": "ImageCropByMask",
+      "target_class": "SAM3Segment",
       "input_slots": [
         "image_filename",
         "ref_filename"
@@ -3273,7 +3284,7 @@
       "label": "Klein Virtual Try-On — 4-reference photoshoot composition",
       "kind": "image",
       "model_family": "klein",
-      "target_class": "EmptyLatentImage",
+      "target_class": "ReferenceLatent",
       "input_slots": [
         "face_filename"
       ],
@@ -3384,6 +3395,7 @@
       "label": "Object removal via LaMa inpainting (no diffusion)",
       "kind": "other",
       "model_family": "detect",
+      "target_class": "LamaRemover",
       "input_slots": [
         "image_filename",
         "mask_filename"
@@ -3434,6 +3446,7 @@
       "label": "Blend two images with adjustable opacity and blend mode",
       "kind": "other",
       "model_family": "detect",
+      "target_class": "ImageBlend",
       "input_slots": [
         "image_a_filename",
         "image_b_filename"
@@ -3468,7 +3481,7 @@
       "label": "LTX Video 2.3 generation — text-to-video or image-to-video",
       "kind": "video",
       "model_family": "ltx",
-      "target_class": "CFGZeroStar",
+      "target_class": "LTXVBaseSampler",
       "input_slots": [
         "image_filename"
       ],
@@ -3625,7 +3638,7 @@
       "label": "Lumina-Image 2.0 (Alpha-VLLM, 2024-12) text-to-image",
       "kind": "image",
       "model_family": "lumina2",
-      "target_class": "SaveImage",
+      "target_class": "CLIPTextEncodeLumina2",
       "input_slots": [],
       "params": [
         {
@@ -3769,7 +3782,7 @@
       "label": "Magic Eraser — SAM3 detect + LaMa inpaint",
       "kind": "image",
       "model_family": "detect",
-      "target_class": "GrowMaskWithBlur",
+      "target_class": "LamaRemover",
       "input_slots": [
         "image_filename"
       ],
@@ -4002,6 +4015,7 @@
       "label": "Canvas extension via outpainting",
       "kind": "image",
       "model_family": "generic",
+      "target_class": "ImagePadForOutpaint",
       "input_slots": [
         "image_filename"
       ],
@@ -4081,6 +4095,7 @@
       "label": "Complete old photo restoration: upscale + face enhance + sharpen",
       "kind": "other",
       "model_family": "sdxl",
+      "target_class": "ReActorRestoreFace",
       "input_slots": [
         "image_filename"
       ],
@@ -4131,6 +4146,7 @@
       "label": "Photobooth: generate passport-style headshots with extreme character fidelity",
       "kind": "other",
       "model_family": "sdxl",
+      "target_class": "ReActorFaceSwapOpt",
       "input_slots": [
         "ref_filename"
       ],
@@ -4303,7 +4319,7 @@
       "label": "Qwen Image Edit 2509 — instruction-driven edits via TextEncodeQwenImageEditPlus",
       "kind": "other",
       "model_family": "flux",
-      "target_class": "CFGNorm",
+      "target_class": "TextEncodeQwenImageEditPlus",
       "input_slots": [
         "image_filename",
         "image2_filename",
@@ -4568,7 +4584,7 @@
       "label": "SAM3 Extract — detect a subject, remove background",
       "kind": "detect",
       "model_family": "detect",
-      "target_class": "ImageCropByMask",
+      "target_class": "BiRefNetRMBG",
       "input_slots": [
         "image_filename"
       ],
@@ -4602,7 +4618,7 @@
       "label": "SAM3 Segment — detect a subject by text and return its mask",
       "kind": "detect",
       "model_family": "detect",
-      "target_class": "GrowMaskWithBlur",
+      "target_class": "SAM3Segment",
       "input_slots": [
         "image_filename"
       ],
@@ -4650,6 +4666,7 @@
       "label": "Build and save a ReActor face model. Drop-in for _build_save_face_model()",
       "kind": "image",
       "model_family": "detect",
+      "target_class": "ReActorSaveFaceModel",
       "input_slots": [
         "source_filename"
       ],
@@ -4769,6 +4786,7 @@
       "label": "SeedVR2 AI video upscaler. Drop-in for _build_seedvr2_video_upscale()",
       "kind": "video",
       "model_family": "video",
+      "target_class": "SeedVR2VideoUpscaler",
       "input_slots": [
         "video_name"
       ],
@@ -4852,6 +4870,7 @@
       "label": "Style transfer via IPAdapter. Drop-in for _build_style_transfer()",
       "kind": "image",
       "model_family": "sdxl",
+      "target_class": "IPAdapterAdvanced",
       "input_slots": [
         "target_filename",
         "style_ref_filename"
@@ -4962,6 +4981,7 @@
       "label": "SUPIR AI restoration - specialized 5-stage restoration pipeline",
       "kind": "image",
       "model_family": "sdxl",
+      "target_class": "SUPIR_sample",
       "input_slots": [
         "image_filename"
       ],
@@ -5073,6 +5093,7 @@
       "label": "Super-resolution upscaling using a trained upscaler model",
       "kind": "image",
       "model_family": "detect",
+      "target_class": "UpscaleModelLoader",
       "input_slots": [
         "image_filename"
       ],
@@ -5100,6 +5121,7 @@
       "label": "Upscale using two models and blend the results",
       "kind": "image",
       "model_family": "detect",
+      "target_class": "UpscaleModelLoader",
       "input_slots": [
         "image_filename"
       ],
@@ -5136,6 +5158,7 @@
       "label": "Upscale + face swap a video. Drop-in for _build_video_reactor()",
       "kind": "video",
       "model_family": "video",
+      "target_class": "ReActorFaceSwapOpt",
       "input_slots": [
         "video_name"
       ],
@@ -5188,6 +5211,7 @@
       "label": "Upscale video. Drop-in for _build_video_upscale()",
       "kind": "video",
       "model_family": "video",
+      "target_class": "TS_Video_Upscale_With_Model",
       "input_slots": [
         "video_name"
       ],
@@ -5226,6 +5250,7 @@
       "label": "Wan 2.2 text-to-video — the T2V sibling of `build_wan_video`",
       "kind": "video",
       "model_family": "wan",
+      "target_class": "Wan22ImageToVideoLatent",
       "input_slots": [],
       "params": [
         {
@@ -5283,7 +5308,7 @@
       "label": "WAN 2.2 Animate — character animation via the native",
       "kind": "video",
       "model_family": "wan",
-      "target_class": "VHS_LoadVideoPath",
+      "target_class": "WanAnimateToVideo",
       "input_slots": [
         "reference_image",
         "clip_vision_image"
@@ -5429,6 +5454,7 @@
       "label": "Thin wrapper: delegates to build_wan_video with end_image_filename",
       "kind": "video",
       "model_family": "wan",
+      "target_class": "WanFirstLastFrameToVideo",
       "input_slots": [],
       "params": [
         {
@@ -5464,7 +5490,7 @@
       "label": "WAN 2.2 frame-by-frame video generation with dual-model architecture",
       "kind": "video",
       "model_family": "wan",
-      "target_class": "SkipLayerGuidanceSD3",
+      "target_class": "WanImageToVideo",
       "input_slots": [
         "image_filename",
         "ip_adapter_image",
@@ -5932,6 +5958,7 @@
       "label": "WaveSpeed AI upscale — fast one-node upscale to 2K/4K/8K",
       "kind": "image",
       "model_family": "detect",
+      "target_class": "WavespeedImageUpscaleNode",
       "input_slots": [
         "image_filename"
       ],
