@@ -209,6 +209,68 @@ except ImportError:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  NSFW source-of-truth — annotate methods at the source they live in
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# This module-level frozenset is the AUTHORITATIVE classification of which
+# ``build_*`` methods operate on NSFW content (explicit nudity, sexual
+# contexts, identity manipulation that the Voodoomaster ⇄ Voodoomancer
+# 2026-05-14 mandate categorises as NSFW-licensed).
+#
+# Why this lives in workflows.py and not in the manifest builder:
+# the builder code is the canonical home for the methods themselves, so
+# the NSFW label belongs next to the implementation it labels. Earlier
+# the classification lived as ``_NSFW_BUILDERS`` inside
+# ``tools/build_builders_manifest.py``; that table now defers to this
+# set (and falls back to its own local copy when this constant is
+# absent, so old SFW trees that haven't been mirrored still work).
+#
+# Mirror invariant: this constant MUST be byte-identical between the
+# spellcaster (SFW) and spellcaster_NSFW trees. The two workflows.py
+# files are mirrored by ``tests/mirror_drift.py`` within each repo and
+# by ``tests/cross_repo_drift.py`` across repos.
+#
+# Conservative policy: false-negatives leak NSFW methods through the
+# SFW channel — strictly worse than false-positives. When in doubt
+# about a new builder, tag it NSFW. The consumer-side heuristic in
+# ``voodoomaster/capabilities/builders_manifest.py:is_nsfw_method``
+# also acts as a SUPERSET safety net (Klein family + faceswap +
+# headswap), so a missed tag here is caught there.
+#
+# The 19 method ids below are the exact set surfaced by the live
+# ``/v1/capabilities`` gate (Voodoomaster on Theo, 2026-05-14), verified
+# against both the consumer heuristic and the producer's prior
+# ``_NSFW_BUILDERS`` table.
+
+NSFW_METHODS: frozenset[str] = frozenset({
+    # ── Klein family (Flux2 photoreal identity-preserving) ──────────────
+    # All klein_* builders are NSFW-licensed by design.
+    "build_klein_img2img",
+    "build_klein_img2img_ref",
+    "build_klein_inpaint",
+    "build_klein_refine",
+    "build_klein_scene_img2img",
+    "build_klein_color_match",
+    "build_klein_blend",
+    "build_klein_detail",
+    "build_klein_face_detail",
+    "build_klein_repose",
+    "build_klein_headswap",
+    "build_klein_virtual_tryon",
+    "build_klein_generate_object",
+    "build_klein_batch_variations",
+    "build_klein_auto_inpaint",
+    "build_klein_sam3_inpaint",
+    # ── Face / head identity manipulation ───────────────────────────────
+    # ReActor-family face swap + MTB faceswap. Any builder whose canonical
+    # job is replacing a face/head in a target image is NSFW-licensed.
+    "build_faceswap",
+    "build_faceswap_model",
+    "build_faceswap_mtb",
+})
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  SHARED CONSTANTS — Single source of truth for Klein / Flux2 / Studio
 # ═══════════════════════════════════════════════════════════════════════════
 
