@@ -1943,7 +1943,7 @@
       "builder": "build_klein_auto_inpaint",
       "label": "Klein Auto-Inpaint — describe what to mask, then inpaint it",
       "kind": "image",
-      "model_family": "klein",
+      "model_family": "flux2klein",
       "target_class": "VAEEncodeForInpaint",
       "input_slots": [
         "image_filename"
@@ -2024,7 +2024,7 @@
       "builder": "build_klein_batch_variations",
       "label": "Klein batch variations — N Klein renders from one reference in a single pass",
       "kind": "image",
-      "model_family": "klein",
+      "model_family": "flux2klein",
       "target_class": "Flux2KleinEnhancer",
       "input_slots": [
         "image_filename"
@@ -2095,7 +2095,7 @@
       "builder": "build_klein_blend",
       "label": "Klein Blend: composite foreground onto background, then harmonize with Klein",
       "kind": "image",
-      "model_family": "klein",
+      "model_family": "flux2klein",
       "target_class": "AILab_ImageCombiner",
       "input_slots": [],
       "params": [
@@ -2188,7 +2188,7 @@
       "builder": "build_klein_color_match",
       "label": "Color-match a generated image to a reference photo",
       "kind": "image",
-      "model_family": "klein",
+      "model_family": "flux2klein",
       "target_class": "ColorMatchV2",
       "input_slots": [
         "target_filename",
@@ -2223,7 +2223,7 @@
       "builder": "build_klein_detail",
       "label": "Klein Detail Enhancer — detect ANY region and re-generate at high detail",
       "kind": "image",
-      "model_family": "klein",
+      "model_family": "flux2klein",
       "target_class": "FaceDetailer",
       "input_slots": [
         "image_filename"
@@ -2314,7 +2314,7 @@
       "builder": "build_klein_face_detail",
       "label": "Klein Face Detailer — detect faces and re-generate them at high detail",
       "kind": "image",
-      "model_family": "klein",
+      "model_family": "flux2klein",
       "target_class": "FaceDetailer",
       "input_slots": [
         "image_filename"
@@ -2401,7 +2401,7 @@
       "builder": "build_klein_generate_object",
       "label": "Klein Object Generator — generate any object/person as a transparent layer",
       "kind": "image",
-      "model_family": "klein",
+      "model_family": "flux2klein",
       "target_class": "BiRefNetRMBG",
       "input_slots": [],
       "params": [
@@ -2480,7 +2480,7 @@
       "builder": "build_klein_headswap",
       "label": "Head swap with Klein Flux2 refinement",
       "kind": "image",
-      "model_family": "klein",
+      "model_family": "flux2klein",
       "target_class": "IdentityFeatureTransfer",
       "input_slots": [
         "target_filename",
@@ -2592,7 +2592,7 @@
       "builder": "build_klein_img2img",
       "label": "Image-to-image with Flux 2 Klein (distilled fast model)",
       "kind": "image",
-      "model_family": "klein",
+      "model_family": "flux2klein",
       "input_slots": [
         "image_filename"
       ],
@@ -2697,7 +2697,7 @@
       "builder": "build_klein_img2img_ref",
       "label": "Klein img2img with separate reference image",
       "kind": "image",
-      "model_family": "klein",
+      "model_family": "flux2klein",
       "input_slots": [
         "image_filename",
         "ref_filename"
@@ -2818,7 +2818,7 @@
       "builder": "build_klein_inpaint",
       "label": "Klein Inpaint: regenerate masked area using FluxGuidance + SetLatentNoiseMask",
       "kind": "image",
-      "model_family": "klein",
+      "model_family": "flux2klein",
       "input_slots": [
         "image_filename",
         "mask_filename"
@@ -2968,7 +2968,7 @@
       "builder": "build_klein_refine",
       "label": "Klein Multi-Reference Refiner — enhance detail using structural references",
       "kind": "image",
-      "model_family": "klein",
+      "model_family": "flux2klein",
       "input_slots": [
         "image_filename"
       ],
@@ -3038,7 +3038,7 @@
       "builder": "build_klein_repose",
       "label": "Klein Re-poser: change character pose using ReferenceLatent + BasicScheduler",
       "kind": "image",
-      "model_family": "klein",
+      "model_family": "flux2klein",
       "target_class": "IdentityFeatureTransfer",
       "input_slots": [
         "image_filename"
@@ -3124,7 +3124,7 @@
       "builder": "build_klein_sam3_inpaint",
       "label": "Klein SAM3 Inpaint — detect a region by text and inpaint it",
       "kind": "detect",
-      "model_family": "klein",
+      "model_family": "flux2klein",
       "target_class": "SAM3Segment",
       "input_slots": [
         "image_filename",
@@ -3217,7 +3217,7 @@
       "builder": "build_klein_scene_img2img",
       "label": "Klein scene img2img: harmonize a composited scene",
       "kind": "image",
-      "model_family": "klein",
+      "model_family": "flux2klein",
       "input_slots": [
         "image_filename"
       ],
@@ -3283,7 +3283,7 @@
       "builder": "build_klein_virtual_tryon",
       "label": "Klein Virtual Try-On — 4-reference photoshoot composition",
       "kind": "image",
-      "model_family": "klein",
+      "model_family": "flux2klein",
       "target_class": "ReferenceLatent",
       "input_slots": [
         "face_filename"
@@ -4232,7 +4232,7 @@
       "builder": "build_pulid_flux",
       "label": "PuLID Flux — auto-detects Flux1 vs Flux2 (Klein). Drop-in for _build_pulid_flux()",
       "kind": "other",
-      "model_family": "flux",
+      "model_family": "flux1dev",
       "input_slots": [
         "target_filename",
         "face_ref_filename"
@@ -4318,7 +4318,7 @@
       "builder": "build_qwen_edit",
       "label": "Qwen Image Edit 2509 — instruction-driven edits via TextEncodeQwenImageEditPlus",
       "kind": "other",
-      "model_family": "flux",
+      "model_family": "flux1dev",
       "target_class": "TextEncodeQwenImageEditPlus",
       "input_slots": [
         "image_filename",
