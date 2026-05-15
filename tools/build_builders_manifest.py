@@ -260,6 +260,79 @@ def _bucket_for(name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# NSFW classification (schema v3) — sourced from workflows.NSFW_METHODS
+# ---------------------------------------------------------------------------
+#
+# Source-of-truth migration (2026-05-15, audit item #4): the NSFW
+# classification lives next to the builder methods themselves in
+# ``spellcaster_core.workflows.NSFW_METHODS``. This module simply
+# consults that constant. The local fallback table below is retained
+# as a SAFETY NET — it activates only when the workflows module is
+# missing the constant (old mirror, partial rebase, etc.) so a
+# producer running against a stale tree still emits a correct manifest.
+#
+# This is the SFW tree's mirror of the NSFW-tree producer logic. The
+# SFW manifest gains the ``nsfw: true`` tags for the 19 NSFW-licensed
+# builders so cross-repo consumers see a consistent wire shape
+# regardless of which channel served the manifest. The consumer-side
+# gate decides whether to honour the tag (block / allow) per channel.
+#
+# Conservative policy: false-negatives leak NSFW methods through the
+# SFW channel — strictly worse than false-positives. When in doubt
+# about a new builder, tag it NSFW upstream in workflows.NSFW_METHODS.
+
+# Fallback used only when ``workflows.NSFW_METHODS`` is absent (old tree).
+# Mirrors the canonical set in workflows.py — keep them in lock-step.
+_NSFW_BUILDERS_FALLBACK: frozenset[str] = frozenset({
+    # ── Klein family (Flux2 photoreal identity-preserving) ──────────────
+    "build_klein_img2img",
+    "build_klein_img2img_ref",
+    "build_klein_inpaint",
+    "build_klein_refine",
+    "build_klein_scene_img2img",
+    "build_klein_color_match",
+    "build_klein_blend",
+    "build_klein_detail",
+    "build_klein_face_detail",
+    "build_klein_repose",
+    "build_klein_headswap",
+    "build_klein_virtual_tryon",
+    "build_klein_generate_object",
+    "build_klein_batch_variations",
+    "build_klein_auto_inpaint",
+    "build_klein_sam3_inpaint",
+    # ── Face / head identity manipulation ───────────────────────────────
+    "build_faceswap",
+    "build_faceswap_model",
+    "build_faceswap_mtb",
+})
+
+
+def _resolve_nsfw_set() -> tuple[frozenset[str], str]:
+    """Return ``(set, source_tag)`` where source_tag is one of
+    ``"workflows.NSFW_METHODS"`` (authoritative) or ``"fallback"``
+    (the local table). The source_tag is exposed so callers (tests,
+    diagnostic CLI) can verify the import path landed."""
+    try:
+        wf = importlib.import_module("spellcaster_core.workflows")
+        nsfw_set = getattr(wf, "NSFW_METHODS", None)
+        if isinstance(nsfw_set, (frozenset, set)) and nsfw_set:
+            return frozenset(nsfw_set), "workflows.NSFW_METHODS"
+    except Exception:  # noqa: BLE001
+        pass
+    return _NSFW_BUILDERS_FALLBACK, "fallback"
+
+
+_NSFW_BUILDERS, _NSFW_SOURCE = _resolve_nsfw_set()
+
+
+def _is_nsfw_builder(builder_name: str) -> bool:
+    """Return True iff this builder is NSFW-licensed per the
+    authoritative ``workflows.NSFW_METHODS`` set (with local fallback)."""
+    return builder_name in _NSFW_BUILDERS
+
+
+# ---------------------------------------------------------------------------
 # target_class — terminal ComfyUI class_type the builder lands on
 # ---------------------------------------------------------------------------
 #
@@ -559,41 +632,43 @@ def enumerate_manifest() -> list[dict[str, Any]]:
         family = _model_family_for(name)
         kind = _bucket_for(name)
         input_slots = [p["name"] for p in params if "slot" in p]
+        target_class = _target_class_for(name, fn)
+        nsfw_flag = _is_nsfw_builder(name)
+
+        # Build entry with deterministic key ordering so PR diffs remain
+        # readable. Optional keys (``target_class``, ``nsfw``) are inserted
+        # in stable slots between the structural fields; absent when not
+        # applicable so the manifest stays compact for SFW-only methods.
         entry: dict[str, Any] = {
             "id":           bare_id,
             "builder":      name,
             "label":        _label_for(name, short_doc),
             "kind":         kind,
             "model_family": family,
-            "input_slots":  input_slots,
-            "params":       params,
-            "short_doc":    short_doc,
         }
-        target_class = _target_class_for(name, fn)
         if target_class:
-            # Insert just after model_family so dispatcher-relevant
-            # fields cluster together in the rendered JSON.
-            entry = {
-                "id":           entry["id"],
-                "builder":      entry["builder"],
-                "label":        entry["label"],
-                "kind":         entry["kind"],
-                "model_family": entry["model_family"],
-                "target_class": target_class,
-                "input_slots":  entry["input_slots"],
-                "params":       entry["params"],
-                "short_doc":    entry["short_doc"],
-            }
+            entry["target_class"] = target_class
+        if nsfw_flag:
+            entry["nsfw"] = True
+        entry["input_slots"] = input_slots
+        entry["params"] = params
+        entry["short_doc"] = short_doc
         entries.append(entry)
     return entries
 
 
-# schema_version bumped 1 -> 2 with the addition of the optional
-# ``target_class`` field per method. Field is omitted when neither the
-# override table nor the AST heuristic can resolve a class; consumers
-# that parse this manifest are required to tolerate the field's
-# absence (fall back to their own static table).
-SCHEMA_VERSION = 2
+# schema_version bumped:
+#   1 -> 2: optional ``target_class`` field per method.
+#   2 -> 3: optional ``nsfw`` field per method (producer-side SSoT for
+#           NSFW classification; sourced from workflows.NSFW_METHODS,
+#           with local fallback for stale trees). Mirrors the bump that
+#           landed in spellcaster_NSFW; the SFW manifest gains the
+#           ``nsfw: true`` tags so cross-repo consumers see a consistent
+#           wire shape regardless of which channel served the manifest.
+# Consumers that parse this manifest are required to tolerate the
+# optional fields' absence (fall back to their own static tables and/or
+# heuristics).
+SCHEMA_VERSION = 3
 GENERATOR_TAG = "spellcaster/tools/build_builders_manifest.py"
 
 
