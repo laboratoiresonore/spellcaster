@@ -133,20 +133,47 @@ def _input_slot_kind(name: str) -> str | None:
 #
 # Patterns are matched against the bare builder name (no ``build_`` prefix).
 # Examples:
-#   build_klein_repose        → klein
-#   build_pulid_flux          → flux
+#   build_klein_repose        → flux2klein
+#   build_pulid_flux          → flux1dev
 #   build_inpaint_fooocus     → sdxl  (Fooocus head is SDXL-only)
 #   build_wan_video           → wan
 #   build_seedvr2_video_upscale → video
+#
+# 2026-05-15 family↔arch alignment fix (PR fix/klein-pulid-arch-key-
+# alignment): families MUST match the keys emitted by the antenna's
+# ``archs`` capabilities block (architectures.py registry keys:
+# ``flux2klein``, ``flux1dev``, ``flux_kontext``, ``chroma``,
+# ``illustrious``, ``pony``, ``sdxl``, ``sd15``, ``zit``, ``wan``,
+# ``ltx``, ``cogvideo``, ``hunyuan_video``, ``hunyuan_3d``, ``framepack``,
+# ``mochi``, ``lumina2``). The previous values ("klein", "flux") were
+# semantic aliases that never matched any arch key, so the
+# voodoomaster gate's ``archs_block.get(family)`` always returned None
+# for klein/pulid_flux builders that intentionally lacked a
+# ``target_class`` (the audit-documented "arch-universal generic flux
+# pipelines gated by model files, not node classes" set). That made
+# the 6 builders report supported=False even when both Klein and Flux1
+# archs were live. Aligning the family string with the arch key is the
+# minimum-blast-radius fix: the gate code is untouched, the manifest
+# field still labels the model family, and downstream consumers
+# (Krita dispatch, gen_menu_icons, gimp-ai-manifest.c) either match on
+# builder NAME or treat model_family as an opaque error-message label.
 _MODEL_FAMILY_PATTERNS: tuple[tuple[str, str], ...] = (
-    # Klein family (Flux2-Klein architecture, Spellcaster-named)
-    (r"^klein_", "klein"),
-    # Explicit arch markers
-    (r"^pulid_flux", "flux"),
-    (r"^flux_", "flux"),
-    (r"_flux$", "flux"),
-    (r"_flux_", "flux"),
-    (r"^qwen_edit", "flux"),  # qwen-image-edit shares the flux loader path
+    # Klein family (Flux2-Klein architecture, Spellcaster-named) — emit
+    # the architectures.py key directly so voodoomaster's per-method
+    # ``supported`` gate finds it in ``archs.flux2klein``.
+    (r"^klein_", "flux2klein"),
+    # Explicit arch markers — emit the canonical Flux1 arch key. PuLID-
+    # Flux bifurcates Flux1/Flux2 at runtime based on the model arg
+    # (manifest gate is the model file presence, not a node class), so
+    # tying it to ``flux1dev`` is honest: when Flux1 is available the
+    # builder is supported, and the Klein variant uses the dedicated
+    # klein_* builders anyway. qwen-image-edit shares the Flux1 loader
+    # path so it lands on the same arch.
+    (r"^pulid_flux", "flux1dev"),
+    (r"^flux_", "flux1dev"),
+    (r"_flux$", "flux1dev"),
+    (r"_flux_", "flux1dev"),
+    (r"^qwen_edit", "flux1dev"),
     # Video architectures (each one has dedicated loader nodes)
     (r"^wan22_t2v", "wan"),
     (r"^wan_animate", "wan"),
