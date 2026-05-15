@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "generator": "spellcaster/tools/build_builders_manifest.py",
   "source": "comfyui-spellcaster/spellcaster_core/workflows.py",
   "method_count": 73,
@@ -704,6 +704,7 @@
       "kind": "image",
       "model_family": "detect",
       "target_class": "ReActorFaceSwapOpt",
+      "nsfw": true,
       "input_slots": [
         "target_filename",
         "source_filename"
@@ -779,6 +780,7 @@
       "kind": "image",
       "model_family": "detect",
       "target_class": "ReActorFaceSwapOpt",
+      "nsfw": true,
       "input_slots": [
         "target_filename"
       ],
@@ -852,6 +854,7 @@
       "kind": "image",
       "model_family": "detect",
       "target_class": "Face Swap (mtb)",
+      "nsfw": true,
       "input_slots": [
         "target_filename",
         "source_filename"
@@ -1945,6 +1948,7 @@
       "kind": "image",
       "model_family": "flux2klein",
       "target_class": "VAEEncodeForInpaint",
+      "nsfw": true,
       "input_slots": [
         "image_filename"
       ],
@@ -2026,6 +2030,7 @@
       "kind": "image",
       "model_family": "flux2klein",
       "target_class": "Flux2KleinEnhancer",
+      "nsfw": true,
       "input_slots": [
         "image_filename"
       ],
@@ -2097,6 +2102,7 @@
       "kind": "image",
       "model_family": "flux2klein",
       "target_class": "AILab_ImageCombiner",
+      "nsfw": true,
       "input_slots": [],
       "params": [
         {
@@ -2190,6 +2196,7 @@
       "kind": "image",
       "model_family": "flux2klein",
       "target_class": "ColorMatchV2",
+      "nsfw": true,
       "input_slots": [
         "target_filename",
         "reference_filename"
@@ -2225,6 +2232,7 @@
       "kind": "image",
       "model_family": "flux2klein",
       "target_class": "FaceDetailer",
+      "nsfw": true,
       "input_slots": [
         "image_filename"
       ],
@@ -2316,6 +2324,7 @@
       "kind": "image",
       "model_family": "flux2klein",
       "target_class": "FaceDetailer",
+      "nsfw": true,
       "input_slots": [
         "image_filename"
       ],
@@ -2403,6 +2412,7 @@
       "kind": "image",
       "model_family": "flux2klein",
       "target_class": "BiRefNetRMBG",
+      "nsfw": true,
       "input_slots": [],
       "params": [
         {
@@ -2482,6 +2492,7 @@
       "kind": "image",
       "model_family": "flux2klein",
       "target_class": "IdentityFeatureTransfer",
+      "nsfw": true,
       "input_slots": [
         "target_filename",
         "source_filename"
@@ -2593,6 +2604,7 @@
       "label": "Image-to-image with Flux 2 Klein (distilled fast model)",
       "kind": "image",
       "model_family": "flux2klein",
+      "nsfw": true,
       "input_slots": [
         "image_filename"
       ],
@@ -2698,6 +2710,7 @@
       "label": "Klein img2img with separate reference image",
       "kind": "image",
       "model_family": "flux2klein",
+      "nsfw": true,
       "input_slots": [
         "image_filename",
         "ref_filename"
@@ -2819,6 +2832,7 @@
       "label": "Klein Inpaint: regenerate masked area using FluxGuidance + SetLatentNoiseMask",
       "kind": "image",
       "model_family": "flux2klein",
+      "nsfw": true,
       "input_slots": [
         "image_filename",
         "mask_filename"
@@ -2969,6 +2983,7 @@
       "label": "Klein Multi-Reference Refiner — enhance detail using structural references",
       "kind": "image",
       "model_family": "flux2klein",
+      "nsfw": true,
       "input_slots": [
         "image_filename"
       ],
@@ -3040,6 +3055,7 @@
       "kind": "image",
       "model_family": "flux2klein",
       "target_class": "IdentityFeatureTransfer",
+      "nsfw": true,
       "input_slots": [
         "image_filename"
       ],
@@ -3126,6 +3142,7 @@
       "kind": "detect",
       "model_family": "flux2klein",
       "target_class": "SAM3Segment",
+      "nsfw": true,
       "input_slots": [
         "image_filename",
         "ref_filename"
@@ -3218,6 +3235,7 @@
       "label": "Klein scene img2img: harmonize a composited scene",
       "kind": "image",
       "model_family": "flux2klein",
+      "nsfw": true,
       "input_slots": [
         "image_filename"
       ],
@@ -3285,6 +3303,7 @@
       "kind": "image",
       "model_family": "flux2klein",
       "target_class": "ReferenceLatent",
+      "nsfw": true,
       "input_slots": [
         "face_filename"
       ],
