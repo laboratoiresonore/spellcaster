@@ -21,6 +21,14 @@ manifest that lists every public ``build_*`` function with:
                        (image / mask / face). Lets the host UI auto-fill
                        from the canvas without re-running the heuristic.
   * ``short_doc``    — first line of the docstring, trimmed to 160 chars.
+  * ``target_class`` — the terminal ComfyUI ``class_type`` the builder
+                       instantiates as its workhorse node (e.g. ``RMBG`` for
+                       ``build_rembg_v3``). This field is the canonical
+                       single-source-of-truth that replaces the formerly
+                       hand-curated dispatcher tables on the Voodoomaster
+                       Python loader AND the Voodoomancer C dispatcher. When
+                       absent, the consumer falls back to its own static
+                       table (graceful degrade for old manifests).
 
 The intent: this manifest is the canonical "what generative methods exist"
 contract that Voodoomaster advertises via ``/v1/capabilities.methods`` and
@@ -225,6 +233,106 @@ def _bucket_for(name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# target_class — terminal ComfyUI class_type the builder lands on
+# ---------------------------------------------------------------------------
+#
+# The dispatcher (Voodoomancer C-side gimp-ai-manifest.c, Voodoomaster
+# Python loader voodoomaster/capabilities/builders_manifest.py) gates
+# methods on whether THIS ComfyUI install has the workhorse node class
+# the builder needs. Pre-manifest, both surfaces kept hand-curated
+# method_id -> class_type tables, which drifted independently — live
+# witness 2026-05-14, all four entries on the C-side mirror were wrong
+# (``RembgV3`` vs canonical ``RMBG``, ``DepthAnythingV2Preprocessor``
+# vs ``DepthAnything_V3``, ``BAE-NormalMapPreprocessor`` vs
+# ``NormalCrafterNode``). Producing this field from the same source
+# of truth as ``workflows.py`` collapses the dual-SSoT.
+#
+# Resolution order:
+#   1. Hand-curated _TARGET_CLASS_OVERRIDES below (highest authority;
+#      hand-verified by reading the builder source).
+#   2. _infer_target_class() heuristic: AST-walk the builder, return
+#      the LAST direct ``_add("ClassName", ...)`` call. Sufficient for
+#      simple 3-node builders (LoadImage -> Builder -> SaveImage).
+#   3. NodeFactory helper inference: when the builder ends with a call
+#      like ``nf.depth_anything_v3(...)`` and the helper itself ends in
+#      a direct ``_add("ClassName", ...)``, surface that class.
+#   4. None — manifest emits no field; consumer falls back to its
+#      static table.
+#
+# Adding a new dispatcher-relevant method: prefer registering an
+# override here AND verifying _infer_target_class() agrees (the
+# generator's CI mode flags drift between the two).
+
+_TARGET_CLASS_OVERRIDES: dict[str, str] = {
+    # Dispatcher-relevant single-class detect/generic builders. These are
+    # the methods Voodoomancer's manifest_node_map[] dispatches via the
+    # generic LoadImage -> Builder -> SaveImage path (PoC scope).
+    "color_match":      "ColorMatch",
+    "depth_map_v3":     "DepthAnything_V3",
+    "normal_map":       "NormalCrafterNode",
+    "rembg":            "Image Rembg (Remove Background)",
+    "rembg_birefnet":   "BiRefNetRMBG",
+    "rembg_v3":         "RMBG",
+    "ddcolor":          "DDColor_Colorize",
+    "lut":              "ImageApplyLUT+",
+}
+
+
+def _infer_target_class(fn: Any) -> str | None:
+    """Best-effort: AST-scan the builder body for the LAST direct
+    ``_add("ClassName", ...)`` call (i.e. the call whose first arg is
+    a string literal). Returns the literal, or None when the heuristic
+    can't decide.
+
+    This is intentionally narrow: detection-family / generic builders
+    (the dispatcher-relevant slice) almost always end with a direct
+    ``nf._add("X", {...})`` because they're 3-node graphs. Multi-stage
+    builders (klein / sdxl / wan / ...) typically delegate to NodeFactory
+    helper methods or do branching — they correctly fall through to the
+    overrides table or to None.
+    """
+    import ast as _ast
+    try:
+        src = inspect.getsource(fn)
+    except (OSError, TypeError):
+        return None
+    try:
+        tree = _ast.parse(src)
+    except SyntaxError:
+        return None
+    last_class: str | None = None
+    for node in _ast.walk(tree):
+        if not isinstance(node, _ast.Call):
+            continue
+        # Match foo._add("ClassName", ...) and bare _add("ClassName", ...)
+        is_add = False
+        if isinstance(node.func, _ast.Attribute) and node.func.attr == "_add":
+            is_add = True
+        elif isinstance(node.func, _ast.Name) and node.func.id == "_add":
+            is_add = True
+        if not is_add or not node.args:
+            continue
+        first = node.args[0]
+        if isinstance(first, _ast.Constant) and isinstance(first.value, str):
+            last_class = first.value
+    return last_class
+
+
+def _target_class_for(name: str, fn: Any) -> str | None:
+    """Resolve the workhorse ComfyUI class_type for a builder.
+
+    Returns None when neither the override table nor the AST heuristic
+    can determine the class with confidence; the manifest then omits
+    the ``target_class`` key and the consumer is expected to fall back
+    to its own static table (PoC dispatcher safety net).
+    """
+    bare = name[len("build_"):] if name.startswith("build_") else name
+    if bare in _TARGET_CLASS_OVERRIDES:
+        return _TARGET_CLASS_OVERRIDES[bare]
+    return _infer_target_class(fn)
+
+
+# ---------------------------------------------------------------------------
 # Manifest assembly
 # ---------------------------------------------------------------------------
 
@@ -321,7 +429,7 @@ def enumerate_manifest() -> list[dict[str, Any]]:
         family = _model_family_for(name)
         kind = _bucket_for(name)
         input_slots = [p["name"] for p in params if "slot" in p]
-        entries.append({
+        entry: dict[str, Any] = {
             "id":           bare_id,
             "builder":      name,
             "label":        _label_for(name, short_doc),
@@ -330,11 +438,32 @@ def enumerate_manifest() -> list[dict[str, Any]]:
             "input_slots":  input_slots,
             "params":       params,
             "short_doc":    short_doc,
-        })
+        }
+        target_class = _target_class_for(name, fn)
+        if target_class:
+            # Insert just after model_family so dispatcher-relevant
+            # fields cluster together in the rendered JSON.
+            entry = {
+                "id":           entry["id"],
+                "builder":      entry["builder"],
+                "label":        entry["label"],
+                "kind":         entry["kind"],
+                "model_family": entry["model_family"],
+                "target_class": target_class,
+                "input_slots":  entry["input_slots"],
+                "params":       entry["params"],
+                "short_doc":    entry["short_doc"],
+            }
+        entries.append(entry)
     return entries
 
 
-SCHEMA_VERSION = 1
+# schema_version bumped 1 -> 2 with the addition of the optional
+# ``target_class`` field per method. Field is omitted when neither the
+# override table nor the AST heuristic can resolve a class; consumers
+# that parse this manifest are required to tolerate the field's
+# absence (fall back to their own static table).
+SCHEMA_VERSION = 2
 GENERATOR_TAG = "spellcaster/tools/build_builders_manifest.py"
 
 

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "generator": "spellcaster/tools/build_builders_manifest.py",
   "source": "comfyui-spellcaster/spellcaster_core/workflows.py",
   "method_count": 73,
@@ -10,6 +10,7 @@
       "label": "CogVideoX (THUDM) image-to-video / text-to-video via Kijai's",
       "kind": "video",
       "model_family": "cogvideo",
+      "target_class": "CogVideoXTeaCache",
       "input_slots": [
         "image_filename"
       ],
@@ -128,6 +129,7 @@
       "label": "AI Color Match — transfer color palette from a reference image",
       "kind": "other",
       "model_family": "detect",
+      "target_class": "ColorMatch",
       "input_slots": [
         "source_filename",
         "reference_filename"
@@ -355,6 +357,7 @@
       "label": "Colorize B&W photo using DDColor (fast, no diffusion)",
       "kind": "other",
       "model_family": "detect",
+      "target_class": "DDColor_Colorize",
       "input_slots": [
         "image_filename"
       ],
@@ -383,6 +386,7 @@
       "label": "Generate monocular depth map using ByteDance Depth Anything V3",
       "kind": "other",
       "model_family": "detect",
+      "target_class": "DepthAnything_V3",
       "input_slots": [
         "image_filename"
       ],
@@ -919,6 +923,7 @@
       "label": "FramePack image-to-video via Kijai's ComfyUI-FramePackWrapper_Plus",
       "kind": "video",
       "model_family": "framepack",
+      "target_class": "FramePackFindNearestBucket",
       "input_slots": [
         "image_filename",
         "end_image_filename"
@@ -1076,6 +1081,7 @@
       "label": "Generate any object/person as a transparent layer using ANY model",
       "kind": "other",
       "model_family": "generic",
+      "target_class": "BiRefNetRMBG",
       "input_slots": [],
       "params": [
         {
@@ -1123,6 +1129,7 @@
       "label": "Hunyuan3D 2.1 image-to-3D mesh generation via Tencent's ComfyUI",
       "kind": "3d",
       "model_family": "hunyuan_3d",
+      "target_class": "Hy3D21ExportMesh",
       "input_slots": [
         "image_filename"
       ],
@@ -1245,6 +1252,7 @@
       "label": "Hunyuan3D 2.1 textured-mesh: geometry + albedo + MR via the",
       "kind": "3d",
       "model_family": "hunyuan_3d",
+      "target_class": "Hy3D21ExportMesh",
       "input_slots": [
         "image_filename"
       ],
@@ -1382,6 +1390,7 @@
       "label": "HunyuanVideo (Tencent 13B) text-to-video / image-to-video via Kijai's",
       "kind": "video",
       "model_family": "hunyuan_video",
+      "target_class": "HyVideoTeaCache",
       "input_slots": [
         "image_filename"
       ],
@@ -1760,6 +1769,7 @@
       "label": "Inpainting: regenerate masked region using diffusion",
       "kind": "image",
       "model_family": "generic",
+      "target_class": "ImageCompositeMasked",
       "input_slots": [
         "image_filename",
         "mask_filename"
@@ -1925,6 +1935,7 @@
       "label": "Klein Auto-Inpaint — describe what to mask, then inpaint it",
       "kind": "image",
       "model_family": "klein",
+      "target_class": "VAEEncodeForInpaint",
       "input_slots": [
         "image_filename"
       ],
@@ -2005,6 +2016,7 @@
       "label": "Klein batch variations — N Klein renders from one reference in a single pass",
       "kind": "image",
       "model_family": "klein",
+      "target_class": "ImageFromBatch",
       "input_slots": [
         "image_filename"
       ],
@@ -2075,6 +2087,7 @@
       "label": "Klein Blend: composite foreground onto background, then harmonize with Klein",
       "kind": "image",
       "model_family": "klein",
+      "target_class": "AILab_ImageCombiner",
       "input_slots": [],
       "params": [
         {
@@ -2167,6 +2180,7 @@
       "label": "Color-match a generated image to a reference photo",
       "kind": "image",
       "model_family": "klein",
+      "target_class": "ColorMatchV2",
       "input_slots": [
         "target_filename",
         "reference_filename"
@@ -2201,6 +2215,7 @@
       "label": "Klein Detail Enhancer — detect ANY region and re-generate at high detail",
       "kind": "image",
       "model_family": "klein",
+      "target_class": "GrowMaskWithBlur",
       "input_slots": [
         "image_filename"
       ],
@@ -2291,6 +2306,7 @@
       "label": "Klein Face Detailer — detect faces and re-generate them at high detail",
       "kind": "image",
       "model_family": "klein",
+      "target_class": "FaceDetailer",
       "input_slots": [
         "image_filename"
       ],
@@ -2377,6 +2393,7 @@
       "label": "Klein Object Generator — generate any object/person as a transparent layer",
       "kind": "image",
       "model_family": "klein",
+      "target_class": "BiRefNetRMBG",
       "input_slots": [],
       "params": [
         {
@@ -3097,6 +3114,7 @@
       "label": "Klein SAM3 Inpaint — detect a region by text and inpaint it",
       "kind": "detect",
       "model_family": "klein",
+      "target_class": "ImageCropByMask",
       "input_slots": [
         "image_filename",
         "ref_filename"
@@ -3255,6 +3273,7 @@
       "label": "Klein Virtual Try-On — 4-reference photoshoot composition",
       "kind": "image",
       "model_family": "klein",
+      "target_class": "EmptyLatentImage",
       "input_slots": [
         "face_filename"
       ],
@@ -3449,6 +3468,7 @@
       "label": "LTX Video 2.3 generation — text-to-video or image-to-video",
       "kind": "video",
       "model_family": "ltx",
+      "target_class": "CFGZeroStar",
       "input_slots": [
         "image_filename"
       ],
@@ -3605,6 +3625,7 @@
       "label": "Lumina-Image 2.0 (Alpha-VLLM, 2024-12) text-to-image",
       "kind": "image",
       "model_family": "lumina2",
+      "target_class": "SaveImage",
       "input_slots": [],
       "params": [
         {
@@ -3696,6 +3717,7 @@
       "label": "Color grading via LUT (Look-Up Table) application",
       "kind": "other",
       "model_family": "detect",
+      "target_class": "ImageApplyLUT+",
       "input_slots": [
         "image_filename"
       ],
@@ -3747,6 +3769,7 @@
       "label": "Magic Eraser — SAM3 detect + LaMa inpaint",
       "kind": "image",
       "model_family": "detect",
+      "target_class": "GrowMaskWithBlur",
       "input_slots": [
         "image_filename"
       ],
@@ -3789,6 +3812,7 @@
       "label": "Mochi-1 (Genmo, Oct 2024) text-to-video via Kijai's ComfyUI-MochiWrapper",
       "kind": "video",
       "model_family": "mochi",
+      "target_class": "MochiFasterCache",
       "input_slots": [],
       "params": [
         {
@@ -3924,6 +3948,7 @@
       "label": "Generate 3D surface normal map using NormalCrafter",
       "kind": "image",
       "model_family": "detect",
+      "target_class": "NormalCrafterNode",
       "input_slots": [
         "image_filename"
       ],
@@ -4278,6 +4303,7 @@
       "label": "Qwen Image Edit 2509 — instruction-driven edits via TextEncodeQwenImageEditPlus",
       "kind": "other",
       "model_family": "flux",
+      "target_class": "CFGNorm",
       "input_slots": [
         "image_filename",
         "image2_filename",
@@ -4395,6 +4421,7 @@
       "label": "Background removal (transparent cutout)",
       "kind": "detect",
       "model_family": "detect",
+      "target_class": "Image Rembg (Remove Background)",
       "input_slots": [
         "image_filename"
       ],
@@ -4423,6 +4450,7 @@
       "label": "Background removal using BiRefNet (higher quality than rembg)",
       "kind": "detect",
       "model_family": "detect",
+      "target_class": "BiRefNetRMBG",
       "input_slots": [
         "image_filename"
       ],
@@ -4476,6 +4504,7 @@
       "label": "RMBG-2.0 / INSPYRENET / BEN2 cutout via 1038lab ComfyUI-RMBG pack",
       "kind": "detect",
       "model_family": "detect",
+      "target_class": "RMBG",
       "input_slots": [
         "image_filename"
       ],
@@ -4539,6 +4568,7 @@
       "label": "SAM3 Extract — detect a subject, remove background",
       "kind": "detect",
       "model_family": "detect",
+      "target_class": "ImageCropByMask",
       "input_slots": [
         "image_filename"
       ],
@@ -4572,6 +4602,7 @@
       "label": "SAM3 Segment — detect a subject by text and return its mask",
       "kind": "detect",
       "model_family": "detect",
+      "target_class": "GrowMaskWithBlur",
       "input_slots": [
         "image_filename"
       ],
@@ -5252,6 +5283,7 @@
       "label": "WAN 2.2 Animate — character animation via the native",
       "kind": "video",
       "model_family": "wan",
+      "target_class": "VHS_LoadVideoPath",
       "input_slots": [
         "reference_image",
         "clip_vision_image"
@@ -5432,6 +5464,7 @@
       "label": "WAN 2.2 frame-by-frame video generation with dual-model architecture",
       "kind": "video",
       "model_family": "wan",
+      "target_class": "SkipLayerGuidanceSD3",
       "input_slots": [
         "image_filename",
         "ip_adapter_image",
@@ -5660,6 +5693,7 @@
       "label": "WAN 2.2 I2V via Kijai's WanVideoWrapper with block-swap (low-VRAM path)",
       "kind": "video",
       "model_family": "wan",
+      "target_class": "WanVideoDecode",
       "input_slots": [
         "image_filename"
       ],
@@ -5782,6 +5816,7 @@
       "label": "WAN 2.2 T2V via Kijai's WanVideoWrapper with block-swap (low-VRAM path)",
       "kind": "video",
       "model_family": "wan",
+      "target_class": "WanVideoDecode",
       "input_slots": [],
       "params": [
         {
