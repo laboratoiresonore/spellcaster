@@ -1397,10 +1397,10 @@
     {
       "id": "hunyuan_video",
       "builder": "build_hunyuan_video",
-      "label": "HunyuanVideo (Tencent 13B) text-to-video / image-to-video via Kijai's",
+      "label": "HunyuanVideo text-to-video / image-to-video",
       "kind": "video",
       "model_family": "hunyuan_video",
-      "target_class": "HyVideoTeaCache",
+      "target_class": "EmptyHunyuanVideo15Latent",
       "input_slots": [
         "image_filename"
       ],
@@ -1571,9 +1571,44 @@
           "name": "filename_prefix",
           "required": false,
           "default": "spellcaster_hunyuan"
+        },
+        {
+          "name": "hunyuan_version",
+          "required": false,
+          "default": "1"
+        },
+        {
+          "name": "negative_text",
+          "required": false,
+          "default": ""
+        },
+        {
+          "name": "clip_l_name",
+          "required": false,
+          "default": "clip_l.safetensors"
+        },
+        {
+          "name": "llm_name",
+          "required": false,
+          "default": "llava_llama3_fp8_scaled.safetensors"
+        },
+        {
+          "name": "sampler_name",
+          "required": false,
+          "default": "euler"
+        },
+        {
+          "name": "scheduler",
+          "required": false,
+          "default": "simple"
+        },
+        {
+          "name": "cfg",
+          "required": false,
+          "default": 1.0
         }
       ],
-      "short_doc": "HunyuanVideo (Tencent 13B) text-to-video / image-to-video via Kijai's"
+      "short_doc": "HunyuanVideo text-to-video / image-to-video."
     },
     {
       "id": "iclight",
@@ -4335,7 +4370,7 @@
     {
       "id": "qwen_edit",
       "builder": "build_qwen_edit",
-      "label": "Qwen Image Edit 2509 — instruction-driven edits via TextEncodeQwenImageEditPlus",
+      "label": "Qwen Image Edit 2509 / 2511 — instruction-driven edits via TextEncodeQwenImageEditPlus",
       "kind": "other",
       "model_family": "flux1dev",
       "target_class": "TextEncodeQwenImageEditPlus",
@@ -4446,9 +4481,14 @@
           "name": "sam3_blur",
           "required": false,
           "default": 4
+        },
+        {
+          "name": "qwen_edit_version",
+          "required": false,
+          "default": "2509"
         }
       ],
-      "short_doc": "Qwen Image Edit 2509 — instruction-driven edits via TextEncodeQwenImageEditPlus."
+      "short_doc": "Qwen Image Edit 2509 / 2511 — instruction-driven edits via TextEncodeQwenImageEditPlus."
     },
     {
       "id": "rembg",
@@ -4627,6 +4667,21 @@
           "name": "auto_crop",
           "required": false,
           "default": false
+        },
+        {
+          "name": "sam3_backend",
+          "required": false,
+          "default": "wrapper"
+        },
+        {
+          "name": "ckpt_name",
+          "required": false,
+          "default": "sam3.1.safetensors"
+        },
+        {
+          "name": "refine_iterations",
+          "required": false,
+          "default": 2
         }
       ],
       "short_doc": "SAM3 Extract — detect a subject, remove background."
@@ -4675,6 +4730,21 @@
           "name": "invert",
           "required": false,
           "default": false
+        },
+        {
+          "name": "sam3_backend",
+          "required": false,
+          "default": "wrapper"
+        },
+        {
+          "name": "ckpt_name",
+          "required": false,
+          "default": "sam3.1.safetensors"
+        },
+        {
+          "name": "refine_iterations",
+          "required": false,
+          "default": 2
         }
       ],
       "short_doc": "SAM3 Segment — detect a subject by text and return its mask."
