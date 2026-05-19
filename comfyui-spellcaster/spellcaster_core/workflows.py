@@ -8464,9 +8464,38 @@ def build_hunyuan_video(prompt_text, seed, *,
                         # Output
                         fps=24,
                         crf=19,
-                        filename_prefix="spellcaster_hunyuan") -> dict:
-    """HunyuanVideo (Tencent 13B) text-to-video / image-to-video via Kijai's
-    ComfyUI-HunyuanVideoWrapper.
+                        filename_prefix="spellcaster_hunyuan",
+                        # ── HunyuanVideo-1.5 (opt-in, 8.3B, 16-GB friendly) ──
+                        hunyuan_version="1",
+                        negative_text="",
+                        clip_l_name="clip_l.safetensors",
+                        llm_name="llava_llama3_fp8_scaled.safetensors",
+                        sampler_name="euler",
+                        scheduler="simple",
+                        cfg=1.0) -> dict:
+    """HunyuanVideo text-to-video / image-to-video.
+
+    Two paths, selected by `hunyuan_version`:
+
+    * `"1"` (DEFAULT — preserves prior behavior): Tencent's original
+      ~13B HunyuanVideo via Kijai's ComfyUI-HunyuanVideoWrapper
+      (HyVideo* node family). Needs ~26 GB VRAM at bf16 or 16 GB with
+      fp8 + block-swap; effectively cloud-only on a 16 GB workstation.
+
+    * `"1.5"` (OPT-IN): Tencent's HunyuanVideo-1.5 (8.3B, late-Nov
+      2025), wired via ComfyUI's native nodes (UNETLoader /
+      UnetLoaderGGUF + DualCLIPLoader[hunyuan_video_15] + VAELoader +
+      EmptyHunyuanVideo15Latent / HunyuanVideo15ImageToVideo + KSampler
+      + VAEDecode). Runs comfortably on 16 GB at Q4-Q8 GGUF and 720p.
+      Pass `hy_model="hunyuan_video_1.5_Q5_K_M.gguf"` (or similar) +
+      `vae_name="hunyuan_video_15_vae.safetensors"` + the two text
+      encoders (`llm_name`, `clip_l_name`).
+
+    Below describes the v1.0 (Kijai-wrapper) path. For v1.5 see the
+    branch comment in-source.
+
+    Original v1.0 docstring: HunyuanVideo (Tencent 13B) text-to-video /
+    image-to-video via Kijai's ComfyUI-HunyuanVideoWrapper.
 
     Supports both modes via the optional `image_filename`:
       * T2V (default) — synthesises a video from prompt alone
@@ -8526,6 +8555,13 @@ def build_hunyuan_video(prompt_text, seed, *,
         enable_vae_tiling: tiled decode for low VRAM.
         fps, crf: video encode params.
         filename_prefix: VHS output prefix.
+        hunyuan_version: `"1"` (default, original 13B via Kijai wrapper) or
+            `"1.5"` (8.3B, native ComfyUI nodes, 16-GB friendly).
+        negative_text: negative prompt (v1.5 only — v1.0 is distilled).
+        clip_l_name / llm_name: text-encoder filenames for v1.5
+            DualCLIPLoader (CLIP-L + llava-llama3). Ignored for v1.0.
+        sampler_name / scheduler / cfg: KSampler knobs for v1.5
+            (defaults euler / simple / cfg=1.0 per ComfyUI workflow).
 
     Returns:
         ComfyUI workflow dict.
@@ -8536,6 +8572,117 @@ def build_hunyuan_video(prompt_text, seed, *,
     _assert_method_for_preset({"arch": "hunyuan_video"}, method)
     nf = NodeFactory()
 
+    # ── HunyuanVideo-1.5 (opt-in) ────────────────────────────────────────
+    # Why: HunyuanVideo-1.5 8.3B fits 16 GB; original 13B requires ~60 GB
+    # headless. v1.5 uses ComfyUI's native nodes (no Kijai wrapper) — the
+    # node class names below were sourced from ComfyUI's stock
+    # `comfy_extras/nodes_hunyuan.py` (HunyuanVideo15ImageToVideo,
+    # EmptyHunyuanVideo15Latent) + nodes.py (DualCLIPLoader with
+    # type="hunyuan_video_15"). GGUF loader is the standard
+    # `UnetLoaderGGUF` from city96/ComfyUI-GGUF — same convention used
+    # elsewhere in this file (e.g. build_qwen_edit).
+    # TODO: verify node class name when ComfyUI v0.21+ is confirmed installed
+    if str(hunyuan_version) == "1.5":
+        # 1. Diffusion model (GGUF preferred for 16 GB; fall back to
+        #    UNETLoader for full-precision safetensors).
+        if str(hy_model).lower().endswith(".gguf"):
+            model_id = nf._add("UnetLoaderGGUF", {
+                "unet_name": hy_model,
+            }, node_id="1")
+        else:
+            model_id = nf._add("UNETLoader", {
+                "unet_name": hy_model,
+                "weight_dtype": "default",
+            }, node_id="1")
+
+        # 2. Dual text encoders (llava-llama3 + clip-l). The native
+        #    DualCLIPLoader `type="hunyuan_video_15"` recipe loads both.
+        dclip_id = nf._add("DualCLIPLoader", {
+            "clip_name1": llm_name,
+            "clip_name2": clip_l_name,
+            "type": "hunyuan_video_15",
+        }, node_id="2")
+
+        # 3. VAE
+        vae_id = nf._add("VAELoader", {
+            "vae_name": vae_name,
+        }, node_id="3")
+
+        # 4. Positive + negative conditioning
+        pos_id = nf._add("CLIPTextEncode", {
+            "clip": [dclip_id, 0],
+            "text": prompt_text,
+        }, node_id="4")
+        neg_id = nf._add("CLIPTextEncode", {
+            "clip": [dclip_id, 0],
+            "text": negative_text,
+        }, node_id="5")
+
+        # 5. Latent (T2V) or I2V conditioning + latent
+        if image_filename:
+            img_id = nf.load_image(image_filename, node_id="6")
+            # HunyuanVideo15ImageToVideo bakes the start image into the
+            # positive/negative conditionings and emits an empty 1.5-shape
+            # latent. clip_vision_output is optional and skipped here.
+            i2v_id = nf._add("HunyuanVideo15ImageToVideo", {
+                "positive":   [pos_id, 0],
+                "negative":   [neg_id, 0],
+                "vae":        [vae_id, 0],
+                "width":      int(width),
+                "height":     int(height),
+                "length":     int(num_frames),
+                "batch_size": 1,
+                "start_image": [img_id, 0],
+            }, node_id="7")
+            pos_ref = [i2v_id, 0]
+            neg_ref = [i2v_id, 1]
+            latent_ref = [i2v_id, 2]
+        else:
+            empty_id = nf._add("EmptyHunyuanVideo15Latent", {
+                "width":      int(width),
+                "height":     int(height),
+                "length":     int(num_frames),
+                "batch_size": 1,
+            }, node_id="7")
+            pos_ref = [pos_id, 0]
+            neg_ref = [neg_id, 0]
+            latent_ref = [empty_id, 0]
+
+        # 6. KSampler — v1.5 is NOT distilled (unlike v1.0), so CFG ≥ 1.0
+        #    is meaningful. Default cfg=1.0 follows ComfyUI's reference
+        #    workflow; bump to 3-7 if negative prompt should bite harder.
+        samp_id = nf._add("KSampler", {
+            "model":         [model_id, 0],
+            "positive":      pos_ref,
+            "negative":      neg_ref,
+            "latent_image":  latent_ref,
+            "seed":          int(seed),
+            "steps":         int(steps),
+            "cfg":           float(cfg),
+            "sampler_name":  sampler_name,
+            "scheduler":     scheduler,
+            "denoise":       1.0,
+        }, node_id="8")
+
+        # 7. Decode + video combine
+        dec_id = nf._add("VAEDecode", {
+            "samples": [samp_id, 0],
+            "vae":     [vae_id, 0],
+        }, node_id="9")
+        nf.update({
+            "10": {"class_type": "VHS_VideoCombine",
+                   "inputs": {"images": [dec_id, 0],
+                              "frame_rate": int(fps),
+                              "loop_count": 0,
+                              "filename_prefix": filename_prefix,
+                              "format": "video/h264-mp4",
+                              "save_output": True,
+                              "pix_fmt": "yuv420p",
+                              "crf": int(crf)}},
+        })
+        return nf.build()
+
+    # ── HunyuanVideo 1.0 (original, Kijai wrapper) ───────────────────────
     # 1a. Optional block swap args
     block_swap_ref = None
     if use_block_swap:
