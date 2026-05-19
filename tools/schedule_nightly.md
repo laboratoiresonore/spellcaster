@@ -29,7 +29,7 @@ audit history.
 ### export_comfyui_workflows.py — 03:30 local time
 
 Refreshes the ComfyUI-GUI-visible spellcaster workflow snapshots at
-`C:\Users\legui\Documents\ComfyUI\user\default\workflows\spellcaster\`.
+`C:\Users\legui\ComfyUI\ComfyUI\user\default\workflows\spellcaster\`.
 Each builder gets its own `.json` with a Note node containing docstring +
 signature. Runs after night_maintenance so the exported file set
 reflects the latest merged workflow changes (e.g. new opt-in kwargs

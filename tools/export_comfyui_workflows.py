@@ -68,8 +68,11 @@ from typing import Any
 REPO = Path(__file__).resolve().parent.parent
 CONNECTOR_DIR = REPO / "plugins" / "gimp" / "comfyui-connector"
 DEFAULT_OUTPUT_DIR = Path(
-    r"C:\Users\legui\Documents\ComfyUI\user\default\workflows\spellcaster"
+    r"C:\Users\legui\ComfyUI\ComfyUI\user\default\workflows\spellcaster"
 )
+# Canonical install per /system_stats on the live server at
+# 192.168.86.28:8190 (argv shows main.py = C:\Users\legui\ComfyUI\ComfyUI\main.py).
+# Documents\ComfyUI is a stale install — workflows there are invisible to GUI.
 
 # Make spellcaster_core importable.
 sys.path.insert(0, str(CONNECTOR_DIR))
@@ -207,7 +210,7 @@ _PARAM_OVERRIDES: dict[str, Any] = {
     "checkpoint":          "ddcolor_artistic.pth",
     "swap_model":          "inswapper_128.onnx",
     "controlnet_model":    "control_canny-fp16.safetensors",
-    "preprocessor_type":   "canny",
+    "preprocessor_type":   "Canny",
     "lut_name":            "neutral.cube",
     "facedetection":       "retinaface_resnet50",
     "filename_prefix":     "spellcaster_export",
