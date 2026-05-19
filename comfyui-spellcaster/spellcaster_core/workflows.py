@@ -9823,8 +9823,9 @@ def build_qwen_edit(image_filename, unet_name, clip_name, vae_name,
                     denoise=1.0, shift=1.73, cfg_norm=0.5,
                     image2_filename=None, image3_filename=None,
                     sam3_prompt=None, sam3_invert=False,
-                    sam3_confidence=0.6, sam3_expand=4, sam3_blur=4) -> dict:
-    """Qwen Image Edit 2509 — instruction-driven edits via TextEncodeQwenImageEditPlus.
+                    sam3_confidence=0.6, sam3_expand=4, sam3_blur=4,
+                    qwen_edit_version="2509") -> dict:
+    """Qwen Image Edit 2509 / 2511 — instruction-driven edits via TextEncodeQwenImageEditPlus.
 
     Sibling to Flux Kontext. The user supplies an instruction prompt
     ("make the sky orange", "remove the sign", "add sunglasses") and an image;
@@ -9855,9 +9856,14 @@ def build_qwen_edit(image_filename, unet_name, clip_name, vae_name,
     Args:
         image_filename: the image to edit.
         unet_name: Qwen Image Edit UNET filename (e.g.
-            "qwen-image-edit_2509.safetensors").
+            "qwen-image-edit_2509.safetensors"). When ``qwen_edit_version="2511"``,
+            this is overridden by the canonical 2511 filename
+            ("qwen_image_edit_2511_bf16.safetensors").
         clip_name: Qwen CLIP filename (e.g.
             "qwen_2.5_vl_7b_fp8_scaled.safetensors"). Loaded with type=qwen_image.
+            TODO: confirm 2511 uses the same text encoder as 2509 — Comfy docs
+            list the same `qwen_2.5_vl_7b_fp8_scaled.safetensors` for both, so
+            no override is wired here.
         vae_name: Qwen VAE filename (e.g. "qwen_image_vae.safetensors").
         prompt_text: edit instruction in plain English.
         seed: sampler seed.
@@ -9871,6 +9877,13 @@ def build_qwen_edit(image_filename, unet_name, clip_name, vae_name,
             when sam3_prompt is set, the edit is composited back onto the
             original image using a SAM3 mask — so "change just the jacket"
             works without painting a mask.
+        qwen_edit_version: which Qwen-Image-Edit release to target. Allowed
+            values: ``"2509"`` (default, current behavior — uses the
+            caller-supplied ``unet_name`` as-is) and ``"2511"`` (opt-in —
+            overrides ``unet_name`` with the canonical
+            ``qwen_image_edit_2511_bf16.safetensors``). 2511 has better
+            character/multi-person consistency, integrated LoRA support, and
+            stronger geometric reasoning than 2509.
 
     Returns:
         ComfyUI workflow dict.
@@ -9880,6 +9893,14 @@ def build_qwen_edit(image_filename, unet_name, clip_name, vae_name,
     present on the server. Nunchaku / fp8 quantization support is optional —
     the standard UNETLoader handles fp16, fp8, and GGUF variants alike.
     """
+    # Why: 2511 has better multi-person consistency + integrated LoRA support
+    if qwen_edit_version == "2511":
+        unet_name = "qwen_image_edit_2511_bf16.safetensors"
+    elif qwen_edit_version != "2509":
+        raise ValueError(
+            f"qwen_edit_version must be '2509' or '2511', got {qwen_edit_version!r}"
+        )
+
     nf = NodeFactory()
 
     # Model / CLIP / VAE loaders
