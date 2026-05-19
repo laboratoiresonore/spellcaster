@@ -211,6 +211,31 @@ def collect_active_sessions() -> str:
         return f"_(session list failed: {e.stderr})_"
 
 
+def collect_sota_review() -> str:
+    """Surface the most recent daily SOTA review report.
+
+    The cloud routine `Spellcaster daily SOTA review` (trig_01JZWcDb…)
+    writes `_dev_docs/upgrade_research/YYYY-WNN.md` via a PR. Once the
+    user merges, the file lands locally. We surface the latest one so
+    the morning briefing flags any Tier-1 drop-in supersessions the
+    incoming Claude session might want to action.
+    """
+    research_dir = REPO / "_dev_docs" / "upgrade_research"
+    if not research_dir.is_dir():
+        return "_(no _dev_docs/upgrade_research/ — daily routine hasn't landed yet)_"
+    md_files = sorted(research_dir.glob("*.md"),
+                       key=lambda p: p.stat().st_mtime, reverse=True)
+    if not md_files:
+        return "_(no SOTA review reports yet)_"
+    latest = md_files[0]
+    age_h = (datetime.now(timezone.utc).timestamp() - latest.stat().st_mtime) / 3600
+    text = latest.read_text(encoding="utf-8", errors="replace")
+    # Cap the slice the LLM sees; Tier-1 + Tier-2 + no-finds are the
+    # signal, not every row of the full table.
+    return (f"_Source: `{latest}` — {age_h:.0f} h old_\n\n"
+            f"```\n{text[:2500]}\n```")
+
+
 def collect_log_tail() -> str:
     """Collect log slices for the LLM, filtering pre-recovered errors.
 
@@ -259,6 +284,7 @@ def build_facts(args) -> dict:
         "capabilities": _safe(lambda: collect_capabilities(args.caps), "capabilities"),
         "active_sessions": _safe(collect_active_sessions, "active_sessions"),
         "log_tail": _safe(collect_log_tail, "log_tail"),
+        "sota_review": _safe(collect_sota_review, "sota_review"),
     }
 
 
@@ -277,6 +303,8 @@ def facts_to_markdown(facts: dict) -> str:
         facts["active_sessions"],
         "## Recent logs",
         facts["log_tail"],
+        "## Latest daily SOTA review",
+        facts["sota_review"],
     ])
 
 
@@ -299,7 +327,10 @@ def llm_summarize(facts_md: str, endpoint: str, model: str) -> str:
         "file / which PR / which timestamp.\n\n"
         "**WHERE CLAUDE'S ATTENTION IS NEEDED**: 2-5 concrete tasks the "
         "incoming Claude session should consider taking. Prefer "
-        "specifics over generalities.\n\n"
+        "specifics over generalities. If the 'Latest daily SOTA review' "
+        "section lists any Tier-1 drop-in supersessions or open daily-"
+        "sota-review/* PRs, mention them by method name + replacement "
+        "model so Claude can decide whether to action this session.\n\n"
         "**OPEN QUESTIONS**: things only a human can answer — flag "
         "them so Claude knows to ask.\n\n"
         "Be concise (under 500 words total). Use file paths verbatim. "
