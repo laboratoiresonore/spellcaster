@@ -25,7 +25,7 @@ three "research backends" that DO:
                            ``/customnodes/getmappings`` to find pack
                            updates.
     backend_local_llm      asks a local LLM (LM Studio / Ollama —
-                           Laborantin-style delegation, failsafe #4) to
+                           ecosystem-peer delegation, failsafe #4) to
                            score each candidate against the builder's
                            use case + spellcaster's quality bar.
 
@@ -625,7 +625,7 @@ def backend_comfy_manager(methods: list[str], comfy_url: str,
 
 
 # ---------------------------------------------------------------------------
-# Backend: local_llm (Laborantin-style delegation — failsafe #4)
+# Backend: local_llm (ecosystem-peer delegation — failsafe #4)
 # ---------------------------------------------------------------------------
 
 def _local_llm_endpoint() -> str:
@@ -633,8 +633,8 @@ def _local_llm_endpoint() -> str:
     1. ``$LMSTUDIO_HOST`` env var
     2. ``$OLLAMA_HOST`` env var
     3. Default ``http://127.0.0.1:1234`` (LM Studio default port)
-    Per ECOSYSTEM_BRIEF, the user's stack runs LM Studio at
-    ``theo-local:1234`` and ``workstation:1234``; either is OK.
+    The user's stack typically runs LM Studio at ``<host>:1234`` on
+    one or more LAN peers; any reachable one works.
 
     Normalisation: env vars on this user's box can be set to bind-address
     forms like ``0.0.0.0`` (Ollama's recommended server-side bind, NOT a
@@ -758,7 +758,7 @@ def backend_local_llm(methods: list[str], baseline: list[Candidate],
     object is mutated AND added to ``br.candidates`` — the calling
     pipeline can then re-sort the merged candidate set.
 
-    Why this exists (Laborantin-aware delegation, ECOSYSTEM_BRIEF §3):
+    Why this exists (ecosystem-peer delegation):
       - Local: no Claude tokens spent on a routine evaluative task.
       - Bias-aware: the loaded model knows the spellcaster method names
         + common arch shorthand.
@@ -775,7 +775,7 @@ def backend_local_llm(methods: list[str], baseline: list[Candidate],
         dry_run: True → emit one demo candidate, no network call.
         endpoint: override the LLM URL (default: env var or 127.0.0.1:1234).
         max_to_score: cap LLM calls per run. Default 10 (~5-15 min on
-            a workstation peer; ~30 min on theo-local cold).
+            a hot LAN peer; ~30 min cold).
     """
     br = BackendResult(backend="local_llm",
                         started_at=datetime.now(timezone.utc).isoformat())

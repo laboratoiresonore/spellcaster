@@ -70,9 +70,9 @@ CONNECTOR_DIR = REPO / "plugins" / "gimp" / "comfyui-connector"
 DEFAULT_OUTPUT_DIR = Path(
     r"C:\Users\legui\ComfyUI\ComfyUI\user\default\workflows\spellcaster"
 )
-# Canonical install per /system_stats on the live server at
-# 192.168.86.28:8190 (argv shows main.py = C:\Users\legui\ComfyUI\ComfyUI\main.py).
-# Documents\ComfyUI is a stale install — workflows there are invisible to GUI.
+# Canonical install: verified via the live server's /system_stats endpoint
+# (argv shows main.py is here, not under Documents\ComfyUI which is a stale
+# install — workflows dropped under the stale path are invisible to the GUI).
 
 # Make spellcaster_core importable.
 sys.path.insert(0, str(CONNECTOR_DIR))
