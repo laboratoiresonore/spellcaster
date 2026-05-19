@@ -808,7 +808,9 @@ def build_sam3_mask(nf, image_ref, prompt, *,
                     invert=False, confidence=0.6,
                     mask_expand=4, mask_blur=4,
                     base_node_id=950,
-                    sam3_backend="wrapper"):
+                    sam3_backend="wrapper",
+                    ckpt_name="sam3.1.safetensors",
+                    refine_iterations=2):
     """Produce a SAM3 mask for the given image, with optional grow+blur.
 
     Used by two different integration patterns:
@@ -826,8 +828,11 @@ def build_sam3_mask(nf, image_ref, prompt, *,
             or None, the helper returns None — callers treat that as
             "no SAM3 scoping requested".
         invert: If True, select everything EXCEPT the target. Same
-            "Anything But" semantics as the GIMP tool.
-        confidence: SAM3 detection threshold (0.0-1.0).
+            "Anything But" semantics as the GIMP tool. wrapper-only —
+            core_native has no invert_output and ignores this flag (the
+            caller should InvertMask post-hoc if needed).
+        confidence: SAM3 detection threshold (0.0-1.0). Maps to SAM3_Detect's
+            `threshold` in core_native.
         mask_expand: Pixels to grow the mask (helps cover soft edges).
         mask_blur: Gaussian blur radius on the grown mask for seamless edges.
         base_node_id: First numeric ID to assign (950 by default to avoid
@@ -838,40 +843,50 @@ def build_sam3_mask(nf, image_ref, prompt, *,
             zero change for existing callers.
             "core_native" — ComfyUI's built-in SAM 3.1 nodes from
             comfy_extras/nodes_sam3.py (PR #13408, merged 2026-04-23).
+            Uses CheckpointLoaderSimple + CLIPTextEncode + SAM3_Detect.
             ~2x faster, dependency-free, supports 16-object multiplexing.
+        ckpt_name: SAM 3.1 checkpoint filename (core_native only).
+            Default "sam3.1.safetensors".
+        refine_iterations: SAM decoder refinement passes for core_native
+            (0-5, default 2). 0 = use raw detector masks.
 
     Returns:
-        A [node_id, 0] MASK reference, or None if prompt is empty.
+        A MASK reference (a 2-element [node_id, slot] list), or None if
+        prompt is empty.
 
     Notes:
-      - Output slot 1 of SAM3Segment / SAM3Predictor is MASK. We pull from 1.
+      - Slot mapping differs by backend: SAM3Segment puts MASK on slot 1
+        (its slot 0 is the foreground image-on-alpha); SAM3_Detect puts
+        MASK on slot 0 (its slot 1 is BoundingBox). This helper unifies
+        both so callers always receive the mask reference directly.
       - GrowMaskWithBlur is from KJNodes; most Spellcaster servers have it.
       - Callers should preflight /object_info/SAM3Segment before relying on
-        this helper. For core_native, preflight /object_info/SAM3Predictor.
+        this helper. For core_native, preflight /object_info/SAM3_Detect.
     """
     if not prompt:
         return None
 
-    # Why: ComfyUI PR #13408 — SAM 3.1 native, 2x faster
+    # Why: ComfyUI PR #13408 — SAM 3.1 native, 2x faster.
+    # Ground truth: SAM3_Detect inputs are (model, image, conditioning,
+    # threshold, refine_iterations, individual_masks); outputs are
+    # (Mask, BoundingBox) so the MASK is on slot 0.
     if sam3_backend == "core_native":
-        # TODO: verify exact class_type + input keys against
-        # comfy_extras/nodes_sam3.py once the user updates ComfyUI.
-        # Names assumed: "SAM3Loader" + "SAM3Predictor".
-        loader_id = nf._add("SAM3Loader", {
-            "model": "sam3.1",
-            "device": "Auto",
+        ckpt_id = nf._add("CheckpointLoaderSimple", {
+            "ckpt_name": ckpt_name,
+        }, node_id=str(base_node_id - 2))
+        cond_id = nf._add("CLIPTextEncode", {
+            "clip": [ckpt_id, 1],
+            "text": prompt,
         }, node_id=str(base_node_id - 1))
-        sam3_id = nf._add("SAM3Predictor", {
-            "sam3_model": [loader_id, 0],
+        sam3_id = nf._add("SAM3_Detect", {
+            "model": [ckpt_id, 0],
             "image": image_ref,
-            "prompt": prompt,
-            "confidence_threshold": float(confidence),
-            "output_mode": "Merged",
-            "max_segments": 0,
-            "invert_output": bool(invert),
-            "background": "Alpha",
-            "background_color": "#000000",
+            "conditioning": [cond_id, 0],
+            "threshold": float(confidence),
+            "refine_iterations": int(refine_iterations),
+            "individual_masks": False,
         }, node_id=str(base_node_id))
+        mask_ref = [sam3_id, 0]
     else:
         sam3_id = nf._add("SAM3Segment", {
             "prompt": prompt,
@@ -886,8 +901,8 @@ def build_sam3_mask(nf, image_ref, prompt, *,
             "background_color": "#000000",
             "image": image_ref,
         }, node_id=str(base_node_id))
+        mask_ref = [sam3_id, 1]
 
-    mask_ref = [sam3_id, 1]
     if mask_expand > 0 or mask_blur > 0:
         grown_id = nf._add("GrowMaskWithBlur", {
             "expand": int(mask_expand),

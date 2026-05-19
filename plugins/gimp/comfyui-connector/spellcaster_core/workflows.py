@@ -6940,7 +6940,9 @@ def build_klein_color_match(target_filename, reference_filename,
 
 def build_sam3_segment(image_filename, prompt, confidence=0.6,
                        output_mode="Merged", mask_expand=0, mask_blur=0,
-                       invert=False, sam3_backend="wrapper") -> dict:
+                       invert=False, sam3_backend="wrapper",
+                       ckpt_name="sam3.1.safetensors",
+                       refine_iterations=2) -> dict:
     """SAM3 Segment — detect a subject by text and return its mask.
 
     Uses SAM3's text-prompted segmentation to find any subject in the
@@ -6954,19 +6956,28 @@ def build_sam3_segment(image_filename, prompt, confidence=0.6,
         prompt (str): What to detect, e.g. "person", "shirt", "hair",
             "background", "cat". Empty string = auto-detect all.
         confidence (float): Detection threshold (0.0-1.0, default 0.6).
+            For core_native this maps to SAM3_Detect's `threshold`.
         output_mode (str): "Merged" (all matches as one mask) or
-            "Separate" (one mask per instance).
+            "Separate" (one mask per instance). wrapper-only — core_native
+            uses individual_masks=False (Merged) always.
         mask_expand (int): Pixels to grow the mask outward.
         mask_blur (int): Gaussian blur on mask edges.
         invert (bool): Invert the mask (select everything EXCEPT target).
+            wrapper-only — core_native has no invert_output; callers wanting
+            inversion should post-process with InvertMask if needed.
         sam3_backend (str): Which SAM3 implementation to emit.
             "wrapper" (default) — existing third-party SAM3 node pack
             (class_type "SAM3Segment"). Preserves current behavior;
             zero change for existing callers.
             "core_native" — ComfyUI's built-in SAM 3.1 nodes from
             comfy_extras/nodes_sam3.py (PR #13408, merged 2026-04-23).
+            Uses CheckpointLoaderSimple + CLIPTextEncode + SAM3_Detect.
             ~2x faster, dependency-free, supports 16-object multiplexing.
             Opt in only when the user's ComfyUI is recent enough.
+        ckpt_name (str): SAM 3.1 checkpoint filename (core_native only).
+            Default "sam3.1.safetensors".
+        refine_iterations (int): SAM decoder refinement passes for
+            core_native (0-5, default 2). 0 = use raw detector masks.
 
     Returns:
         dict: ComfyUI workflow. Output is a mask saved as image.
@@ -6977,26 +6988,29 @@ def build_sam3_segment(image_filename, prompt, confidence=0.6,
 
     img_id = nf.load_image(image_filename, node_id="1")
 
-    # Why: ComfyUI PR #13408 — SAM 3.1 native, 2x faster
+    # Why: ComfyUI PR #13408 — SAM 3.1 native, 2x faster.
+    # Ground truth: comfy_extras/nodes_sam3.py — SAM3_Detect takes a MODEL
+    # (loaded via CheckpointLoaderSimple) + IMAGE + CONDITIONING (text via
+    # CLIPTextEncode) + threshold + refine_iterations + individual_masks.
+    # Outputs: (Mask, BoundingBox) — slot 0 is MASK (not slot 1!).
     if sam3_backend == "core_native":
-        # TODO: verify exact class_type + input keys against
-        # comfy_extras/nodes_sam3.py once the user updates ComfyUI.
-        # Names assumed: "SAM3Loader" (model) + "SAM3Predictor" (segment).
-        loader_id = nf._add("SAM3Loader", {
-            "model": "sam3.1",
-            "device": "Auto",
+        ckpt_id = nf._add("CheckpointLoaderSimple", {
+            "ckpt_name": ckpt_name,
+        }, node_id="8")
+        cond_id = nf._add("CLIPTextEncode", {
+            "clip": [ckpt_id, 1],
+            "text": prompt,
         }, node_id="9")
-        sam3_id = nf._add("SAM3Predictor", {
-            "sam3_model": [loader_id, 0],
+        sam3_id = nf._add("SAM3_Detect", {
+            "model": [ckpt_id, 0],
             "image": [img_id, 0],
-            "prompt": prompt,
-            "confidence_threshold": float(confidence),
-            "output_mode": output_mode,
-            "max_segments": 0,
-            "invert_output": bool(invert),
-            "background": "Alpha",
-            "background_color": "#222222",
+            "conditioning": [cond_id, 0],
+            "threshold": float(confidence),
+            "refine_iterations": int(refine_iterations),
+            "individual_masks": False,
         }, node_id="10")
+        # core_native: MASK is on slot 0 (Mask, BoundingBox)
+        mask_ref = [sam3_id, 0]
     else:
         sam3_id = nf._add("SAM3Segment", {
             "prompt": prompt,
@@ -7013,9 +7027,10 @@ def build_sam3_segment(image_filename, prompt, confidence=0.6,
             "background_color": "#222222",
             "image": [img_id, 0],
         }, node_id="10")
+        # wrapper: MASK is on slot 1 (image-on-alpha, mask)
+        mask_ref = [sam3_id, 1]
 
     # Optionally expand + blur the mask
-    mask_ref = [sam3_id, 1]
     if mask_expand > 0 or mask_blur > 0:
         grow_id = nf._add("GrowMaskWithBlur", {
             "expand": mask_expand,
@@ -7035,8 +7050,18 @@ def build_sam3_segment(image_filename, prompt, confidence=0.6,
         "mask": mask_ref,
     }, node_id="20")
 
-    # Save the segmented subject (foreground on alpha from SAM3 slot 0)
-    nf.save_image_websocket([sam3_id, 0], node_id="30", label="sam3_subject")
+    if sam3_backend == "core_native":
+        # core_native has no foreground-on-alpha output; compose the
+        # original image with the mask via JoinImageWithAlpha so callers
+        # still get a "sam3_subject" image alongside the mask.
+        subject_id = nf._add("JoinImageWithAlpha", {
+            "image": [img_id, 0],
+            "alpha": mask_ref,
+        }, node_id="21")
+        nf.save_image_websocket([subject_id, 0], node_id="30", label="sam3_subject")
+    else:
+        # Save the segmented subject (foreground on alpha from SAM3 slot 0)
+        nf.save_image_websocket([sam3_id, 0], node_id="30", label="sam3_subject")
     # Save the mask as a separate image
     nf.save_image_websocket([mask_img, 0], node_id="31", label="sam3_mask")
 
@@ -7048,7 +7073,9 @@ def build_sam3_segment(image_filename, prompt, confidence=0.6,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_sam3_extract(image_filename, prompt="person", confidence=0.6,
-                       auto_crop=False, sam3_backend="wrapper") -> dict:
+                       auto_crop=False, sam3_backend="wrapper",
+                       ckpt_name="sam3.1.safetensors",
+                       refine_iterations=2) -> dict:
     """SAM3 Extract — detect a subject, remove background.
 
     Combines SAM3 segmentation with BiRefNet background removal.
@@ -7071,7 +7098,13 @@ def build_sam3_extract(image_filename, prompt="person", confidence=0.6,
             "core_native" — ComfyUI core SAM 3.1 (PR #13408) drives
             the extract using `prompt` + `confidence`, producing a
             tighter mask than BiRefNet for text-targeted subjects.
+            Uses CheckpointLoaderSimple + CLIPTextEncode + SAM3_Detect,
+            then JoinImageWithAlpha to compose the subject on alpha.
             ~2x faster than wrapper SAM3, dependency-free.
+        ckpt_name (str): SAM 3.1 checkpoint filename (core_native only).
+            Default "sam3.1.safetensors".
+        refine_iterations (int): SAM decoder refinement passes for
+            core_native (0-5, default 2). 0 = use raw detector masks.
 
     Returns:
         dict: ComfyUI workflow.
@@ -7083,29 +7116,35 @@ def build_sam3_extract(image_filename, prompt="person", confidence=0.6,
 
     img_id = nf.load_image(image_filename, node_id="1")
 
-    # Why: ComfyUI PR #13408 — SAM 3.1 native, 2x faster
+    # Why: ComfyUI PR #13408 — SAM 3.1 native, 2x faster.
+    # Ground truth: SAM3_Detect outputs (Mask, BoundingBox) — slot 0 is
+    # MASK. No image-on-alpha output, so we compose subject via
+    # JoinImageWithAlpha(image, mask) from comfy_extras/nodes_compositing.
     if sam3_backend == "core_native":
-        # TODO: verify exact class_type + input keys against
-        # comfy_extras/nodes_sam3.py once the user updates ComfyUI.
-        # Names assumed: "SAM3Loader" + "SAM3Predictor".
-        loader_id = nf._add("SAM3Loader", {
-            "model": "sam3.1",
-            "device": "Auto",
+        ckpt_id = nf._add("CheckpointLoaderSimple", {
+            "ckpt_name": ckpt_name,
+        }, node_id="8")
+        cond_id = nf._add("CLIPTextEncode", {
+            "clip": [ckpt_id, 1],
+            "text": prompt,
         }, node_id="9")
-        # SAM3 predictor returns (image_on_alpha, mask).
-        sam3_id = nf._add("SAM3Predictor", {
-            "sam3_model": [loader_id, 0],
+        sam3_id = nf._add("SAM3_Detect", {
+            "model": [ckpt_id, 0],
             "image": [img_id, 0],
-            "prompt": prompt,
-            "confidence_threshold": float(confidence),
-            "output_mode": "Merged",
-            "max_segments": 0,
-            "invert_output": False,
-            "background": "Alpha",
-            "background_color": "#222222",
+            "conditioning": [cond_id, 0],
+            "threshold": float(confidence),
+            "refine_iterations": int(refine_iterations),
+            "individual_masks": False,
         }, node_id="10")
-        output_ref = [sam3_id, 0]
-        mask_ref = [sam3_id, 1]
+        mask_ref = [sam3_id, 0]
+
+        # Compose original RGB image with the SAM3 mask as alpha to get
+        # foreground-on-transparent (no separate RMBG step needed).
+        subject_id = nf._add("JoinImageWithAlpha", {
+            "image": [img_id, 0],
+            "alpha": mask_ref,
+        }, node_id="15")
+        output_ref = [subject_id, 0]
 
         if auto_crop:
             crop_id = nf._add("ImageCropByMask", {
