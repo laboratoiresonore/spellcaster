@@ -807,7 +807,8 @@ def ensure_mod16(nf, image_ref, arch_key, scale_node_id=None):
 def build_sam3_mask(nf, image_ref, prompt, *,
                     invert=False, confidence=0.6,
                     mask_expand=4, mask_blur=4,
-                    base_node_id=950):
+                    base_node_id=950,
+                    sam3_backend="wrapper"):
     """Produce a SAM3 mask for the given image, with optional grow+blur.
 
     Used by two different integration patterns:
@@ -831,32 +832,60 @@ def build_sam3_mask(nf, image_ref, prompt, *,
         mask_blur: Gaussian blur radius on the grown mask for seamless edges.
         base_node_id: First numeric ID to assign (950 by default to avoid
             clashing with the main builder's node-id range).
+        sam3_backend: Which SAM3 implementation to emit.
+            "wrapper" (default) — existing third-party SAM3 node pack
+            (class_type "SAM3Segment"). Preserves current behavior;
+            zero change for existing callers.
+            "core_native" — ComfyUI's built-in SAM 3.1 nodes from
+            comfy_extras/nodes_sam3.py (PR #13408, merged 2026-04-23).
+            ~2x faster, dependency-free, supports 16-object multiplexing.
 
     Returns:
         A [node_id, 0] MASK reference, or None if prompt is empty.
 
     Notes:
-      - Output slot 1 of SAM3Segment is MASK. We always pull from slot 1.
+      - Output slot 1 of SAM3Segment / SAM3Predictor is MASK. We pull from 1.
       - GrowMaskWithBlur is from KJNodes; most Spellcaster servers have it.
       - Callers should preflight /object_info/SAM3Segment before relying on
-        this helper.
+        this helper. For core_native, preflight /object_info/SAM3Predictor.
     """
     if not prompt:
         return None
 
-    sam3_id = nf._add("SAM3Segment", {
-        "prompt": prompt,
-        "output_mode": "Merged",
-        "confidence_threshold": float(confidence),
-        "max_segments": 0, "segment_pick": 0,
-        "mask_blur": 0, "mask_offset": 0,
-        "device": "Auto",
-        "invert_output": bool(invert),
-        "unload_model": False,
-        "background": "Alpha",
-        "background_color": "#000000",
-        "image": image_ref,
-    }, node_id=str(base_node_id))
+    # Why: ComfyUI PR #13408 — SAM 3.1 native, 2x faster
+    if sam3_backend == "core_native":
+        # TODO: verify exact class_type + input keys against
+        # comfy_extras/nodes_sam3.py once the user updates ComfyUI.
+        # Names assumed: "SAM3Loader" + "SAM3Predictor".
+        loader_id = nf._add("SAM3Loader", {
+            "model": "sam3.1",
+            "device": "Auto",
+        }, node_id=str(base_node_id - 1))
+        sam3_id = nf._add("SAM3Predictor", {
+            "sam3_model": [loader_id, 0],
+            "image": image_ref,
+            "prompt": prompt,
+            "confidence_threshold": float(confidence),
+            "output_mode": "Merged",
+            "max_segments": 0,
+            "invert_output": bool(invert),
+            "background": "Alpha",
+            "background_color": "#000000",
+        }, node_id=str(base_node_id))
+    else:
+        sam3_id = nf._add("SAM3Segment", {
+            "prompt": prompt,
+            "output_mode": "Merged",
+            "confidence_threshold": float(confidence),
+            "max_segments": 0, "segment_pick": 0,
+            "mask_blur": 0, "mask_offset": 0,
+            "device": "Auto",
+            "invert_output": bool(invert),
+            "unload_model": False,
+            "background": "Alpha",
+            "background_color": "#000000",
+            "image": image_ref,
+        }, node_id=str(base_node_id))
 
     mask_ref = [sam3_id, 1]
     if mask_expand > 0 or mask_blur > 0:

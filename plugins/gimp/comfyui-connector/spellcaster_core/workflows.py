@@ -6940,7 +6940,7 @@ def build_klein_color_match(target_filename, reference_filename,
 
 def build_sam3_segment(image_filename, prompt, confidence=0.6,
                        output_mode="Merged", mask_expand=0, mask_blur=0,
-                       invert=False) -> dict:
+                       invert=False, sam3_backend="wrapper") -> dict:
     """SAM3 Segment — detect a subject by text and return its mask.
 
     Uses SAM3's text-prompted segmentation to find any subject in the
@@ -6959,31 +6959,60 @@ def build_sam3_segment(image_filename, prompt, confidence=0.6,
         mask_expand (int): Pixels to grow the mask outward.
         mask_blur (int): Gaussian blur on mask edges.
         invert (bool): Invert the mask (select everything EXCEPT target).
+        sam3_backend (str): Which SAM3 implementation to emit.
+            "wrapper" (default) — existing third-party SAM3 node pack
+            (class_type "SAM3Segment"). Preserves current behavior;
+            zero change for existing callers.
+            "core_native" — ComfyUI's built-in SAM 3.1 nodes from
+            comfy_extras/nodes_sam3.py (PR #13408, merged 2026-04-23).
+            ~2x faster, dependency-free, supports 16-object multiplexing.
+            Opt in only when the user's ComfyUI is recent enough.
 
     Returns:
         dict: ComfyUI workflow. Output is a mask saved as image.
 
-    Requires: SAM3 node pack.
+    Requires: SAM3 node pack (wrapper) OR ComfyUI >= PR #13408 (core_native).
     """
     nf = NodeFactory()
 
     img_id = nf.load_image(image_filename, node_id="1")
 
-    sam3_id = nf._add("SAM3Segment", {
-        "prompt": prompt,
-        "output_mode": output_mode,
-        "confidence_threshold": confidence,
-        "max_segments": 0,
-        "segment_pick": 0,
-        "mask_blur": 0,
-        "mask_offset": 0,
-        "device": "Auto",
-        "invert_output": invert,
-        "unload_model": False,
-        "background": "Alpha",
-        "background_color": "#222222",
-        "image": [img_id, 0],
-    }, node_id="10")
+    # Why: ComfyUI PR #13408 — SAM 3.1 native, 2x faster
+    if sam3_backend == "core_native":
+        # TODO: verify exact class_type + input keys against
+        # comfy_extras/nodes_sam3.py once the user updates ComfyUI.
+        # Names assumed: "SAM3Loader" (model) + "SAM3Predictor" (segment).
+        loader_id = nf._add("SAM3Loader", {
+            "model": "sam3.1",
+            "device": "Auto",
+        }, node_id="9")
+        sam3_id = nf._add("SAM3Predictor", {
+            "sam3_model": [loader_id, 0],
+            "image": [img_id, 0],
+            "prompt": prompt,
+            "confidence_threshold": float(confidence),
+            "output_mode": output_mode,
+            "max_segments": 0,
+            "invert_output": bool(invert),
+            "background": "Alpha",
+            "background_color": "#222222",
+        }, node_id="10")
+    else:
+        sam3_id = nf._add("SAM3Segment", {
+            "prompt": prompt,
+            "output_mode": output_mode,
+            "confidence_threshold": confidence,
+            "max_segments": 0,
+            "segment_pick": 0,
+            "mask_blur": 0,
+            "mask_offset": 0,
+            "device": "Auto",
+            "invert_output": invert,
+            "unload_model": False,
+            "background": "Alpha",
+            "background_color": "#222222",
+            "image": [img_id, 0],
+        }, node_id="10")
 
     # Optionally expand + blur the mask
     mask_ref = [sam3_id, 1]
@@ -7019,7 +7048,7 @@ def build_sam3_segment(image_filename, prompt, confidence=0.6,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_sam3_extract(image_filename, prompt="person", confidence=0.6,
-                       auto_crop=False) -> dict:
+                       auto_crop=False, sam3_backend="wrapper") -> dict:
     """SAM3 Extract — detect a subject, remove background.
 
     Combines SAM3 segmentation with BiRefNet background removal.
@@ -7035,15 +7064,58 @@ def build_sam3_extract(image_filename, prompt="person", confidence=0.6,
         confidence (float): Detection threshold.
         auto_crop (bool): If True, crop to subject bounds. Default False
             to preserve position when importing as a GIMP layer.
+        sam3_backend (str): Which SAM3 implementation to emit.
+            "wrapper" (default) — BiRefNet RMBG path as today; the
+            "SAM3" in the name refers to the historical wrapper pack
+            preflight. Zero change for existing callers.
+            "core_native" — ComfyUI core SAM 3.1 (PR #13408) drives
+            the extract using `prompt` + `confidence`, producing a
+            tighter mask than BiRefNet for text-targeted subjects.
+            ~2x faster than wrapper SAM3, dependency-free.
 
     Returns:
         dict: ComfyUI workflow.
 
-    Requires: SAM3 node pack + BiRefNet RMBG.
+    Requires: SAM3 node pack + BiRefNet RMBG (wrapper) OR
+        ComfyUI >= PR #13408 (core_native).
     """
     nf = NodeFactory()
 
     img_id = nf.load_image(image_filename, node_id="1")
+
+    # Why: ComfyUI PR #13408 — SAM 3.1 native, 2x faster
+    if sam3_backend == "core_native":
+        # TODO: verify exact class_type + input keys against
+        # comfy_extras/nodes_sam3.py once the user updates ComfyUI.
+        # Names assumed: "SAM3Loader" + "SAM3Predictor".
+        loader_id = nf._add("SAM3Loader", {
+            "model": "sam3.1",
+            "device": "Auto",
+        }, node_id="9")
+        # SAM3 predictor returns (image_on_alpha, mask).
+        sam3_id = nf._add("SAM3Predictor", {
+            "sam3_model": [loader_id, 0],
+            "image": [img_id, 0],
+            "prompt": prompt,
+            "confidence_threshold": float(confidence),
+            "output_mode": "Merged",
+            "max_segments": 0,
+            "invert_output": False,
+            "background": "Alpha",
+            "background_color": "#222222",
+        }, node_id="10")
+        output_ref = [sam3_id, 0]
+        mask_ref = [sam3_id, 1]
+
+        if auto_crop:
+            crop_id = nf._add("ImageCropByMask", {
+                "image": output_ref,
+                "mask": mask_ref,
+            }, node_id="20")
+            output_ref = [crop_id, 0]
+
+        nf.save_image_websocket(output_ref, node_id="30")
+        return nf.build()
 
     # BiRefNet background removal (higher quality than SAM3's built-in)
     rmbg_id = nf._add("BiRefNetRMBG", {
