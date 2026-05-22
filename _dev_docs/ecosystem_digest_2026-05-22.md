@@ -65,7 +65,7 @@ Top of HF trending text-to-image, 2026-05-22:
 
 ## Note on builder count
 
-`build_*` count is **74** today (baseline 2026-05-13 was 73). One new builder landed (consistent with PR #44 "NSFW source-of-truth annotations" plus #43 replay-bridge work — likely the replay-bridge helpers). Not a divergence to flag.
+`build_*` count is **74** today (baseline 2026-05-13 was 73). One new builder landed (consistent with the recent "NSFW source-of-truth annotations" and "replay-bridge per-character portrait consistency proxy helpers" audit commits — likely the replay-bridge helpers). Not a divergence to flag.
 
 ## Run metadata
 
