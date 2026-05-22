@@ -1,0 +1,36 @@
+{
+  "iso_week": "2026-W21",
+  "run_date": "2026-05-22",
+  "tool_present": false,
+  "tool_path": "tools/upgrade_research.py",
+  "note": "tools/upgrade_research.py absent in branch as of HEAD 534e64b; digest synthesised from HF MCP + WebSearch + WebFetch.",
+  "backends": {
+    "local_index": {"status": "empty", "candidates": 0, "source": "comfyui-spellcaster/spellcaster_core/lora_calibrations_sfw.json"},
+    "huggingface": {"status": "ok", "candidates": 26},
+    "civitai": {"status": "skipped", "reason": "script not in branch"},
+    "comfy_manager": {"status": "skipped", "reason": "LAN-only"},
+    "local_llm": {"status": "skipped", "reason": "LAN-only"}
+  },
+  "top_candidates": [
+    {"rank": 1, "id": "black-forest-labs/FLUX.2-klein-4B", "arch": "flux2-klein", "downloads": 1000000, "likes": 684, "fits_16gb": true, "url": "https://hf.co/black-forest-labs/FLUX.2-klein-4B"},
+    {"rank": 2, "id": "Phr00t/Qwen-Image-Edit-Rapid-AIO", "arch": "qwen-image-edit", "downloads": 0, "likes": 2038, "fits_16gb": true, "url": "https://hf.co/Phr00t/Qwen-Image-Edit-Rapid-AIO"},
+    {"rank": 3, "id": "Qwen/Qwen-Image-Edit-2511", "arch": "qwen-image-edit", "downloads": 222200, "likes": 1004, "fits_16gb": "with quantization", "url": "https://hf.co/Qwen/Qwen-Image-Edit-2511"},
+    {"rank": 4, "id": "lightx2v/Qwen-Image-Edit-2511-Lightning", "arch": "qwen-image-edit-distill", "downloads": 262600, "likes": 445, "fits_16gb": true, "url": "https://hf.co/lightx2v/Qwen-Image-Edit-2511-Lightning"},
+    {"rank": 5, "id": "codeShare/FLUX.2-klein-9b-SDNQ-4bit", "arch": "flux2-klein", "downloads": 651, "likes": 1, "fits_16gb": true, "url": "https://hf.co/codeShare/FLUX.2-klein-9b-SDNQ-4bit"},
+    {"rank": 6, "id": "joseplcam/FLUX.2-klein-9B-nvfp4", "arch": "flux2-klein", "downloads": 92, "likes": 0, "fits_16gb": "blackwell-only", "url": "https://hf.co/joseplcam/FLUX.2-klein-9B-nvfp4"},
+    {"rank": 7, "id": "Qwen/Qwen-Image-2512", "arch": "qwen-image", "downloads": 482600, "likes": 842, "fits_16gb": true, "url": "https://hf.co/Qwen/Qwen-Image-2512"},
+    {"rank": 8, "id": "Tongyi-MAI/Z-Image-Turbo", "arch": "z-image", "downloads": 1200000, "likes": 4661, "fits_16gb": true, "url": "https://hf.co/Tongyi-MAI/Z-Image-Turbo", "already_adopted": true},
+    {"rank": 9, "id": "microsoft/Lens-Turbo", "arch": "lens", "downloads": 116, "likes": 34, "fits_16gb": true, "license": "mit-research-only", "url": "https://hf.co/microsoft/Lens-Turbo"},
+    {"rank": 10, "id": "fal/Qwen-Image-Edit-2511-Multiple-Angles-LoRA", "arch": "qwen-image-edit-lora", "downloads": 46100, "likes": 1328, "fits_16gb": true, "url": "https://hf.co/fal/Qwen-Image-Edit-2511-Multiple-Angles-LoRA"}
+  ],
+  "ecosystem_releases": {
+    "comfyui": {"baseline": "0.20.3", "latest": "0.22.0", "latest_date": "2026-05-20"},
+    "krita_ai_diffusion": {"baseline": "1.50.0", "latest": "1.50.0"},
+    "lm_studio": {"latest": "0.4.13", "latest_date": "2026-05-13", "beta": "0.4.14-3"},
+    "wan": {"latest": "2.7", "latest_date_approx": "2026-04"},
+    "ltx_video": {"latest": "2.3", "latest_date": "2026-03-05"},
+    "qwen_image": {"base_latest": "2512", "edit_latest": "2511"},
+    "z_image": {"variants": ["Turbo", "Omni-Base"]},
+    "microsoft_lens": {"created": "2026-05-15", "variants": ["Lens", "Lens-Turbo", "Lens-Base"]}
+  }
+}
