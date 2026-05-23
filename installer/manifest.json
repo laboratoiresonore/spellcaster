@@ -120,11 +120,21 @@
       "repo": "https://github.com/mlinmg/ComfyUI-LaMA-Preprocessor",
       "alt_repo": "https://github.com/Acly/comfyui-inpaint-nodes",
       "provides": [
-        "LaMaInpaint"
+        "LaMaPreprocessor"
+      ],
+      "required_by": [],
+      "note": "Preprocessor pack — registers LaMaPreprocessor. NOT the remover; lama_remove is satisfied by the separate comfyui-lama-remover entry below. See PATCH_0009 (Voodoomancer)."
+    },
+    "comfyui-lama-remover": {
+      "repo": "https://github.com/gokayfem/comfyui-lama-remover",
+      "provides": [
+        "LamaRemover",
+        "LamaRemoverIMG"
       ],
       "required_by": [
         "lama_remove"
-      ]
+      ],
+      "note": "Provides the LamaRemover / LamaRemoverIMG nodes used by build_lama_remove(). Earlier manifest entries mis-claimed a phantom `LaMaInpaint` class — see PATCH_0009 (Voodoomancer)."
     },
     "ComfyUI-essentials": {
       "repo": "https://github.com/cubiq/ComfyUI_essentials",

@@ -108,6 +108,7 @@ tests/*
 !tests/test_auto_updater.py
 !tests/test_phase9_ws.py
 !tests/gimp_batch.py
+!tests/test_lama_class_name_drift.py
 audit_*.py
 
 # Spell icons (user-generated during install, not source)

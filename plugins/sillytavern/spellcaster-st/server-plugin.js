@@ -814,7 +814,9 @@ function init(router) {
             'Face: ReActor':    ['ReActorFaceSwap'],
             'Face: PuLID Flux': ['PulidFluxModelLoader', 'ApplyPulidFlux'],
             'BG Remove':        ['BiRefNetRMBG', 'RMBG'],
-            'Inpaint (LaMa)':   ['LaMaInpaint'],
+            // PATCH_0009 cleanup: `LaMaInpaint` was a phantom class name —
+            // the real class registered by comfyui-lama-remover is `LamaRemover`.
+            'Inpaint (LaMa)':   ['LamaRemover'],
             'Chroma':           ['ChromaSampler'],
         };
         let catalog = null;

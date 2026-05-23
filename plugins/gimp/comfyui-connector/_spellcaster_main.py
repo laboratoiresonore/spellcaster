@@ -1877,7 +1877,11 @@ _FEATURE_SENTINELS: dict[str, tuple[str, ...]] = {
     "supir":             ("SUPIR_sample", "SUPIR_first_stage"),
     "seedv2r":           ("SeedVR2VideoUpscaler", "SeedVR2Upscaler"),
     "colorize":          ("DDColor_Colorize",),
-    "lama_remove":       ("LaMaInpaint", "LaMaInpaintingModelLoader"),
+    # PATCH_0009 cleanup: `LaMaInpaint`/`LaMaInpaintingModelLoader` are phantom
+    # class names — no ComfyUI custom-node pack has ever registered them. The
+    # real class emitted by build_lama_remove() is `LamaRemover` (from
+    # gokayfem/comfyui-lama-remover), with `LamaRemoverIMG` as the alt entry.
+    "lama_remove":       ("LamaRemover", "LamaRemoverIMG"),
     "wan_i2v":           ("WanImageToVideo", "LoadWanVideoModel"),
     "detail_hallucinate": ("UltimateSDUpscale",),
     "rembg":             ("BiRefNetRMBG", "RMBG"),
@@ -33885,7 +33889,9 @@ class Spellcaster(Gimp.PlugIn):
              "tier": "0007"},
             {"action_id": "lama.erase_selection",
              "tool_class": "GimpVoodooLamaEraseTool",
-             "required_nodes": ["LaMaInpaint"],
+             # PATCH_0009 cleanup: `LaMaInpaint` was a phantom — real class is
+             # `LamaRemover` (from gokayfem/comfyui-lama-remover).
+             "required_nodes": ["LamaRemover", "LamaRemoverIMG"],
              "tier": "0007"},
             {"action_id": "kontext.clone",
              "tool_class": "GimpVoodooKontextCloneTool",

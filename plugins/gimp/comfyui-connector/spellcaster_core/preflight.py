@@ -170,10 +170,14 @@ FALLBACK_REGISTRY = {
         "Background removal node",
         "Install: ComfyUI-rembg (required for background removal)",
     ),
-    "LaMaInpainting": (
+    # PATCH_0009 cleanup: `LaMaInpainting` was a phantom class name — no
+    # ComfyUI custom-node pack has ever registered it. The real class
+    # emitted by build_lama_remove() is `LamaRemover` (from
+    # gokayfem/comfyui-lama-remover).
+    "LamaRemover": (
         None,
         "LaMa object removal node",
-        "Install: comfyui-lama (required for object removal)",
+        "Install: comfyui-lama-remover (required for object removal)",
     ),
 }
 

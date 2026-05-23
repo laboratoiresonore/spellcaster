@@ -285,7 +285,7 @@ def cmd_doctor(args):
         "VHS_VideoCombine": "Video assembly (VideoHelperSuite)",
         "ReActorFaceSwapOpt": "Face swap (ReActor)",
         "ImageRembg": "Background removal",
-        "LaMaInpainting": "Object removal (LaMa)",
+        "LamaRemover": "Object removal (LaMa)",
         "RIFE_VFI": "Frame interpolation (RIFE)",
         "RTXVideoSuperResolution": "RTX upscale (known broken - auto-fallback)",
         "WanImageToVideo": "WAN I2V conditioning",
