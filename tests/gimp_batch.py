@@ -87,17 +87,39 @@ import urllib.request
 from pathlib import Path
 
 
+def _prefer_console(path: str) -> str:
+    """If the caller pointed us at the GUI ``gimp-3*.exe`` and a
+    sibling ``gimp-console-3*.exe`` exists, switch to the console
+    binary. On Windows the GUI binary doesn't reliably exit after a
+    batch run (no console-attached stdio + the GUI loop swallows
+    --quit in some 3.0.x builds), which manifests as a 180s timeout
+    instead of a useful error from the test driver."""
+    if not sys.platform.startswith("win"):
+        return path
+    p = Path(path)
+    name = p.name.lower()
+    if "console" in name:
+        return path
+    # Try the matching console binary in the same dir.
+    for cand in ("gimp-console-3.0.exe", "gimp-console-3.exe",
+                 "gimp-console.exe"):
+        sib = p.with_name(cand)
+        if sib.exists():
+            return str(sib)
+    return path
+
+
 def locate_gimp(cli_flag: str | None) -> str | None:
     """Return the absolute path to a GIMP 3.x executable, or None."""
     if cli_flag:
         p = Path(cli_flag).expanduser()
         if p.exists():
-            return str(p)
+            return _prefer_console(str(p))
     env = os.environ.get("GIMP_EXE")
     if env:
         p = Path(env).expanduser()
         if p.exists():
-            return str(p)
+            return _prefer_console(str(p))
     # On Windows, prefer ``gimp-console`` over ``gimp`` because the
     # GUI launcher doesn't wire stdout/stderr to the parent console
     # (the harness would appear to hang). Every other platform can
@@ -105,6 +127,12 @@ def locate_gimp(cli_flag: str | None) -> str | None:
     candidates: list[str] = []
     if sys.platform.startswith("win"):
         candidates += [
+            # Voodoomancer GIMP 3.0.4 fork (preferred — the canonical
+            # Spellcaster canvas-side runtime for testing).
+            r"C:\Voodoomancer\hub\gimp\bin\gimp-console-3.0.exe",
+            r"C:\Voodoomancer\hub\gimp\bin\gimp-console-3.exe",
+            r"C:\Voodoomancer\hub\gimp\bin\gimp-console.exe",
+            # Stock GIMP 3 install paths
             r"C:\Program Files\GIMP 3\bin\gimp-console-3.2.exe",
             r"C:\Program Files\GIMP 3\bin\gimp-console-3.exe",
             r"C:\Program Files\GIMP 3\bin\gimp-console.exe",
@@ -148,17 +176,24 @@ def run_harness(gimp_exe: str, report_path: str,
     #   --batch-interpreter=plug-in-script-fu-eval : force Scheme
     #                evaluation of the -b string. Without this flag
     #                GIMP might treat it as a filename in some versions.
-    # ImageProcedures in GIMP 3.x require an image argument. In batch
-    # mode with no open canvases, we create a throwaway 1\u00d71 image
-    # first, pass it in, then let the harness build its own 256\u00d7256
-    # canvas internally. Drawables is an empty vector \u2014 the
-    # harness doesn't use it.
+    # ImageProcedures in GIMP 3.x require run-mode + image + drawables.
+    # In batch mode with no open canvases we create a throwaway 1x1
+    # image and a seed layer, insert the layer, and pass BOTH to the
+    # harness. The drawables arg must be a non-empty GIMP core-object
+    # array (script-fu ``(vector lyr)``) because GIMP 3's PDB validator
+    # rejects an empty drawables vector for ImageProcedures with the
+    # default sensitivity mask (the harness ignores the drawable list,
+    # but PDB validation runs first). Passing ``(vector)`` here was the
+    # source of the "Invalid value for argument 2" failure in GIMP 3.0.4.
+    # See upstream plug-ins/script-fu/libscriptfu/scheme-wrapper.c:1719
+    # (g_param_value_validate -> arg index 2 == drawables for any
+    # ImageProcedure registered via Gimp.ImageProcedure.new).
     scheme = (
         "(let* ((img (car (gimp-image-new 1 1 RGB)))"
         "       (lyr (car (gimp-layer-new img \"seed\" 1 1 "
         "                   RGBA-IMAGE 100 LAYER-MODE-NORMAL))))"
         "  (gimp-image-insert-layer img lyr 0 -1)"
-        "  (spellcaster-test-harness RUN-NONINTERACTIVE img (vector)))"
+        "  (spellcaster-test-harness RUN-NONINTERACTIVE img (vector lyr)))"
     )
     env = dict(os.environ)
     env["SPELLCASTER_TEST_REPORT"] = report_path
