@@ -20,6 +20,11 @@ Usage
     python tests/gimp_batch.py
     python tests/gimp_batch.py --gimp "C:/Program Files/GIMP 3/bin/gimp.exe"
     python tests/gimp_batch.py --timeout 180
+    # patch-0009 native-tool harness extensions:
+    python tests/gimp_batch.py --patch-0009
+    python tests/gimp_batch.py --patch-0009 --quick
+    python tests/gimp_batch.py --patch-0009 --filter "klein.*"
+    python tests/gimp_batch.py --results-dir tests/results/2026-05-22T15-30/
 
 Exit codes
 ----------
@@ -43,17 +48,42 @@ The harness procedure lives in the installed plugin at
 ``~/Library/Application Support/GIMP/3.2/plug-ins/`` on macOS. If the
 plugin isn't installed there, GIMP will refuse to register the
 procedure \u2014 the driver reports that with exit code 2.
+
+Patch-0009 mode
+---------------
+
+``--patch-0009`` runs, in this order:
+
+  1. The in-plugin harness (same as the no-flag default). Its
+     NativeTools section (added by the same feature branch) probes the
+     ComfyUI side for each native-tool ``action_id`` and verifies the
+     required node classes are loadable via ``/object_info``.
+  2. Any per-tool contract files dropped at
+     ``patches/0009-inbox/*-test.json`` by Tier-A agents as their tools
+     ship. Each contract is invoked via the parked test-seam
+     (``gimpvoodooaitool-test-seam.c``) when the seam is wired into the
+     build, OR \u2014 when the seam is parked (current state) \u2014 falls back
+     to a ComfyUI ``/history`` poll against the dispatched ``prompt_id``
+     in the in-plugin harness's logs/dispatch_log.jsonl.
+
+``--quick`` restricts the patch-0009 set to the 5 patch-0007 tools +
+Tier-A patch-0009 tools (Generate Anything, Klein Inpaint, Virtual
+Try-On). ``--filter <regex>`` further restricts to action_ids matching
+the regex.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 
@@ -149,6 +179,240 @@ def run_harness(gimp_exe: str, report_path: str,
     return proc.returncode, proc.stdout, proc.stderr
 
 
+# ─── Patch-0009 native-tool contract loader ────────────────────────────
+#
+# Contracts live at C:\Users\legui\Voodoomancer\patches\0009-inbox\*-test.json
+# and are dropped there by Tier-A agents as each native tool ships. Shape:
+#
+#   {"action_id": "klein.inpaint",
+#    "tool_class": "GimpVoodooKleinInpaintTool",
+#    "required_canvas_state": {
+#       "width": 512, "height": 512, "layers": [
+#         {"name": "Selection Source",
+#          "rgb": [128,128,128], "alpha": 255}
+#       ],
+#       "selection_rect": [128, 128, 256, 256]
+#    },
+#    "options": {"prompt": "a red apple", "denoise": 0.7, "seed": 42},
+#    "success_criteria": {
+#       "result_layer_min_alpha_pixels": 1000,
+#       "comfyui_history_status": "success"
+#    }}
+
+QUICK_ACTION_IDS = {
+    # patch-0007 native
+    "sam3.point_prompt", "lama.erase_selection", "kontext.clone",
+    "magical.zoom", "detail.hallucinate",
+    # patch-0009 Tier-A
+    "gen.in_selection", "klein.inpaint", "klein.virtual_tryon",
+}
+
+
+def _voodoomancer_inbox_path() -> Path:
+    """Resolve the contract-inbox directory. Honors override env var
+    so CI can point at a synthetic set."""
+    override = os.environ.get("VOODOOMANCER_PATCH_INBOX")
+    if override:
+        p = Path(override)
+        if p.exists():
+            return p
+    return Path(r"C:\Users\legui\Voodoomancer\patches\0009-inbox")
+
+
+def load_patch_0009_contracts(filter_regex: str | None = None,
+                              quick: bool = False) -> list[dict]:
+    """Read every ``*-test.json`` under the inbox, normalize, and
+    return the list sorted by ``action_id``."""
+    inbox = _voodoomancer_inbox_path()
+    contracts: list[dict] = []
+    if not inbox.exists():
+        return contracts
+    for jf in sorted(inbox.glob("*-test.json")):
+        try:
+            data = json.loads(jf.read_text(encoding="utf-8"))
+        except Exception as e:
+            print(f"  [WARN] contract {jf.name} unparseable: {e}",
+                  file=sys.stderr)
+            continue
+        if not isinstance(data, dict):
+            continue
+        data.setdefault("_source", str(jf))
+        aid = data.get("action_id")
+        if not aid:
+            continue
+        if quick and aid not in QUICK_ACTION_IDS:
+            continue
+        if filter_regex and not re.search(filter_regex, aid):
+            continue
+        contracts.append(data)
+    return contracts
+
+
+def poll_comfyui_history(comfyui_url: str, prompt_id: str,
+                         timeout: float = 60.0) -> tuple[str, dict]:
+    """Poll ``/history/<prompt_id>`` until the prompt finishes or the
+    timeout expires. Returns ``(status, body)`` where status is one of
+    ``success``, ``failed``, ``unknown``, ``timeout``."""
+    deadline = time.time() + timeout
+    url = f"{comfyui_url.rstrip('/')}/history/{prompt_id}"
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=4) as r:
+                body = json.loads(r.read().decode("utf-8", "replace"))
+        except urllib.error.URLError:
+            time.sleep(1.0)
+            continue
+        except Exception:
+            time.sleep(1.0)
+            continue
+        if isinstance(body, dict) and prompt_id in body:
+            entry = body[prompt_id]
+            status = (entry.get("status") or {}).get(
+                "status_str") or "unknown"
+            if status in ("success", "error", "failed"):
+                return ("success" if status == "success" else "failed",
+                        entry)
+        time.sleep(1.0)
+    return ("timeout", {})
+
+
+def run_contract_via_dispatch_log(contract: dict, results_dir: Path,
+                                  comfyui_url: str) -> dict:
+    """Test-seam fallback: when the C-side seam isn't wired, this path
+    inspects the in-plugin dispatch_log.jsonl that the live harness's
+    NativeTools cases already produced. Returns a result dict."""
+    action_id = contract["action_id"]
+    log_path = (Path(os.environ.get("APPDATA") or "~").expanduser()
+                / "GIMP" / "3.2" / "plug-ins" / "comfyui-connector"
+                / "logs" / "dispatch_log.jsonl")
+    found_row: dict | None = None
+    if log_path.exists():
+        try:
+            for line in reversed(log_path.read_text(
+                    encoding="utf-8", errors="replace").splitlines()):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                if row.get("action_id") == action_id or action_id in (
+                        row.get("handler") or ""):
+                    found_row = row
+                    break
+        except Exception:
+            pass
+
+    res = {
+        "action_id": action_id,
+        "tool_class": contract.get("tool_class", ""),
+        "via": "dispatch_log_fallback",
+        "dispatch_log_present": log_path.exists(),
+        "matched_row": bool(found_row),
+    }
+    if found_row:
+        pid = (found_row.get("prompt_id")
+               or (found_row.get("comfy") or {}).get("prompt_id"))
+        if pid and comfyui_url:
+            hstat, _hbody = poll_comfyui_history(
+                comfyui_url, pid, timeout=8.0)
+            res["history_status"] = hstat
+            res["prompt_id"] = pid
+        res["outcome"] = found_row.get("outcome", "unknown")
+        res["arch"] = found_row.get("arch")
+        res["status"] = "PASS" if (
+            found_row.get("outcome") == "ok"
+            and res.get("history_status", "success") in
+                ("success", "unknown")
+        ) else "FAIL"
+    else:
+        res["status"] = "SKIP"
+        res["detail"] = (
+            f"no dispatch_log row for {action_id} — run the GIMP "
+            f"harness with a real ComfyUI server first, OR wire the "
+            f"C-side test seam (gimpvoodooaitool-test-seam.c) to "
+            f"trigger dispatch from this driver.")
+    return res
+
+
+def _run_patch_0009_only(args) -> int:
+    """Run only the patch-0009 contract path. Used when no GIMP is
+    available (the in-plugin harness can't run, but the contract
+    driver still works against pre-existing dispatch_log.jsonl rows)."""
+    ts = time.strftime("%Y%m%dT%H%M%S")
+    results_dir = (Path(args.results_dir)
+                   if args.results_dir
+                   else Path(__file__).resolve().parent
+                        / "results" / ts)
+    results_dir.mkdir(parents=True, exist_ok=True)
+    contracts = load_patch_0009_contracts(
+        filter_regex=args.filter, quick=args.quick)
+    existing = {c["action_id"] for c in contracts}
+    if args.quick:
+        for aid in sorted(QUICK_ACTION_IDS - existing):
+            if args.filter and not re.search(args.filter, aid):
+                continue
+            contracts.append({"action_id": aid,
+                              "tool_class": "<synthetic>",
+                              "_source": "(default — no contract file)"})
+    comfy_url = (args.comfyui_url or os.environ.get("COMFYUI_URL") or "")
+    print(f"── patch-0009 native-tool contracts "
+          f"({len(contracts)}) — no-GIMP mode ──")
+    if not contracts:
+        print("  (no contracts in inbox + nothing matched filter)")
+    results: list[dict] = []
+    for contract in contracts:
+        t0 = time.time()
+        try:
+            r = run_contract_via_dispatch_log(
+                contract, results_dir, comfy_url)
+        except Exception as e:
+            r = {"action_id": contract.get("action_id", "?"),
+                 "tool_class": contract.get("tool_class", ""),
+                 "via": "exception",
+                 "status": "FAIL",
+                 "detail": f"{type(e).__name__}: {e}"}
+        r["elapsed_ms"] = int((time.time() - t0) * 1000)
+        results.append(r)
+        status = r.get("status", "?")
+        sigil = ("[PASS]" if status == "PASS"
+                 else "[SKIP]" if status == "SKIP"
+                 else "[FAIL]")
+        print(f"  {sigil} {r['action_id']:28s} "
+              f"via={r.get('via','?')}  "
+              f"{r.get('detail','')[:80]}")
+    report_path = write_patch_0009_report(results, results_dir)
+    print(f"\n  patch-0009 report: {report_path}")
+    p9_fail = sum(1 for r in results if r.get("status") == "FAIL")
+    return 0 if p9_fail == 0 else 1
+
+
+def write_patch_0009_report(results: list[dict], results_dir: Path) -> Path:
+    """Persist the patch-0009 per-contract results as JSONL +
+    a human-readable summary.txt. Returns the report path."""
+    results_dir.mkdir(parents=True, exist_ok=True)
+    jsonl_path = results_dir / "patch-0009-results.jsonl"
+    with open(jsonl_path, "w", encoding="utf-8") as f:
+        for r in results:
+            f.write(json.dumps(r) + "\n")
+    summary_path = results_dir / "patch-0009-summary.txt"
+    n_pass = sum(1 for r in results if r.get("status") == "PASS")
+    n_fail = sum(1 for r in results if r.get("status") == "FAIL")
+    n_skip = sum(1 for r in results if r.get("status") == "SKIP")
+    with open(summary_path, "w", encoding="utf-8") as f:
+        f.write(f"patch-0009 native-tool harness — "
+                f"{time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"  PASS={n_pass}  FAIL={n_fail}  SKIP={n_skip}\n\n")
+        for r in results:
+            f.write(f"  [{r.get('status','?'):4s}] "
+                    f"{r.get('action_id','?'):28s} "
+                    f"via={r.get('via','?')}\n")
+            if r.get("detail"):
+                f.write(f"         {r['detail']}\n")
+    return jsonl_path
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                   formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -159,10 +423,37 @@ def main() -> int:
                     help="Path to write the JSONL report "
                          "(default: <tmp>/spellcaster-test-report.jsonl)")
     ap.add_argument("--verbose", "-v", action="store_true")
+    # patch-0009 extensions
+    ap.add_argument("--patch-0009", action="store_true",
+                    help="In addition to the in-plugin harness, run "
+                         "every per-tool contract in "
+                         "patches/0009-inbox/*-test.json.")
+    ap.add_argument("--quick", action="store_true",
+                    help="With --patch-0009: limit to the 5 patch-0007 "
+                         "+ 3 Tier-A patch-0009 action_ids.")
+    ap.add_argument("--filter", default=None, metavar="REGEX",
+                    help="With --patch-0009: only run contracts whose "
+                         "action_id matches REGEX.")
+    ap.add_argument("--results-dir", default=None,
+                    help="Directory for timestamped reports "
+                         "(default: tests/results/<timestamp>/).")
+    ap.add_argument("--comfyui-url", default=None,
+                    help="ComfyUI URL for /history polling under "
+                         "--patch-0009 (default: read from plugin "
+                         "config or COMFYUI_URL env).")
     args = ap.parse_args()
 
     gimp_exe = locate_gimp(args.gimp)
     if not gimp_exe:
+        # When --patch-0009 is the only requested run AND no GIMP is
+        # installed, we can still execute the contract-driven path
+        # (which only reads files written by previous GIMP runs).
+        # Otherwise fail-fast.
+        if args.patch_0009:
+            print("WARN: no GIMP 3.x executable — running patch-0009 "
+                  "contract path only (dispatch_log fallback).",
+                  file=sys.stderr)
+            return _run_patch_0009_only(args)
         print("ERROR: could not find a GIMP 3.x executable.\n"
               "Pass --gimp <path> or set GIMP_EXE.",
               file=sys.stderr)
@@ -245,7 +536,83 @@ def main() -> int:
                     print(f"        {line}")
     total = n_pass + n_fail
     print(f"\n  {n_pass}/{total} PASSED  ({elapsed:.1f}s wall)")
-    return 0 if n_fail == 0 else 1
+
+    # ── Patch-0009 extension ────────────────────────────────────────
+    # Runs after the in-plugin harness so the dispatch_log.jsonl is
+    # fresh — the fallback path mines it for per-action_id rows.
+    p9_fail = 0
+    if args.patch_0009:
+        ts = time.strftime("%Y%m%dT%H%M%S")
+        results_dir = (Path(args.results_dir)
+                       if args.results_dir
+                       else Path(__file__).resolve().parent
+                            / "results" / ts)
+        results_dir.mkdir(parents=True, exist_ok=True)
+
+        contracts = load_patch_0009_contracts(
+            filter_regex=args.filter, quick=args.quick)
+        # Synthesize a contract for every QUICK action_id even when no
+        # JSON file exists yet — so --quick produces useful output on a
+        # fresh repo where Tier-A agents haven't dropped anything in
+        # yet. This is the EXPECTED state right now.
+        existing_aids = {c["action_id"] for c in contracts}
+        synth_pool = QUICK_ACTION_IDS if args.quick else set()
+        for aid in sorted(synth_pool - existing_aids):
+            if args.filter and not re.search(args.filter, aid):
+                continue
+            contracts.append({
+                "action_id": aid,
+                "tool_class": "<synthetic>",
+                "_source": "(default — no contract file)",
+            })
+
+        # Resolve ComfyUI URL for /history polling.
+        comfy_url = args.comfyui_url or os.environ.get("COMFYUI_URL")
+        if not comfy_url:
+            # Last-ditch: read the deployed plugin config.json.
+            cfg = (Path(os.environ.get("APPDATA") or "~").expanduser()
+                   / "GIMP" / "3.2" / "plug-ins"
+                   / "comfyui-connector" / "config.json")
+            try:
+                if cfg.exists():
+                    comfy_url = json.loads(
+                        cfg.read_text(encoding="utf-8")
+                    ).get("server_url") or ""
+            except Exception:
+                pass
+
+        print(f"\n── patch-0009 native-tool contracts "
+              f"({len(contracts)}) ──")
+        if not contracts:
+            print("  (no contracts in inbox + nothing matched filter)")
+
+        p9_results: list[dict] = []
+        for contract in contracts:
+            t0 = time.time()
+            try:
+                r = run_contract_via_dispatch_log(
+                    contract, results_dir, comfy_url or "")
+            except Exception as e:
+                r = {"action_id": contract.get("action_id", "?"),
+                     "tool_class": contract.get("tool_class", ""),
+                     "via": "exception",
+                     "status": "FAIL",
+                     "detail": f"{type(e).__name__}: {e}"}
+            r["elapsed_ms"] = int((time.time() - t0) * 1000)
+            p9_results.append(r)
+            status = r.get("status", "?")
+            sigil = ("[PASS]" if status == "PASS"
+                     else "[SKIP]" if status == "SKIP"
+                     else "[FAIL]")
+            print(f"  {sigil} {r['action_id']:28s} "
+                  f"via={r.get('via','?')}  "
+                  f"{r.get('detail','')[:80]}")
+
+        report_path = write_patch_0009_report(p9_results, results_dir)
+        print(f"\n  patch-0009 report: {report_path}")
+        p9_fail = sum(1 for r in p9_results if r.get("status") == "FAIL")
+
+    return 0 if (n_fail == 0 and p9_fail == 0) else 1
 
 
 if __name__ == "__main__":

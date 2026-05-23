@@ -33860,6 +33860,134 @@ class Spellcaster(Gimp.PlugIn):
                     f"({type(e).__name__}: {e})")
         cases.append(("guild_reachable", "Connectivity", _guild_reachable))
 
+        # ── NativeTools (patch-0007 + patch-0009 toolbox tools) ───────
+        # Probes the ComfyUI side for each native-tool action_id:
+        #  * action_id is known to the C-side dispatcher (cross-checked
+        #    against the canonical mirror below — kept in sync with
+        #    patches/0007-voodoomancer-native-ai.files/gimp-ai-comfy.c
+        #    action_table[]).
+        #  * Required ComfyUI node-classes for the action's typical
+        #    workflow load via /object_info.
+        # Skips (not fails) when ComfyUI is unreachable — that is
+        # already flagged by the comfyui_reachable case.
+        #
+        # When patch-0009 Tier-A agents drop their per-tool contracts
+        # under <repo>/patches/0009-inbox/*-test.json, those override
+        # the in-source defaults. Contract shape:
+        #   {"action_id": "klein.inpaint",
+        #    "required_nodes": ["KSampler", "VAEEncodeForInpaint"],
+        #    "tool_class": "GimpVoodooKleinInpaintTool"}
+        _NATIVE_TOOLS_INVENTORY = [
+            # patch-0007 (already native) -------------------------------
+            {"action_id": "sam3.point_prompt",
+             "tool_class": "GimpVoodooSAM3SelectTool",
+             "required_nodes": ["SAM3Segment"],
+             "tier": "0007"},
+            {"action_id": "lama.erase_selection",
+             "tool_class": "GimpVoodooLamaEraseTool",
+             "required_nodes": ["LaMaInpaint"],
+             "tier": "0007"},
+            {"action_id": "kontext.clone",
+             "tool_class": "GimpVoodooKontextCloneTool",
+             "required_nodes": ["KSampler"],
+             "tier": "0007"},
+            {"action_id": "magical.zoom",
+             "tool_class": "GimpVoodooMagicalZoomTool",
+             "required_nodes": ["KSampler", "UpscaleModelLoader"],
+             "tier": "0007"},
+            {"action_id": "detail.hallucinate",
+             "tool_class": "GimpVoodooDetailHallucinateTool",
+             "required_nodes": ["KSampler"],
+             "tier": "0007"},
+            # patch-0009 Tier-A (planned) -------------------------------
+            {"action_id": "gen.in_selection",
+             "tool_class": "GimpVoodooGenerateAnythingTool",
+             "required_nodes": ["KSampler"],
+             "tier": "0009A"},
+            {"action_id": "klein.inpaint",
+             "tool_class": "GimpVoodooKleinInpaintTool",
+             "required_nodes": ["KSampler"],
+             "tier": "0009A"},
+            {"action_id": "klein.virtual_tryon",
+             "tool_class": "GimpVoodooVirtualTryonTool",
+             "required_nodes": ["KSampler"],
+             "tier": "0009A"},
+        ]
+
+        def _load_native_tool_contracts():
+            """Merge in-source defaults with any per-tool contracts the
+            Tier-A agents have dropped in patches/0009-inbox/. Contract
+            file overrides the matching action_id from the defaults
+            (last-write-wins on action_id key).
+            """
+            merged = {e["action_id"]: dict(e)
+                      for e in _NATIVE_TOOLS_INVENTORY}
+            # Try a few candidate inbox locations — the repo path varies
+            # between deployed plug-in and source-tree runs.
+            inbox_candidates = [
+                Path(__file__).resolve().parents[5]
+                  / "Users" / "legui" / "Voodoomancer" / "patches"
+                  / "0009-inbox",
+                Path(r"C:\Users\legui\Voodoomancer\patches\0009-inbox"),
+                Path(os.environ.get("VOODOOMANCER_PATCH_INBOX") or ""),
+            ]
+            for inbox in inbox_candidates:
+                if not (inbox and inbox.exists() and inbox.is_dir()):
+                    continue
+                for jf in sorted(inbox.glob("*-test.json")):
+                    try:
+                        data = json.loads(jf.read_text(encoding="utf-8"))
+                    except Exception:
+                        continue
+                    aid = data.get("action_id")
+                    if not aid:
+                        continue
+                    base = merged.get(aid, {})
+                    base.update(data)
+                    base["_source"] = str(jf)
+                    merged[aid] = base
+                break  # first inbox wins
+            return list(merged.values())
+
+        def _make_native_tool_case(spec):
+            action_id = spec["action_id"]
+            req_nodes = spec.get("required_nodes") or []
+            tier = spec.get("tier", "ext")
+            def _fn():
+                # Skip cleanly when ComfyUI is unreachable — the
+                # connectivity case has already flagged it FAIL.
+                try:
+                    nodes = _probe_comfyui_nodes(srv) or set()
+                except Exception as e:
+                    raise AssertionError(
+                        f"Cannot probe ComfyUI /object_info "
+                        f"for {action_id}: {e}")
+                missing = [n for n in req_nodes if n not in nodes]
+                if missing:
+                    raise AssertionError(
+                        f"Action {action_id} ({tier}) needs node(s) "
+                        f"not installed on ComfyUI: {missing}. "
+                        f"Install via ComfyUI Manager.")
+                return (f"action={action_id} tier={tier} "
+                        f"nodes_ok={len(req_nodes)}"
+                        + (f" src={os.path.basename(spec['_source'])}"
+                           if spec.get("_source") else ""))
+            return _fn
+
+        try:
+            from pathlib import Path  # local import to keep top clean
+        except Exception:
+            Path = None  # type: ignore
+        if Path is not None:
+            for spec in _load_native_tool_contracts():
+                aid = spec["action_id"]
+                # Stable, sortable case name so the report groups by
+                # tier and then by action_id.
+                tier = spec.get("tier", "ext")
+                name = f"native_tool[{tier}]:{aid}"
+                cases.append((name, "NativeTools",
+                              _make_native_tool_case(spec)))
+
         return cases
 
     # ── Case runner (shared infrastructure) ─────────────────────────

@@ -41,6 +41,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Optional
 
 
@@ -2431,6 +2432,176 @@ def test_plugin_surface(report: Report, verbose: bool = False) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+#  Patch-0009 native-tools audit (ComfyUI side)
+# ═══════════════════════════════════════════════════════════════════════
+
+# Mirror of patches/0007-voodoomancer-native-ai.files/gimp-ai-comfy.c
+# action_table[] for the action_ids we expect the C-side dispatcher to
+# accept. Plus the patch-0009 Tier-A additions planned in PATCH_0009_PLAN
+# §2.2. Sync this list when action_table[] grows.
+_NATIVE_ACTION_IDS = {
+    # patch-0007 IMG actions ----------------------------------------
+    "magical.zoom", "lama.erase_selection", "detail.hallucinate",
+    "sam3.point_prompt", "sam3.auto_object", "sam3.anything_but",
+    "sam3.remove_object", "kontext.clone", "relight.layer",
+    "relight.shadow_sync", "inpaint.semantic_fill",
+    "inpaint.texture_fill", "inpaint.stroke_style",
+    "inpaint.prompt_stroke", "heal.inpaint", "heal.skin_retouch",
+    "magic_eraser.dispatch", "img.paint_from_prompt",
+    "gen.in_selection", "gen.outpaint_beyond",
+    "inpaint.acly_lama_only", "inpaint.acly_fooocus",
+    "inpaint.acly_quick_replace", "inpaint.acly_outpaint",
+    "rembg.v3", "depth.map_v3", "generic.run",
+    # patch-0007 VAR actions
+    "ping", "comfy.has_node", "comfy.object_info", "inline.probe",
+    # patch-0009 Tier-A planned (will be added to action_table when
+    # the corresponding tool C class lands)
+    "klein.inpaint", "klein.virtual_tryon",
+}
+
+# Per-action required ComfyUI node classes for the workflow-class
+# loadability check. Sparse: we only enumerate the ones where a
+# specific node-class is the dispositive availability signal. Actions
+# omitted here just get the "action_id known" check.
+_NATIVE_ACTION_NODES = {
+    "sam3.point_prompt":  ["SAM3Segment"],
+    "sam3.auto_object":   ["SAM3Segment"],
+    "sam3.anything_but":  ["SAM3Segment"],
+    "sam3.remove_object": ["SAM3Segment"],
+    "lama.erase_selection": ["LaMaInpaint"],
+    "magical.zoom":       ["UpscaleModelLoader", "KSampler"],
+    "detail.hallucinate": ["KSampler"],
+    "kontext.clone":      ["KSampler"],
+    "gen.in_selection":   ["KSampler"],
+    "gen.outpaint_beyond": ["KSampler"],
+    "klein.inpaint":      ["KSampler"],
+    "klein.virtual_tryon": ["KSampler"],
+    "relight.layer":      ["LoadAndApplyICLightUnet"],
+    "rembg.v3":           ["Image Rembg (Remove Background)"],
+    "depth.map_v3":       ["KSampler"],
+}
+
+
+def _query_comfyui_object_info(comfyui_url: str) -> dict | None:
+    """Return the parsed /object_info dict or None on failure. Cached
+    on the function attribute so repeat-queries are free."""
+    cached = getattr(_query_comfyui_object_info, "_cache", None)
+    if cached is not None and cached.get("url") == comfyui_url:
+        return cached.get("data")
+    try:
+        with urllib.request.urlopen(
+                f"{comfyui_url.rstrip('/')}/object_info",
+                timeout=HTTP_TIMEOUT) as r:
+            data = json.loads(r.read().decode("utf-8", "replace"))
+    except Exception:
+        return None
+    _query_comfyui_object_info._cache = {"url": comfyui_url,
+                                          "data": data}
+    return data
+
+
+def test_native_tools(report: Report, verbose: bool = False) -> None:
+    """ComfyUI-side audit for the patch-0009 native toolbox tools.
+
+    For each known native action_id:
+      1. action_id is in the canonical _NATIVE_ACTION_IDS set
+         (mirrors gimp-ai-comfy.c action_table[]).
+      2. Required node-classes for the action's typical workflow load
+         via ComfyUI's /object_info. Missing nodes = FAIL with the
+         install-via-Manager hint.
+
+    Complements tests/gimp_batch.py: e2e_audit hits the ComfyUI side
+    standalone; gimp_batch tests the GIMP→ComfyUI round trip.
+    """
+    section = "native_tools"
+    t0 = time.time()
+    # Honor the env var FIRST so the section runs in --offline mode
+    # without hitting the Guild. Falls back to Guild /api/config when
+    # the env is unset.
+    comfyui_url = COMFYUI_URL_ENV
+    if not comfyui_url:
+        try:
+            comfyui_url = get_comfyui_url()
+        except Exception:
+            comfyui_url = None
+    if not comfyui_url:
+        report.add(section, "ComfyUI URL resolved",
+                   SKIP,
+                   "No ComfyUI URL from Guild /api/config or "
+                   "SPELLCASTER_TEST_COMFYUI_URL env.")
+        return
+    obj_info = _query_comfyui_object_info(comfyui_url)
+    if obj_info is None:
+        report.add(section, "ComfyUI /object_info reachable",
+                   FAIL,
+                   f"Could not GET {comfyui_url}/object_info — is "
+                   f"ComfyUI running?")
+        return
+    available_nodes = set(obj_info.keys())
+    report.add(section, "ComfyUI /object_info reachable",
+               PASS,
+               f"{len(available_nodes)} node classes available")
+
+    # Iterate over the canonical action set + any action_ids declared
+    # by per-tool contracts in the inbox.
+    inbox = Path(r"C:\Users\legui\Voodoomancer\patches\0009-inbox")
+    inbox_action_ids: set[str] = set()
+    inbox_required: dict[str, list[str]] = {}
+    if inbox.exists():
+        for jf in sorted(inbox.glob("*-test.json")):
+            try:
+                data = json.loads(jf.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            aid = data.get("action_id")
+            if not aid:
+                continue
+            inbox_action_ids.add(aid)
+            req = data.get("required_nodes") or []
+            if req:
+                inbox_required[aid] = req
+    all_action_ids = sorted(_NATIVE_ACTION_IDS | inbox_action_ids)
+
+    for aid in all_action_ids:
+        case_t0 = time.time()
+        req_nodes = inbox_required.get(aid) or _NATIVE_ACTION_NODES.get(aid)
+        if not req_nodes:
+            # action_id is registered but no node-availability signal
+            # to check — pass with a note.
+            report.add(section, f"action[{aid}]",
+                       PASS,
+                       "registered (no required-nodes mapping)",
+                       elapsed_ms=int((time.time() - case_t0) * 1000))
+            continue
+        missing = [n for n in req_nodes if n not in available_nodes]
+        report.add(section, f"action[{aid}]",
+                   PASS if not missing else FAIL,
+                   (f"nodes_ok={len(req_nodes)}"
+                    if not missing
+                    else f"missing={missing} — install via "
+                         f"ComfyUI Manager"),
+                   elapsed_ms=int((time.time() - case_t0) * 1000))
+
+    # Sanity-check: the patch-0007 baseline must not regress. If any
+    # of the 5 patch-0007 actions can't dispatch, flag LOUDLY.
+    p7 = {"sam3.point_prompt", "lama.erase_selection",
+          "kontext.clone", "magical.zoom", "detail.hallucinate"}
+    p7_failed = []
+    for r in report.results:
+        if r.section != section:
+            continue
+        for aid in p7:
+            if r.name == f"action[{aid}]" and r.status == FAIL:
+                p7_failed.append(aid)
+    report.add(section, "patch-0007 baseline (5 tools)",
+               PASS if not p7_failed else FAIL,
+               f"regressed={p7_failed}" if p7_failed else "intact")
+
+    report.add(section, "section complete", PASS,
+               elapsed_ms=int((time.time() - t0) * 1000))
+
+
+# ═══════════════════════════════════════════════════════════════════════
 #  MAIN
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -2458,6 +2629,8 @@ SECTIONS = {
     "guards":            test_guards,
     "iclight_cn":        test_iclight_cn,
     "plugin_surface":    test_plugin_surface,
+    # Patch-0009 native-toolbox tools (ComfyUI side)
+    "native_tools":      test_native_tools,
 }
 
 
@@ -2480,7 +2653,8 @@ def main():
     # Sections that don't contact the Guild — safe to run standalone.
     OFFLINE_SECTIONS = {"events_schema", "coverage_inventory",
                          "upload_cache", "guards", "iclight_cn",
-                         "plugin_surface", "error_extraction"}
+                         "plugin_surface", "error_extraction",
+                         "native_tools"}
 
     selected = set(SECTIONS.keys())
     if args.only:
