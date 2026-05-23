@@ -19558,26 +19558,26 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-send-image": None,
             "spellcaster-outpaint": None,
             "spellcaster-batch-variations": None,
-            "spellcaster-upscale": "upscale",
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooupscaletool.c
             "spellcaster-face-restore": "face_restore",
-            "spellcaster-photo-restore": "photo_restore",
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoophotorestoretool.c
             "spellcaster-detail-hallucinate": "detail_hallucinate",
             "spellcaster-supir": "supir",
             "spellcaster-seedv2r": "seedv2r",
             "spellcaster-colorize": "colorize",
             "spellcaster-lama-remove": "lama_remove",
-            "spellcaster-faceswap": "face_swap_reactor",
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoofaceswaptool.c
             "spellcaster-faceswap-model": "face_swap_reactor",
             "spellcaster-faceswap-mtb": "face_swap_mtb",
             "spellcaster-faceid-img2img": "faceid_img2img",
             "spellcaster-pulid-flux": "pulid_flux",
-            "spellcaster-klein-img2img": "klein_flux2",
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooaieditortool.c
             "spellcaster-klein-img2img-ref": "klein_flux2",
-            "spellcaster-klein-outpaint": "klein_flux2",
-            "spellcaster-klein-blend": "klein_flux2",
-            "spellcaster-klein-repose": "klein_flux2",
-            "spellcaster-klein-headswap": "klein_flux2",
-            "spellcaster-klein-inpaint": "klein_flux2",
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoooutpainttool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoolayerblendtool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooreposetool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooheadswaptool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodookleininpainttool.c
             # R117: LTX procedures now go through the sentinel probe
             # (see _FEATURE_SENTINELS["ltx_video"]). Gate key remains
             # fail-open: if the probe can't run the procedure still
@@ -19597,24 +19597,24 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-body-factory": None,
             "spellcaster-clothing-store": None,
             "spellcaster-studio-set": None,
-            "spellcaster-rembg": "rembg",
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoorembgtool.c
             "spellcaster-gif-stitch": None,
             "spellcaster-embed-watermark": None,
             "spellcaster-read-watermark": None,
             "spellcaster-layer-blend-ratio": None,
             "spellcaster-upscale-blend": "upscale",
             "spellcaster-lut": "lut_grading",
-            "spellcaster-style-transfer": "style_transfer",
-            "spellcaster-iclight": "iclight",
-            "spellcaster-klein-detail": "klein_flux2",
-            "spellcaster-klein-generate": "klein_flux2",
-            "spellcaster-klein-auto-inpaint": "klein_flux2",
-            "spellcaster-klein-sam3-inpaint": "klein_flux2",
-            "spellcaster-klein-refine": "klein_flux2",
-            "spellcaster-klein-face-detail": "klein_flux2",
-            "spellcaster-klein-color-match": "klein_flux2",
-            "spellcaster-klein-virtual-tryon": "klein_flux2",
-            "spellcaster-generate-anything": None,  # works with all models
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoostyletransfertool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooiclighttool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoodetailtool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoogenerateobjecttool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooautoinpainttool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoosam3inpainttool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoorefinetool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoofacedetailtool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoocolormatchtool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoovirtualtryontool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoogenerateanythingtool.c
             "spellcaster-settings": None,
             "spellcaster-my-presets": None,
             "spellcaster-bridge": None,
@@ -19813,8 +19813,7 @@ class Spellcaster(Gimp.PlugIn):
                                     "Regenerate selected area with AI"),
             "spellcaster-send-image": ("Upload Image to Server", self._run_send,
                                        "Upload canvas to ComfyUI input folder"),
-            "spellcaster-faceswap": ("Face Swap (ReActor)...", self._run_faceswap,
-                                     "Swap face on canvas using a source face image"),
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoofaceswaptool.c
             "spellcaster-faceswap-model": ("Face Swap (Saved Face Model)...", self._run_faceswap_model,
                                            "Swap face using a saved face model from the server"),
             "spellcaster-faceswap-mtb": ("Face Swap (mtb)...", self._run_faceswap_mtb,
@@ -19823,8 +19822,7 @@ class Spellcaster(Gimp.PlugIn):
                                            "Regenerate image preserving a specific face identity"),
             "spellcaster-pulid-flux": ("◈ Face Identity (Flux)...", self._run_pulid_flux,
                                        "Generate with Flux preserving face identity"),
-            "spellcaster-klein-img2img": ("AI Editor...", self._run_klein,
-                                          "Next-gen image editing — fast, high quality"),
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooaieditortool.c
             "spellcaster-photobooth": ("1. Casting Polaroids (Face Model)...", self._run_photobooth,
                                        "Headshot session — generate clean face photos and save as reusable actor model"),
             "spellcaster-body-factory": ("2. Body Double (Full Body Ref)...", self._run_body_factory,
@@ -19833,8 +19831,7 @@ class Spellcaster(Gimp.PlugIn):
                                             "Costume fitting — try different outfits on your character via AI"),
             "spellcaster-studio-set": ("4. Set Design (Scene Compositor)...", self._run_studio_set,
                                         "Build the set — compose actors into a background scene for filming"),
-            "spellcaster-rembg": ("Remove Background...", self._run_rembg,
-                                   "Remove image background using AI (transparent PNG)"),
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoorembgtool.c
             "spellcaster-layer-blend-ratio": ("Layer Blend by Ratio...", self._run_layer_blend_ratio,
                                                "Blend two layers by a controllable ratio (e.g. 40%/60%)"),
             "spellcaster-upscale-blend": ("Upscaler Ratio Blender...", self._run_upscale_blend,
@@ -19845,37 +19842,26 @@ class Spellcaster(Gimp.PlugIn):
                                              "Hide encrypted metadata inside image pixels (LSB steganography)"),
             "spellcaster-read-watermark": ("Read Invisible Watermark...", self._run_read_watermark,
                                             "Extract hidden metadata from a watermarked image"),
-            "spellcaster-klein-outpaint": ("Outpaint...", self._run_klein_outpaint,
-                                          "Extend canvas — best outpaint quality"),
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoooutpainttool.c
             "spellcaster-klein-img2img-ref": ("Editor + Reference...", self._run_klein_ref,
                                               "Edit image using a reference for structure/style"),
-            "spellcaster-klein-blend": ("Layer Blender...", self._run_klein_blend,
-                                         "Blend foreground into background — AI harmonization"),
-            "spellcaster-klein-repose": ("Re-poser...", self._run_klein_repose,
-                                          "Change character pose, position, or camera angle"),
-            "spellcaster-klein-headswap": ("Headswap...", self._run_klein_headswap,
-                                            "Face swap + AI refinement for natural blending"),
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoolayerblendtool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooreposetool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooheadswaptool.c
             # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodookleininpainttool.c
-            "spellcaster-klein-detail": ("Detail Enhancer...", self._run_klein_detail,
-                                          "Enhance any region — face, eyes, hands, skin, hair, clothing"),
-            "spellcaster-klein-generate": ("Generate Object...", self._run_klein_generate,
-                                            "Generate any object as a transparent layer — matches scene lighting"),
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoodetailtool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoogenerateobjecttool.c
             # Auto-Inpaint / SAM3-Inpaint / Refine / Face Detailer / Color
             # Match / Virtual Try-On used to live under a separate
             # "Klein" submenu with redundant "Klein *" prefixes. Merged
             # into the Flux 2 submenu (2026-04-20) so the user sees ONE
             # current submenu instead of both a current ("Flux 2") and
             # an outdated ("Klein") copy side-by-side.
-            "spellcaster-klein-auto-inpaint": ("Auto-Inpaint... (Florence)", self._run_klein_auto_inpaint,
-                                                "Florence2 auto-mask + Flux 2 inpaint — describe what to replace, no mask painting"),
-            "spellcaster-klein-sam3-inpaint": ("SAM3 Inpaint...", self._run_klein_sam3_inpaint,
-                                                "SAM3 segment + Flux 2 inpaint — optionally guided by a reference image"),
-            "spellcaster-klein-refine": ("Refine...", self._run_klein_refine,
-                                          "Multi-reference Flux 2 refine — LineArt/HED/Tile/Depth structural enhancement"),
-            "spellcaster-klein-face-detail": ("Face Detailer...", self._run_klein_face_detail,
-                                               "YOLO face detection + Flux 2 high-detail regeneration of each face"),
-            "spellcaster-klein-color-match": ("Reference Color Match...", self._run_klein_color_match,
-                                               "ColorMatchV2 — harmonize image colors against a reference photo (no diffusion)"),
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooautoinpainttool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoosam3inpainttool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoorefinetool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoofacedetailtool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoocolormatchtool.c
             # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoovirtualtryontool.c
             # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoogenerateanythingtool.c
             "spellcaster-ltx-t2v": ("LTX 2.3 Text to Video...", self._run_ltx_t2v,
@@ -19898,28 +19884,24 @@ class Spellcaster(Gimp.PlugIn):
                                            "Upscale a video and swap faces using ReActor"),
             "spellcaster-seedvr2-video": ("SeedVR2 Video Upscale...", self._run_seedvr2_video,
                                            "AI video upscaler with hallucination control"),
-"spellcaster-upscale": ("Upscale 4x...", self._run_upscale,
-                                     "Upscale image using super-resolution model"),
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooupscaletool.c
             "spellcaster-lama-remove": ("Object Removal...", self._run_lama_remove,
                                          "Erase selected objects — AI fills the gap seamlessly"),
             "spellcaster-lut": ("Color Grading...", self._run_lut,
                                  "Apply cinematic film color look"),
             "spellcaster-outpaint": ("Outpaint / Extend Canvas...", self._run_outpaint,
                                       "Extend canvas by AI-generating new content at edges"),
-            "spellcaster-style-transfer": ("Style Transfer...", self._run_style_transfer,
-                                            "Apply the visual style of any reference image"),
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoostyletransfertool.c
             "spellcaster-face-restore": ("Face Restore...", self._run_face_restore,
                                           "Restore and enhance faces using AI models"),
-            "spellcaster-photo-restore": ("Photo Restoration Pipeline...", self._run_photo_restore,
-                                           "Full restoration: upscale + face restore + sharpen"),
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoophotorestoretool.c
             "spellcaster-detail-hallucinate": ("Detail Hallucination...", self._run_detail_hallucinate,
                                                 "Upscale + low-denoise img2img to add AI detail"),
             "spellcaster-colorize": ("Colorize B&W Photo...", self._run_colorize,
                                       "Add color to black and white photos using ControlNet"),
             "spellcaster-batch-variations": ("Batch Variations (txt2img)...", self._run_batch_variations,
                                               "Generate multiple txt2img variations in one batch"),
-            "spellcaster-iclight": ("IC-Light Relighting...", self._run_iclight,
-                                     "Change lighting direction on any photo using IC-Light"),
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooiclighttool.c
             "spellcaster-supir": ("SUPIR AI Restoration...", self._run_supir,
                                    "Restore and enhance images using SUPIR AI model"),
             "spellcaster-seedv2r": ("SeedV2R Upscale...", self._run_seedv2r,
@@ -20174,42 +20156,38 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-outpaint":         _M_SUMMON,
             "spellcaster-batch-variations": _M_SUMMON,
             "spellcaster-kontext":          _M_SUMMON,
-            "spellcaster-generate-anything": _M_SUMMON,
-
-            # 🪆 Klein — Flux 2 family (user asked for its own top entry)
-            "spellcaster-klein-img2img":     _M_KLEIN,
-            "spellcaster-klein-outpaint":    _M_KLEIN,
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoogenerateanythingtool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooaieditortool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoooutpainttool.c
             "spellcaster-klein-img2img-ref": _M_KLEIN,
-            "spellcaster-klein-blend":       _M_KLEIN,
-            "spellcaster-klein-repose":      _M_KLEIN,
-            "spellcaster-klein-headswap":    _M_KLEIN,
-            "spellcaster-klein-inpaint":     _M_KLEIN,
-            "spellcaster-klein-detail":      _M_KLEIN,
-            "spellcaster-klein-generate":    _M_KLEIN,
-            "spellcaster-klein-auto-inpaint":  _M_KLEIN,
-            "spellcaster-klein-sam3-inpaint":  _M_KLEIN,
-            "spellcaster-klein-refine":        _M_KLEIN,
-            "spellcaster-klein-face-detail":   _M_KLEIN,
-            "spellcaster-klein-color-match":   _M_KLEIN,
-            "spellcaster-klein-virtual-tryon": _M_KLEIN,
-
-            # ⚗ Alchemy — enhance / restore / colors / style
-            "spellcaster-upscale":           _M_ALCHEMY,
-            "spellcaster-photo-restore":     _M_ALCHEMY,
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoolayerblendtool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooreposetool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooheadswaptool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodookleininpainttool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoodetailtool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoogenerateobjecttool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooautoinpainttool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoosam3inpainttool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoorefinetool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoofacedetailtool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoocolormatchtool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoovirtualtryontool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooupscaletool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoophotorestoretool.c
             "spellcaster-detail-hallucinate": _M_ALCHEMY,
             "spellcaster-supir":             _M_ALCHEMY,
             "spellcaster-seedv2r":           _M_ALCHEMY,
             "spellcaster-colorize":          _M_ALCHEMY,
             "spellcaster-lama-remove":       _M_ALCHEMY,
-            "spellcaster-style-transfer":    _M_ALCHEMY,
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoostyletransfertool.c
             "spellcaster-lut":               _M_ALCHEMY,
-            "spellcaster-iclight":           _M_ALCHEMY,
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooiclighttool.c
             "spellcaster-color-match":       _M_ALCHEMY,
             "spellcaster-normal-map":        _M_ALCHEMY,
             "spellcaster-magical-zoom":      _M_ALCHEMY,
 
             # 🎭 Masks — identity + face ops (user asked for this name)
-            "spellcaster-faceswap":          _M_MASKS,
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoofaceswaptool.c
             "spellcaster-faceswap-model":    _M_MASKS,
             "spellcaster-faceswap-mtb":      _M_MASKS,
             "spellcaster-faceid-img2img":    _M_MASKS,
@@ -20221,9 +20199,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-sam3-extract":      _M_SIGILS,
             "spellcaster-anything-but":      _M_SIGILS,
             "spellcaster-magic-eraser":      _M_SIGILS,
-            "spellcaster-rembg":             _M_SIGILS,
-
-            # 🔮 Scrying — video
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoorembgtool.c
             "spellcaster-ltx-t2v":           _M_SCRYING,
             "spellcaster-ltx-i2v":           _M_SCRYING,
             "spellcaster-wan-i2v":           _M_SCRYING,
@@ -20309,19 +20285,9 @@ class Spellcaster(Gimp.PlugIn):
             # Right next to File → New / File → Open — "start from AI"
             # is a first-class way to begin a project.
             "spellcaster-txt2img":           "<Image>/File/New with AI",
-            "spellcaster-generate-anything": "<Image>/File/New with AI",
-
-            # ── Edit menu ────────────────────────────────────────
-            # AI edit-by-instruction is conceptually an edit operation;
-            # sits next to Undo / Redo / Paste / etc.
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoogenerateanythingtool.c
             "spellcaster-kontext":           "<Image>/Edit",
-            "spellcaster-klein-sam3-inpaint":"<Image>/Edit",
-
-            # ── Select menu ──────────────────────────────────────
-            # AI select goes ABOVE Select By Color in users' minds —
-            # SAM3 is the most powerful selection tool GIMP has access
-            # to. Multiple entries so "select the shirt" vs "select
-            # the foreground" vs "extract as new layer" all appear.
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoosam3inpainttool.c
             "spellcaster-sam3-select":       "<Image>/Select",
             "spellcaster-sam3-extract":      "<Image>/Select",
             "spellcaster-anything-but":      "<Image>/Select",
@@ -20330,11 +20296,11 @@ class Spellcaster(Gimp.PlugIn):
             # ── Image menu ───────────────────────────────────────
             # AI upscale / extend / photo-restore live next to
             # Scale Image / Canvas Size / Duplicate.
-            "spellcaster-upscale":           "<Image>/Image",
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooupscaletool.c
             "spellcaster-outpaint":          "<Image>/Image",
             "spellcaster-outpaint-3d":       "<Image>/Image",
-            "spellcaster-klein-outpaint":    "<Image>/Image",
-            "spellcaster-photo-restore":     "<Image>/Image",
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoooutpainttool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoophotorestoretool.c
             "spellcaster-detail-hallucinate":"<Image>/Image",
             "spellcaster-img2img":           "<Image>/Image",
             "spellcaster-img2img-3d":        "<Image>/Image",
@@ -20353,7 +20319,7 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-color-match":       "<Image>/Colors",
             "spellcaster-colorize":          "<Image>/Colors",
             "spellcaster-lut":               "<Image>/Colors",
-            "spellcaster-iclight":           "<Image>/Colors",
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooiclighttool.c
             "spellcaster-iclight-3d":        "<Image>/Colors",
             "spellcaster-ddcolor":           "<Image>/Colors",
 
@@ -20362,15 +20328,11 @@ class Spellcaster(Gimp.PlugIn):
             "spellcaster-quick-enhance":     "<Image>/Filters",
             "spellcaster-quick-erase":       "<Image>/Filters",
             "spellcaster-quick-rembg":       "<Image>/Filters",
-            "spellcaster-style-transfer":    "<Image>/Filters",
-            "spellcaster-rembg":             "<Image>/Filters",
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoostyletransfertool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoorembgtool.c
             "spellcaster-supir":             "<Image>/Filters",
             "spellcaster-face-restore":      "<Image>/Filters",
-            "spellcaster-klein-detail":      "<Image>/Filters",
-
-            # ── Windows menu ─────────────────────────────────────
-            # Settings + diagnostics next to GIMP's own tool-window
-            # management.
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoodetailtool.c
             "spellcaster-settings":          "<Image>/Windows",
             "spellcaster-refresh-from-server": "<Image>/Windows",
             "spellcaster-show-minihud":      "<Image>/Windows",
@@ -20408,35 +20370,22 @@ class Spellcaster(Gimp.PlugIn):
                 "<Image>/Tools/AI Selection",
             "spellcaster-magic-eraser":
                 "<Image>/Tools/AI Selection",
-            "spellcaster-rembg":
-                "<Image>/Tools/AI Selection",
-
-            # ── AI Paint (paralleling Tools/Paint) ──
-            # Inpaint / outpaint / detail enhance — the "brush-like"
-            # AI edits that modify pixel regions.
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoorembgtool.c
             "spellcaster-inpaint":
                 "<Image>/Tools/AI Paint",
             "spellcaster-inpaint-3d":
                 "<Image>/Tools/AI Paint",
             "spellcaster-quick-inpaint":
                 "<Image>/Tools/AI Paint",
-            "spellcaster-klein-inpaint":
-                "<Image>/Tools/AI Paint",
-            "spellcaster-klein-auto-inpaint":
-                "<Image>/Tools/AI Paint",
-            "spellcaster-klein-sam3-inpaint":
-                "<Image>/Tools/AI Paint",
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodookleininpainttool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooautoinpainttool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoosam3inpainttool.c
             "spellcaster-quick-erase":
                 "<Image>/Tools/AI Paint",
             "spellcaster-quick-rembg":
                 "<Image>/Tools/AI Paint",
-            "spellcaster-klein-detail":
-                "<Image>/Tools/AI Paint",
-
-            # ── AI Transform (paralleling Tools/Transform) ──
-            # Scale / warp / expand operations.
-            "spellcaster-upscale":
-                "<Image>/Tools/AI Transform",
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoodetailtool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooupscaletool.c
             "spellcaster-quick-upscale":
                 "<Image>/Tools/AI Transform",
             "spellcaster-upscale-blend":
@@ -20449,18 +20398,13 @@ class Spellcaster(Gimp.PlugIn):
                 "<Image>/Tools/AI Transform",
             "spellcaster-outpaint-3d":
                 "<Image>/Tools/AI Transform",
-            "spellcaster-klein-outpaint":
-                "<Image>/Tools/AI Transform",
-            "spellcaster-photo-restore":
-                "<Image>/Tools/AI Transform",
-            "spellcaster-klein-repose":
-                "<Image>/Tools/AI Transform",
-            "spellcaster-klein-headswap":
-                "<Image>/Tools/AI Transform",
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoooutpainttool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoophotorestoretool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooreposetool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooheadswaptool.c
             "spellcaster-face-restore":
                 "<Image>/Tools/AI Transform",
-            "spellcaster-faceswap":
-                "<Image>/Tools/AI Transform",
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoofaceswaptool.c
             "spellcaster-faceswap-model":
                 "<Image>/Tools/AI Transform",
             "spellcaster-magical-zoom":
@@ -20476,36 +20420,28 @@ class Spellcaster(Gimp.PlugIn):
                 "<Image>/Tools/AI Generate",
             "spellcaster-kontext":
                 "<Image>/Tools/AI Generate",
-            "spellcaster-generate-anything":
-                "<Image>/Tools/AI Generate",
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoogenerateanythingtool.c
             "spellcaster-batch-variations":
                 "<Image>/Tools/AI Generate",
-            "spellcaster-klein-img2img":
-                "<Image>/Tools/AI Generate",
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooaieditortool.c
             "spellcaster-klein-img2img-ref":
                 "<Image>/Tools/AI Generate",
             "spellcaster-klein-batch-variations":
                 "<Image>/Tools/AI Generate",
             "spellcaster-klein-scene-img2img":
                 "<Image>/Tools/AI Generate",
-            "spellcaster-klein-virtual-tryon":
-                "<Image>/Tools/AI Generate",
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoovirtualtryontool.c
             "spellcaster-klein-generate-object":
                 "<Image>/Tools/AI Generate",
-            "spellcaster-klein-refine":
-                "<Image>/Tools/AI Generate",
-            "spellcaster-klein-blend":
-                "<Image>/Tools/AI Generate",
-            "spellcaster-klein-color-match":
-                "<Image>/Tools/AI Generate",
-            "spellcaster-klein-face-detail":
-                "<Image>/Tools/AI Generate",
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoorefinetool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoolayerblendtool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoocolormatchtool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoofacedetailtool.c
             "spellcaster-faceid-img2img":
                 "<Image>/Tools/AI Generate",
             "spellcaster-pulid-flux":
                 "<Image>/Tools/AI Generate",
-            "spellcaster-style-transfer":
-                "<Image>/Tools/AI Generate",
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoostyletransfertool.c
             "spellcaster-photobooth":
                 "<Image>/Tools/AI Generate",
             "spellcaster-body-factory":
@@ -20522,8 +20458,7 @@ class Spellcaster(Gimp.PlugIn):
                 "<Image>/Tools/AI Color",
             "spellcaster-color-match":
                 "<Image>/Tools/AI Color",
-            "spellcaster-iclight":
-                "<Image>/Tools/AI Color",
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodooiclighttool.c
             "spellcaster-iclight-3d":
                 "<Image>/Tools/AI Color",
             "spellcaster-ddcolor":
