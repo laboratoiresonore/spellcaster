@@ -19855,8 +19855,7 @@ class Spellcaster(Gimp.PlugIn):
                                           "Change character pose, position, or camera angle"),
             "spellcaster-klein-headswap": ("Headswap...", self._run_klein_headswap,
                                             "Face swap + AI refinement for natural blending"),
-            "spellcaster-klein-inpaint": ("Inpaint...", self._run_klein_inpaint,
-                                           "Regenerate selected area — context-aware, smooth edges"),
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodookleininpainttool.c
             "spellcaster-klein-detail": ("Detail Enhancer...", self._run_klein_detail,
                                           "Enhance any region — face, eyes, hands, skin, hair, clothing"),
             "spellcaster-klein-generate": ("Generate Object...", self._run_klein_generate,
@@ -19877,10 +19876,8 @@ class Spellcaster(Gimp.PlugIn):
                                                "YOLO face detection + Flux 2 high-detail regeneration of each face"),
             "spellcaster-klein-color-match": ("Reference Color Match...", self._run_klein_color_match,
                                                "ColorMatchV2 — harmonize image colors against a reference photo (no diffusion)"),
-            "spellcaster-klein-virtual-tryon": ("Virtual Try-On...", self._run_klein_virtual_tryon,
-                                                 "4-reference photoshoot — face + outfit + optional background + pose"),
-            "spellcaster-generate-anything": ("Generate Anything...", self._run_generate_anything,
-                                               "Generate any object as a transparent layer — works with ALL models"),
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoovirtualtryontool.c
+            # Converted to native toolbox tool in patch 0009 — see Voodoomancer upstream/app/tools/gimpvoodoogenerateanythingtool.c
             "spellcaster-ltx-t2v": ("LTX 2.3 Text to Video...", self._run_ltx_t2v,
                                     "Generate video from text using LTX Video 2.3"),
             "spellcaster-ltx-i2v": ("LTX 2.3 Image to Video...", self._run_ltx_i2v,
