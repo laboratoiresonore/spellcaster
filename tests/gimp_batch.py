@@ -317,7 +317,13 @@ def run_contract_via_dispatch_log(contract: dict, results_dir: Path,
     inspects the in-plugin dispatch_log.jsonl that the live harness's
     NativeTools cases already produced. Returns a result dict."""
     action_id = contract["action_id"]
-    log_path = (Path(os.environ.get("APPDATA") or "~").expanduser()
+    # MSYS Python 3.14 raises RuntimeError on Path("~").expanduser()
+    # when $HOME is unset; fall through APPDATA → USERPROFILE → ~ so
+    # the contract path can't fail just for shell-env reasons.
+    _appdata = (os.environ.get("APPDATA")
+                or os.environ.get("USERPROFILE")
+                or os.path.expanduser("~"))
+    log_path = (Path(_appdata)
                 / "GIMP" / "3.2" / "plug-ins" / "comfyui-connector"
                 / "logs" / "dispatch_log.jsonl")
     found_row: dict | None = None
@@ -601,11 +607,28 @@ def main() -> int:
                 "_source": "(default — no contract file)",
             })
 
-        # Resolve ComfyUI URL for /history polling.
-        comfy_url = args.comfyui_url or os.environ.get("COMFYUI_URL")
+        # Resolve ComfyUI URL for /history polling. Honors
+        # $SPELLCASTER_TEST_COMFYUI_URL last so callers who explicitly
+        # set the test target (e.g. an MSYS bash run pointed at Theo's
+        # ComfyUI on 8190 instead of the deployed 8188) don't have to
+        # also pass --comfyui-url.
+        comfy_url = (args.comfyui_url
+                     or os.environ.get("COMFYUI_URL")
+                     or os.environ.get("SPELLCASTER_TEST_COMFYUI_URL"))
         if not comfy_url:
-            # Last-ditch: read the deployed plugin config.json.
-            cfg = (Path(os.environ.get("APPDATA") or "~").expanduser()
+            # Last-ditch: read the deployed plugin config.json. Resolve
+            # $APPDATA defensively — MSYS Python 3.14's
+            # Path("~").expanduser() raises RuntimeError when $HOME is
+            # unset, which crashed the post-harness reporting path on a
+            # clean bash -lc shell.
+            appdata = (os.environ.get("APPDATA")
+                       or os.environ.get("USERPROFILE")
+                       or os.path.expanduser("~"))
+            try:
+                appdata_path = Path(appdata)
+            except Exception:
+                appdata_path = Path(".")
+            cfg = (appdata_path
                    / "GIMP" / "3.2" / "plug-ins"
                    / "comfyui-connector" / "config.json")
             try:

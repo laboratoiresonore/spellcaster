@@ -33781,7 +33781,18 @@ class Spellcaster(Gimp.PlugIn):
         # ── Connectivity (needs ComfyUI) ──────────────────────
         # Always included; each case self-guards against unreachable
         # server and raises an AssertionError with actionable copy.
-        srv = _load_config().get("server_url") or COMFYUI_DEFAULT_URL
+        #
+        # Test-harness URL override: $SPELLCASTER_TEST_COMFYUI_URL wins
+        # over the deployed plugin's config.json. Matches the env-var
+        # contract that tests/e2e_audit.py already honors so both
+        # harnesses probe the same /object_info. Without this, a
+        # canvas-test run against a ComfyUI on a non-default port
+        # (e.g. Theo's 8190 when the user's deployed config still says
+        # 8188) silently probed nothing and reported KSampler missing
+        # for every NativeTools case (false-positive FAILs).
+        srv = (os.environ.get("SPELLCASTER_TEST_COMFYUI_URL")
+               or _load_config().get("server_url")
+               or COMFYUI_DEFAULT_URL)
 
         def _comfyui_reachable():
             try:
@@ -33802,13 +33813,40 @@ class Spellcaster(Gimp.PlugIn):
                     f"Set the URL in Spellcaster \u2192 Settings.")
         cases.append(("comfyui_reachable", "Connectivity", _comfyui_reachable))
 
+        # Cached /object_info probe shared by every node-installed check
+        # AND every NativeTools case below. Two scaffolding wins:
+        #   * One network round-trip instead of 14+ (every probe was its
+        #     own fetch of a ~26 MB JSON blob; canvas-test wall time was
+        #     dominated by this).
+        #   * Generous timeout. The default _probe_comfyui_nodes timeout
+        #     of 3.0s is correct for an inline UI probe (don't block the
+        #     button render) but wrong for a test harness fetching the
+        #     full /object_info over a LAN: a 26 MB body on a real
+        #     ComfyUI install routinely takes 8-10 s. The pre-fix
+        #     harness ate the timeout silently, returned set(), and
+        #     every required-node check fell through to a false-positive
+        #     "node not installed" FAIL.
+        _harness_nodes_cache: set[str] | None = None
+        _harness_nodes_err: Exception | None = None
+        def _harness_probe_nodes() -> set[str]:
+            nonlocal _harness_nodes_cache, _harness_nodes_err
+            if _harness_nodes_cache is not None:
+                return _harness_nodes_cache
+            try:
+                _harness_nodes_cache = (
+                    _probe_comfyui_nodes(srv, timeout=30.0) or set())
+            except Exception as e:  # noqa: BLE001
+                _harness_nodes_err = e
+                _harness_nodes_cache = set()
+            return _harness_nodes_cache
+
         def _node_installed(node_name: str, human: str, needed_for: str):
             def _fn():
-                try:
-                    nodes = _probe_comfyui_nodes(srv) or set()
-                except Exception as e:
+                nodes = _harness_probe_nodes()
+                if _harness_nodes_err is not None and not nodes:
                     raise AssertionError(
-                        f"Could not query {srv}/object_info: {e}")
+                        f"Could not query {srv}/object_info: "
+                        f"{_harness_nodes_err}")
                 if node_name not in nodes:
                     raise AssertionError(
                         f"{human} not installed. Needed for: "
@@ -33959,12 +33997,13 @@ class Spellcaster(Gimp.PlugIn):
             def _fn():
                 # Skip cleanly when ComfyUI is unreachable — the
                 # connectivity case has already flagged it FAIL.
-                try:
-                    nodes = _probe_comfyui_nodes(srv) or set()
-                except Exception as e:
+                # Reuses _harness_probe_nodes' cached fetch (30s
+                # timeout, single round-trip per harness run).
+                nodes = _harness_probe_nodes()
+                if _harness_nodes_err is not None and not nodes:
                     raise AssertionError(
                         f"Cannot probe ComfyUI /object_info "
-                        f"for {action_id}: {e}")
+                        f"for {action_id}: {_harness_nodes_err}")
                 missing = [n for n in req_nodes if n not in nodes]
                 if missing:
                     raise AssertionError(
