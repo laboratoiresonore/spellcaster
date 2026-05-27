@@ -1,0 +1,412 @@
+[
+  {
+    "method": "build_ltx_video",
+    "category": "node_pack",
+    "name": "ComfyUI v0.22.0 — LTX IC-LoRA + VRAM reduction",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/ComfyUI/releases",
+    "risk": "low",
+    "confidence": 0.97,
+    "notes": "Released 2026-05-20 (in window). Adds downscaled IC-LoRA support to LTXVAddGuide node, optional attention_mask input, reduced peak VRAM when guide masks active. Core engine update. Build: expose ic_lora_path param in build_ltx_video."
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "node_pack",
+    "name": "ComfyUI v0.22.0 — BiRefNet compat fix",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/ComfyUI/releases",
+    "risk": "low",
+    "confidence": 0.97,
+    "notes": "Released 2026-05-20 (in window). Fixes BiRefNet compatibility regression. No new model weights; runtime fix only. Update ComfyUI engine."
+  },
+  {
+    "method": "build_depth_map_v3",
+    "category": "node_pack",
+    "name": "MoGe-2 monocular geometry estimation — native ComfyUI 0.22.0",
+    "source": "github",
+    "url": "https://github.com/zade23/ComfyUI-MoGe2",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "ComfyUI v0.22.0 (May 20, in window) adds native MoGe support. MoGe-2 (Ruicheng/moge-2-vitl-normal) produces depth + normals + point maps in one pass at ~60ms. ~4-6 GB VRAM. Supersedes DA3 for metric-scale output. Also: kijai/ComfyUI-MoGe node pack available."
+  },
+  {
+    "method": "build_normal_map",
+    "category": "node_pack",
+    "name": "MoGe-2 — depth + normal in one model",
+    "source": "github",
+    "url": "https://github.com/kijai/ComfyUI-MoGe",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "MoGe-2 outputs normals alongside depth, eliminating the need for a separate normal map model. Could simplify build_normal_map + build_depth_map_v3 into one call. Native in ComfyUI 0.22.0."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "node_pack",
+    "name": "ComfyUI-ReActor v0.6.0 — ReActorSetWeight blend control",
+    "source": "github",
+    "url": "https://github.com/Gourieff/ComfyUI-ReActor/releases",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Released 2026-05-21 (in window). New ReActorSetWeight node allows face swap blend strength 0-100% in 12.5% steps. Add swap_strength param (0.0-1.0, default 1.0) to build_faceswap, build_faceswap_model, build_faceswap_mtb."
+  },
+  {
+    "method": "build_faceswap_model",
+    "category": "node_pack",
+    "name": "ComfyUI-ReActor v0.6.0 — ReActorSetWeight",
+    "source": "github",
+    "url": "https://github.com/Gourieff/ComfyUI-ReActor/releases",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Same as build_faceswap — v0.6.0 (May 21) blend control. Update build_faceswap_model to expose swap_strength."
+  },
+  {
+    "method": "build_save_face_model",
+    "category": "node_pack",
+    "name": "InsightFace 1.0 — packaging only, no C++ build tools required",
+    "source": "github",
+    "url": "https://www.insightface.ai/guides/insightface-1-0-tutorial",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Released 2026-05-23 (in window). No new models — packaging ergonomics improvement removes C++ build dependency. Test pip install insightface==1.0 in spellcaster container. Affects all InsightFace-dependent builders."
+  },
+  {
+    "method": "build_sam3_segment",
+    "category": "checkpoint",
+    "name": "SAM 3.1 — sam3.1_multiplex_fp16.safetensors",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Comfy-Org/sam3.1",
+    "risk": "low",
+    "confidence": 0.93,
+    "notes": "Released 2026-03-27 (outside 7-day window but newly tracked). Object Multiplex gives 7x faster multi-object tracking vs SAM3. Drop-in checkpoint replacement; same ComfyUI nodes. Also applies to build_sam3_mask and build_sam3_extract."
+  },
+  {
+    "method": "build_sam3_mask",
+    "category": "checkpoint",
+    "name": "SAM 3.1 — sam3.1_multiplex_fp16.safetensors",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Comfy-Org/sam3.1",
+    "risk": "low",
+    "confidence": 0.93,
+    "notes": "See build_sam3_segment. Same drop-in checkpoint upgrade."
+  },
+  {
+    "method": "build_sam3_extract",
+    "category": "checkpoint",
+    "name": "SAM 3.1 — sam3.1_multiplex_fp16.safetensors",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Comfy-Org/sam3.1",
+    "risk": "low",
+    "confidence": 0.93,
+    "notes": "See build_sam3_segment. Same drop-in checkpoint upgrade."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "node_pack",
+    "name": "WAN 2.7 — major quality upgrade, native 1080p, 9-grid I2V, FLF, ref2v, video editing",
+    "source": "github",
+    "url": "https://blog.comfy.org/p/wan27-is-now-available-in-comfyui",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "Partner nodes available (~April 22 / May 2026). Local weights on HuggingFace. Kijai ComfyUI-WanVideoWrapper expected to support. New builders needed: build_wan27_video, build_wan27_t2v, build_wan27_flf. Keep WAN 2.2 as legacy fallback. VRAM similar to WAN 2.2 with blockswap."
+  },
+  {
+    "method": "build_wan22_t2v",
+    "category": "node_pack",
+    "name": "WAN 2.7 T2V — unifies T2V+I2V+FLF",
+    "source": "github",
+    "url": "https://wavespeed.ai/blog/posts/wan-2-7-vs-wan-2-2",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "WAN 2.7 supersedes WAN 2.2 T2V. Same partner node path. New build_wan27_t2v builder needed."
+  },
+  {
+    "method": "build_wan_flf",
+    "category": "node_pack",
+    "name": "WAN 2.7 FLF — first-class first/last-frame support",
+    "source": "github",
+    "url": "https://docs.comfy.org/tutorials/partner-nodes/wan/wan2-7",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "WAN 2.7 FLF is a native mode, not a workaround. Pairs with the reference-to-video path."
+  },
+  {
+    "method": "build_wan_animate_video",
+    "category": "checkpoint",
+    "name": "LongCat-Video-Avatar-1.5 — audio-driven avatar with Whisper-Large lip sync",
+    "source": "github",
+    "url": "https://github.com/meituan-longcat/LongCat-Video",
+    "risk": "medium",
+    "confidence": 0.82,
+    "notes": "Released 2026-05-21 (in window). Meituan's audio-driven avatar video. Whisper-Large (vs Wav2Vec2), 8-step distillation, FP8 ~15 GB VRAM (fits 16 GB). Audio-Text-to-Video + Audio-Text-Image-to-Video. FP8 ComfyUI workflow available. New builder: build_longcat_avatar_video. Fills audio-driven gap."
+  },
+  {
+    "method": "build_wan_video_blockswap",
+    "category": "node_pack",
+    "name": "WAN 2.7 — supersedes WAN 2.2 blockswap baseline",
+    "source": "github",
+    "url": "https://github.com/kijai/ComfyUI-WanVideoWrapper",
+    "risk": "medium",
+    "confidence": 0.80,
+    "notes": "WAN 2.7 has better baseline quality; blockswap architecture compatible. New WAN 2.7 builders would inherit blockswap support."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "lora",
+    "name": "LightX2V V2 — WAN 2.2 distillation LoRA (8-14 steps, 75% faster)",
+    "source": "github",
+    "url": "https://www.runcomfy.com/comfyui-workflows/wan-2-2-lightx2v-v2-comfyui-workflow-fast-image-text-to-video",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Drop-in LoRA for WAN 2.2. 8 steps (max speed), 12 (balanced), 14 (quality). LCM sampler, CFG ~1-2. Update pick_wan_accel_loras() and wan_turbo_kwargs() step counts. No VRAM overhead."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "node_pack",
+    "name": "ComfyUI-wanBlockswap — CPU offload 40 transformer blocks",
+    "source": "github",
+    "url": "https://github.com/orssorbit/ComfyUI-wanBlockswap",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "WanVideoBlockSwap node: offloads up to 40 blocks to CPU, saves 2-6 GB VRAM. Auto-inject in detect_wan_preset() when 14B model detected and VRAM <= 16 GB. Speed cost ~10-30%."
+  },
+  {
+    "method": "build_video_upscale",
+    "category": "node_pack",
+    "name": "NVIDIA RTX Video Super Resolution — hardware-accelerated 4K upscale",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "RTX Tensor-core accelerated, negligible VRAM (dedicated VSR silicon). 30x faster than ESRGAN on RTX 50-series. RTX 5060 Ti fully supported. Search 'RTX' in ComfyUI Manager. Add rtx_vsr backend option to build_video_upscale and build_upscale."
+  },
+  {
+    "method": "build_upscale",
+    "category": "node_pack",
+    "name": "NVIDIA RTX Video Super Resolution",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "See build_video_upscale. Same RTX VSR node, same action."
+  },
+  {
+    "method": "build_wavespeed_upscale",
+    "category": "node_pack",
+    "name": "FlashVSR — CVPR 2026 one-step diffusion VSR (updated 2026-05-13)",
+    "source": "github",
+    "url": "https://github.com/WaveSpeedAI/wavespeed-comfyui",
+    "risk": "low",
+    "confidence": 0.87,
+    "notes": "2x upscale at 6 GB, 4x at 10 GB. CVPR 2026 paper. Also: 1038lab/ComfyUI-FlashVSR. Updated May 13. Verify build_wavespeed_upscale wires to FlashVSR; add block-sparse attention when supported."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "HiDream-O1-Image-Dev-2604 FP8 — 8B UiT unified architecture",
+    "source": "huggingface",
+    "url": "https://huggingface.co/HiDream-ai/HiDream-O1-Image-Dev-2604",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "Released 2026-05-08 to 2026-05-15. 8B Pixel-level Unified Transformer — no external VAE, no disjoint encoder. txt2img, img2img editing, subject personalization, skeleton conditioning. FP8 ~10 GB (fits 16 GB). GenEval 0.90. Native ComfyUI 0.22.0 + Saganaki22/HiDream_O1-ComfyUI node pack. New hidream_o1 architecture + build_hidream_txt2img builder needed."
+  },
+  {
+    "method": "build_img2img",
+    "category": "checkpoint",
+    "name": "HiDream-O1-Image FP8 — instruction-based editing",
+    "source": "huggingface",
+    "url": "https://huggingface.co/HiDream-ai/HiDream-O1-Image",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Full (not Dev) HiDream-O1 model recommended for editing quality. Additive to build_img2img as an alternative architecture choice."
+  },
+  {
+    "method": "build_qwen_edit",
+    "category": "node_pack",
+    "name": "ComfyUI-Spectrum-Qwen-Proper — 3-5x speedup on Qwen-Image-Edit",
+    "source": "github",
+    "url": "https://github.com/xmarre/ComfyUI-Spectrum-Qwen-Proper",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Chebyshev ridge-regression spectral forecaster. 3-5x inference speedup on Qwen-Image-Edit-2511, no quality loss. Also: EricRollei/Eric_Qwen_Edit_Experiments v2.0 (March 20, 2026) adds UltraGen, PromptRewriter, ControlNet, Spectrum. Install and enable in build_qwen_edit."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "checkpoint",
+    "name": "HyperSwap 1a/1b/1c 256.onnx — speed-optimized face swap models",
+    "source": "github",
+    "url": "https://github.com/Gourieff/ComfyUI-ReActor/issues/143",
+    "risk": "low",
+    "confidence": 0.83,
+    "notes": "FaceFusion Labs ONNX models. Faster than inswapper_128; inswapper still edges for absolute similarity. Place in ComfyUI/models/hyperswap/. Expose as configurable model choice in build_faceswap alongside inswapper_128 default. ReActor v0.6.2+ required."
+  },
+  {
+    "method": "build_klein_headswap",
+    "category": "lora",
+    "name": "ilkerzgi/face-swap — diffusion-native face swap LoRA on FLUX.2-Klein-9B",
+    "source": "huggingface",
+    "url": "https://huggingface.co/ilkerzgi/face-swap",
+    "risk": "low",
+    "confidence": 0.78,
+    "notes": "Released 2026-04-13. LoRA for FLUX.2-klein-9B. 4500+ downloads. 6-8 GB VRAM with GGUF quantization. Different paradigm from ONNX inswapper — diffusion-native results. Consider adding diffusion_swap flag to build_klein_headswap."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "checkpoint",
+    "name": "OSDFace — one-step diffusion face restoration (CVPR 2025 / NTIRE 2026 winner)",
+    "source": "github",
+    "url": "https://github.com/jkwang28/OSDFace",
+    "risk": "medium",
+    "confidence": 0.80,
+    "notes": "Technically superior to CodeFormer on all benchmarks (NTIRE 2026). Single-step inference ~0.1s at 512px. No ComfyUI node yet — monitor for community wrapper. Will supersede CodeFormer in build_face_restore and build_photo_restore when available."
+  },
+  {
+    "method": "build_photo_restore",
+    "category": "checkpoint",
+    "name": "OSDFace — see build_face_restore",
+    "source": "github",
+    "url": "https://github.com/jkwang28/OSDFace",
+    "risk": "medium",
+    "confidence": 0.80,
+    "notes": "Same OSDFace finding. No ComfyUI node yet."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "checkpoint",
+    "name": "Hunyuan3D 2.1 — PBR textures, improved detail",
+    "source": "github",
+    "url": "https://github.com/Yuan-ManX/ComfyUI-Hunyuan3D-2.1",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "ComfyUI 0.22.0 fixes batch processing for Hunyuan3D 2.1. Mesh generation: 10 GB recommended (within 16 GB). PBR texturing: 20 GB+ (over budget). Update build_hunyuan_3d_mesh to target 2.1. Hold build_hunyuan_3d_textured until quantized."
+  },
+  {
+    "method": "build_hunyuan_3d_textured",
+    "category": "checkpoint",
+    "name": "Pixal3D-ComfyUI v0.2.3 — SIGGRAPH 2026 image-to-3D alternative",
+    "source": "github",
+    "url": "https://github.com/Saganaki22/Pixal3D-ComfyUI",
+    "risk": "medium",
+    "confidence": 0.80,
+    "notes": "Released 2026-05-23 (in window). TencentARC Pixal3D, 1.3B params on TRELLIS.2 backbone. Pixel-aligned, textured GLB. Integrates MoGe + RMBG-2.0 internally. ~14-16 GB VRAM needed at standard res (tight). Low-VRAM mode available. New builder: build_pixal3d_mesh."
+  },
+  {
+    "method": "build_seedv2r",
+    "category": "checkpoint",
+    "name": "SeedVR2 — upgrade from SeedVR v1 to SeedVR2-3B or 7B",
+    "source": "huggingface",
+    "url": "https://github.com/comfyorg/comfyui_seedvr2",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "SeedVR2 v2.5 (ICLR 2026): one-step diffusion, 60% less VRAM vs v1, GGUF support. 3B FP16 ~12 GB, 7B Q4 GGUF ~10 GB. Both within 16 GB. Use comfyorg/comfyui_seedvr2 official fork. Upgrade if build_seedv2r still uses original SeedVR v1."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Microsoft Lens — 3.8B GPT-OSS encoder + FLUX.2 VAE, MIT license",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Comfy-Org/Lens",
+    "risk": "medium",
+    "confidence": 0.82,
+    "notes": "Native ComfyUI support merged ~2026-05-26 (in window). Three variants: Lens-Turbo (4 steps, CFG 1), Lens (20 steps), Lens-Base (50 steps). BF16 ~10-12 GB, FP8 ~6 GB. Needs new 'lens' architecture entry in architectures.py and build_lens_txt2img builder. GPT-OSS text encoder = new CLIP loader branch in composites.py."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "node_pack",
+    "name": "Comfy-WaveSpeed First Block Cache — 1.5-2x speedup",
+    "source": "github",
+    "url": "https://github.com/chengzeyi/Comfy-WaveSpeed",
+    "risk": "low",
+    "confidence": 0.83,
+    "notes": "Apply First Block Cache node. Supports WAN 2.1 T2V/I2V, Flux 1, LTXV, HunyuanVideo, SDXL. 1.5-2x speed gain, no VRAM overhead, no quality loss. Inject as intermediate option between standard and turbo presets in optimizer.py."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "node_pack",
+    "name": "Comfy-WaveSpeed First Block Cache — LTXV acceleration",
+    "source": "github",
+    "url": "https://github.com/chengzeyi/Comfy-WaveSpeed",
+    "risk": "low",
+    "confidence": 0.83,
+    "notes": "Same WaveSpeed FBC node, LTXV path. 1.5-2x speedup. See build_wan_video entry for details."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Nova Anime XL IL v19.0 — SDXL anime checkpoint (DARE merge)",
+    "source": "civitai",
+    "url": "https://civitai.com/models/376130/nova-anime-xl",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Released 2026-05-12 (outside 7-day window but newly tracked). DARE merge of NoobAI EPS v1.1 + Illustrious v2.0 + ChenkinNoob v0.5. Best-rated SDXL anime checkpoint on CivitAI. ~6-8 GB VRAM. Add as checkpoint option for illustrious/sdxl architecture presets."
+  },
+  {
+    "method": "build_klein_img2img",
+    "category": "lora",
+    "name": "Ultra Real Klein 9B — photorealism LoRA",
+    "source": "civitai",
+    "url": "https://civitai.com/models/2462105/ultra-real-klein-9b",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Updated 2026-05-15. 261 reviews. Most-reviewed Klein 9B LoRA on CivitAI. Reduces plastic/smooth AI look, adds natural skin texture. Add to autoset_loras for txt2img and klein_refine modes in flux2klein architecture entry."
+  },
+  {
+    "method": "build_klein_inpaint",
+    "category": "lora",
+    "name": "FLUX.2 Klein 4B Outpaint LoRA",
+    "source": "civitai",
+    "url": "https://civitai.com/models/2515526/flux-2-klein-4b-outpaint-lora",
+    "risk": "low",
+    "confidence": 0.75,
+    "notes": "Klein 4B specific outpainting LoRA. Add to autoset_loras for klein_inpaint when mask coverage > 30% on edges (outpaint detection heuristic). Released April 2026."
+  },
+  {
+    "method": "build_iclight",
+    "category": "checkpoint",
+    "name": "IC-Light V2 — Flux-based relighting (NOT YET RELEASED)",
+    "source": "github",
+    "url": "https://github.com/lllyasviel/IC-Light/discussions/98",
+    "risk": "high",
+    "confidence": 0.60,
+    "notes": "Tier 3 — monitor only. Flux-based, 16ch VAE, much better than SD1.5 version. Weights not publicly released (HF space demo only). Non-commercial license planned. Do not wire until weights + license confirmed."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "node_pack",
+    "name": "SANA-WM — NVIDIA 2.6B world model (720p, 60s, 6-DoF camera)",
+    "source": "github",
+    "url": "https://www.marktechpost.com/2026/05/16/nvidia-introduces-sana-wm-a-2-6b-parameter-open-source-world-model-that-generates-minute-scale-720p-video-on-a-single-gpu/",
+    "risk": "medium",
+    "confidence": 0.65,
+    "notes": "Tier 3 — monitor. Published 2026-05-15-16. 2.6B param, 720p 60-second video with 6-DoF camera control. Apache 2.0. ComfyUI nodes in diffusers. VRAM: needs NVFP4 or 8-bit quant for RTX 5090; uncertain on 16 GB RTX 5060 Ti. Wire when confirmed 16 GB-safe workflow published."
+  },
+  {
+    "method": "build_hunyuan_3d_textured",
+    "category": "node_pack",
+    "name": "ComfyUI-Trellis2 — TRELLIS.2 4B 3D model (May 26, in window)",
+    "source": "github",
+    "url": "https://github.com/visualbruno/ComfyUI-Trellis2",
+    "risk": "high",
+    "confidence": 0.72,
+    "notes": "Tier 3 — VRAM. New node committed 2026-05-26 (in window). Microsoft TRELLIS.2, 4B params, CVPR 2025. 24 GB+ at 1024^3; only ~16 GB at 512^3. Over budget at full resolution. Monitor for quantized variant."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "checkpoint",
+    "name": "BFS-Best-Face-Swap-Video — IC-LoRA for LTX-2.3 video head swap",
+    "source": "huggingface",
+    "url": "https://huggingface.co/SSBOfficial/BFS-Best-Face-Swap-Video",
+    "risk": "high",
+    "confidence": 0.70,
+    "notes": "Tier 3 — VRAM. Released 2026-05-25 (in window). IC-LoRA adapter for LTX-2.3 (22B) video head swap. LTX-2.3 full model needs 24 GB+; GGUF path unconfirmed for IC-LoRA. Wait for community GGUF wrappers at 16 GB."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "checkpoint",
+    "name": "OSDFace via NTIRE 2026 validation",
+    "source": "github",
+    "url": "https://arxiv.org/abs/2604.10532",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "NTIRE 2026 Face Restoration Challenge (April 2026) confirmed OSDFace as top approach. 96 registrants, 9 teams. Field moving toward one-step diffusion restoration. CodeFormer remains competitive but no longer SOTA. Monitor github.com/jkwang28/OSDFace for ComfyUI node."
+  }
+]
