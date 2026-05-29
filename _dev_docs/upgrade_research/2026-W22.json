@@ -1,0 +1,272 @@
+[
+  {
+    "method": "build_img2img",
+    "category": "checkpoint",
+    "name": "FLUX.1 Kontext [dev]",
+    "source": "huggingface",
+    "url": "https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "12B Flow Matching model (BFL open weights, 2025-05-29). Community GGUF Q5/Q6/Q8 now confirmed fitting 10–13 GB VRAM on RTX 5060 Ti. Unifies T2I + instruction-based image editing in one pass. Native ComfyUI support. Paper arxiv:2506.15742. Also relevant to build_inpaint, build_style_transfer."
+  },
+  {
+    "method": "build_qwen_edit",
+    "category": "checkpoint",
+    "name": "Qwen-Image-2.0",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Qwen/Qwen-Image",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "Tech report arxiv:2605.10730 published 2026-05-11. 7B Multimodal Diffusion Transformer + Qwen3-VL encoder. Successor to Qwen2.5-VL backbone in build_qwen_edit. Companion VAE report arxiv:2605.13565 (2026-05-19). Open weights expected (Apache-2.0 precedent); not yet confirmed fully public."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "HiDream-O1-Image",
+    "source": "huggingface",
+    "url": "https://huggingface.co/HiDream-ai/HiDream-O1-Image",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Released 2026-05-08, MIT license. 8B pixel-native unified model; no external VAE/CLIP. FP8 quant (drbaph/HiDream-O1-Image-FP8) ~10 GB VRAM. ComfyUI bbox conditioning via Saganaki22/HiDream_O1-ComfyUI (added 2026-05-13, entering window). Additive new builder; not a replacement for SDXL/Flux spine."
+  },
+  {
+    "method": "build_qwen_edit",
+    "category": "node_pack",
+    "name": "VIBE: Visual Instruction Based Editor (ComfyUI node)",
+    "source": "github",
+    "url": "https://github.com/ComfyNodePRs/PR-ComfyUI-VIBE-11e7b9c7",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Paper arxiv:2601.02242 (Jan 2026). 2B Qwen3-VL + 1.6B Sana1.5 instruction-editing pipeline; ~6–8 GB VRAM. Lightweight complement to build_qwen_edit or as in-pipeline refiner."
+  },
+  {
+    "method": "build_style_transfer",
+    "category": "lora",
+    "name": "Muapi Flux.1-dev style LoRA batch (10+ models, 2026-05-22–28)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Muapi",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "10+ FLUX.1-dev style LoRAs published 2026-05-22 to 2026-05-28: DBZ anime (05-28), ink wash (05-28), ligne-claire (05-25), ultra semi-realistic (05-25), Alex Ross (05-24), Take On Me rotoscope (05-23), Comix (05-23). Apache-2.0 / openrail++. Standard diffusers format; drop-in for build_style_transfer and build_txt2img Flux path."
+  },
+  {
+    "method": "build_klein_img2img",
+    "category": "lora",
+    "name": "Flux.2-klein-4B_Lora (nphSi)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/nphSi/Flux.2-klein-4B_Lora",
+    "risk": "low",
+    "confidence": 0.70,
+    "notes": "First public community LoRA targeting Flux.2-klein-4B base. Trained via OpenTrainer F2k. Zero downloads as of review; quality unvalidated. Signals the Klein LoRA training ecosystem is becoming accessible."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "checkpoint",
+    "name": "Kijai/WanVideo_comfy_nvfp4",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Kijai/WanVideo_comfy_nvfp4",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Created 2026-05-28. NVFP4-quantized Wan video checkpoints repackaged by Kijai for ComfyUI. RTX 5060 Ti (Blackwell) qualifies. Significant VRAM and speed savings over FP8. Requires NVFP4 loader support in ComfyUI-WanVideoWrapper (verify GH issue #1888). Also relevant to build_wan22_t2v, build_wan_video_blockswap, build_wan_video_blockswap_t2v, build_wan_animate_video."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "checkpoint",
+    "name": "Kijai/WanVideo_comfy (re-pull — updated 2026-05-24)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Kijai/WanVideo_comfy",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Main Kijai Wan checkpoint repo (4.8M downloads) received updated files on 2026-05-24. Re-pull to pick up VACE/I2V variant updates. Relevant to all build_wan_* methods using Kijai weights."
+  },
+  {
+    "method": "build_wan22_t2v",
+    "category": "lora",
+    "name": "VideoRLVR-Wan2.2 (DarthZhu)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/DarthZhu/VideoRLVR-Wan2.2",
+    "risk": "medium",
+    "confidence": 0.70,
+    "notes": "RL fine-tune of Wan2.2-TI2V-5B with verifiable video rewards (arxiv:2605.15458, May 2026). Improved instruction-following in generated video. 5B fits 16 GB VRAM comfortably. HF modified 2026-05-21. Base also at DarthZhu/VideoRLVR-Wan2.2-Base."
+  },
+  {
+    "method": "build_seedvr2_video_upscale",
+    "category": "paper",
+    "name": "Video Quality Models for Diffusion-Based Video Super-Resolution benchmark",
+    "source": "arxiv",
+    "url": "https://arxiv.org/abs/2605.25940",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Published 2026-05-25 (in window). Benchmarks Lanczos, Rhea, SCST, DOVE, SeedVR2, Starlight Mini. SeedVR2 confirmed top-tier; no-reference video quality metrics proven unreliable for diffusion VSR. Also relevant to build_wavespeed_upscale."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "LTX-Video-0.9.7-dev (yrrhall, community mirror)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/yrrhall/LTX-Video-0.9.7-dev",
+    "risk": "medium",
+    "confidence": 0.60,
+    "notes": "Community upload created 2026-05-23. Tagged base_model:finetune of Lightricks/LTX-Video. This is the 2B open-weights branch (LTX-2.3 at 22B requires >16 GB — hard skip). Treat as dev mirror until Lightricks publishes official 0.9.7 tag on their namespace."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "lora",
+    "name": "dslr-photo-video-wan-2.1-2.2-low-noise (Muapi)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Muapi/dslr-photo-video-wan-2.1-2.2-low-noise",
+    "risk": "low",
+    "confidence": 0.65,
+    "notes": "Created 2026-05-28 (in window). LoRA targeting low-noise DSLR-photographic output for Wan2.1/2.2 T2V. Additive quality option; compatible with Wan 14B T2V. Also relevant to build_wan22_t2v."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "node_pack",
+    "name": "ComfyUI-ReActor ≥ May 12 2026 + HyperSwap 256 ONNX",
+    "source": "github",
+    "url": "https://github.com/Gourieff/ComfyUI-ReActor",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "ReActor updated ~2026-05-12. Adds: HyperSwap 256 px ONNX models (1a/1b/1c) from FaceFusion Labs (hyperswap_1a/1b/1c_256.onnx → models/hyperswap/); new 'Restore Face Advanced' node (targeted per-face restoration post-swap); ReActorSetWeight node (0–100% swap strength). Open issues #183/#204 on HyperSwap selector bugs; test before production use. InSwapper 128 still recommended as default for ID similarity."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "onnx",
+    "name": "HyperSwap 256 — hyperswap_1a/1b/1c_256.onnx (FaceFusion Labs)",
+    "source": "github",
+    "url": "https://github.com/Gourieff/ComfyUI-ReActor/issues/143",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Three 256 px ONNX swap models now supported inside ReActor. 2× internal resolution vs InSwapper 128. 1c variant reported most balanced. InSwapper still wins on identity-similarity score in community benchmarks; HyperSwap is opt-in upgrade. Fits 16 GB VRAM."
+  },
+  {
+    "method": "build_klein_headswap",
+    "category": "node_pack",
+    "name": "ComfyUI-PuLID-Flux2 v0.6.2 (iFayens) — native Klein 4B/9B weights",
+    "source": "github",
+    "url": "https://github.com/iFayens/ComfyUI-PuLID-Flux2",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "v0.6.2 released ~2026-05-22 (confirmed 'about 1 week ago' as of review). Key changes: improved face-recognition backbone, fewer artifacts, native Klein 4B/9B v1/v2 weight support. sipie800/ComfyUI-PuLID-Flux-Enhanced officially discontinued — migration required. Also relevant to build_klein_face_detail, build_faceid_img2img, build_pulid_flux."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "paper",
+    "name": "NTIRE 2026 Real-World Face Restoration Challenge",
+    "source": "arxiv",
+    "url": "https://arxiv.org/abs/2604.10532",
+    "risk": "medium",
+    "confidence": 0.60,
+    "notes": "Published 2026-04-15. 10 competing SOTA face restoration methods, AdaFace-based identity scoring. Winning weights not yet public (repo: github.com/jkwang28/NTIRE2026_RealWorld_Face_Restoration). CodeFormer/GFPGAN remain current until weights drop. Also relevant to build_photo_restore."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "checkpoint",
+    "name": "DreamID-V (ByteDance, ComfyUI JR fork)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/XuGuo699/DreamID-V",
+    "risk": "high",
+    "confidence": 0.70,
+    "notes": "Published Jan 2026. Video DiT face swap using Wan2.1 backbone; significantly outperforms InSwapper on FID (4.69) and ID similarity. ComfyUI nodes: github.com/HM-RunningHub/ComfyUI_RH_DreamID-V and JR fork (github.com/Goldlionren/ComfyUI_JR_DreamID-V) with FFN chunking + optional FlashAttention 2. 16 GB VRAM borderline — Wan-1.3B-Faster variant reduces peak VRAM. Test on testbed before wiring."
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "node_pack",
+    "name": "BiRefNet native ComfyUI (Comfy-Org/BiRefNet)",
+    "source": "github",
+    "url": "https://blog.comfy.org/p/new-open-source-models-now-in-comfyui",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "ComfyUI blog 2026-05-14: BiRefNet ships natively via Comfy-Org/BiRefNet model card. Model → models/background_removal/birefnet.safetensors. No custom node required. Official Comfy-Org maintained checkpoint. Existing custom node wrappers still work."
+  },
+  {
+    "method": "build_magic_eraser",
+    "category": "node_pack",
+    "name": "VOID (Netflix) native ComfyUI — quad-mask video inpaint",
+    "source": "github",
+    "url": "https://blog.comfy.org/p/new-open-source-models-now-in-comfyui",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Announced ComfyUI blog 2026-05-14. Netflix VOID uses quadmask (4-value: remove/overlap/physically-affected/keep) for video object removal. Native ComfyUI node. BiRefNet v2 in same release is a complement to SAM3 masking step in build_magic_eraser for hair/fur/transparency. New video inpaint capability not currently in Spellcaster."
+  },
+  {
+    "method": "build_supir",
+    "category": "paper",
+    "name": "ASASR: Adversarial Sobolev Alignment for Faithful Image Super Resolution",
+    "source": "arxiv",
+    "url": "https://arxiv.org/abs/2605.23264",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "Submitted 2026-05-22 (in window). ICML 2026 accepted. Sobolev-geometry-based framework fixing spectral misalignment in generative SR. Code: github.com/wafer-bob/ASASR. No HF weights yet. SUPIR remains current production backbone; monitor for checkpoint release."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "paper",
+    "name": "AssetGen: Deployable 3D Asset Generation at Interactive Speed",
+    "source": "arxiv",
+    "url": "https://arxiv.org/abs/2605.26137",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "Submitted 2026-05-22 (in window). Single-image to textured PBR mesh (baked normals) in ~30 s (Flash variant: 14 s). Coarse-to-refine VecSet + GPU mesh simplification + multi-view texture baking + 3D inpainting. No public weights yet. When released, evaluate as replacement for build_hunyuan_3d_mesh / build_hunyuan_3d_textured. Also relevant to build_hunyuan_3d_textured."
+  },
+  {
+    "method": "build_sam3_segment",
+    "category": "checkpoint",
+    "name": "SAM 3.1 (Meta facebookresearch/sam3)",
+    "source": "github",
+    "url": "https://github.com/facebookresearch/sam3",
+    "risk": "low",
+    "confidence": 0.93,
+    "notes": "SAM 3.1 released 2026-03-27. Adds shared-memory multi-object tracking. 848M params, gated HF access. Image segmentation quality unchanged vs SAM 3 — tracking-only update. ComfyUI nodes: ComfyUI-SAM3 (PozzettiAndrea), ComfyUI-TBG-SAM3, ComfyUI-Easy-Sam3. No action required."
+  },
+  {
+    "method": "build_normal_map",
+    "category": "checkpoint",
+    "name": "MoGe-2 (Ruicheng/moge-2-vitl-normal)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Ruicheng/moge-2-vitl-normal",
+    "risk": "low",
+    "confidence": 0.91,
+    "notes": "Paper arxiv:2507.02546 (July 2025); integrated into ComfyUI v0.22.0 (2026-05-20). 330M ViT-L, ~660 MB FP16, well within 16 GB VRAM. Outputs metric depth + surface normals + GLB mesh from single image. ComfyUI node: zade23/ComfyUI-MoGe2. Strong upgrade for build_normal_map; supplementary depth output relevant to build_depth_map_v3."
+  },
+  {
+    "method": "build_depth_map_v3",
+    "category": "paper",
+    "name": "Depth Anything with Any Prior (Prior Depth Anything)",
+    "source": "arxiv",
+    "url": "https://arxiv.org/abs/2505.10565",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Submitted 2026-05-15. Extends Depth Anything V2 with sparse LiDAR/depth prior for metric accuracy up to 4K. Code: github.com/SpatialVision/Prior-Depth-Anything. Not a standalone monocular depth drop-in — requires sparse prior input. No ComfyUI node yet. Depth Anything v3 remains the production backbone."
+  },
+  {
+    "method": "build_seedv2r",
+    "category": "node_pack",
+    "name": "ComfyUI-SeedVR2_VideoUpscaler (numz) — active maintenance confirmed",
+    "source": "github",
+    "url": "https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler",
+    "risk": "low",
+    "confidence": 0.82,
+    "notes": "GitHub issues filed 2026-05-25 and 2026-05-26 confirm active maintenance. Last stable release v2.5.23 (2025-12-24). SeedVR2 (ICLR 2026, arxiv:2506.05301) supports FP8 on 12–16 GB VRAM. Note: verify whether build_seedv2r points to SeedVR2 (video) or a distinct SeedV2R (image restoration) backbone — names are similar."
+  },
+  {
+    "method": "build_rembg_v3",
+    "category": "checkpoint",
+    "name": "RMBG-2.0 (briaai/RMBG-2.0) — confirmed current",
+    "source": "huggingface",
+    "url": "https://huggingface.co/briaai/RMBG-2.0",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "HF lastModified ~2026-04-13. BiRefNet-architecture backbone with Bria AI proprietary training data. No superseding open background-removal model found in the 7-day window. Current backbone confirmed SOTA."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "paper",
+    "name": "SridBench — Scientific Research Illustration Drawing Benchmark",
+    "source": "arxiv",
+    "url": "https://arxiv.org/abs/2505.22126",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Published 2026-05-28 (in window). All tested models (GPT-4o-image, Gemini-2.0-Flash, etc.) fall far short of human performance on scientific figure generation across 13 disciplines. Context only — useful for setting user-facing expectations in Spellcaster's illustration use cases. No model action."
+  }
+]
