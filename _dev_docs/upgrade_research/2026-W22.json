@@ -87,7 +87,7 @@
     "url": "https://blog.comfy.org/p/wan27-is-now-available-in-comfyui",
     "risk": "medium",
     "confidence": 0.90,
-    "notes": "Released 2026-04-22. MoE architecture. First+last frame in single clip, 9-grid I2V, native audio, instruction editing. ComfyUI partner nodes available. Q8 GGUF + blockswap required at 16 GB VRAM; RTX 5060 Ti at floor. Supersedes Wan 2.1/2.2 on quality metrics. Tier 3 until local blockswap validation done."
+    "notes": "Released 2026-04-22. MoE architecture. First+last frame in single clip, 9-grid I2V, native audio, instruction-based editing. ComfyUI partner nodes available. Q8 GGUF + blockswap required at 16 GB VRAM; RTX 5060 Ti at floor. Supersedes Wan 2.1/2.2 on quality metrics. Tier 3 until local blockswap validation done."
   },
   {
     "method": "build_txt2img,build_img2img,build_klein_img2img,build_style_transfer,build_pulid_flux",
