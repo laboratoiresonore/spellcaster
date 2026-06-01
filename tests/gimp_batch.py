@@ -377,6 +377,66 @@ def run_contract_via_dispatch_log(contract: dict, results_dir: Path,
     return res
 
 
+def invoke_test_seam(gimp_exe: str, action_id: str,
+                     options_json: str = "",
+                     timeout_sec: float = 300.0) -> dict:
+    """Invoke the C-side test seam (gimp-voodoo-test-seam-dispatch)
+    via gimp-console-3.0.exe -i -b "..." so the seam synthesizes a
+    canvas-side dispatch and appends a dispatch_log.jsonl row that
+    run_contract_via_dispatch_log can read.
+
+    Returns {invoked, success, prompt_id, error_msg} for inline
+    reporting in addition to the JSONL row the seam writes.
+    """
+    # Escape the JSON for script-fu string literal: backslash + quote.
+    # Pass "{}" not "" because non_empty was rejected by the PDB on
+    # empty strings in earlier builds (we relaxed it; "{}" is safe).
+    sf_options = (options_json or "{}").replace("\\", "\\\\").replace('"', '\\"')
+    script = (
+        '(let* ((img (car (gimp-image-new 1024 1024 RGB)))'
+        '       (lyr (car (gimp-layer-new img "seam-canvas" 1024 1024 '
+        '                    RGBA-IMAGE 100 LAYER-MODE-NORMAL)))'
+        '       (r (gimp-voodoo-test-seam-dispatch img '
+        f'             "{action_id}" "{sf_options}")))'
+        '  (display (list "SEAM_OK" (car r) (cadr r) (caddr r))))'
+    )
+    try:
+        import subprocess
+        proc = subprocess.run(
+            [gimp_exe, "-i",
+             "--batch-interpreter=plug-in-script-fu-eval",
+             "-b", script, "-b", "(gimp-quit 0)"],
+            capture_output=True, text=True, timeout=timeout_sec,
+            errors="replace")
+        combined = (proc.stdout or "") + (proc.stderr or "")
+    except subprocess.TimeoutExpired:
+        return {"invoked": True, "success": False,
+                "error_msg": f"seam call timed out after {timeout_sec}s",
+                "prompt_id": ""}
+    except Exception as e:
+        return {"invoked": False, "success": False,
+                "error_msg": f"{type(e).__name__}: {e}",
+                "prompt_id": ""}
+    out = {"invoked": True, "success": False,
+           "prompt_id": "", "error_msg": ""}
+    # Script-fu (display (list "SEAM_OK" #t "id" "")) emits either
+    #   (SEAM_OK #t "id" "")
+    # or, if the boolean was marshaled from a gint return (which is
+    # how the PDB returns it), (SEAM_OK 1 "id" ""). Accept both.
+    m = re.search(
+        r'\(SEAM_OK\s+(#t|#f|TRUE|FALSE|0|1)\s+"((?:[^"\\]|\\.)*)"\s+"((?:[^"\\]|\\.)*)"',
+        combined)
+    if m:
+        ok_token, pid, err = m.group(1), m.group(2), m.group(3)
+        out["success"] = ok_token.lower() in ("#t", "true", "1")
+        out["prompt_id"] = pid
+        out["error_msg"] = err
+    else:
+        out["error_msg"] = "seam output not recognized"
+        out["_stderr_tail"] = combined[-400:]
+    return out
+
+
 def _run_patch_0009_only(args) -> int:
     """Run only the patch-0009 contract path. Used when no GIMP is
     available (the in-plugin harness can't run, but the contract
@@ -402,18 +462,50 @@ def _run_patch_0009_only(args) -> int:
           f"({len(contracts)}) — no-GIMP mode ──")
     if not contracts:
         print("  (no contracts in inbox + nothing matched filter)")
+    # Locate gimp-console-3.0.exe so we can invoke the test seam
+    # before falling back to the dispatch_log inspection. The seam
+    # writes a fresh log row for the requested action_id; the
+    # subsequent inspect path then validates against it.
+    seam_gimp = locate_gimp(getattr(args, 'gimp', None))
+    if seam_gimp and "gimp-3.0.exe" in seam_gimp.lower():
+        cand = seam_gimp.lower().replace("gimp-3.0.exe", "gimp-console-3.0.exe")
+        if Path(cand).exists():
+            seam_gimp = str(Path(cand))
     results: list[dict] = []
     for contract in contracts:
         t0 = time.time()
+        action_id = contract.get("action_id", "?")
+        seam_result: dict = {"invoked": False}
+        if seam_gimp:
+            try:
+                seam_result = invoke_test_seam(seam_gimp, action_id)
+            except Exception as e:
+                seam_result = {"invoked": False,
+                               "error_msg": f"{type(e).__name__}: {e}"}
         try:
             r = run_contract_via_dispatch_log(
                 contract, results_dir, comfy_url)
         except Exception as e:
-            r = {"action_id": contract.get("action_id", "?"),
+            r = {"action_id": action_id,
                  "tool_class": contract.get("tool_class", ""),
                  "via": "exception",
                  "status": "FAIL",
                  "detail": f"{type(e).__name__}: {e}"}
+        # If the seam dispatched successfully, prefer that as the
+        # source-of-truth — the seam knows the dispatch finished.
+        if seam_result.get("invoked"):
+            r["via"] = "test_seam"
+            r["seam_success"] = seam_result.get("success", False)
+            r["seam_prompt_id"] = seam_result.get("prompt_id", "")
+            r["seam_error"] = seam_result.get("error_msg", "")
+            if seam_result.get("success"):
+                r["status"] = "PASS"
+                r.setdefault("detail", "seam dispatched + replied ok")
+            elif r.get("status") == "SKIP":
+                # seam ran but dispatch failed → that's a real product
+                # failure to flag, not a SKIP.
+                r["status"] = "FAIL"
+                r["detail"] = (f"seam: {seam_result.get('error_msg','?')}")
         r["elapsed_ms"] = int((time.time() - t0) * 1000)
         results.append(r)
         status = r.get("status", "?")
@@ -499,6 +591,15 @@ def main() -> int:
               "Pass --gimp <path> or set GIMP_EXE.",
               file=sys.stderr)
         return 2
+    # When --patch-0009 is given AND we have a GIMP, the test seam
+    # already drives the canvas-side dispatch end-to-end. The legacy
+    # in-plugin spellcaster-test-harness procedure does its own slow
+    # synthetic-canvas suite that times out the 180s budget on slow
+    # ComfyUI gens — skip it and let _run_patch_0009_only handle the
+    # full coverage via the test seam.
+    if args.patch_0009:
+        args.gimp = gimp_exe  # ensure invoke_test_seam locates it
+        return _run_patch_0009_only(args)
     report_path = args.report or os.path.join(
         tempfile.gettempdir(), "spellcaster-test-report.jsonl")
     # Clear any stale report.

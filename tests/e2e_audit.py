@@ -2457,6 +2457,12 @@ _NATIVE_ACTION_IDS = {
     # patch-0009 Tier-A planned (will be added to action_table when
     # the corresponding tool C class lands)
     "klein.inpaint", "klein.virtual_tryon",
+    # patch-0009 Tier-C-1 remainder (auto-inpaint via Florence;
+    # sam3-inpaint via SAM3 text-segmentation) + Tier-C-2 Klein
+    # Face Detailer (already in action_table but missing from this
+    # canonical set — flagged by prior consolidation agent).
+    "klein.auto_inpaint_florence", "klein.sam3_inpaint",
+    "klein.face_detail",
 }
 
 # Per-action required ComfyUI node classes for the workflow-class
@@ -2468,7 +2474,13 @@ _NATIVE_ACTION_NODES = {
     "sam3.auto_object":   ["SAM3Segment"],
     "sam3.anything_but":  ["SAM3Segment"],
     "sam3.remove_object": ["SAM3Segment"],
-    "lama.erase_selection": ["LaMaInpaint"],
+    # PATCH_0009: `LaMaInpaint` is a phantom — no ComfyUI custom-node pack
+    # has ever registered that class. The actual class emitted by
+    # spellcaster's build_lama_remove() is "LamaRemover" (from
+    # comfyui-lama-remover by Layer-norm / Sanster's big-lama port).
+    # See: spellcaster_core/node_factory.py:lama_remover() and
+    # builders_manifest.json target_class="LamaRemover".
+    "lama.erase_selection": ["LamaRemover"],
     "magical.zoom":       ["UpscaleModelLoader", "KSampler"],
     "detail.hallucinate": ["KSampler"],
     "kontext.clone":      ["KSampler"],
@@ -2479,6 +2491,15 @@ _NATIVE_ACTION_NODES = {
     "relight.layer":      ["LoadAndApplyICLightUnet"],
     "rembg.v3":           ["Image Rembg (Remove Background)"],
     "depth.map_v3":       ["KSampler"],
+    # PATCH_0009 tier-C-1 remainder: Klein Auto-Inpaint (Florence
+    # detect-then-inpaint) and Klein SAM3-Inpaint (SAM3 text-segment
+    # then inpaint). Both use SamplerCustomAdvanced via BasicGuider
+    # + BetaSamplingScheduler (see workflows.py build_klein_*).
+    "klein.auto_inpaint_florence": ["Florence2Run", "SamplerCustomAdvanced"],
+    "klein.sam3_inpaint":          ["SAM3Segment", "SamplerCustomAdvanced"],
+    # Klein Face Detailer — Impact-Pack monolithic detect/crop/regen
+    # (workflows.py build_klein_face_detail).
+    "klein.face_detail":           ["UltralyticsDetectorProvider", "FaceDetailer"],
 }
 
 
