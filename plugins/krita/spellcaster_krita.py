@@ -204,9 +204,30 @@ class KritaSpellcaster(SpellcasterPlugin):
             data = QByteArray(ptr.asstring(img.byteCount()))
         node = doc.createNode(name, "paintlayer")
         node.setPixelData(data, 0, 0, w, h)
-        doc.rootNode().addChildNode(node, None)
+        # Acly ai_diffusion pattern: insert above the user's active layer
+        # (or its parent) rather than dumping at the document root. Falls
+        # back to root if no active node is set.
+        active = None
+        parent = None
+        try:
+            active = doc.activeNode()
+            parent = active.parentNode() if active else None
+        except Exception:
+            pass
+        if parent is None:
+            parent = doc.rootNode()
+        try:
+            parent.addChildNode(node, active)
+        except Exception:
+            # If `above` arg doesn't accept the active node for any reason,
+            # fall back to a root-level append so we never lose the layer.
+            doc.rootNode().addChildNode(node, None)
         doc.refreshProjection()
-        self.show_progress(f"Spellcaster: inserted {w}×{h} layer")
+        try:
+            doc.setActiveNode(node)
+        except Exception:
+            pass
+        self.show_progress(f"Spellcaster: inserted '{name}' ({w}×{h})")
 
     def show_progress(self, message):
         """Show in Krita's status bar."""

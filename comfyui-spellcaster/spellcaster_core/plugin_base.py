@@ -1265,48 +1265,91 @@ class SpellcasterPlugin:
             pass
 
     def _download_and_insert(self, outputs, label):
-        """Download output images and insert as layers."""
+        """Download EVERY output image and insert each as a separate layer.
+
+        Previously this early-returned after the first image, which
+        silently dropped 6/7 of multi-angle outputs and 3/4 of
+        batch-variation outputs. Now iterates the full outputs dict,
+        accumulating each image as its own layer with a stable name.
+
+        Layer naming follows Acly ai_diffusion's pattern:
+          "<op> #N"               -- single-image ops (face_swap, pulid, ...)
+          "<op> - <sub_label>"    -- when the SaveImage node carries a
+                                     meaningful title/label (multi_angle's
+                                     angle slug, klein_batch's variation #)
+        """
+        _MAX = 500 * 1024 * 1024
+        inserted = []
+        counter = 0
+        first_data = None
         for nid, out in outputs.items():
+            # Pull a sub-label from the node title if the workflow attached
+            # one (multi_angle uses 'front_45' etc.; klein_batch variants
+            # leave it blank).
+            sub_label = ""
+            try:
+                # outputs dict keys are node IDs (strings); look up the
+                # node's title in the local workflow snapshot if we
+                # stashed it. Not always available; treat as optional.
+                meta = (out.get("_meta") or {}) if isinstance(out, dict) else {}
+                sub_label = (meta.get("title") or "").strip()
+            except Exception:
+                sub_label = ""
             for key in ("images", "gifs", "videos"):
-                for item in out.get(key, []):
-                    fn = item["filename"]
+                items = out.get(key, []) if isinstance(out, dict) else []
+                for j, item in enumerate(items):
+                    fn = item.get("filename", "?")
                     sf = item.get("subfolder", "")
                     ft = item.get("type", "output")
-                    url = f"{self.server}/view?filename={fn}&subfolder={sf}&type={ft}"
+                    url = (f"{self.server}/view?filename={fn}"
+                           f"&subfolder={sf}&type={ft}")
                     try:
-                        # 500 MB cap — same as cli.download_output. Beyond
-                        # this the server is streaming garbage and we'd
-                        # rather surface an error than hang the editor.
-                        _MAX = 500 * 1024 * 1024
-                        data = urllib.request.urlopen(url, timeout=120).read(_MAX + 1)
+                        data = urllib.request.urlopen(
+                            url, timeout=120).read(_MAX + 1)
                         if len(data) > _MAX:
                             raise IOError(f"/view exceeded {_MAX} bytes")
-                        if len(data) > 100:
+                        if len(data) <= 100:
+                            continue
+                        counter += 1
+                        if first_data is None:
+                            first_data = data
+                            # Re-upload the FIRST image for chaining; the
+                            # caller treats `_last_upload` as the canvas
+                            # after this method returns.
                             self._last_upload = None
-                            # Re-upload for chaining
-                            chain_name = f"spellcaster_{uuid.uuid4().hex[:8]}.png"
                             if fn.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-                                self._upload_raw(chain_name, data)
-                                self._last_upload = chain_name
-                            self.insert_layer(data, f"{label}: {fn}")
-                            # Cross-interface stash (§15). No-ops when
-                            # the plugin wasn't constructed with a
-                            # guild_url; otherwise pushes the bytes
-                            # into AssetGallery so every other plugin
-                            # sees the generation via
-                            # ``<origin>.asset.created``.
+                                chain_name = f"spellcaster_{uuid.uuid4().hex[:8]}.png"
+                                try:
+                                    self._upload_raw(chain_name, data)
+                                    self._last_upload = chain_name
+                                except Exception:
+                                    pass
+                        # Build a layer name -- prefer sub_label when set,
+                        # otherwise number them.
+                        if sub_label:
+                            layer_name = f"{label} - {sub_label}"
+                        elif len(items) > 1:
+                            layer_name = f"{label} #{counter}.{j+1}"
+                        else:
+                            layer_name = f"{label} #{counter}"
+                        self.insert_layer(data, layer_name)
+                        # Cross-interface stash -- guild-aware; no-op
+                        # without a guild_url.
+                        try:
                             gallery_url = self._stash_in_gallery(
                                 data, kind=label, title=fn)
-                            # Record the canonical URL on the plugin
-                            # so callers that want it can
-                            # ``plugin._last_gallery_url`` without
-                            # re-reading the bytes. Falls back to the
-                            # raw ComfyUI /view URL only when the
-                            # gallery stash didn't happen (no guild
-                            # configured or upload failed).
                             self._last_gallery_url = gallery_url or url
-                            self.show_progress(f"Done! ({len(data)//1024} KB)")
-                            return data
+                        except Exception:
+                            pass
+                        inserted.append(layer_name)
                     except Exception as e:
-                        self.show_error(f"Download failed: {e}")
-        return None
+                        self.show_error(f"Download failed for {fn}: {e}")
+
+        if inserted:
+            if len(inserted) == 1:
+                self.show_progress(f"Done! Inserted {inserted[0]}")
+            else:
+                self.show_progress(
+                    f"Done! Inserted {len(inserted)} layers "
+                    f"({', '.join(inserted[:3])}{'...' if len(inserted) > 3 else ''})")
+        return first_data
