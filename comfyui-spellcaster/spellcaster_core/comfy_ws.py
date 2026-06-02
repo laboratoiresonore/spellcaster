@@ -70,6 +70,37 @@ from typing import Any, Callable, Iterator, List, Mapping, Optional, Tuple
 from urllib import error as urlerror
 from urllib import request as urlrequest
 
+# ── Upload helper ─────────────────────────────────────────────────
+# spellcaster_krita.py imports `upload_image` from this module to push
+# canvas / mask PNGs to ComfyUI's input dir before referencing them in
+# a workflow. Pure-stdlib so the Krita plugin keeps zero non-Python deps.
+
+
+def upload_image(server_url: str, image_bytes: bytes, filename: str = "input.png") -> str:
+    """POST raw image bytes to ComfyUI's /upload/image and return the
+    server-side filename. Files land in ComfyUI's `input/` directory so
+    workflow nodes (LoadImage, etc.) can reference them by name.
+    """
+    boundary = uuid.uuid4().hex
+    head = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="image"; '
+        f'filename="{filename}"\r\n'
+        f"Content-Type: image/png\r\n\r\n"
+    ).encode("utf-8")
+    tail = f"\r\n--{boundary}--\r\n".encode("utf-8")
+    body = head + image_bytes + tail
+    req = urlrequest.Request(
+        f"{server_url.rstrip('/')}/upload/image",
+        data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST",
+    )
+    with urlrequest.urlopen(req, timeout=30) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    return payload.get("name", filename)
+
+
 # ── Binary frame protocol ─────────────────────────────────────────
 
 WS_EVENT_PREVIEW_IMAGE = 1

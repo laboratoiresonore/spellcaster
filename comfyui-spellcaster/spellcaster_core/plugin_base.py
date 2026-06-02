@@ -974,8 +974,17 @@ class SpellcasterPlugin:
                     err = json.loads(e.read().decode())
                 except Exception:
                     pass
-                err_str = (
-                    f"Rejected: {json.dumps(err.get('node_errors', {}))[:200]}")
+                # Show the most informative field available. Some rejections
+                # come back without `node_errors` (e.g. prompt-level errors,
+                # invalid workflow shape) -- those used to render as the
+                # unhelpful "Rejected: {}".
+                node_errs = err.get("node_errors", {})
+                if node_errs:
+                    err_str = f"Rejected: {json.dumps(node_errs)[:400]}"
+                elif err:
+                    err_str = f"Rejected: {json.dumps(err)[:400]}"
+                else:
+                    err_str = "Rejected (no detail returned by ComfyUI)"
                 self.show_error(err_str)
                 return None
 
