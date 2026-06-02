@@ -991,6 +991,18 @@ class SpellcasterPlugin:
             except Exception:
                 pass
 
+            # File-level fallback: when a node references a model file that
+            # isn't on this server (hyperswap_1c_256 / reswapper_256 /
+            # GPEN-BFR-2048 / etc.) auto-swap to the available alternative.
+            try:
+                from .preflight import substitute_missing_files
+                workflow, file_subs = substitute_missing_files(
+                    workflow, self.server)
+                for nid, inp, old, new in file_subs:
+                    self.show_progress(f"File fallback: {old} -> {new}")
+            except Exception:
+                pass
+
             # Optimize
             try:
                 workflow, warnings = optimize_workflow(

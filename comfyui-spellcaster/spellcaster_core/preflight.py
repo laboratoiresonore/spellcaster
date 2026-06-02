@@ -377,6 +377,85 @@ def check_workflow(workflow, comfy_url):
 
 
 # ═══════════════════════════════════════════════════════════════════════
+#  Model-file substitution (file-level fallback)
+# ═══════════════════════════════════════════════════════════════════════
+#
+#  preflight_workflow() handles MISSING NODE TYPES. This complementary
+#  pass handles MISSING MODEL FILES referenced by nodes that ARE present.
+#  When a workflow names e.g. swap_model="hyperswap_1c_256.onnx" but the
+#  ComfyUI server only has inswapper_128.onnx, validation fails with
+#  "Value not in list" -- accurate but unactionable. This map provides
+#  graceful fallback to the closest available alternative.
+#
+#  Per node-type + input-name, list (missing -> fallback) substitutions.
+#  Substitution only fires when the missing value is referenced AND the
+#  fallback IS in the live picker list.
+_FILE_FALLBACKS = {
+    ("ReActorFaceSwapOpt", "swap_model"): {
+        "hyperswap_1c_256.onnx": "inswapper_128.onnx",
+        "reswapper_256.onnx":    "inswapper_128.onnx",
+        "simswap_256.onnx":      "inswapper_128.onnx",
+    },
+    ("ReActorFaceSwap", "swap_model"): {
+        "hyperswap_1c_256.onnx": "inswapper_128.onnx",
+        "reswapper_256.onnx":    "inswapper_128.onnx",
+    },
+    ("ReActorFaceSwapOpt", "face_restore_model"): {
+        "GPEN-BFR-2048.onnx": "GPEN-BFR-512.onnx",
+        "GPEN-BFR-1024.onnx": "GPEN-BFR-512.onnx",
+    },
+    ("ReActorFaceSwap", "face_restore_model"): {
+        "GPEN-BFR-2048.onnx": "GPEN-BFR-512.onnx",
+        "GPEN-BFR-1024.onnx": "GPEN-BFR-512.onnx",
+    },
+    ("ReActorFaceBoost", "boost_model"): {
+        "GPEN-BFR-2048.onnx": "GPEN-BFR-512.onnx",
+        "GPEN-BFR-1024.onnx": "GPEN-BFR-512.onnx",
+    },
+}
+
+
+def substitute_missing_files(workflow, comfy_url):
+    """Swap referenced model filenames for available alternatives.
+
+    For each node in the workflow, look up its (class_type, input_name)
+    in _FILE_FALLBACKS. If the input's current value is a key in the
+    substitution map AND the fallback value IS in the live picker list,
+    swap them. Otherwise leave alone (preflight will surface a clear
+    error if validation later fails).
+
+    Returns (patched_workflow, substitutions) where substitutions is a
+    list of (node_id, input_name, old_value, new_value) tuples for the
+    caller to surface in the UI.
+    """
+    substitutions = []
+    patched = dict(workflow)
+    for nid, node in list(patched.items()):
+        if not isinstance(node, dict):
+            continue
+        ct = node.get("class_type", "")
+        inputs = node.get("inputs", {}) or {}
+        for input_name, value in list(inputs.items()):
+            sub_map = _FILE_FALLBACKS.get((ct, input_name))
+            if not sub_map or value not in sub_map:
+                continue
+            fallback = sub_map[value]
+            # Confirm the fallback IS in the live picker list before swapping
+            picker = _get_picker_values(comfy_url, ct, input_name)
+            if picker and fallback not in picker:
+                continue  # fallback also missing -- leave the original; user gets clear error
+            new_node = dict(node)
+            new_inputs = dict(inputs)
+            new_inputs[input_name] = fallback
+            new_node["inputs"] = new_inputs
+            patched[nid] = new_node
+            substitutions.append((nid, input_name, value, fallback))
+            print(f"[Preflight] file-sub {ct}.{input_name}: "
+                   f"{value} -> {fallback}")
+    return patched, substitutions
+
+
+# ═══════════════════════════════════════════════════════════════════════
 #  Model-file validation (ckpt / lora / cn / upscale / vae / clip)
 # ═══════════════════════════════════════════════════════════════════════
 #
