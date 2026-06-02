@@ -229,7 +229,9 @@ DEFAULT_PROMPTS: dict[str, str] = {
     ),
 
     # ───── Restoration / advanced inpaint ──────────────────────────
-    "photo_restore": "",  # no prompt -- pure quality restoration pipeline
+    "photo_restore": "",
+    "klein_multi_angle": "",   # 7 hard-coded angle templates
+  # no prompt -- pure quality restoration pipeline
     "inpaint_fooocus": (
         "high quality inpaint, matching surrounding context, seamless "
         "integration, detailed texture, photorealistic"

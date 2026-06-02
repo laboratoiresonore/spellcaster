@@ -270,6 +270,16 @@ class KritaSpellcaster(SpellcasterPlugin):
             ref, prompt, seed, klein_model_key=klein_model_key)
         return self._run_workflow(wf, "photobooth")
 
+
+    def klein_multi_angle(self, klein_model_key="Klein 4B", seed=0,
+                          steps=4):
+        """Klein multi-angle character sheet (7 views from one reference)."""
+        img = self.upload_canvas()
+        wf = self._wf("build_klein_multi_angle")(
+            img, klein_model_key=klein_model_key,
+            seed=seed, steps=steps)
+        return self._run_workflow(wf, "klein_multi_angle")
+
     def pulid_flux(self, face_ref_bytes, prompt, seed=0):
         target = self.upload_canvas()
         face_ref = self._upload_bytes(face_ref_bytes,
@@ -1392,36 +1402,8 @@ class SpellcasterExtension(Extension):
                                                        batch_count=4)
 
     def _on_klein_multi_angle(self):
-        """Open the CivitAI 2642426 multi-angle workflow in ComfyUI.
-
-        Generates 7 consistent views (45° front, side profile, rear,
-        45° rear, high angle, low angle, close-up detail) of the same
-        subject from a single reference image. Workflow lives in
-        ComfyUI's user library and runs natively there since it uses
-        a ComfyUI subgraph (no Spellcaster builder yet -- that would
-        need a UI->API subgraph expander).
-
-        This handler just opens the ComfyUI tab on the workflow.
-        Workflow file: <ComfyUI>/user/default/workflows/
-                       Flux Klein Multi-Angle (CivitAI 2642426).json
-        """
-        try:
-            plug = self._get_plugin()
-            server = plug.server
-        except Exception:
-            server = "http://127.0.0.1:8188"
-        url = server.rstrip("/") + "/?workflowFilename=Flux%20Klein%20Multi-Angle%20%28CivitAI%202642426%29.json"
-        try:
-            import webbrowser
-            webbrowser.open(url)
-        except Exception:
-            # Fallback: just open ComfyUI; user picks the workflow manually.
-            try:
-                import webbrowser
-                webbrowser.open(server)
-            except Exception:
-                pass
-
+        """Dispatch klein_multi_angle via Spellcaster (7-angle sheet)."""
+        self._get_plugin().klein_multi_angle()
     def _on_photobooth(self):
         prompt, ok = self._prompt("Photobooth",
                                     "Style of portrait (or blank for default):", "", op_key="photobooth")
@@ -1751,6 +1733,7 @@ METHOD_SPECS = [
     ('Transform', 'klein_detail',           'Klein multi-pass detail',      True,  False, '', lambda p, t, r: p.klein_detail(t)),
     ('Transform', 'klein_scene_img2img',    'Klein re-scene / relight',     True,  False, '', lambda p, t, r: p.klein_scene_img2img(t)),
     ('Transform', 'klein_generate_object',  'Klein add object to scene',    True,  False, '', lambda p, t, r: p.klein_generate_object(t)),
+    ('Transform', 'klein_multi_angle',     'Klein multi-angle character sheet (7)',  False, False, '', lambda p, t, r: p.klein_multi_angle()),
     ('Transform', 'klein_batch_variations', 'Klein batch variations (4x)',  True,  False, '', lambda p, t, r: p.klein_batch_variations(t)),
     ('Transform', 'photobooth',             'Photobooth (passport portrait)', True, False, '', lambda p, t, r: p.photobooth(t)),
     ('Transform', 'qwen_edit',              'Qwen edit (semantic)',         True,  False, '', lambda p, t, r: p.qwen_edit(t)),
