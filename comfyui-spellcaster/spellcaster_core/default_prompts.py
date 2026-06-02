@@ -227,6 +227,14 @@ DEFAULT_PROMPTS: dict[str, str] = {
     "faceswap_from_model": (
         "[name of a previously-saved face model]"
     ),
+
+    # ───── Restoration / advanced inpaint ──────────────────────────
+    "photo_restore": "",  # no prompt -- pure quality restoration pipeline
+    "inpaint_fooocus": (
+        "high quality inpaint, matching surrounding context, seamless "
+        "integration, detailed texture, photorealistic"
+    ),
+    "video_upscale": "",  # no prompt -- upscale only
 }
 
 

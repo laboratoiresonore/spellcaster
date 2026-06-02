@@ -464,6 +464,62 @@ class KritaSpellcaster(SpellcasterPlugin):
         wf = self._wf("build_faceswap_mtb")(target, source)
         return self._run_workflow(wf, "faceswap_mtb")
 
+    def photo_restore(self, seed=0):
+        """Old-photo restoration: upscale + face enhance + sharpen.
+        No prompt -- pure quality pipeline. Wraps build_photo_restore."""
+        img = self.upload_canvas()
+        wf = self._wf("build_photo_restore")(
+            img,
+            upscale_model="4x-UltraSharp.pth",
+            face_model="codeformer-v0.1.0.pth",
+            facedetection="retinaface_resnet50",
+            visibility=0.7,
+            codeformer_weight=0.5,
+            sharpen_radius=1.0,
+            sigma=1.0,
+            alpha=1.0,
+        )
+        return self._run_workflow(wf, "photo_restore")
+
+    def inpaint_fooocus(self, prompt, seed=0):
+        """Fooocus-style inpaint: LaMa pre-fill + Fooocus head LoRA on SDXL.
+        Often higher quality than the default SDXL inpaint for clothing /
+        object replacement. Requires a Krita selection (mask)."""
+        img = self.upload_canvas()
+        mask = self._upload_mask()
+        if not mask:
+            self.show_error("Fooocus inpaint needs a Krita selection.")
+            return None
+        preset = {
+            "ckpt": "SDXL\\Realistic\\RealVisXL_V5.0_fp16.safetensors",
+            "arch": "sdxl",
+            "steps": 30, "cfg": 7.0,
+            "sampler": "dpmpp_2m", "scheduler": "karras",
+            "denoise": 0.85, "width": 1024, "height": 1024,
+        }
+        wf = self._wf("build_inpaint_fooocus")(
+            img, mask, preset, prompt, "", seed)
+        return self._run_workflow(wf, "inpaint_fooocus")
+
+    def video_upscale(self, video_bytes, upscale_factor=2.0):
+        """Upscale a video file. Uploads the video to ComfyUI's input dir
+        then runs build_video_upscale."""
+        if not video_bytes:
+            self.show_error("Video upscale needs a video file.")
+            return None
+        import uuid as _u
+        name = f"spellcaster_video_{_u.uuid4().hex[:8]}.mp4"
+        # Use the raw-bytes upload helper inherited from the base class
+        # (or fall back to our _upload_bytes which does the multipart POST).
+        try:
+            self._upload_raw(name, video_bytes)
+        except AttributeError:
+            self._upload_bytes(video_bytes, prefix="video")
+            name = self._upload_bytes_last_name if hasattr(self, '_upload_bytes_last_name') else name
+        wf = self._wf("build_video_upscale")(
+            name, upscale_factor=upscale_factor)
+        return self._run_workflow(wf, "video_upscale")
+
     # =====================================================================
     #  Iteration 3 — alt upscalers + utility ops
     # =====================================================================
@@ -1638,6 +1694,10 @@ METHOD_SPECS = [
     ('Face', 'klein_headswap',     'Klein head swap',               False, True,  'Source face',    lambda p, t, r: p.klein_headswap(r)),
     ('Face', 'klein_virtual_tryon','Klein virtual try-on (outfit)', True,  True,  'Outfit image',   lambda p, t, r: p.klein_virtual_tryon(r, t)),
     ('Face', 'face_restore',       'Restore Faces',                 False, False, '',               lambda p, t, r: p.face_restore()),
+
+    ('Transform', 'photo_restore',         'Old photo restore (no prompt)',  False, False, '', lambda p, t, r: p.photo_restore()),
+    ('Inpaint',   'inpaint_fooocus',       'Fooocus inpaint (LaMa+SDXL)',    True,  False, '', lambda p, t, r: p.inpaint_fooocus(t)),
+    ('Upscale',   'video_upscale',         'Video upscale (pick file)',      False, True,  'Video file', lambda p, t, r: p.video_upscale(r) if r else None),
 
     # ── Style / Composite (canvas + ref image) ────────────────
     ('Style', 'style_transfer_from_bytes', 'Style Transfer',            True,  True,  'Style reference',  lambda p, t, r: p.style_transfer_from_bytes(r, t)),
