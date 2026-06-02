@@ -158,6 +158,73 @@ def _fallback_skip(nid, node, workflow):
     return None  # Can't skip safely
 
 
+def _fallback_sam3_optional(nid, node, workflow):
+    """Skip SAM3Segment + its downstream mask-composite chain so the
+    workflow runs without SAM3 region scoping (full-canvas transform).
+
+    SAM3 is used by Spellcaster in two patterns:
+      a) DIRECT (sam3_segment / sam3_extract / klein_sam3_inpaint) -- the
+         whole workflow exists to USE SAM3; can't salvage; this fallback
+         returns None to signal "no graceful skip".
+      b) OPTIONAL (build_sam3_mask inside img2img/iclight/refine/etc) --
+         used to composite the transform output onto the original via a
+         SAM3-masked region. Removing SAM3 + GrowMaskWithBlur +
+         ImageCompositeMasked, then rewiring consumers to use the
+         transformed "source" image directly, degrades gracefully to
+         "transform the whole canvas, no region scoping".
+
+    We detect pattern (b) by looking for an ImageCompositeMasked whose
+    `mask` input traces back to this SAM3Segment.
+    """
+    # Find any ImageCompositeMasked whose mask comes (directly or via
+    # GrowMaskWithBlur) from this SAM3 node.
+    sam3_id_str = str(nid)
+    composites_to_strip = []
+    grow_to_strip = []
+    for cid, cnode in workflow.items():
+        if not isinstance(cnode, dict):
+            continue
+        if cnode.get("class_type") != "ImageCompositeMasked":
+            continue
+        mask_ref = cnode.get("inputs", {}).get("mask")
+        if not (isinstance(mask_ref, list) and len(mask_ref) == 2):
+            continue
+        mask_src = str(mask_ref[0])
+        # Direct: composite.mask <- SAM3
+        if mask_src == sam3_id_str:
+            composites_to_strip.append(cid)
+            continue
+        # Indirect: composite.mask <- GrowMaskWithBlur <- SAM3
+        grow_node = workflow.get(mask_src) or workflow.get(int(mask_src) if mask_src.isdigit() else None)
+        if isinstance(grow_node, dict) and grow_node.get("class_type") == "GrowMaskWithBlur":
+            inner = grow_node.get("inputs", {}).get("mask")
+            if isinstance(inner, list) and len(inner) == 2 and str(inner[0]) == sam3_id_str:
+                composites_to_strip.append(cid)
+                grow_to_strip.append(mask_src)
+
+    if not composites_to_strip:
+        # No composite uses our mask -- this is the DIRECT pattern.
+        # Can't salvage; the workflow is entirely SAM3-based.
+        return None
+
+    # OPTIONAL pattern: rewire each composite's consumers to use the
+    # composite's `source` input (the transformed image) directly, then
+    # delete the composite + grow + sam3 nodes.
+    to_delete = set([sam3_id_str] + [str(g) for g in grow_to_strip])
+    for cid in composites_to_strip:
+        cnode = workflow[cid]
+        source_ref = cnode.get("inputs", {}).get("source")
+        if not (isinstance(source_ref, list) and len(source_ref) == 2):
+            # Can't determine the source; bail with an error
+            return None
+        _rewire_refs(workflow, cid, 0, source_ref[0], source_ref[1])
+        to_delete.add(str(cid))
+
+    # Build the patched dict: drop the stripped nodes
+    patched = {k: v for k, v in workflow.items() if str(k) not in to_delete}
+    return patched
+
+
 # The registry: class_type → (fallback_fn, description, install_hint)
 FALLBACK_REGISTRY = {
     "RIFE_VFI": (
@@ -174,6 +241,11 @@ FALLBACK_REGISTRY = {
         None,
         "LaMa object removal node",
         "Install: comfyui-lama (required for object removal)",
+    ),
+    "SAM3Segment": (
+        _fallback_sam3_optional,
+        "SAM3 region scoping -> skipped (transform applies to full canvas)",
+        "Install: ComfyUI-Segment-Anything-2 for region-scoped edits",
     ),
 }
 

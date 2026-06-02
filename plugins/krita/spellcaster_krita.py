@@ -34,9 +34,21 @@ class KritaSpellcaster(SpellcasterPlugin):
 
     def __init__(self, server_url="http://192.168.86.28:8190",
                  guild_url=None, origin="krita"):
+        # Read user's SAM3-skip preference from Krita settings BEFORE super()
+        # so the base class's __init__ doesn't get to set the default.
+        # Stored as the string "true" / "false" via Application.writeSetting.
+        try:
+            from krita import Application as _App
+            _skip = (_App.readSetting(
+                "spellcaster", "skip_sam3", "false") or "false").lower()
+            self._initial_skip_sam3 = _skip in ("true", "1", "yes", "on")
+        except Exception:
+            self._initial_skip_sam3 = False
         # Passing guild_url + origin activates the cross-interface
         # heartbeat + AssetGallery stash in plugin_base.
         super().__init__(server_url, guild_url=guild_url, origin=origin)
+        # Apply the persisted SAM3-skip preference.
+        self.skip_sam3 = self._initial_skip_sam3
         self._app = Krita.instance()
 
     def _heartbeat_meta(self):
@@ -1272,14 +1284,49 @@ class SpellcasterExtension(Extension):
             plug.show_error(f"Preset failed: {e}")
 
     def _on_settings(self):
-        from PyQt5.QtWidgets import QInputDialog
-        current = Application.readSetting("spellcaster", "server_url",
-                                          "http://192.168.86.28:8190")
-        url, ok = QInputDialog.getText(None, "Spellcaster Settings",
-                                       "ComfyUI Server URL:", text=current)
-        if ok and url:
-            Application.writeSetting("spellcaster", "server_url", url)
-            self._plugin = None  # Force reconnect
+        from PyQt5.QtWidgets import (
+            QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QCheckBox,
+            QPushButton, QLabel,
+        )
+        dlg = QDialog()
+        dlg.setWindowTitle("Spellcaster Settings")
+        layout = QVBoxLayout(dlg)
+
+        # Server URL
+        layout.addWidget(QLabel("ComfyUI Server URL:"))
+        url_in = QLineEdit(Application.readSetting(
+            "spellcaster", "server_url", "http://192.168.86.28:8190"))
+        layout.addWidget(url_in)
+
+        # Skip SAM3 toggle
+        skip_cur = (Application.readSetting(
+            "spellcaster", "skip_sam3", "false") or "false").lower()
+        skip_in = QCheckBox(
+            "Skip SAM3 region-scoping  "
+            "(workflows treat the whole canvas; install ComfyUI-Segment-"
+            "Anything-2 to enable)")
+        skip_in.setChecked(skip_cur in ("true", "1", "yes", "on"))
+        layout.addWidget(skip_in)
+
+        # Buttons
+        btn_row = QHBoxLayout()
+        ok_btn = QPushButton("OK")
+        cancel_btn = QPushButton("Cancel")
+        ok_btn.clicked.connect(dlg.accept)
+        cancel_btn.clicked.connect(dlg.reject)
+        btn_row.addStretch(1)
+        btn_row.addWidget(ok_btn)
+        btn_row.addWidget(cancel_btn)
+        layout.addLayout(btn_row)
+
+        if dlg.exec_() == QDialog.Accepted:
+            url = url_in.text().strip()
+            if url:
+                Application.writeSetting("spellcaster", "server_url", url)
+            Application.writeSetting(
+                "spellcaster", "skip_sam3",
+                "true" if skip_in.isChecked() else "false")
+            self._plugin = None  # Force reconnect with new settings
 
     # ─────────────────────────────────────────────────────────────
     #  Klein / PuLID / SUPIR / SAM3 / Qwen handlers

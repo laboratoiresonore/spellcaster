@@ -122,6 +122,21 @@ class SpellcasterPlugin:
         self._guild_url = (guild_url or "").rstrip("/") or None
         self._origin = origin or ""
         self._heartbeat_started = False
+        # Optional global disable for SAM3 region-scoping. When True,
+        # any SAM3Segment nodes in submitted workflows are stripped via
+        # preflight's _fallback_sam3_optional, regardless of whether
+        # the server has the SAM3 pack installed. Users without the pack
+        # should set this to True for clear behavior. UIs may surface a
+        # checkbox that toggles this attribute. Default False = trust
+        # preflight to detect + skip when the pack isn't on the server.
+        self.skip_sam3 = False
+        # Sub-set: which DIRECT sam3 methods (sam3_segment, sam3_extract,
+        # klein_sam3_inpaint) can never be salvaged when SAM3 is missing,
+        # since they have no graceful fallback. These check this list at
+        # entry and refuse with a clear error.
+        self._sam3_direct_methods = (
+            "sam3_segment", "sam3_extract", "klein_sam3_inpaint"
+        )
         self._inbox_poll_started = False
         if self._guild_url and self._origin:
             self._start_heartbeat_loop()
@@ -934,6 +949,32 @@ class SpellcasterPlugin:
         err_str = ""
         arch = self._guess_workflow_arch(workflow)
         try:
+            # Force-strip SAM3 chains if user opted out, BEFORE preflight.
+            # This guarantees no SAM3 node ever reaches the server even if
+            # the pack IS installed.
+            if self.skip_sam3:
+                workflow = self._strip_sam3_chain(workflow)
+
+            # DIRECT-SAM3 methods (sam3_segment / sam3_extract /
+            # klein_sam3_inpaint) have no graceful fallback -- the workflow
+            # IS the SAM3 segmentation. If we're running one of those AND
+            # SAM3 isn't available, refuse early with a clear message.
+            if label in self._sam3_direct_methods:
+                # The preflight call below will detect SAM3 absence, but
+                # for direct methods we want a more user-friendly error.
+                try:
+                    from .preflight import get_available_nodes
+                    if "SAM3Segment" not in (get_available_nodes(self.server) or set()):
+                        err_str = (
+                            f"{label} requires SAM3 (not installed on this "
+                            "ComfyUI server). Install ComfyUI-Segment-Anything-2 "
+                            "and restart ComfyUI, or use a workflow that "
+                            "doesn't depend on SAM3.")
+                        self.show_error(err_str)
+                        return None
+                except Exception:
+                    pass
+
             # Preflight
             self.show_progress(f"Checking nodes...")
             try:
@@ -1119,6 +1160,28 @@ class SpellcasterPlugin:
                 )
             except Exception:
                 pass
+
+    def _strip_sam3_chain(self, workflow):
+        """Pre-preflight scrub of SAM3 nodes. Use when user opted out of
+        SAM3 via self.skip_sam3 = True so we never even ask the server.
+        Reuses preflight's _fallback_sam3_optional for the actual rewiring.
+        """
+        try:
+            from .preflight import _fallback_sam3_optional
+        except Exception:
+            return workflow
+        patched = dict(workflow)
+        sam3_ids = [nid for nid, n in patched.items()
+                    if isinstance(n, dict)
+                    and n.get("class_type") == "SAM3Segment"]
+        for sid in sam3_ids:
+            node = patched.get(sid)
+            if node is None:
+                continue
+            res = _fallback_sam3_optional(sid, node, patched)
+            if res is not None:
+                patched = res
+        return patched
 
     def _guess_workflow_arch(self, workflow) -> str:
         """Best-effort arch classification from loader nodes.
