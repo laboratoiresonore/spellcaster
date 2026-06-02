@@ -874,6 +874,11 @@ class SpellcasterExtension(Extension):
             "Klein batch variations (4x)", menu)
         a_kbv.triggered.connect(self._on_klein_batch)
 
+        a_kma = window.createAction(
+            "spellcaster_klein_multi_angle",
+            "Klein multi-angle character sheet (7 views)…", menu)
+        a_kma.triggered.connect(self._on_klein_multi_angle)
+
         a_pb = window.createAction(
             "spellcaster_photobooth",
             "Photobooth (passport-style headshot)", menu)
@@ -1385,6 +1390,37 @@ class SpellcasterExtension(Extension):
         if ok and prompt:
             self._get_plugin().klein_batch_variations(prompt,
                                                        batch_count=4)
+
+    def _on_klein_multi_angle(self):
+        """Open the CivitAI 2642426 multi-angle workflow in ComfyUI.
+
+        Generates 7 consistent views (45° front, side profile, rear,
+        45° rear, high angle, low angle, close-up detail) of the same
+        subject from a single reference image. Workflow lives in
+        ComfyUI's user library and runs natively there since it uses
+        a ComfyUI subgraph (no Spellcaster builder yet -- that would
+        need a UI->API subgraph expander).
+
+        This handler just opens the ComfyUI tab on the workflow.
+        Workflow file: <ComfyUI>/user/default/workflows/
+                       Flux Klein Multi-Angle (CivitAI 2642426).json
+        """
+        try:
+            plug = self._get_plugin()
+            server = plug.server
+        except Exception:
+            server = "http://127.0.0.1:8188"
+        url = server.rstrip("/") + "/?workflowFilename=Flux%20Klein%20Multi-Angle%20%28CivitAI%202642426%29.json"
+        try:
+            import webbrowser
+            webbrowser.open(url)
+        except Exception:
+            # Fallback: just open ComfyUI; user picks the workflow manually.
+            try:
+                import webbrowser
+                webbrowser.open(server)
+            except Exception:
+                pass
 
     def _on_photobooth(self):
         prompt, ok = self._prompt("Photobooth",
