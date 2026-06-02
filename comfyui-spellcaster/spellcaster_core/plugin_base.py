@@ -993,16 +993,45 @@ class SpellcasterPlugin:
                 self.show_error(err_str)
                 return None
 
-            # Poll
-            self.show_progress(f"Generating ({label})...")
+            # Poll with no-progress watchdog (replaces the old 5-min hard
+            # timeout that killed legitimate long generations like SUPIR
+            # upscales, klein_detail multi-pass, Wan video). The new rule:
+            # we keep waiting indefinitely AS LONG AS ComfyUI is still
+            # advancing the work -- judged by /queue presence (still in
+            # queue_running/pending) OR /history message count growing
+            # (each node-completion adds a message). We only give up if
+            # NO advance for NO_PROGRESS_TIMEOUT seconds, or we hit the
+            # absolute HARD_CEILING safety net.
+            NO_PROGRESS_TIMEOUT = 180   # 3 min stuck = bail
+            HARD_CEILING = 3600         # 1 hour absolute max
             tpoll = time.time()
-            while time.time() - tpoll < 300:
+            last_advance = tpoll
+            last_msg_count = 0
+            last_node = None
+            node_step = 0
+            self.show_progress(f"Generating ({label})...")
+            while time.time() - tpoll < HARD_CEILING:
+                advanced = False
                 try:
                     r = urllib.request.urlopen(
                         f"{self.server}/history/{pid}", timeout=5)
                     d = json.loads(r.read())
                     if pid in d:
                         st = d[pid].get("status", {})
+                        msgs = st.get("messages") or []
+                        if len(msgs) > last_msg_count:
+                            last_msg_count = len(msgs)
+                            advanced = True
+                            # Surface current node for "still working" UI
+                            for m in reversed(msgs):
+                                if (isinstance(m, (list, tuple))
+                                        and len(m) >= 2
+                                        and m[0] == "executing"):
+                                    n = m[1].get("node") if isinstance(m[1], dict) else None
+                                    if n and n != last_node:
+                                        last_node = n
+                                        node_step += 1
+                                    break
                         if st.get("completed"):
                             outputs = d[pid].get("outputs", {})
                             outcome = "ok"
@@ -1034,11 +1063,45 @@ class SpellcasterPlugin:
                             return None
                 except Exception:
                     pass
+
+                # Fallback "still alive" check: prompt may not be in history
+                # yet but should be in the queue while running.
+                if not advanced:
+                    try:
+                        q = urllib.request.urlopen(
+                            f"{self.server}/queue", timeout=5)
+                        qd = json.loads(q.read())
+                        in_q = any(
+                            isinstance(item, (list, tuple)) and len(item) > 1
+                            and item[1] == pid
+                            for item in (qd.get("queue_running", [])
+                                         + qd.get("queue_pending", []))
+                        )
+                        if in_q:
+                            advanced = True
+                    except Exception:
+                        pass
+
+                if advanced:
+                    last_advance = time.time()
+
+                stuck = int(time.time() - last_advance)
+                if stuck > NO_PROGRESS_TIMEOUT:
+                    err_str = (f"No progress in {NO_PROGRESS_TIMEOUT}s "
+                               f"(last node: {last_node or '?'})")
+                    self.show_error(err_str)
+                    return None
+
                 time.sleep(2)
                 elapsed = int(time.time() - tpoll)
-                self.show_progress(f"Generating ({label})... {elapsed}s")
+                # Block-bar based on node-execution count (capped at 20 blocks).
+                bar_full = min(node_step, 20)
+                bar = "█" * bar_full + "░" * (20 - bar_full)
+                node_hint = f"node {last_node}" if last_node else "queued"
+                self.show_progress(
+                    f"Generating ({label}) [{bar}] {elapsed}s -- {node_hint}")
 
-            err_str = "Timeout"
+            err_str = f"Hit hard ceiling ({HARD_CEILING}s)"
             self.show_error(err_str)
             return None
         except Exception as _exc:

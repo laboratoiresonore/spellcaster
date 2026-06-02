@@ -268,6 +268,10 @@ class KritaSpellcaster(SpellcasterPlugin):
         # - Klein 4B has "4b" in the name so builder routes CLIPLoader to
         #   qwen_3_4b (which we have) and PuLID to the Flux2 node family
         #   from iFayens/ComfyUI-PuLID-Flux2.
+        # denoise=0.25 (was 0.65): the previous default regenerated 65%% of
+        # the canvas latent, blowing away background + clothes. PuLID's
+        # identity-injection only needs ~0.20-0.35 denoise to imprint the
+        # face on the existing image; lower preserves more of the original.
         # enhance=False skips the Klein enhancer chain which adds
         # ApplyTeaCachePatch (from lldacing/ComfyUI_Patches_ll). If you
         # install that pack you can flip enhance=True for ~1.5x speed.
@@ -276,6 +280,7 @@ class KritaSpellcaster(SpellcasterPlugin):
             prompt_text=prompt, negative_text="", seed=seed,
             flux_model="A-Flux\\flux-2-klein-4b-fp8.safetensors",
             pulid_model="pulid_flux2_klein_v2.safetensors",
+            denoise=0.25,
             enhance=False,
         )
         return self._run_workflow(wf, "pulid_flux")
@@ -419,7 +424,10 @@ class KritaSpellcaster(SpellcasterPlugin):
             "arch": "sdxl",
             "steps": 28, "cfg": 6.0,
             "sampler": "dpmpp_2m", "scheduler": "karras",
-            "denoise": 0.55, "width": 1024, "height": 1024,
+            # denoise=0.35 (was 0.55): preserves more of the original
+            # canvas. FaceID IPAdapter injects identity even at low
+            # denoise; higher just regenerates background unnecessarily.
+            "denoise": 0.35, "width": 1024, "height": 1024,
         }
         wf = self._wf("build_faceid_img2img")(
             target, face, preset, prompt_text=prompt,
