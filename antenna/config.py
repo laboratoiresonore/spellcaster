@@ -75,8 +75,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # services coexist cleanly in one config file.
     "comfyui_root": "auto",
     "comfyui_url": "http://127.0.0.1:8188",
-    "llm_engine": "",            # "koboldcpp" | "ollama" | "" (disabled)
+    "llm_engine": "",            # "koboldcpp" | "ollama" | "lmstudio" | "" (disabled)
     "llm_url": "http://127.0.0.1:5001",
+    "lmstudio_url": "http://127.0.0.1:1234",   # LM Studio OpenAI-compatible API
+                                               # (override with a remote host's
+                                               # URL to probe LM Studio elsewhere)
     "resolve_install_dir": "",   # Phase 4 — DaVinci Resolve integration
     "token_path": str(DEFAULT_DIR / DEFAULT_TOKEN_FILENAME),
     "tls_cert_path": str(DEFAULT_DIR / DEFAULT_CERT_FILENAME),

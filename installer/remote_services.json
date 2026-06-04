@@ -41,6 +41,24 @@
       "managed_ops": ["pull_model", "list_models"]
     },
     {
+      "key": "lmstudio",
+      "label": "LM Studio",
+      "description": "OpenAI-compatible local LLM server (GUI + `lms` CLI) on :1234",
+      "default_port": 1234,
+      "detect_paths": [
+        "lm-studio/LM Studio.exe",
+        "LM Studio/LM Studio.exe",
+        "Programs/lm-studio/LM Studio.exe",
+        "Applications/LM Studio.app",
+        "usr/bin/lm-studio",
+        "lms.exe",
+        "usr/bin/lms"
+      ],
+      "detect_process": "LM Studio",
+      "probe_path": "/v1/models",
+      "managed_ops": ["list_models", "load_model", "unload_model"]
+    },
+    {
       "key": "sillytavern",
       "label": "SillyTavern",
       "description": "Character chat front-end that integrates with Spellcaster's wizards",

@@ -36,6 +36,7 @@ Install modes:
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 import traceback
@@ -67,17 +68,31 @@ def status(ctx: dict[str, Any]) -> tuple[int, dict]:
     Probes the usual ports:
       - KoboldCpp       :5001  /v1/models
       - Ollama          :11434 /api/tags
+      - LM Studio       :1234  /v1/models   (OpenAI-compatible)
       - ComfyUI QwenVL  via the ComfyUI /object_info registry
 
     Returns a dict with every probed backend's reachability, which
     Guild + wizard use to decide whether /llm/install is even needed.
     """
+    cfg = ctx.get("config") or {}
+    lmstudio_url = str(cfg.get("lmstudio_url", "http://127.0.0.1:1234")).rstrip("/")
     out = {
         "host": "localhost",      # relative to this antenna
         "kobold":   {"reachable": False, "url": "http://127.0.0.1:5001",   "model": None},
         "ollama":   {"reachable": False, "url": "http://127.0.0.1:11434",  "model": None},
+        "lmstudio": {"reachable": False, "url": lmstudio_url,              "model": None},
         "comfyui":  {"reachable": False, "qwen_node": False},
     }
+
+    def _first_openai_model(raw: bytes) -> str | None:
+        # OpenAI /v1/models shape: {"data": [{"id": "..."}]}. Returns the
+        # first model id, or None if the body isn't parseable.
+        try:
+            data = json.loads(raw).get("data") or []
+            return data[0].get("id") if data else None
+        except Exception:
+            return None
+
     # Kobold
     try:
         req = urllib.request.Request("http://127.0.0.1:5001/v1/models",
@@ -85,6 +100,19 @@ def status(ctx: dict[str, Any]) -> tuple[int, dict]:
         with urllib.request.urlopen(req, timeout=2) as resp:
             if resp.status == 200:
                 out["kobold"]["reachable"] = True
+                out["kobold"]["model"] = _first_openai_model(resp.read())
+    except Exception:
+        pass
+    # LM Studio (OpenAI-compatible /v1/models). URL is configurable so a
+    # remote LM Studio host can be probed by setting lmstudio_url in
+    # antenna_config.json; defaults to localhost.
+    try:
+        req = urllib.request.Request(f"{lmstudio_url}/v1/models",
+                                      headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            if resp.status == 200:
+                out["lmstudio"]["reachable"] = True
+                out["lmstudio"]["model"] = _first_openai_model(resp.read())
     except Exception:
         pass
     # Ollama
