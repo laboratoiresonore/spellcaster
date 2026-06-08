@@ -104,6 +104,43 @@ Option A is the higher-leverage one — the civitai backend in particular gives 
 
 ---
 
+### Task 8 — Network handoff (expose antenna so the next cloud run CAN reach LAN)
+
+**Why**: The 2026-06-08 cloud run confirmed the sandbox is on the strict-allowlist network policy — `huggingface.co`, `civitai.com`, `api.github.com`, and arbitrary `host:port` TCP are all blocked at the proxy. Only the Anthropic API + a small allowlist (e.g. `raw.githubusercontent.com`) gets through. That's why every "WebSearch" / "HF MCP" call in today's digest had to be tunneled via Anthropic's tools — the sandbox cannot speak directly to the open internet, let alone NAT'd LAN services.
+
+If the operator wants future cloud runs to do antenna-side smoke tests (Task 5), benchmark calls against ComfyUI, or any other LAN-adjacent verification, antenna needs to surface itself behind a stable allowlisted URL.
+
+**Pick one path**:
+
+**8a — Cloudflare Tunnel (recommended)**
+- Install `cloudflared` on the antenna host.
+- Provision a stable hostname under a domain the operator already owns (e.g. `antenna.lab.your-domain.tld`).
+- Run `cloudflared tunnel` pointed at `https://127.0.0.1:7334` (antenna's bind). Antenna already terminates TLS (see `antenna/config.py` cert generation) — tunnel through cleartext on the tunnel hop is fine since Cloudflare wraps it again.
+- Lock the public endpoint to the mTLS client cert antenna already issues during pairing (`antenna/pairing.py`, `antenna/auth.py`). This is the critical step — without mTLS the tunnel is an open backdoor to ComfyUI on the LAN.
+- Add `antenna.lab.your-domain.tld` (and `*.trycloudflare.com` if you accept the free-tier URL) to the cloud sandbox env's outbound allowlist.
+
+**8b — Tailscale Funnel**
+- Install Tailscale on the antenna host, enable Funnel for the antenna service on port 7334.
+- Result is a `*.ts.net` URL the cloud sandbox can reach if `ts.net` is added to the allowlist.
+- mTLS still required (Funnel is publicly reachable like Cloudflare Tunnel).
+
+**8c — ngrok**
+- Lowest setup cost (paid plan for a stable URL).
+- Same mTLS requirement.
+
+**After provisioning, on this branch**:
+1. Add an `ANTENNA_REMOTE_URL` field to `antenna/config.py` defaults (commented out, with a docstring pointing at this task).
+2. Drop the operator's chosen URL into `_dev_docs/CLOUD_ROUTINE_CONFIG.md` (new file) with the allowlist domains the cloud env needs.
+3. Update the routine spec under "You **cannot**" — once the tunnel is live, the constraint changes to "You can reach antenna via `$ANTENNA_REMOTE_URL` with the issued client cert".
+4. Smoke-test from a non-LAN machine first — if the tunnel works from someone else's network, it'll work from the cloud sandbox once allowlisted.
+
+**Don't ship without**:
+- mTLS or equivalent auth on the tunnel (an open `/api/comfyui/*` proxy is a remote-execution surface).
+- Rate limiting on the public endpoint (`antenna/firewall.py` is LAN-firewall only — Cloudflare WAF or a small middleware handles this).
+- A kill switch — `cloudflared service stop` if anything looks off.
+
+---
+
 ## Handover hygiene
 
 - The PR (#74) is the digest's source of truth. Land bump PRs as separate branches (`bump/comfyui-0.23.0`, `bump/krita-ai-1.51.1`, `feat/klein-4b`) rather than piling onto `digest/2026-06-08`.
