@@ -1725,13 +1725,37 @@ class NodeFactory:
             inputs["vae"] = vae_ref
         return self._add("ControlNetApplyAdvanced", inputs, node_id)
 
+    # Map of UI-friendly short names -> actual ComfyUI class_types from
+    # comfyui_controlnet_aux. Lets callers pass "canny" / "depth" / etc.
+    # without knowing the full preprocessor class name. If a key is not
+    # found here, the input is passed through unchanged (so callers can
+    # still pass a full class_type).
+    _PREPROCESSOR_ALIASES = {
+        "canny":     "CannyEdgePreprocessor",
+        "depth":     "DepthAnythingV2Preprocessor",  # falls through to v1 if v2 missing
+        "depth_v1":  "DepthAnythingPreprocessor",
+        "openpose":  "DWPreprocessor",                # newer, more accurate than legacy Openpose
+        "lineart":   "LineArtPreprocessor",
+        "softedge":  "HEDPreprocessor",
+        "scribble":  "FakeScribblePreprocessor",
+        "normal":    "BAE-NormalMapPreprocessor",
+        "mlsd":      "M-LSDPreprocessor",
+        "color":     "ColorPreprocessor",
+        "anime_lineart":  "AnimeLineArtPreprocessor",
+    }
+
     def preprocessor(self, class_type, image_ref, node_id=None, **kwargs):
         """Generic preprocessor (LineArtPreprocessor, CannyEdgePreprocessor, etc).
+
+        Accepts either a full ComfyUI class_type or one of the UI-friendly
+        short names in `_PREPROCESSOR_ALIASES` (canny, depth, openpose, ...).
+
         Outputs: [0]=IMAGE (preprocessed)
         """
+        resolved = self._PREPROCESSOR_ALIASES.get(class_type, class_type)
         inputs = {"image": image_ref}
         inputs.update(kwargs)
-        return self._add(class_type, inputs, node_id)
+        return self._add(resolved, inputs, node_id)
 
     def differential_diffusion(self, model_ref, node_id=None):
         """DifferentialDiffusion — enable differential diffusion on model.
