@@ -1010,6 +1010,72 @@ def build_upscale(image_filename, model_name, upscale_factor=1.0) -> dict:
     return nf.build()
 
 
+def build_2d_to_sbs(image_filename,
+                    depth_model="depth_anything_v2_vitl.pth",
+                    depth_resolution=512,
+                    depth_scale=40,
+                    sbs_mode="parallel",
+                    output_type="sbs",
+                    method="mesh_warping",
+                    depth_blur=15) -> dict:
+    """Convert a 2D image to side-by-side stereoscopic 3D for XREAL Air,
+    Quest, Vision Pro, anaglyph glasses, etc.
+    """
+    nf = NodeFactory()
+    img_id = nf.load_image(image_filename, node_id="1")
+    depth_id = nf._add("DepthAnythingV2Preprocessor", {
+        "image": [img_id, 0],
+        "ckpt_name": depth_model,
+        "resolution": int(depth_resolution),
+    }, node_id="2")
+    sbs_id = nf._add("Y7_SideBySide", {
+        "base_image": [img_id, 0],
+        "depth_map": [depth_id, 0],
+        "method": method,
+        "depth_scale": int(depth_scale),
+        "mode": sbs_mode,
+        "output_type": output_type,
+        "depth_blur_strength": int(depth_blur),
+    }, node_id="3")
+    nf.save_image_websocket([sbs_id, 0], node_id="4")
+    return nf.build()
+
+
+def build_2d_to_sbs_extreme(image_filename,
+                        depth_model="depth_anything_v2_vitl.pth",
+                        depth_resolution=1024,
+                        divergence=12.0,
+                        separation=0.0,
+                        fill_technique="GPU Warp (Fast)",
+                        sbs_mode="left-right") -> dict:
+    """MAXED 2D -> SBS using ComfyStereo's StereoImageNode.
+
+    Higher fidelity (vitl depth @ 1024 + GPU warp fill, divergence up to 15)
+    in exchange for VRAM + time.
+    """
+    nf = NodeFactory()
+    img_id = nf.load_image(image_filename, node_id="1")
+    depth_id = nf._add("DepthAnythingV2Preprocessor", {
+        "image": [img_id, 0],
+        "ckpt_name": depth_model,
+        "resolution": int(depth_resolution),
+    }, node_id="2")
+    sbs_id = nf._add("StereoImageNode", {
+        "image": [img_id, 0],
+        "depth_map": [depth_id, 0],
+        "modes": sbs_mode,
+        "fill_technique": fill_technique,
+        "divergence": float(divergence),
+        "separation": float(separation),
+        "stereo_balance": 0.0,
+        "convergence_point": 0.5,
+        "stereo_offset_exponent": 1.5,
+        "depth_edge_blur": True,
+    }, node_id="3")
+    nf.save_image_websocket([sbs_id, 0], node_id="4")
+    return nf.build()
+
+
 def build_wavespeed_upscale(image_filename, model="SeedVR2", target="2K") -> dict:
     """WaveSpeed AI upscale — fast one-node upscale to 2K/4K/8K.
 

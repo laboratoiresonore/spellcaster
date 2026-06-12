@@ -66,11 +66,26 @@ class KritaSpellcaster(SpellcasterPlugin):
         }
 
     def get_canvas_png(self):
-        """Export active document as PNG bytes."""
+        """Export active document as PNG bytes.
+
+        Forces a projection refresh + waitForDone first so the export
+        captures the CURRENT visible state. Without this, Krita's
+        exportImage can write a stale flattened cache from before the
+        user's most recent layer edits/imports -- which manifests as
+        "spellcaster swapped the wrong face / wrong image" because the
+        server processed an out-of-date PNG.
+        """
         doc = self._app.activeDocument()
         if not doc:
             raise RuntimeError("No active document")
-        # Export to temp file
+        try:
+            doc.refreshProjection()
+        except Exception:
+            pass
+        try:
+            doc.waitForDone()
+        except Exception:
+            pass
         import tempfile
         tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
         tmp.close()
@@ -168,14 +183,17 @@ class KritaSpellcaster(SpellcasterPlugin):
         return None
 
     def insert_layer(self, png_bytes, name="Spellcaster"):
-        """Decode PNG bytes via QImage and insert as a new paint layer.
+        """Thread-safe wrapper: marshal layer insertion to the UI thread.
 
-        Uses Acly AI-Diffusion's proven order:
-          createNode → setPixelData (with QByteArray bytes) → addChildNode.
-        Avoids Application.openDocument() which spawns a Krita import
-        modal ("Exporting to canvas") and can hang the workflow.
-        Handles QImage scanline padding (bytesPerLine ≠ width*4 on odd widths).
+        _run_workflow runs in a daemon thread so dispatching doesn't
+        freeze Krita. Layer insertion still has to happen on the UI
+        thread because Krita's Document/Node APIs are not thread-safe.
         """
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(0, lambda: self._insert_layer_ui(png_bytes, name))
+
+    def _insert_layer_ui(self, png_bytes, name="Spellcaster"):
+        """UI-thread implementation. See insert_layer for the public entry."""
         from PyQt5.QtGui import QImage
         from PyQt5.QtCore import QByteArray
         doc = self._app.activeDocument()
@@ -230,14 +248,41 @@ class KritaSpellcaster(SpellcasterPlugin):
         self.show_progress(f"Spellcaster: inserted '{name}' ({w}×{h})")
 
     def show_progress(self, message):
-        """Show in Krita's status bar."""
-        self._app.activeWindow().activeView().showFloatingMessage(
-            message, QIcon(), 3000, 1)
+        """Thread-safe: marshal status update to the UI thread."""
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(0, lambda m=message: self._show_progress_ui(m))
+
+    def _show_progress_ui(self, message):
+        try:
+            self._app.activeWindow().activeView().showFloatingMessage(
+                message, QIcon(), 3000, 1)
+        except Exception:
+            print(f"[Spellcaster] {message}")
 
     def show_error(self, message):
-        """Show error dialog."""
+        """Thread-safe: marshal error dialog to the UI thread."""
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(0, lambda m=message: self._show_error_ui(m))
+
+    def _show_error_ui(self, message):
         from PyQt5.QtWidgets import QMessageBox
         QMessageBox.critical(None, "Spellcaster", message)
+
+    def _run_workflow(self, workflow, label="generation"):
+        """Async fire-and-forget: run base _run_workflow in a daemon thread
+        so the blocking history-poll loop never freezes the Krita UI.
+
+        Base class's show_progress/show_error/insert_layer are overridden
+        above to marshal back to the UI thread via QTimer.singleShot --
+        so calls from the worker thread are safe.
+        """
+        from threading import Thread
+        Thread(
+            target=lambda: SpellcasterPlugin._run_workflow(self, workflow, label),
+            daemon=True,
+            name=f"spellcaster-{label}",
+        ).start()
+        return None
 
     # =====================================================================
     #  Klein / PuLID / SUPIR / SAM3 wrappers — wired to spellcaster_core
@@ -478,25 +523,31 @@ class KritaSpellcaster(SpellcasterPlugin):
         return self._run_workflow(wf, "faceid_img2img")
 
     def face_swap(self, source_image_bytes, swap_model="inswapper_128.onnx"):
-        """Override base face_swap to disable CodeFormer post-restoration.
-        CodeFormer at the default visibility=1.0 adds masculine features
-        (moustache, stronger jaw, broader features) to female faces. We
-        skip restoration entirely -- inswapper_128 alone preserves the
-        source face's gender / age correctly.
+        """Override base face_swap to disable ALL face restoration.
+
+        CodeFormer (the default face_restore_model) masculinizes female
+        faces -- stronger jawlines, brows, moustache hints. Setting
+        visibility=0.1 alone doesn't fix it because ReActor runs a
+        SEPARATE Face Boost node (reactor_face_boost) which always
+        applies CodeFormer at full strength regardless of the main
+        restore visibility. build_faceswap passes face_restore_model to
+        BOTH the main ReActorFaceSwapOpt AND the reactor_face_boost --
+        setting it to "none" (a valid picker value) disables both.
+        Result: pure inswapper_128 face transplant, no restoration drift.
         """
         if not source_image_bytes:
             self.show_error("Face Swap needs a source face image.")
             return None
         target = self.upload_canvas()
         src_name = self._upload_bytes(source_image_bytes, prefix="faceswap_src")
-        # ReActorFaceSwapOpt requires face_restore_visibility >= 0.1 (min).
-        # 0.1 is the lowest legal value and is barely-perceptible -- it does
-        # NOT cause the moustache/jawline drift that visibility=1.0 produces.
-        # codeformer_weight=0.0 further neutralizes the restoration pass.
+        print(f"[Spellcaster face_swap] target={target} source={src_name} "
+              f"src_bytes={len(source_image_bytes)}")
+        self.show_progress(f"Face swap: target={target} source={src_name}")
         wf = self._wf("build_faceswap")(
             target, src_name,
             swap_model=swap_model,
-            face_restore_vis=0.1,
+            face_restore_model="none",
+            face_restore_vis=0.1,    # ignored when model="none" but min-legal
             codeformer_weight=0.0,
         )
         return self._run_workflow(wf, "face_swap")
@@ -506,6 +557,59 @@ class KritaSpellcaster(SpellcasterPlugin):
         source = self._upload_bytes(source_face_bytes, prefix="mtb_face")
         wf = self._wf("build_faceswap_mtb")(target, source)
         return self._run_workflow(wf, "faceswap_mtb")
+
+    def to_sbs_max(self, depth_scale=70):
+        """MAX-PRECISION 2D -> SBS using Y7 mesh_warping + vitl@1024.
+
+        Mesh-warping preserves original detail (skin, hair, edges) while
+        producing clean stereo geometry. For stronger 3D pop with some
+        ghost artifacts, use to_sbs_extreme().
+        """
+        img = self.upload_canvas()
+        wf = self._wf("build_2d_to_sbs")(
+            img,
+            depth_model="depth_anything_v2_vitl.pth",
+            depth_resolution=1024,
+            depth_scale=depth_scale,
+            method="mesh_warping",
+            depth_blur=7,
+        )
+        return self._run_workflow(wf, "2d_to_sbs_max")
+
+    def to_sbs_extreme(self, divergence=12.0):
+        """EXTREME 2D -> SBS using ComfyStereo. Strongest pop, ghost artifacts."""
+        img = self.upload_canvas()
+        wf = self._wf("build_2d_to_sbs_extreme")(
+            img,
+            depth_model="depth_anything_v2_vitl.pth",
+            depth_resolution=1024,
+            divergence=divergence,
+        )
+        return self._run_workflow(wf, "2d_to_sbs_extreme")
+
+    def to_sbs(self, depth_scale=40, sbs_mode="parallel", output_type="sbs",
+                depth_model="depth_anything_v2_vitl.pth"):
+        """One-click 2D -> SBS stereoscopic 3D for XREAL Air / Quest / Vision Pro.
+
+        Takes the active canvas, generates a depth map via Depth-Anything V2,
+        and feeds it to Y7_SideBySide to produce a side-by-side stereo image.
+        Result lands as a new layer. Fullscreen across the XREAL Air's eye
+        monitors (or any SBS HMD) for genuine stereoscopic 3D viewing.
+
+        depth_scale: 10-80, higher = stronger effect (default 40)
+        sbs_mode: "parallel" or "cross-eyed"
+        output_type: "sbs" or "anaglyph"
+        depth_model: depth_anything_v2_vit{g,l,b,s}.pth (g=largest)
+        """
+        img = self.upload_canvas()
+        wf = self._wf("build_2d_to_sbs")(
+            img,
+            depth_model=depth_model,
+            depth_scale=depth_scale,
+            sbs_mode=sbs_mode,
+            output_type=output_type,
+        )
+        return self._run_workflow(wf, "2d_to_sbs")
 
     def photo_restore(self, seed=0):
         """Old-photo restoration: upscale + face enhance + sharpen.
@@ -822,6 +926,21 @@ class SpellcasterExtension(Extension):
         # Upscale
         a4 = window.createAction("spellcaster_upscale", "AI Upscale (4x)", menu)
         a4.triggered.connect(self._on_upscale)
+
+        # 2D -> SBS (stereoscopic 3D for XREAL Air / Quest / Vision Pro)
+        a_sbs = window.createAction(
+            "spellcaster_2d_to_sbs", "Convert to SBS 3D (XREAL Air)", menu)
+        a_sbs.triggered.connect(self._on_2d_to_sbs)
+
+        # MAX-quality SBS: Y7 mesh_warping + vitl depth @ 1024 (precision)
+        a_sbs_max = window.createAction(
+            "spellcaster_2d_to_sbs_max", "Convert to SBS 3D (MAX QUALITY)", menu)
+        a_sbs_max.triggered.connect(self._on_2d_to_sbs_max)
+
+        # EXTREME SBS: ComfyStereo at high divergence (strongest pop, some artifacts)
+        a_sbs_ext = window.createAction(
+            "spellcaster_2d_to_sbs_extreme", "Convert to SBS 3D (EXTREME)", menu)
+        a_sbs_ext.triggered.connect(self._on_2d_to_sbs_extreme)
 
         # Remove background
         a5 = window.createAction("spellcaster_rembg", "Remove Background", menu)
@@ -1203,6 +1322,32 @@ class SpellcasterExtension(Extension):
 
     def _on_upscale(self):
         self._get_plugin().upscale()
+
+    def _on_2d_to_sbs(self):
+        from PyQt5.QtWidgets import QInputDialog
+        scale, ok = QInputDialog.getInt(
+            None, "2D -> SBS 3D",
+            "Depth scale (10 mild, 40 default, 80 strong):", 40, 10, 80, 5)
+        if ok:
+            self._get_plugin().to_sbs(depth_scale=scale)
+
+    def _on_2d_to_sbs_max(self):
+        from PyQt5.QtWidgets import QInputDialog
+        scale, ok = QInputDialog.getInt(
+            None, "2D -> SBS 3D (MAX precision)",
+            "Depth scale (40 mild, 70 default, 100 strong):",
+            70, 10, 100, 5)
+        if ok:
+            self._get_plugin().to_sbs_max(depth_scale=scale)
+
+    def _on_2d_to_sbs_extreme(self):
+        from PyQt5.QtWidgets import QInputDialog
+        div, ok = QInputDialog.getDouble(
+            None, "2D -> SBS 3D (EXTREME)",
+            "Divergence (5 mild, 12 default, 15 max):",
+            12.0, 0.05, 15.0, 1)
+        if ok:
+            self._get_plugin().to_sbs_extreme(divergence=div)
 
     def _on_rembg(self):
         self._get_plugin().rembg()
