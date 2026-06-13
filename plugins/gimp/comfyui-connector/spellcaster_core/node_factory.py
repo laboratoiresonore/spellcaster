@@ -1521,25 +1521,51 @@ class NodeFactory:
                                             image_ref, scale_by,
                                             upscale_method="nearest-exact",
                                             node_id=None):
-        """Upscale by Factor with Model (WLSH) — model-based upscale at given factor.
+        """Upscale image with model to a given output factor.
 
-        Uses the WLSH custom node which applies a model upscale then resizes
-        to the specified factor.
+        Emits a 2-node core-ComfyUI graph:
+          ImageUpscaleWithModel(upscale_model, image)  ->  IMAGE at model's
+            native factor (4x, 2x, ...). Then ImageScaleBy resamples that
+            output to match the caller's requested `scale_by` factor.
+
+        Previously this emitted the single-node WLSH custom node
+        ("Upscale by Factor with Model (WLSH)"), which broke build_upscale,
+        build_photo_restore, build_detail_hallucinate, build_seedv2r, and
+        build_upscale_blend on any server without WLSH installed.
 
         Args:
             upscale_model_ref: Reference to UPSCALE_MODEL
             image_ref: Reference to IMAGE
-            scale_by: Float factor (e.g. 2.0 for 2x)
-            upscale_method: Resize method ("nearest-exact", "bilinear", "area")
+            scale_by: Float factor (e.g. 2.0 for 2x output)
+            upscale_method: Resize method ("nearest-exact", "bilinear",
+                "area", "bicubic", "bislerp", "lanczos")
 
         Outputs: [0]=IMAGE
         """
-        return self._add("Upscale by Factor with Model (WLSH)", {
+        # Step 1: run the model upscale at its native factor (4x for
+        # most ESRGAN-class models, 2x for some others).
+        up_id = self._add("ImageUpscaleWithModel", {
             "upscale_model": upscale_model_ref,
             "image": image_ref,
-            "factor": float(scale_by),
-            "upscale_method": upscale_method,
         }, node_id)
+
+        # Fast path: caller wants the model's native output (scale_by=1.0
+        # is the spellcaster_core default). No resize node needed.
+        if abs(float(scale_by) - 1.0) < 1e-6:
+            return up_id
+
+        # Step 2 (only when caller asked for a non-native factor):
+        # resample to the requested factor relative to the model output.
+        # Use a high-offset node_id (caller_id + 500) so we don't collide
+        # with later explicit node_ids the caller assigns.
+        scale_nid = (str(int(node_id) + 500) if node_id and str(node_id).isdigit()
+                     else None)
+        scale_id = self._add("ImageScaleBy", {
+            "image": [up_id, 0],
+            "upscale_method": upscale_method,
+            "scale_by": float(scale_by),
+        }, scale_nid)
+        return scale_id
 
     def image_sharpen(self, image_ref, sharpen_radius=1, sigma=1.0,
                       alpha=1.0, node_id=None):
