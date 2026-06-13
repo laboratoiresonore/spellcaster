@@ -294,7 +294,7 @@ class KritaSpellcaster(SpellcasterPlugin):
         from spellcaster_core import workflows
         return getattr(workflows, builder_name)
 
-    def klein_img2img(self, prompt, klein_model_key="Klein 9B",
+    def klein_img2img(self, prompt, klein_model_key="Klein 4B",
                       denoise=0.65, seed=0):
         img = self.upload_canvas()
         wf = self._wf("build_klein_img2img")(
@@ -302,7 +302,7 @@ class KritaSpellcaster(SpellcasterPlugin):
             denoise=denoise)
         return self._run_workflow(wf, "klein_img2img")
 
-    def klein_refine(self, prompt, klein_model_key="Klein 9B",
+    def klein_refine(self, prompt, klein_model_key="Klein 4B",
                      denoise=0.35, seed=0):
         img = self.upload_canvas()
         # build_klein_refine doesn't accept denoise — the caller's denoise
@@ -312,7 +312,7 @@ class KritaSpellcaster(SpellcasterPlugin):
             img, klein_model_key, prompt, seed)
         return self._run_workflow(wf, "klein_refine")
 
-    def klein_repose(self, prompt, klein_model_key="Klein 9B", seed=0):
+    def klein_repose(self, prompt, klein_model_key="Klein 4B", seed=0):
         img = self.upload_canvas()
         wf = self._wf("build_klein_repose")(
             img, klein_model_key, prompt, seed)
@@ -323,14 +323,14 @@ class KritaSpellcaster(SpellcasterPlugin):
         wf = self._wf("build_klein_face_detail")(img, prompt, seed)
         return self._run_workflow(wf, "klein_face_detail")
 
-    def klein_batch_variations(self, prompt, klein_model_key="Klein 9B",
+    def klein_batch_variations(self, prompt, klein_model_key="Klein 4B",
                                 batch_count=4, seed=0):
         img = self.upload_canvas()
         wf = self._wf("build_klein_batch_variations")(
             img, klein_model_key, prompt, seed, count=batch_count)
         return self._run_workflow(wf, "klein_batch_variations")
 
-    def photobooth(self, prompt, klein_model_key="Klein 9B", seed=0):
+    def photobooth(self, prompt, klein_model_key="Klein 4B", seed=0):
         ref = self.upload_canvas()
         wf = self._wf("build_photobooth")(
             ref, prompt, seed, klein_model_key=klein_model_key)
@@ -450,7 +450,7 @@ class KritaSpellcaster(SpellcasterPlugin):
             return None
         return self._upload_bytes(mask, prefix="mask")
 
-    def klein_inpaint(self, prompt, klein_model_key="Klein 9B", seed=0,
+    def klein_inpaint(self, prompt, klein_model_key="Klein 4B", seed=0,
                       denoise=1.0):
         img = self.upload_canvas()
         mask = self._upload_mask()
@@ -495,7 +495,7 @@ class KritaSpellcaster(SpellcasterPlugin):
         return self._run_workflow(wf, "klein_detail")
 
     def klein_img2img_ref(self, ref_bytes, prompt,
-                            klein_model_key="Klein 9B", seed=0):
+                            klein_model_key="Klein 4B", seed=0):
         img = self.upload_canvas()
         ref = self._upload_bytes(ref_bytes, prefix="ref")
         wf = self._wf("build_klein_img2img_ref")(

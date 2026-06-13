@@ -5808,7 +5808,7 @@ def build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_t
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_photobooth(ref_filename, prompt_text, seed,
-                     klein_model_key="Klein 9B", steps=20, guidance=1.0,
+                     klein_model_key="Klein 4B", steps=20, guidance=1.0,
                      swap_model="reswapper_256.onnx",
                      face_restore_model="codeformer-v0.1.0.pth",
                      face_restore_vis=0.9, codeformer_weight=0.6,
@@ -6054,7 +6054,7 @@ def build_klein_repose(image_filename, klein_model_key, prompt_text, seed,
 def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
                       blend_mode="normal", opacity=1.0,
                       scale=None, position_x=0.5, position_y=0.5,
-                      klein_model_key="Klein 9B", steps=20, denoise=0.25,
+                      klein_model_key="Klein 4B", steps=20, denoise=0.25,
                       guidance=1.0, loras=None, klein_models=None,
                       enhance=True, sampler_name="euler") -> dict:
     """Klein Blend: composite foreground onto background, then harmonize with Klein.
@@ -6280,7 +6280,7 @@ def build_klein_batch_variations(image_filename, klein_model_key, prompt_text,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_klein_inpaint(image_filename, mask_filename=None, prompt_text="", seed=0,
-                        klein_model_key="Klein 9B", steps=25, denoise=0.92,
+                        klein_model_key="Klein 4B", steps=25, denoise=0.92,
                         guidance=1.0, grow_px=0, use_differential_diffusion=False,
                         use_solid_mask=False, solid_mask_width=1024,
                         solid_mask_height=1024, loras=None,
@@ -6419,7 +6419,7 @@ def build_klein_inpaint(image_filename, mask_filename=None, prompt_text="", seed
 
 def build_klein_virtual_tryon(face_filename, outfit_filename, prompt_text, seed,
                                bg_filename=None, pose_filename=None,
-                               klein_model_key="Klein 9B", steps=4,
+                               klein_model_key="Klein 4B", steps=4,
                                denoise=1.0, guidance=1.0,
                                loras=None, lora_name=None, lora_strength=1.0,
                                klein_models=None, enhance=False,
@@ -6586,7 +6586,7 @@ def build_klein_virtual_tryon(face_filename, outfit_filename, prompt_text, seed,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_klein_scene_img2img(image_filename, prompt_text, seed,
-                               klein_model_key="Klein 9B", steps=20,
+                               klein_model_key="Klein 4B", steps=20,
                                denoise=0.30, guidance=1.0,
                                klein_models=None,
                                loras=None, enhance=True,
@@ -6811,7 +6811,7 @@ def build_klein_refine(image_filename, klein_model_key, prompt_text, seed,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_klein_auto_inpaint(image_filename, mask_prompt, inpaint_prompt, seed,
-                              klein_model_key="Klein 9B",
+                              klein_model_key="Klein 4B",
                               steps=4, denoise=1.0, guidance=1.0,
                               florence_model="microsoft/Florence-2-base",
                               loras=None, lora_name=None, lora_strength=1.0,
@@ -7238,7 +7238,7 @@ def build_magic_eraser(image_filename, prompt, confidence=0.6,
 
 def build_klein_sam3_inpaint(image_filename, segment_prompt, inpaint_prompt, seed,
                               ref_filename=None,
-                              klein_model_key="Klein 9B",
+                              klein_model_key="Klein 4B",
                               steps=10, guidance=1.0,
                               mask_expand=120, mask_blur=15,
                               confidence=0.6,
@@ -7492,7 +7492,7 @@ def build_klein_sam3_inpaint(image_filename, segment_prompt, inpaint_prompt, see
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_klein_face_detail(image_filename, prompt_text, seed,
-                             klein_model_key="Klein 9B",
+                             klein_model_key="Klein 4B",
                              steps=4, denoise=0.4, guidance=1.0,
                              guide_size=512, max_size=1024,
                              detector_model="bbox/face_yolov8m.pt",
@@ -7622,7 +7622,7 @@ def build_klein_face_detail(image_filename, prompt_text, seed,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_klein_generate_object(scene_filename, prompt_text, seed,
-                                 klein_model_key="Klein 9B",
+                                 klein_model_key="Klein 4B",
                                  width=1024, height=1024,
                                  steps=6, guidance=1.0,
                                  loras=None, lora_name=None, lora_strength=1.0,
@@ -7853,7 +7853,7 @@ DETAIL_PRESETS = {
 
 
 def build_klein_detail(image_filename, preset_key, prompt_text, seed,
-                       klein_model_key="Klein 9B", steps=None, denoise=None,
+                       klein_model_key="Klein 4B", steps=None, denoise=None,
                        guidance=1.0, guide_size=None, max_size=1024,
                        sam3_prompt=None, loras=None, lora_name=None,
                        lora_strength=1.0, klein_models=None, enhance=True) -> dict:
