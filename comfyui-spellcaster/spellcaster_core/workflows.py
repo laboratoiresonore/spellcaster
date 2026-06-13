@@ -5720,8 +5720,9 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
 #  with user-controlled scale factor)
 # ═══════════════════════════════════════════════════════════════════════════
 
-def build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_text,
-                   seed, denoise, cfg, steps, scale_factor, orig_width, orig_height,
+def build_seedv2r(image_filename, upscale_model, preset, prompt_text="", negative_text="",
+                   seed=0, denoise=0.4, cfg=None, steps=None,
+                   scale_factor=2.0, orig_width=1024, orig_height=1024,
                    controlnet=None, controlnet_2=None, guide_modes=None,
                    loras=None, enhance=True, quality="balanced") -> dict:
     """SeedV2R: upscale + img2img. Drop-in for _build_seedv2r().
@@ -5732,6 +5733,12 @@ def build_seedv2r(image_filename, upscale_model, preset, prompt_text, negative_t
     _assert_method_for_preset(preset, "seedv2r")
     nf = NodeFactory()
     arch_key = preset.get("arch", "sdxl")
+    # cfg / steps default to preset values so a basic call signature
+    # build_seedv2r(image, upscale_model, preset) just works.
+    if cfg is None:
+        cfg = preset.get("cfg", 6.0)
+    if steps is None:
+        steps = preset.get("steps", 20)
 
     # 1. Load source image
     img_id = nf.load_image(image_filename, node_id="1")
