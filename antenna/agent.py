@@ -378,6 +378,18 @@ def _build_routes(cfg: dict[str, Any]) -> dict[tuple[str, str], Callable]:
         print(f"[antenna] WARN: self_update endpoint failed to import: {e}",
               file=sys.stderr)
 
+    # Webcam — snapshot for tile painting + start/stop recording.
+    try:
+        from .endpoints import cam as cam_ep
+        routes[("GET",  "/cam/snapshot")]      = cam_ep.get_snapshot
+        routes[("POST", "/cam/record")]        = cam_ep.start_record
+        routes[("POST", "/cam/record_stop")]   = cam_ep.stop_record
+        routes[("GET",  "/cam/record_status")] = cam_ep.record_status
+        print("[antenna] registered: GET /cam/snapshot, POST /cam/record, /cam/record_stop, GET /cam/record_status")
+    except ImportError as e:
+        print(f"[antenna] WARN: cam endpoint failed to import: {e}",
+              file=sys.stderr)
+
     # Per-service auto-updates — registry-driven. Reads update_command
     # from remote_services.json and executes per service. Daily cron on
     # each Windows host calls /update/all to keep everything fresh.
