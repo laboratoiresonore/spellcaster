@@ -187,6 +187,8 @@ def status(ctx: dict[str, Any]) -> tuple[int, dict]:
     return 200, {
         "service": "spellcaster-antenna",
         "version": __version__,
+        "deprecated": True,
+        "deprecation_note": "Spellcaster antenna is being absorbed into prometheus-client; functionality moving package-by-package. Fleet-frame no longer requires this agent for basic visibility (reads /srv/storage/inventory/*.json instead).",
         "protocol": 1,
         "uptime_seconds": uptime_seconds,
         "hostname": socket.gethostname(),
