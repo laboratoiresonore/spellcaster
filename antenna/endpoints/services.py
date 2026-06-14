@@ -155,18 +155,107 @@ def register_service(ctx: dict[str, Any]) -> tuple[int, dict]:
                   "port": svc_entry.get("port")}
 
 
+_PORT_REAP_FALLBACK = {
+    # Map service name -> default port we should port-reap if the
+    # canonical service_launcher.stop_service has no handler. This lets
+    # us kill services we never spawned (sillytavern, lmstudio, etc.)
+    # by closing whatever process owns that port.
+    "sillytavern": 8000,
+    "lmstudio":    1234,
+    "kobold_rp":   5001,
+    "kobold_tts":  5002,
+    "resolve":     0,
+    "darktable":   0,
+    "gimp":        0,
+    "signal":      0,
+}
+
+
+def _port_reap(port: int) -> dict[str, Any]:
+    """Best-effort: terminate any process owning the given TCP port."""
+    if not port:
+        return {"state": "no_port", "detail": "service has no canonical port"}
+    import os
+    if os.name == "nt":
+        # Windows: netstat for the PID, then taskkill /F /PID
+        import subprocess
+        try:
+            r = subprocess.run(
+                ["netstat", "-ano", "-p", "TCP"],
+                capture_output=True, text=True, timeout=5,
+            )
+            pids: set[int] = set()
+            for ln in r.stdout.splitlines():
+                parts = ln.split()
+                if len(parts) >= 5 and parts[-1].isdigit():
+                    local = parts[1]
+                    if local.endswith(f":{port}"):
+                        pids.add(int(parts[-1]))
+            if not pids:
+                return {"state": "not_running", "detail": f"nothing on :{port}"}
+            killed = []
+            failed = []
+            for pid in pids:
+                try:
+                    subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+                                   capture_output=True, timeout=5)
+                    killed.append(pid)
+                except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                    failed.append(pid)
+            return {"state": "stopped" if killed else "failed",
+                    "killed_pids": killed, "failed_pids": failed,
+                    "detail": f"reaped :{port}"}
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+            return {"state": "failed", "detail": f"{type(e).__name__}: {e}"}
+    # POSIX fallback
+    import subprocess
+    try:
+        r = subprocess.run(["lsof", "-tiTCP:%d" % port, "-sTCP:LISTEN"],
+                           capture_output=True, text=True, timeout=5)
+        pids = [int(x) for x in r.stdout.split() if x.isdigit()]
+        if not pids:
+            return {"state": "not_running", "detail": f"nothing on :{port}"}
+        for pid in pids:
+            try:
+                os.kill(pid, 15)  # SIGTERM
+            except (ProcessLookupError, PermissionError):
+                pass
+        return {"state": "stopped", "killed_pids": pids,
+                "detail": f"SIGTERM to {pids}"}
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        return {"state": "failed", "detail": f"{type(e).__name__}: {e}"}
+
+
 def stop_service(ctx: dict[str, Any]) -> tuple[int, dict]:
-    """POST /service/stop — kill the child we launched (or port-reap)."""
+    """POST /service/stop — kill the child we launched (or port-reap).
+
+    Supported service names:
+      - comfyui / kobold / ollama — full launcher-managed stop via
+        service_launcher.stop_service (graceful + tracked).
+      - sillytavern / lmstudio / kobold_rp / kobold_tts — best-effort
+        port reap (we never spawned them, but if they're sitting on
+        their canonical port we'll kill the owner).
+      - resolve / darktable / gimp / signal — no canonical TCP port;
+        returns 400 with a clear "no stop path" message.
+    """
     body = ctx.get("body") or {}
     name = (body.get("service") or "").strip().lower()
-    if name not in ("comfyui", "kobold", "ollama"):
-        return 400, {"error": f"service must be one of comfyui/kobold/ollama, "
-                               f"got {name!r}"}
     cfg = ctx.get("config") or {}
-    try:
-        result = _sl.stop_service(name, cfg)
-    except Exception as e:  # noqa: BLE001
-        return 500, {"error": f"stop failed: {type(e).__name__}: {e}"}
+    if name in ("comfyui", "kobold", "ollama"):
+        try:
+            result = _sl.stop_service(name, cfg)
+        except Exception as e:  # noqa: BLE001
+            return 500, {"error": f"stop failed: {type(e).__name__}: {e}"}
+    elif name in _PORT_REAP_FALLBACK:
+        port = cfg.get(f"{name}_port") or _PORT_REAP_FALLBACK[name]
+        if not port:
+            return 400, {"error": f"{name} has no stoppable TCP port; close "
+                                   f"the app window manually"}
+        result = _port_reap(int(port))
+        if result.get("state") == "failed":
+            return 500, result
+    else:
+        return 400, {"error": f"unknown service {name!r}"}
     # Notify the tray so the user sees the transition.
     try:
         from .. import agent as _agent
