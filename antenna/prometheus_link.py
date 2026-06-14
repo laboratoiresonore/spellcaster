@@ -113,6 +113,45 @@ def _detected_services(cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
         return {}
 
 
+def _collect_telemetry(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Reuse antenna.telemetry.collect_snapshot — gracefully degrades when
+    psutil/nvidia-smi aren't available. Wrapped in a broad try so the
+    heartbeat thread never crashes on a sensor hiccup.
+    """
+    try:
+        from . import telemetry as _tel
+        snap = _tel.collect_snapshot(cfg) or {}
+        # Add Windows-side uptime since collect_snapshot doesn't include it.
+        snap.setdefault("uptime_s", _uptime_s())
+        return snap
+    except Exception:
+        return {"uptime_s": _uptime_s()}
+
+
+def _uptime_s() -> float:
+    """Cross-platform best-effort uptime in seconds."""
+    try:
+        import time as _t
+        # Linux/macOS: /proc/uptime first
+        try:
+            with open("/proc/uptime", "r") as f:
+                return float(f.read().split()[0])
+        except OSError:
+            pass
+        # Windows: GetTickCount64 via ctypes
+        if sys.platform == "win32":
+            import ctypes
+            return ctypes.windll.kernel32.GetTickCount64() / 1000.0
+        # Fallback: time since boot via psutil if present
+        try:
+            import psutil  # type: ignore
+            return _t.time() - psutil.boot_time()
+        except Exception:
+            return 0.0
+    except Exception:
+        return 0.0
+
+
 def _build_payload(cfg: dict[str, Any], token: str) -> dict[str, Any]:
     return {
         "hostname": socket.gethostname().lower(),
@@ -121,6 +160,7 @@ def _build_payload(cfg: dict[str, Any], token: str) -> dict[str, Any]:
         "antenna_port": int(cfg.get("port", 7334)),
         "bearer_token": token,
         "services_detected": _detected_services(cfg),
+        "telemetry": _collect_telemetry(cfg),
     }
 
 
