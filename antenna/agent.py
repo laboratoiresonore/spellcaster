@@ -52,7 +52,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
 
-from . import __version__, auth, config, heartbeat
+from . import __version__, auth, config, heartbeat, prometheus_link
 
 
 # ─── Routing table ───────────────────────────────────────────────────────
@@ -377,6 +377,36 @@ def _build_routes(cfg: dict[str, Any]) -> dict[tuple[str, str], Callable]:
     except ImportError as e:
         print(f"[antenna] WARN: self_update endpoint failed to import: {e}",
               file=sys.stderr)
+
+    # Webcam — snapshot for tile painting + start/stop recording.
+    try:
+        from .endpoints import cam as cam_ep
+        routes[("GET",  "/cam/snapshot")]      = cam_ep.get_snapshot
+        routes[("POST", "/cam/record")]        = cam_ep.start_record
+        routes[("POST", "/cam/record_stop")]   = cam_ep.stop_record
+        routes[("GET",  "/cam/record_status")] = cam_ep.record_status
+        print("[antenna] registered: GET /cam/snapshot, POST /cam/record, /cam/record_stop, GET /cam/record_status")
+    except ImportError as e:
+        print(f"[antenna] WARN: cam endpoint failed to import: {e}",
+              file=sys.stderr)
+
+    # Per-service auto-updates — registry-driven. Reads update_command
+    # from remote_services.json and executes per service. Daily cron on
+    # each Windows host calls /update/all to keep everything fresh.
+    try:
+        from .endpoints import updates as up_ep
+        # /update/all and /update/status get their own fixed routes.
+        # /update/<service> is a prefix-match handled by the dispatcher
+        # below — we install one wildcard entry.
+        routes[("POST", "/update/all")]    = up_ep.update_all
+        routes[("GET",  "/update/status")] = up_ep.update_status
+        # /update/<service> — agent's prefix routing picks this up if a
+        # POST hits "/update/<anything-not-all>".
+        routes[("POST", "/update/")]       = up_ep.update_one
+        print("[antenna] registered: POST /update/<svc>, POST /update/all, GET /update/status")
+    except ImportError as e:
+        print(f"[antenna] WARN: updates endpoint failed to import: {e}",
+              file=sys.stderr)
     except Exception as e:  # noqa: BLE001 — catch ALL, including SyntaxError
         print(f"[antenna] WARN: self_update endpoint error: "
               f"{type(e).__name__}: {e}", file=sys.stderr)
@@ -482,6 +512,12 @@ class _AntennaHandler(BaseHTTPRequestHandler):
 
         # 2. Route match
         handler = self._routes.get(route_key)
+        # Prefix fallback for /update/<service> — the registered route
+        # key uses the bare "/update/" sentinel; route to update_one if
+        # the request path matches the prefix but doesn't hit a more
+        # specific exact entry (like /update/all).
+        if handler is None and method == "POST" and path.startswith("/update/") and path != "/update":
+            handler = self._routes.get(("POST", "/update/"))
         if handler is None:
             self._send_json(404, {"error": f"no such endpoint: {method} {path}"})
             _audit_log(self._config["log_path"], client_ip, method, path, 404)
@@ -653,6 +689,10 @@ def serve(cfg: dict[str, Any] | None = None,
     # Start heartbeat to Mega Bridge so declared services appear in the
     # Guild sidebar. No-op when hub_url isn't configured (local agent).
     heartbeat.start(cfg)
+
+    # Start the Prometheus fleet-frame link. No-op when prometheus_url
+    # isn't configured (spellcaster install without a fleet hub).
+    prometheus_link.start(cfg)
 
     print(f"[antenna] Ready. Ctrl-C to stop.", flush=True)
     notify("Antenna ready",
