@@ -14,7 +14,8 @@
       ],
       "detect_process": "main.py",
       "probe_path": "/system_stats",
-      "managed_ops": ["install_node", "install_model", "list_models"]
+      "managed_ops": ["install_node", "install_model", "list_models"],
+      "update_command": "powershell -NoProfile -Command \"$paths=@('C:\\ComfyUI','C:\\Tools\\ComfyUI','C:\\Spellcaster\\ComfyUI','C:\\ComfyUI_windows_portable\\ComfyUI'); foreach ($p in $paths) { if (Test-Path (Join-Path $p '.git')) { Write-Output '[update] git pulling' $p; git -C $p pull --ff-only; if (Test-Path (Join-Path $p 'requirements.txt')) { python -m pip install --quiet -r (Join-Path $p 'requirements.txt') } } }\""
     },
     {
       "key": "kobold",
@@ -38,7 +39,8 @@
       "detect_paths": ["ollama.exe", "ollama/ollama"],
       "detect_process": "ollama",
       "probe_path": "/api/tags",
-      "managed_ops": ["pull_model", "list_models"]
+      "managed_ops": ["pull_model", "list_models"],
+      "update_command": "winget upgrade --silent --accept-source-agreements --accept-package-agreements --id Ollama.Ollama"
     },
     {
       "key": "lmstudio",
@@ -56,7 +58,8 @@
       ],
       "detect_process": "LM Studio",
       "probe_path": "/v1/models",
-      "managed_ops": ["list_models", "load_model", "unload_model"]
+      "managed_ops": ["list_models", "load_model", "unload_model"],
+      "update_command": "winget upgrade --silent --accept-source-agreements --accept-package-agreements --id ElementLabs.LMStudio"
     },
     {
       "key": "sillytavern",
@@ -66,7 +69,8 @@
       "detect_paths": ["SillyTavern/server.js", "sillytavern/server.js"],
       "detect_process": "sillytavern",
       "probe_path": "/",
-      "managed_ops": ["start", "stop", "install_extension"]
+      "managed_ops": ["start", "stop", "install_extension"],
+      "update_command": "powershell -NoProfile -Command \"$paths=@('C:\\SillyTavern','C:\\Tools\\SillyTavern','C:\\Spellcaster\\SillyTavern'); foreach ($p in $paths) { if (Test-Path (Join-Path $p '.git')) { Write-Output '[update] git pulling' $p; git -C $p pull --ff-only; if (Test-Path (Join-Path $p 'package.json')) { Push-Location $p; npm install --silent; Pop-Location } } }\""
     },
     {
       "key": "gimp",
