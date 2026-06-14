@@ -52,7 +52,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
 
-from . import __version__, auth, config, heartbeat
+from . import __version__, auth, config, heartbeat, prometheus_link
 
 
 # ─── Routing table ───────────────────────────────────────────────────────
@@ -653,6 +653,10 @@ def serve(cfg: dict[str, Any] | None = None,
     # Start heartbeat to Mega Bridge so declared services appear in the
     # Guild sidebar. No-op when hub_url isn't configured (local agent).
     heartbeat.start(cfg)
+
+    # Start the Prometheus fleet-frame link. No-op when prometheus_url
+    # isn't configured (spellcaster install without a fleet hub).
+    prometheus_link.start(cfg)
 
     print(f"[antenna] Ready. Ctrl-C to stop.", flush=True)
     notify("Antenna ready",

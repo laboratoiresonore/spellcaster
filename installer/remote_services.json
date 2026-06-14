@@ -111,6 +111,47 @@
       "detect_process": "Resolve",
       "probe_path": "",
       "managed_ops": ["import_clip", "apply_lut", "render_timeline"]
+    },
+    {
+      "key": "voodoomaster",
+      "label": "Voodoomaster",
+      "description": "Voodoomancer server (NSFW image gen pipeline orchestrator)",
+      "default_port": 7777,
+      "detect_paths": [
+        "Voodoomancer/voodoomaster/server.py",
+        "Voodoomancer/voodoomaster.py",
+        "voodoomaster/server.py"
+      ],
+      "detect_process": "voodoomaster",
+      "probe_path": "/status",
+      "managed_ops": []
+    },
+    {
+      "key": "whimweaver",
+      "label": "Whimweaver",
+      "description": "Whimweaver storytelling server (magic-book live-narrative engine)",
+      "default_port": 8765,
+      "detect_paths": [
+        "LaboratoireSonore/whimweaver/whimweaver_server.py",
+        "LaboratoireSonore/whimweaver/server.py",
+        "whimweaver/server.py"
+      ],
+      "detect_process": "whimweaver",
+      "probe_path": "/healthz",
+      "managed_ops": []
+    },
+    {
+      "key": "beatweaver",
+      "label": "Beatweaver",
+      "description": "Beatweaver scene-driven music engine (server-side)",
+      "default_port": 9876,
+      "detect_paths": [
+        "LeLaboratoireSonore/beatweaver/server.py",
+        "beatweaver/server.py"
+      ],
+      "detect_process": "beatweaver",
+      "probe_path": "/health",
+      "managed_ops": []
     }
   ]
 }

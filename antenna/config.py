@@ -71,6 +71,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # that this antenna heartbeats to. Empty string → heartbeats disabled;
     # the agent still serves /status etc. locally.
     "hub_url": "",
+    # URL of the Prometheus fleet frame on the hub server. When set, the
+    # antenna posts a heartbeat to {prometheus_url}/api/heartbeat every
+    # 5 s so this machine appears in the unified fleet bar at
+    # http://prometheus:8100/. Empty string → fleet link disabled.
+    "prometheus_url": "",
     # Service-specific config lives under namespaced keys so multiple
     # services coexist cleanly in one config file.
     "comfyui_root": "auto",
