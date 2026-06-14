@@ -49,20 +49,24 @@ def _find_video_device() -> str | None:
                  "-f", "dshow", "-i", "dummy"],
                 capture_output=True, text=True, timeout=4,
             )
-            in_video = False
+            # ffmpeg 8.x dropped the "DirectShow video devices" header
+            # line that used to anchor section parsing. Match the
+            # per-device "(video)" / "(audio)" / "(none)" tag instead —
+            # works on both old and new ffmpeg output. Skip "(none)"
+            # (OBS Virtual Camera shows as none when not streaming) and
+            # the Alternative-name lines.
             for ln in r.stderr.splitlines():
-                if "DirectShow video devices" in ln:
-                    in_video = True
+                if "Alternative name" in ln:
                     continue
-                if "DirectShow audio devices" in ln:
-                    in_video = False
+                if "(video)" not in ln:
                     continue
-                if in_video and '"' in ln and "Alternative" not in ln:
-                    start = ln.find('"')
-                    end = ln.rfind('"')
-                    if start >= 0 and end > start:
-                        name = ln[start + 1: end]
-                        break
+                if '"' not in ln:
+                    continue
+                start = ln.find('"')
+                end = ln.find('"', start + 1)
+                if start >= 0 and end > start:
+                    name = ln[start + 1: end]
+                    break
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
             pass
     else:
