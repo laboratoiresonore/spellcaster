@@ -20,7 +20,7 @@ Heartbeat shape
   POST {prometheus_url}/api/heartbeat
   Body: {
     "hostname":         "theo",
-    "tailnet_ip":       "100.101.223.17",
+    "tailnet_ip":       "100.x.x.x",
     "antenna_version":  "2.3",
     "antenna_port":     7334,
     "bearer_token":     "...",
