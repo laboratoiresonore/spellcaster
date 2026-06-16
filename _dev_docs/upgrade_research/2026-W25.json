@@ -1,0 +1,332 @@
+[
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "LTX-2.3",
+    "source": "huggingface",
+    "url": "https://hf.co/Lightricks/LTX-2.3",
+    "risk": "medium",
+    "confidence": 0.90,
+    "notes": "Tier 1 supersession. 22B params (vs ~13B), native 4K@50fps, synchronized stereo audio in single diffusion pass, portrait 9:16, built-in temporal upscaler. GGUF/distilled fits 16GB. IC-LoRAs: HDR, LipDub, Motion-Track-Control, Union-Control. Day-0 ComfyUI v0.16+ support. Released March 5, 2026."
+  },
+  {
+    "method": "build_sam3_segment",
+    "category": "checkpoint",
+    "name": "SAM 3.1 Object Multiplex",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/ComfyUI/pull/13408",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Tier 1 supersession. Up to 7x faster multi-object tracking vs SAM 3.0. Shared-memory single forward pass, text-conditioned detection, bit-packed masks. Checkpoint: sam3.1_multiplex_fp16. Native ComfyUI support April 2026. Drop-in for all build_sam3_* methods."
+  },
+  {
+    "method": "build_sam3_mask",
+    "category": "checkpoint",
+    "name": "SAM 3.1 Object Multiplex",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/ComfyUI/pull/13408",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Same as build_sam3_segment entry. Applies to all sam3 family builders."
+  },
+  {
+    "method": "build_sam3_extract",
+    "category": "checkpoint",
+    "name": "SAM 3.1 Object Multiplex",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/ComfyUI/pull/13408",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Same as build_sam3_segment entry. Applies to all sam3 family builders."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "checkpoint",
+    "name": "HyperSwap 256px models via ReActor v0.6.2",
+    "source": "github",
+    "url": "https://github.com/Gourieff/ComfyUI-ReActor",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Tier 1 supersession. HyperSwap 1a/1b/1c (256px) from FaceFusion Labs replaces inswapper_128 (128px). Drop-in via ReActor v0.6.2. Also: new Restore Face Advanced node. ReActor v0.7.0 alpha will drop InsightFace/C++ dependency entirely. Released April 25, 2026."
+  },
+  {
+    "method": "build_wan_animate_video",
+    "category": "checkpoint",
+    "name": "SCAIL-2",
+    "source": "github",
+    "url": "https://github.com/zai-org/SCAIL-2",
+    "risk": "medium",
+    "confidence": 0.95,
+    "notes": "Tier 2 NEW BUILDER. IN-WINDOW RELEASE (June 9-13, 2026). Skeleton-free end-to-end character animation on Wan 2.1 14B. No OpenPose, no ControlNet, no skeleton extraction. Supports cross-identity replacement, animals, multi-character. Unified Motion Transfer Interface + dual masking + RoPE. Apache 2.0. VRAM: same as build_wan_video_blockswap (block-swap fits ~16GB). ComfyUI workflows: nextdiffusion.ai, runcomfy.com. CVPR 2026 Findings. arXiv:2606.10804."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Ideogram 4.0",
+    "source": "huggingface",
+    "url": "https://hf.co/ideogram-ai/ideogram-4-fp8",
+    "risk": "medium",
+    "confidence": 0.97,
+    "notes": "Tier 2 NEW BUILDER. 9.3B DiT with Qwen3-VL-8B + Gemma4 text encoders. FLUX.2 VAE. Native 2K. Structured JSON prompting, bounding-box layout, hex palette control. Best-in-class multilingual text rendering. Day-0 ComfyUI v0.24.0. Non-commercial license. New nodes: Ideogram4Scheduler, DualModelGuider, CFGOverride. Released June 3, 2026."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Microsoft Lens / Lens-Turbo",
+    "source": "huggingface",
+    "url": "https://hf.co/microsoft/Lens-Turbo",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Tier 2 augmentation. 3.8B dual-stream MMDiT, GPT-OSS-20B MoE text encoder. MIT license. Native 1440x1440, 1:2 to 2:1 aspect. Lens-Turbo: 4-step ~0.84s/img at 1024px. ComfyUI PR #14077 (kijai) merged June 2026. Fast, commercially viable alternative to FLUX.1-schnell. Released May 22, 2026."
+  },
+  {
+    "method": "build_img2img",
+    "category": "checkpoint",
+    "name": "FLUX.1 Kontext-dev",
+    "source": "huggingface",
+    "url": "https://hf.co/black-forest-labs/FLUX.1-Kontext-dev",
+    "risk": "medium",
+    "confidence": 0.90,
+    "notes": "Tier 2 NEW BUILDER. 12B flow-matching model unifying generation + context-aware editing. Capabilities: local edit, global style, character reference consistency, text glyph editing, multi-turn chains. Native ComfyUI docs available. Gated (BFL research license). 2.7M downloads, 2662 likes. Updated Jan 1, 2026. Paper: arXiv:2506.15742."
+  },
+  {
+    "method": "build_inpaint",
+    "category": "checkpoint",
+    "name": "FLUX.1 Kontext-dev",
+    "source": "huggingface",
+    "url": "https://hf.co/black-forest-labs/FLUX.1-Kontext-dev",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Same as build_img2img entry. Kontext also augments inpainting workflows via context-guided region editing."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "node_pack",
+    "name": "ComfyUI-Flux-FaceIR",
+    "source": "github",
+    "url": "https://github.com/cosmicrealm/ComfyUI-Flux-FaceIR",
+    "risk": "medium",
+    "confidence": 0.70,
+    "notes": "Tier 2 NEW BUILDER. Klein 4B face restoration. Blind restoration + reference-guided (up to 3 refs). Uses: flux-2-klein-base-4b, qwen_3_4b CLIP, flux2-vae + FaceIR LoRA. All model components already local per Klein family. Photorealistic quality uplift over CodeFormer. Active April-June 2026."
+  },
+  {
+    "method": "build_photo_restore",
+    "category": "node_pack",
+    "name": "ComfyUI-Flux-FaceIR",
+    "source": "github",
+    "url": "https://github.com/cosmicrealm/ComfyUI-Flux-FaceIR",
+    "risk": "medium",
+    "confidence": 0.70,
+    "notes": "Same as build_face_restore entry."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "checkpoint",
+    "name": "Hunyuan3D 3.0",
+    "source": "github",
+    "url": "https://docs.comfy.org/tutorials/partner-nodes/hunyuan3d/hunyuan3d-3-0",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Tier 2 upgrade. Tencent Hunyuan3D 3rd gen via ComfyUI Partner Nodes. Direct incremental upgrade over Hunyuan3D 2.x currently wired in spellcaster. Geometry and texture fidelity improvements. Released February 13-14, 2026."
+  },
+  {
+    "method": "build_hunyuan_3d_textured",
+    "category": "checkpoint",
+    "name": "Hunyuan3D 3.0",
+    "source": "github",
+    "url": "https://docs.comfy.org/tutorials/partner-nodes/hunyuan3d/hunyuan3d-3-0",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Same as build_hunyuan_3d_mesh entry."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "checkpoint",
+    "name": "TripoSplat",
+    "source": "huggingface",
+    "url": "https://hf.co/VAST-AI/TripoSplat",
+    "risk": "medium",
+    "confidence": 0.92,
+    "notes": "Tier 2 NEW BUILDER. MIT licensed image-to-3D Gaussian Splat. Day-0 ComfyUI v0.23.0 native. Single image → 262k Gaussians via DeG adaptive allocation. Minimal codebase, no transformers dependency. Outputs .splat (complementary to mesh). arXiv:2605.16355. Released ~June 1, 2026."
+  },
+  {
+    "method": "build_supir",
+    "category": "node_pack",
+    "name": "RealRestorer",
+    "source": "github",
+    "url": "https://github.com/StartHua/Comfyui_RealRestorer",
+    "risk": "low",
+    "confidence": 0.82,
+    "notes": "Tier 2 augmentation. 9-degradation unified restoration (blur, rain, reflection, low-light, denoising, haze, moire, flare, artifacts). ComfyUI node packaged. HuggingFace: RealRestorer/RealRestorer. Lighter than SUPIR 5-stage pipeline. Active April 2026."
+  },
+  {
+    "method": "build_pulid_flux",
+    "category": "node_pack",
+    "name": "ComfyUI-PuLID-Flux2 Klein support",
+    "source": "github",
+    "url": "https://github.com/iFayens/ComfyUI-PuLID-Flux2",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Tier 2 upgrade. Adds PuLID face identity conditioning for FLUX.2-Klein 4B/9B and Dev variants. Existing build_pulid_flux may target FLUX.1-dev only. Enables face-consistent generation across Klein family. Active 2026."
+  },
+  {
+    "method": "build_rembg",
+    "category": "node_pack",
+    "name": "ComfyUI-RMBG v3.0.0",
+    "source": "github",
+    "url": "https://github.com/1038lab/ComfyUI-RMBG",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Tier 2 consolidation. v3.0.0 bundles RMBG-2.0, BiRefNet, INSPYRENET, BEN, BEN2, SAM/SAM2/SAM3, GroundingDINO in one node. BEN2 excellent on hair/fine details. Single node replaces build_rembg + build_rembg_birefnet + build_rembg_v3 chain. Updated Jan 1, 2026."
+  },
+  {
+    "method": "build_wan22_t2v",
+    "category": "checkpoint",
+    "name": "Wan 2.7",
+    "source": "github",
+    "url": "https://wan.video/blog/wan2.7",
+    "risk": "high",
+    "confidence": 0.85,
+    "notes": "Tier 3 monitor. MoE 27B total / 14B active. 4K native, 20-30s clips, Thinking Mode, native audio sync, FLF control, multi-reference (up to 5 faces). Apache 2.0 via ModelScope. 24GB VRAM minimum — GGUF exists but quality on 16GB uncertain. Released April 22, 2026. Supersedes build_wan22_t2v and build_wan_video when VRAM budget is resolved."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "checkpoint",
+    "name": "Wan 2.7",
+    "source": "github",
+    "url": "https://wan.video/blog/wan2.7",
+    "risk": "high",
+    "confidence": 0.85,
+    "notes": "Same as build_wan22_t2v entry."
+  },
+  {
+    "method": "build_qwen_edit",
+    "category": "checkpoint",
+    "name": "Qwen-Image-2.0",
+    "source": "huggingface",
+    "url": "https://hf.co/papers/2605.10730",
+    "risk": "high",
+    "confidence": 0.70,
+    "notes": "Tier 3 monitor. Paper only (May 11, 2026). MMDiT + Qwen3-VL encoder. Unifies T2I + editing. 1K-token instructions, multilingual text rendering, photorealistic generation. Substantially outperforms Qwen-Image-1.0. No local checkpoint released yet. Monitor HF for Tongyi-MAI/Qwen-Image-2.0."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "checkpoint",
+    "name": "SAM 3D (CVPR 2026 Best Paper)",
+    "source": "github",
+    "url": "https://github.com/facebookresearch/sam-3d-objects",
+    "risk": "high",
+    "confidence": 0.80,
+    "notes": "Tier 3 monitor. Meta CVPR 2026 Best Paper. Single-image visually grounded 3D object reconstruction — geometry, texture, layout in one pass. Weights on HF: facebook/sam-3d-objects. No ComfyUI node yet. Paper updated June 2, 2026. arXiv:2511.16624."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "checkpoint",
+    "name": "InstantRestore (SIGGRAPH 2026)",
+    "source": "github",
+    "url": "https://github.com/snap-research/InstantRestore",
+    "risk": "high",
+    "confidence": 0.55,
+    "notes": "Tier 3 monitor. Single-step face restoration with shared-image attention, 4 reference images. Outperforms CodeFormer-class in identity preservation. Official weights available but no ComfyUI wrapper exists. SIGGRAPH 2026, arXiv April 14, 2026."
+  },
+  {
+    "method": "build_supir",
+    "category": "checkpoint",
+    "name": "RDBM (CVPR 2026)",
+    "source": "github",
+    "url": "https://github.com/MiliLab/RDBM",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "Tier 3 monitor. Residual Diffusion Bridge Model. Unified restoration for rain/low-light/snow/haze/deblur. Presented at CVPR Denver (June 3-5, 2026). GitHub code available but no ComfyUI node and no packaged weights release. arXiv:2510.23116."
+  },
+  {
+    "method": "build_depth_map_v3",
+    "category": "checkpoint",
+    "name": "InfiniDepth (CVPR 2026)",
+    "source": "github",
+    "url": "https://github.com/zju3dv/InfiniDepth",
+    "risk": "medium",
+    "confidence": 0.78,
+    "notes": "Tier 3 monitor. Arbitrary-resolution depth via neural implicit fields. CVPR 2026. Code open-sourced but no ComfyUI node. arXiv:2601.03252. Competes with DA3 for build_depth_map_v3."
+  },
+  {
+    "method": "build_lama_remove",
+    "category": "checkpoint",
+    "name": "VOID (Netflix, Apache 2.0)",
+    "source": "github",
+    "url": "https://blog.comfy.org/p/new-open-source-models-now-in-comfyui",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "Tier 3 monitor. Two-pass diffusion on CogVideoX for video-coherent object removal (shadows, reflections, chain reactions). Apache 2.0. Native ComfyUI support confirmed. Pairs with SAM3 for text-driven masks. Video-domain only — LaMa still best for static images. Released April-May 2026."
+  },
+  {
+    "method": "build_hunyuan_video",
+    "category": "checkpoint",
+    "name": "HunyuanVideo 1.5 ecosystem",
+    "source": "github",
+    "url": "https://github.com/Tencent-Hunyuan/HunyuanVideo-1.5",
+    "risk": "medium",
+    "confidence": 0.60,
+    "notes": "Tier 3 monitor. 8.3B params, 75-second clips on RTX 4090. HunyuanCustom, HunyuanVideo-Avatar, HunyuanVideo-Foley sub-models. ComfyUI support confirmed. Released November 2025. Outside 7-day window."
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "checkpoint",
+    "name": "MatAnyone 2 (CVPR 2026 Highlight)",
+    "source": "github",
+    "url": "https://github.com/pq-yang/MatAnyone2",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Tier 3 monitor (video-specific). Video+image human matting with learned Matting Quality Evaluator (MQE). CVPR 2026 Highlight. ComfyUI node: FuouM/ComfyUI-MatAnyone. Upgrade path for video sequences. Does not replace rembg for static images. arXiv:2512.11782."
+  },
+  {
+    "method": "build_wan_animate_video",
+    "category": "node_pack",
+    "name": "comfyui-deno-custom-nodes v0.7.37",
+    "source": "github",
+    "url": "https://github.com/Deno2026/comfyui-deno-custom-nodes",
+    "risk": "low",
+    "confidence": 0.82,
+    "notes": "IN-WINDOW RELEASE (June 16, 2026). Node pack v0.7.37 bundles: RTX VSR 4K upscaling (NVIDIA hardware, 4 modes), LTX 2.3 loader/sequencer/multi-LoRA, Wan2.2 reference video edit nodes, H.264 real-time preview. RTX VSR augments build_video_upscale. LTX 2.3 loader augments build_ltx_video migration."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "lora",
+    "name": "FLUX.2 Klein LoRA wave (Build Small Hackathon)",
+    "source": "huggingface",
+    "url": "https://hf.co/blog/black-forest-labs/flux-2-klein-lora",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "IN-WINDOW EVENT (June 5-15, 2026). Build Small Hackathon by Gradio + HF + BFL produced surge of community Klein LoRAs. Monitor HF Hub for quality style/character LoRAs compatible with build_klein_* family. Additive enhancement."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "lora",
+    "name": "BFS-Best-Face-Swap (Klein/Qwen LoRA)",
+    "source": "huggingface",
+    "url": "https://hf.co/chfm/BFS-Best-Face-Swap",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "IN-WINDOW (June 7-8, 2026). Diffusion-native face+head swap LoRA for Qwen-Image-Edit-2511 and FLUX.2-Klein without InsightFace/ONNX. Growing community fork count. Alternative approach to inswapper pipeline. Base: Qwen/Qwen-Image-Edit-2511."
+  },
+  {
+    "method": "build_klein_headswap",
+    "category": "lora",
+    "name": "ilkerzgi/face-swap (Klein 9B LoRA)",
+    "source": "huggingface",
+    "url": "https://hf.co/ilkerzgi/face-swap",
+    "risk": "low",
+    "confidence": 0.45,
+    "notes": "Tier 2 augmentation. 10.5k downloads — most popular FLUX.2-Klein face swap LoRA on HF. Created April 13, 2026. Flux-native alternative to inswapper for build_klein_headswap use cases. HF Space available: linoyts/Flux2-Klein-Face-Swap."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "node_pack",
+    "name": "ComfyUI v0.24.0 DualModelGuider + CFGOverride",
+    "source": "github",
+    "url": "https://docs.comfy.org/changelog",
+    "risk": "low",
+    "confidence": 0.93,
+    "notes": "Released June 3, 2026. DualModelGuider enables conditional/unconditional guidance on two separate models (needed for Ideogram 4). CFGOverride allows per-step CFG modulation. PiD conditioning extended with SDXL and QwenImage variants. Augments all existing build_txt2img and build_klein_* workflows."
+  }
+]
