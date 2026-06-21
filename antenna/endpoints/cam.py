@@ -19,6 +19,7 @@ from __future__ import annotations
 import base64
 import os
 import subprocess
+from .. import _silent
 import sys
 import tempfile
 import time
@@ -44,7 +45,7 @@ def _find_video_device() -> str | None:
     name: str | None = None
     if sys.platform == "win32":
         try:
-            r = subprocess.run(
+            r = _silent.run(
                 ["ffmpeg", "-hide_banner", "-list_devices", "true",
                  "-f", "dshow", "-i", "dummy"],
                 capture_output=True, text=True, timeout=4,
@@ -102,7 +103,7 @@ def _capture_jpeg() -> bytes | None:
                 "-frames:v", "1", "-vf", "scale=640:-2",
                 "-f", "image2", str(out_path),
             ]
-        subprocess.run(cmd, capture_output=True, timeout=FFMPEG_TIMEOUT_S)
+        _silent.run(cmd, capture_output=True, timeout=FFMPEG_TIMEOUT_S)
         if out_path.exists() and out_path.stat().st_size > 0:
             with out_path.open("rb") as f:
                 blob = f.read()
@@ -176,7 +177,7 @@ def start_record(ctx: dict[str, Any]) -> tuple[int, dict]:
             str(out_path),
         ]
     try:
-        proc = subprocess.Popen(
+        proc = _silent.Popen(
             cmd,
             stdin=subprocess.PIPE,  # so we can send 'q' to stop cleanly
             stdout=subprocess.DEVNULL,

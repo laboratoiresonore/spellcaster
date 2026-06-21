@@ -53,6 +53,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from . import _silent
 import sys
 import time
 from pathlib import Path
@@ -129,30 +130,27 @@ def _running_cmdlines_containing(needle: str) -> list[str]:
     lines: list[str] = []
     try:
         if os.name == "nt":
-            _cf = 0x08000000  # CREATE_NO_WINDOW
             # wmic deprecated but still shipping on most installs. Use
             # CIM-cmdlets as the better path but fall back to wmic.
             try:
-                proc = subprocess.run(
+                proc = _silent.run(
                     ["wmic", "process", "get", "ProcessId,CommandLine", "/FORMAT:CSV"],
                     capture_output=True, text=True, timeout=5,
-                    creationflags=_cf,
                 )
                 text = proc.stdout or ""
             except (OSError, subprocess.TimeoutExpired):
-                proc = subprocess.run(
+                proc = _silent.run(
                     ["powershell", "-NoProfile", "-Command",
                      "Get-CimInstance Win32_Process | Select-Object "
                      "-ExpandProperty CommandLine"],
                     capture_output=True, text=True, timeout=5,
-                    creationflags=_cf,
                 )
                 text = proc.stdout or ""
             for line in text.splitlines():
                 if needle_lc in line.lower():
                     lines.append(line.strip())
         else:
-            proc = subprocess.run(
+            proc = _silent.run(
                 ["ps", "-eo", "args"],
                 capture_output=True, text=True, timeout=3,
             )

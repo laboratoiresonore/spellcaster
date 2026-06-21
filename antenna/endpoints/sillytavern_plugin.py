@@ -21,6 +21,7 @@ Handlers
 """
 from __future__ import annotations
 
+from .. import _silent
 import json
 import os
 import shutil
@@ -119,7 +120,7 @@ def _plugin_src() -> Path:
 def _git_sha(root: Path) -> str:
     try:
         import subprocess
-        r = subprocess.run(
+        r = _silent.run(
             ["git", "-C", str(root), "rev-parse", "HEAD"],
             capture_output=True, text=True, timeout=5,
         )

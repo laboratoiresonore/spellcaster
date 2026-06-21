@@ -37,6 +37,7 @@ import json
 import os
 import py_compile
 import subprocess
+from .. import _silent
 import sys
 import threading
 import time
@@ -63,7 +64,7 @@ def _src_root() -> Path:
 def _git_sha(root: Path) -> str:
     """Current HEAD SHA of the source tree, or '' if not a git repo."""
     try:
-        r = subprocess.run(
+        r = _silent.run(
             ["git", "-C", str(root), "rev-parse", "HEAD"],
             capture_output=True, text=True, timeout=5,
         )
@@ -76,9 +77,9 @@ def _git_pull(root: Path) -> tuple[bool, str, str]:
     """git fetch + git reset --hard origin/main. Returns (ok, old_sha, new_sha)."""
     old_sha = _git_sha(root)
     try:
-        subprocess.run(["git", "-C", str(root), "fetch", "--depth=1", "origin", "main"],
+        _silent.run(["git", "-C", str(root), "fetch", "--depth=1", "origin", "main"],
                        check=True, capture_output=True, timeout=30)
-        subprocess.run(["git", "-C", str(root), "reset", "--hard", "origin/main"],
+        _silent.run(["git", "-C", str(root), "reset", "--hard", "origin/main"],
                        check=True, capture_output=True, timeout=10)
     except subprocess.CalledProcessError as e:
         return False, old_sha, f"git error: {e.stderr.decode(errors='replace')[:500]}"
@@ -91,7 +92,7 @@ def _git_pull(root: Path) -> tuple[bool, str, str]:
 def _git_reset_to(root: Path, sha: str) -> bool:
     """Hard-reset to a specific SHA. Used for rollback."""
     try:
-        subprocess.run(["git", "-C", str(root), "reset", "--hard", sha],
+        _silent.run(["git", "-C", str(root), "reset", "--hard", sha],
                        check=True, capture_output=True, timeout=10)
         return True
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
@@ -190,7 +191,7 @@ def _schedule_restart(delay_seconds: float = 0.5) -> None:
                 f"sleep 1.5 && '{py}' -m antenna.agent",
             ]
         try:
-            subprocess.Popen(trampoline_cmd, **kwargs)
+            _silent.Popen(trampoline_cmd, **kwargs)
         except Exception as e:
             print(f"[self-update] failed to spawn trampoline: {e}",
                   file=sys.stderr)

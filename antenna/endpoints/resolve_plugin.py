@@ -40,6 +40,7 @@ Invariants
 """
 from __future__ import annotations
 
+from .. import _silent
 import hashlib
 import json
 import os
@@ -154,7 +155,7 @@ def _git_sha(root: Path) -> str:
     """Current HEAD SHA of the source tree, or '' if not a git repo."""
     try:
         import subprocess
-        r = subprocess.run(
+        r = _silent.run(
             ["git", "-C", str(root), "rev-parse", "HEAD"],
             capture_output=True, text=True, timeout=5,
         )

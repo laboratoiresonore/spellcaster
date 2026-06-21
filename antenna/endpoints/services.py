@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .. import _silent
 from .. import service_launcher as _sl
 
 
@@ -180,7 +181,7 @@ def _port_reap(port: int) -> dict[str, Any]:
         # Windows: netstat for the PID, then taskkill /F /PID
         import subprocess
         try:
-            r = subprocess.run(
+            r = _silent.run(
                 ["netstat", "-ano", "-p", "TCP"],
                 capture_output=True, text=True, timeout=5,
             )
@@ -197,7 +198,7 @@ def _port_reap(port: int) -> dict[str, Any]:
             failed = []
             for pid in pids:
                 try:
-                    subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+                    _silent.run(["taskkill", "/F", "/T", "/PID", str(pid)],
                                    capture_output=True, timeout=5)
                     killed.append(pid)
                 except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
@@ -210,7 +211,7 @@ def _port_reap(port: int) -> dict[str, Any]:
     # POSIX fallback
     import subprocess
     try:
-        r = subprocess.run(["lsof", "-tiTCP:%d" % port, "-sTCP:LISTEN"],
+        r = _silent.run(["lsof", "-tiTCP:%d" % port, "-sTCP:LISTEN"],
                            capture_output=True, text=True, timeout=5)
         pids = [int(x) for x in r.stdout.split() if x.isdigit()]
         if not pids:
