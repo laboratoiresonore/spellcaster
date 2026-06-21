@@ -70,16 +70,24 @@ def _tailnet_ip() -> str:
     Tries `tailscale ip -4` first; falls back to the outbound-route trick.
     """
     try:
+        import os as _os
         import subprocess
+        _cf = 0x08000000 if _os.name == "nt" else 0  # CREATE_NO_WINDOW
         r = subprocess.run(
             ["tailscale", "ip", "-4"],
             capture_output=True, text=True, timeout=2.0,
+            creationflags=_cf,
         )
         if r.returncode == 0:
             ip = (r.stdout or "").strip().splitlines()
             if ip and ip[0].startswith("100."):
                 return ip[0]
-    except (FileNotFoundError, OSError):
+    except Exception:
+        # Was catching only (FileNotFoundError, OSError). A
+        # subprocess.TimeoutExpired (raised when `tailscale ip -4` hangs
+        # because the daemon is stuck/restarting) used to escape and kill
+        # the entire prometheus-link thread. Catch broadly so the
+        # heartbeat keeps running off the fallback IP.
         pass
     # Fallback: outbound-route IP
     try:
@@ -222,7 +230,18 @@ class _LinkThread(threading.Thread):
 
     def run(self) -> None:
         while not self._stop_event.is_set():
-            self._cycle()
+            try:
+                self._cycle()
+            except Exception as e:
+                # Defensive: any unhandled exception inside _cycle() (sensor
+                # hiccup, sudden DNS failure, transient OSError on Windows,
+                # etc.) must NOT kill the heartbeat loop. Log once per
+                # consecutive run of the same exception class.
+                cls = type(e).__name__
+                if getattr(self, "_last_exc_cls", None) != cls:
+                    print(f"[prometheus-link] cycle error ({cls}): {e}",
+                          file=sys.stderr, flush=True)
+                    self._last_exc_cls = cls
             self._stop_event.wait(HEARTBEAT_INTERVAL)
 
     def _cycle(self) -> None:

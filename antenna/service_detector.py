@@ -129,12 +129,14 @@ def _running_cmdlines_containing(needle: str) -> list[str]:
     lines: list[str] = []
     try:
         if os.name == "nt":
+            _cf = 0x08000000  # CREATE_NO_WINDOW
             # wmic deprecated but still shipping on most installs. Use
             # CIM-cmdlets as the better path but fall back to wmic.
             try:
                 proc = subprocess.run(
                     ["wmic", "process", "get", "ProcessId,CommandLine", "/FORMAT:CSV"],
                     capture_output=True, text=True, timeout=5,
+                    creationflags=_cf,
                 )
                 text = proc.stdout or ""
             except (OSError, subprocess.TimeoutExpired):
@@ -143,6 +145,7 @@ def _running_cmdlines_containing(needle: str) -> list[str]:
                      "Get-CimInstance Win32_Process | Select-Object "
                      "-ExpandProperty CommandLine"],
                     capture_output=True, text=True, timeout=5,
+                    creationflags=_cf,
                 )
                 text = proc.stdout or ""
             for line in text.splitlines():
