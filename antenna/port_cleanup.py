@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from . import _silent
 import sys
 import time
 from typing import Any
@@ -39,7 +40,7 @@ def _find_pids_holding_port_windows(port: int) -> list[int]:
     """
     pids: set[int] = set()
     try:
-        proc = subprocess.run(
+        proc = _silent.run(
             ["netstat", "-ano", "-p", "TCP"],
             capture_output=True, text=True, timeout=5,
             # No shell — the binary is always on PATH on Windows.
@@ -71,7 +72,7 @@ def _pid_image_name_windows(pid: int) -> str:
     """Best-effort image name for a Windows PID. Empty string if unknown."""
     try:
         # `tasklist /FI "PID eq <pid>" /FO CSV /NH` — quoting-safe CSV output.
-        proc = subprocess.run(
+        proc = _silent.run(
             ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
             capture_output=True, text=True, timeout=5,
         )
@@ -87,7 +88,7 @@ def _pid_image_name_windows(pid: int) -> str:
 
 def _kill_pid_windows(pid: int) -> bool:
     try:
-        subprocess.run(
+        _silent.run(
             ["taskkill", "/F", "/PID", str(pid)],
             capture_output=True, text=True, timeout=5, check=False,
         )
@@ -101,7 +102,7 @@ def _find_pids_holding_port_posix(port: int) -> list[int]:
     """Return PIDs of POSIX processes listening on `port` via lsof."""
     pids: set[int] = set()
     try:
-        proc = subprocess.run(
+        proc = _silent.run(
             ["lsof", "-nP", "-i", f"TCP:{port}", "-sTCP:LISTEN", "-t"],
             capture_output=True, text=True, timeout=5, check=False,
         )
@@ -121,7 +122,7 @@ def _find_pids_holding_port_posix(port: int) -> list[int]:
 
 def _pid_image_name_posix(pid: int) -> str:
     try:
-        proc = subprocess.run(
+        proc = _silent.run(
             ["ps", "-p", str(pid), "-o", "comm="],
             capture_output=True, text=True, timeout=5, check=False,
         )

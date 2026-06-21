@@ -52,6 +52,8 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+from . import _silent
+
 
 HEARTBEAT_INTERVAL = 5.0
 HEARTBEAT_TIMEOUT = 4.0
@@ -70,13 +72,10 @@ def _tailnet_ip() -> str:
     Tries `tailscale ip -4` first; falls back to the outbound-route trick.
     """
     try:
-        import os as _os
-        import subprocess
-        _cf = 0x08000000 if _os.name == "nt" else 0  # CREATE_NO_WINDOW
-        r = subprocess.run(
+        import subprocess  # for TimeoutExpired etc.
+        r = _silent.run(
             ["tailscale", "ip", "-4"],
             capture_output=True, text=True, timeout=2.0,
-            creationflags=_cf,
         )
         if r.returncode == 0:
             ip = (r.stdout or "").strip().splitlines()

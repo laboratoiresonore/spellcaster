@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from .. import _silent
 import sys
 import threading
 import time
@@ -128,7 +129,7 @@ def _run_one(service: dict[str, Any]) -> dict[str, Any]:
             # cmd.exe on Windows, /bin/sh elsewhere — let subprocess pick
             full = cmd
             use_shell = True
-        proc = subprocess.Popen(
+        proc = _silent.Popen(
             full,
             shell=use_shell,
             stdout=subprocess.PIPE,

@@ -40,6 +40,7 @@ import secrets
 import socket
 import ssl
 import subprocess
+from . import _silent
 import sys
 from pathlib import Path
 from typing import Any
@@ -273,7 +274,7 @@ def _openssl_available() -> bool:
     if not path:
         return False
     try:
-        r = subprocess.run([path, "version"], capture_output=True, timeout=3)
+        r = _silent.run([path, "version"], capture_output=True, timeout=3)
         return r.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         return False
@@ -309,7 +310,7 @@ IP.2  = {lan_ip}
     ext_path.write_text(ext_config, encoding="utf-8")
     openssl_exe = _find_openssl() or "openssl"  # fall-through for PATH case
     try:
-        subprocess.run([
+        _silent.run([
             openssl_exe, "req", "-x509", "-newkey", "rsa:2048",
             "-keyout", str(key_path),
             "-out", str(cert_path),
@@ -368,7 +369,7 @@ def _generate_cert_powershell(cert_path: Path, key_path: Path,
     )
 
     try:
-        r = subprocess.run(
+        r = _silent.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
             capture_output=True, text=True, timeout=30,
         )

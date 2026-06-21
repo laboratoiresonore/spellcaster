@@ -47,6 +47,7 @@ from __future__ import annotations
 import os
 import socket
 import subprocess
+from . import _silent
 import sys
 import threading
 import time
@@ -166,10 +167,9 @@ def _list_processes() -> list[str]:
     """
     if os.name == "nt":
         try:
-            r = subprocess.run(
+            r = _silent.run(
                 ["tasklist", "/FO", "CSV", "/NH"],
                 capture_output=True, text=True, timeout=3,
-                creationflags=0x08000000,  # CREATE_NO_WINDOW
             )
             if r.returncode != 0:
                 return []
@@ -184,7 +184,7 @@ def _list_processes() -> list[str]:
             return []
     else:
         try:
-            r = subprocess.run(
+            r = _silent.run(
                 ["ps", "-eo", "comm,args"],
                 capture_output=True, text=True, timeout=3,
             )

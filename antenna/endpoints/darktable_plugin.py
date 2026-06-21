@@ -23,6 +23,7 @@ stay aligned with the installer's copy target (install.py:_find_..).
 """
 from __future__ import annotations
 
+from .. import _silent
 import hashlib
 import json
 import os
@@ -92,7 +93,7 @@ def _plugin_src_file() -> Path:
 def _git_sha(root: Path) -> str:
     try:
         import subprocess
-        r = subprocess.run(
+        r = _silent.run(
             ["git", "-C", str(root), "rev-parse", "HEAD"],
             capture_output=True, text=True, timeout=5,
         )

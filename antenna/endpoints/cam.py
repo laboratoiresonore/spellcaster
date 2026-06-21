@@ -19,6 +19,7 @@ from __future__ import annotations
 import base64
 import os
 import subprocess
+from .. import _silent
 import sys
 import tempfile
 import time
@@ -29,6 +30,18 @@ from typing import Any
 SNAPSHOT_CACHE_S = 30.0
 DEVICE_CACHE_S = 300.0
 FFMPEG_TIMEOUT_S = 8.0
+
+# DEBUG: log module load + cwd so I can verify the right copy is in play
+import sys as _sys
+print(f"[cam] module loaded, sys.platform={_sys.platform}, executable={_sys.executable}, __file__={__file__}",
+      file=_sys.stderr, flush=True)
+try:
+    with open(os.path.expanduser("~/.spellcaster/cam_debug.log"), "a", encoding="utf-8") as _f:
+        _f.write(f"MODULE LOAD time={time.time()} __file__={__file__}\n")
+    print("[cam] debug-file write OK at module load", file=_sys.stderr, flush=True)
+except Exception as _e:
+    print(f"[cam] debug-file write FAILED at module load: {type(_e).__name__}: {_e}",
+          file=_sys.stderr, flush=True)
 
 
 _camera_cache: dict[str, Any] = {"ts": 0.0, "device": None}
@@ -43,12 +56,20 @@ def _find_video_device() -> str | None:
         return cached
     name: str | None = None
     if sys.platform == "win32":
+        _debug("entering device probe")
         try:
-            r = subprocess.run(
+            r = _silent.run(
                 ["ffmpeg", "-hide_banner", "-list_devices", "true",
                  "-f", "dshow", "-i", "dummy"],
                 capture_output=True, text=True, timeout=4,
+                stdin=subprocess.DEVNULL,
             )
+            _debug(f"ffmpeg rc={r.returncode} stderr_len={len(r.stderr or '')}")
+            if r.stderr:
+                _debug(f"first 300 stderr: {r.stderr[:300]!r}")
+            if r.stderr and "(video)" not in r.stderr:
+                print(f"[cam] no (video) in stderr; first 500 chars: {r.stderr[:500]!r}",
+                      file=sys.stderr, flush=True)
             # ffmpeg 8.x dropped the "DirectShow video devices" header
             # line that used to anchor section parsing. Match the
             # per-device "(video)" / "(audio)" / "(none)" tag instead —
@@ -67,8 +88,10 @@ def _find_video_device() -> str | None:
                 if start >= 0 and end > start:
                     name = ln[start + 1: end]
                     break
-        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-            pass
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as _ex:
+            _debug(f"device probe FAILED: {type(_ex).__name__}: {_ex}")
+        except Exception as _ex2:
+            _debug(f"device probe UNEXPECTED: {type(_ex2).__name__}: {_ex2}")
     else:
         for n in range(5):
             p = f"/dev/video{n}"
@@ -106,7 +129,7 @@ def _capture_jpeg() -> bytes | None:
                 "-frames:v", "1", "-vf", "scale=640:-2",
                 "-f", "image2", str(out_path),
             ]
-        subprocess.run(cmd, capture_output=True, timeout=FFMPEG_TIMEOUT_S)
+        _silent.run(cmd, capture_output=True, timeout=FFMPEG_TIMEOUT_S)
         if out_path.exists() and out_path.stat().st_size > 0:
             with out_path.open("rb") as f:
                 blob = f.read()
@@ -123,9 +146,25 @@ def _capture_jpeg() -> bytes | None:
     return None
 
 
+def _debug(msg: str) -> None:
+    try:
+        with open(os.path.expanduser("~/.spellcaster/cam_debug.log"), "a", encoding="utf-8") as _f:
+            _f.write(time.strftime("%H:%M:%S") + " " + msg + "\n")
+    except Exception:
+        pass
+
+
 def get_snapshot(ctx: dict[str, Any]) -> tuple[int, dict]:
     """GET /cam/snapshot — base64 JPEG, or 503 if no camera."""
-    jpeg = _capture_jpeg()
+    _debug(f"get_snapshot ENTRY pid={os.getpid()} tid={__import__('threading').get_ident()}")
+    try:
+        jpeg = _capture_jpeg()
+    except Exception as _ex:
+        _debug(f"_capture_jpeg threw: {type(_ex).__name__}: {_ex}")
+        import traceback as _tb
+        _debug(_tb.format_exc())
+        jpeg = None
+    _debug(f"get_snapshot _capture_jpeg returned: {type(jpeg).__name__}")
     if not jpeg:
         return 503, {"error": "no camera or capture failed",
                      "device": _find_video_device()}
@@ -180,7 +219,7 @@ def start_record(ctx: dict[str, Any]) -> tuple[int, dict]:
             str(out_path),
         ]
     try:
-        proc = subprocess.Popen(
+        proc = _silent.Popen(
             cmd,
             stdin=subprocess.PIPE,  # so we can send 'q' to stop cleanly
             stdout=subprocess.DEVNULL,
