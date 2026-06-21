@@ -169,6 +169,7 @@ def _list_processes() -> list[str]:
             r = subprocess.run(
                 ["tasklist", "/FO", "CSV", "/NH"],
                 capture_output=True, text=True, timeout=3,
+                creationflags=0x08000000,  # CREATE_NO_WINDOW
             )
             if r.returncode != 0:
                 return []

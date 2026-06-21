@@ -78,12 +78,14 @@ def _gpu_snapshot() -> dict[str, Any]:
             "vram_used_mb": 0, "vram_total_mb": 0,
             "gpu_name": ""}
     try:
+        _cf = 0x08000000 if os.name == "nt" else 0  # CREATE_NO_WINDOW
         result = subprocess.run(
             ["nvidia-smi",
              "--query-gpu=name,utilization.gpu,temperature.gpu,"
              "memory.used,memory.total",
              "--format=csv,noheader,nounits"],
             capture_output=True, text=True, timeout=3,
+            creationflags=_cf,
         )
     except (OSError, subprocess.TimeoutExpired):
         return out
