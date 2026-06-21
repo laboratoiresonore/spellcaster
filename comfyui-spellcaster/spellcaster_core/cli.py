@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Spellcaster CLI — generate images/videos from the command line.
+# Silent-subprocess monkey-patch (per FLEET-FUNCTION-ATLAS.md sec: silent-
+# subprocess consolidation, 2026-06-20). Import first so every subsequent
+# subprocess.* call inherits CREATE_NO_WINDOW on Windows -- kills console
+# flashes when the CLI shells out to the ComfyUI push path / git / etc.
+import sys as _ss_sys
+import os as _ss_os
+_ss_sys.path.insert(0, _ss_os.path.dirname(_ss_os.path.abspath(__file__)))
+import _silent_subprocess  # noqa: F401 -- side-effect import
+
+"""Spellcaster CLI -- generate images/videos from the command line.
 
 No GIMP, no Wizard Guild, no browser needed. Just ComfyUI + this script.
 
