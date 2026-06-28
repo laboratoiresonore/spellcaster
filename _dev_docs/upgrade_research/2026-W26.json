@@ -1,0 +1,522 @@
+[
+  {
+    "method": "build_inpaint",
+    "category": "checkpoint",
+    "name": "Moebius 0.22B",
+    "source": "huggingface",
+    "url": "https://huggingface.co/hustvl/Moebius",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "ECCV 2026. 0.22B matches FLUX.1-Fill-Dev (11.9B) on 6 benchmarks; 26ms/step; Apache 2.0. No ComfyUI node yet as of 2026-06-28 — community port expected within days. Will replace FLUX.1-Fill-Dev in build_inpaint."
+  },
+  {
+    "method": "build_magic_eraser",
+    "category": "checkpoint",
+    "name": "Moebius 0.22B",
+    "source": "huggingface",
+    "url": "https://huggingface.co/hustvl/Moebius",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Same model as build_inpaint entry. One model covers erase and inpaint workflows."
+  },
+  {
+    "method": "build_lama_remove",
+    "category": "checkpoint",
+    "name": "Moebius 0.22B",
+    "source": "huggingface",
+    "url": "https://huggingface.co/hustvl/Moebius",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Moebius outperforms LaMa on object removal. Await ComfyUI node before wiring."
+  },
+  {
+    "method": "build_pulid_flux",
+    "category": "node_pack",
+    "name": "ComfyUI-PuLID-Flux2 v0.6.2",
+    "source": "github",
+    "url": "https://github.com/iFayens/ComfyUI-PuLID-Flux2",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Released 2026-05-22. Adds native Klein 4B/9B/Dev auto-detection, improved face recognition, fewer artifacts. Drop-in node update; same workflow graph."
+  },
+  {
+    "method": "build_faceid_img2img",
+    "category": "node_pack",
+    "name": "balazik/ComfyUI-PuLID-Flux (migration from discontinued Enhanced fork)",
+    "source": "github",
+    "url": "https://github.com/balazik/ComfyUI-PuLID-Flux",
+    "risk": "low",
+    "confidence": 0.78,
+    "notes": "ComfyUI-PuLID-Flux-Enhanced (sipie800) formally discontinued; last update 2026-02-12. Must migrate to maintained fork. No model weight changes needed."
+  },
+  {
+    "method": "build_photobooth",
+    "category": "node_pack",
+    "name": "balazik/ComfyUI-PuLID-Flux (migration from discontinued Enhanced fork)",
+    "source": "github",
+    "url": "https://github.com/balazik/ComfyUI-PuLID-Flux",
+    "risk": "low",
+    "confidence": 0.78,
+    "notes": "Same migration as build_faceid_img2img — Enhanced fork discontinued."
+  },
+  {
+    "method": "build_sam3_segment",
+    "category": "checkpoint",
+    "name": "SAM 3.1",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facebook/sam3.1",
+    "risk": "medium",
+    "confidence": 0.96,
+    "notes": "Released 2026-03-27. Accepts text prompts and image exemplars (open-vocabulary). 7x faster multi-object tracking vs SAM 2. Weights gated on Meta HF; Comfy-Org mirror available. Fits 16 GB at FP16."
+  },
+  {
+    "method": "build_sam3_mask",
+    "category": "checkpoint",
+    "name": "SAM 3.1",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facebook/sam3.1",
+    "risk": "medium",
+    "confidence": 0.96,
+    "notes": "Same SAM 3.1 upgrade. Text-driven masking is a major workflow capability gain."
+  },
+  {
+    "method": "build_sam3_extract",
+    "category": "checkpoint",
+    "name": "SAM 3.1",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facebook/sam3.1",
+    "risk": "medium",
+    "confidence": 0.96,
+    "notes": "Text noun-phrase prompts replace the point/box flow. Same upgrade as segment/mask."
+  },
+  {
+    "method": "build_klein_sam3_inpaint",
+    "category": "checkpoint",
+    "name": "SAM 3.1 (upstream dependency)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facebook/sam3.1",
+    "risk": "medium",
+    "confidence": 0.90,
+    "notes": "SAM 3.1 text prompts make the segment step easier; upgrade the SAM upstream dep."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "LTX-2.3 (22B)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Lightricks/LTX-2.3",
+    "risk": "medium",
+    "confidence": 0.90,
+    "notes": "Released 2026-03-05. Complete architecture change: 22B DiT, audio+video, 4K/50fps, new VAE. FP8 or GGUF Q4 (unsloth/LTX-2.3-GGUF) required for 16 GB VRAM. Builder must be rewritten for new node structure. ComfyUI v0.26.0 (2026-06-23) adds native LTX2 Context Windows node."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "node_pack",
+    "name": "Deno2026 custom nodes v0.7.64 — LTX-2.3 tiled upscaler",
+    "source": "github",
+    "url": "https://github.com/Deno2026/comfyui-deno-custom-nodes",
+    "risk": "low",
+    "confidence": 0.75,
+    "notes": "Released 2026-06-26 (in reporting window). Contains LTX-2.3 tiled spatial upscaler/loader and reference video editing helpers. Complements LTX-2.3 model upgrade."
+  },
+  {
+    "method": "build_seedvr2_video_upscale",
+    "category": "node_pack",
+    "name": "SeedVR2 v2.5 (GGUF, 4-node modular)",
+    "source": "github",
+    "url": "https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler",
+    "risk": "medium",
+    "confidence": 0.90,
+    "notes": "Released 2026-11-07. Breaking change: 4-node modular system replaces single node. 60% VRAM reduction; 7B now runs on 8 GB with GGUF Q4. Old workflows must be rebuilt. Improved temporal consistency."
+  },
+  {
+    "method": "build_seedv2r",
+    "category": "checkpoint",
+    "name": "SeedVR2 3B / 7B (ICLR 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/ByteDance-Seed/SeedVR2-3B",
+    "risk": "medium",
+    "confidence": 0.97,
+    "notes": "Paper 2026-06-05; ICLR 2026 accepted 2026-01-27. One-step diffusion (adversarial post-training) replaces multi-step SeedVR. 3B fits 16 GB; 7B needs BF16 variant (SassyDiffusion/SeedVR2-7B_BF16). Direct successor to build_seedv2r."
+  },
+  {
+    "method": "build_hunyuan_video",
+    "category": "checkpoint",
+    "name": "HunyuanVideo-1.5 (8.3B)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/tencent/HunyuanVideo-1.5",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Released 2025-11-21; I2V step-distilled 2025-12-05. 8.3B vs original 13B; 1.87x speedup via SSTA attention; I2V in 8-12 steps. Better 16 GB headroom than original HunyuanVideo."
+  },
+  {
+    "method": "build_video_upscale",
+    "category": "node_pack",
+    "name": "FlashVSR v1.1",
+    "source": "github",
+    "url": "https://github.com/1038lab/ComfyUI-FlashVSR",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "arXiv 2510.12747, CVPR 2026. One-step diffusion VSR; Tiny Long low-VRAM mode; tiling available. Multiple ports — prefer 1038lab or naxci1/ComfyUI-FlashVSR_Stable (VRAM-optimized). Caution: ports missing locality-constrained sparse attention show quality degradation."
+  },
+  {
+    "method": "build_video_upscale",
+    "category": "node_pack",
+    "name": "NVIDIA RTX Video Super Resolution Node",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Last updated 2026-03-22. TensorRT-accelerated 4K upscaling on RTX 5060 Ti. 30x faster than ESRGAN. Two-pass (denoise + upscale) available. Deno2026 v0.7.64 (2026-06-26) includes enhanced 4-mode wrapper."
+  },
+  {
+    "method": "build_wavespeed_upscale",
+    "category": "node_pack",
+    "name": "FlashVSR v1.1",
+    "source": "github",
+    "url": "https://github.com/OpenImagingLab/FlashVSR",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Local alternative to WaveSpeed cloud inference. Same quality warning re: sparse attention implementation."
+  },
+  {
+    "method": "build_upscale",
+    "category": "node_pack",
+    "name": "NVIDIA RTX VSR Node",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Hardware-accelerated image upscaling on RTX 5060 Ti. 30x faster than software ESRGAN."
+  },
+  {
+    "method": "build_upscale_blend",
+    "category": "node_pack",
+    "name": "NVIDIA RTX VSR Node",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Can replace one of the two ESRGAN legs in the blend with hardware-accelerated VSR."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "checkpoint",
+    "name": "Wan2.7 (14B, GGUF+blockswap)",
+    "source": "github",
+    "url": "https://comfyui.org/en/wan27-is-now-available-in-comfyui",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Released 2026-04-22 on ModelScope (not HF). Adds native audio, 5-image multi-reference, built-in FLF. Requires GGUF Q4 + blockswap for 16 GB VRAM at 720p (~10-15 min). Community GGUF quantizations on HF."
+  },
+  {
+    "method": "build_wan22_t2v",
+    "category": "checkpoint",
+    "name": "Wan2.7 (14B, GGUF+blockswap)",
+    "source": "github",
+    "url": "https://comfyui.org/en/wan27-is-now-available-in-comfyui",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Same Wan2.7 upgrade. T2V benefits from new audio conditioner."
+  },
+  {
+    "method": "build_wan_flf",
+    "category": "checkpoint",
+    "name": "Wan2.7 (14B, native FLF)",
+    "source": "github",
+    "url": "https://comfyui.org/en/wan27-is-now-available-in-comfyui",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "FLF now native in Wan2.7 — may allow simplification of build_wan_flf builder."
+  },
+  {
+    "method": "build_wan_animate_video",
+    "category": "checkpoint",
+    "name": "Wan2.7 (14B)",
+    "source": "github",
+    "url": "https://comfyui.org/en/wan27-is-now-available-in-comfyui",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "5-image multi-reference improves animation consistency."
+  },
+  {
+    "method": "build_wan_video_blockswap",
+    "category": "checkpoint",
+    "name": "Wan2.7 + blockswap",
+    "source": "github",
+    "url": "https://comfyui.org/en/wan27-is-now-available-in-comfyui",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Blockswap + GGUF combination still needed for 16 GB VRAM."
+  },
+  {
+    "method": "build_wan_video_blockswap_t2v",
+    "category": "checkpoint",
+    "name": "Wan2.7 + blockswap",
+    "source": "github",
+    "url": "https://comfyui.org/en/wan27-is-now-available-in-comfyui",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Same as build_wan_video_blockswap."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "checkpoint",
+    "name": "HyperSwap 256 (1a/1b/1c variants)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facefusion/models-3.3.0/tree/main",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Already in ReActor v0.6.2 (2025-04-25); adoption peaking June 2026. 2x face output resolution vs inswapper_128. Download into ComfyUI/models/hyperswap/. Inswapper retains higher identity similarity — test 1a/1b/1c for best tradeoff."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "node_pack",
+    "name": "ReActor v0.6.x — Restore Face Advanced",
+    "source": "github",
+    "url": "https://github.com/Gourieff/ComfyUI-ReActor",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "New Restore Face Advanced node applies CodeFormer only to swapped faces. ReActorSetWeight (0-100% swap strength), ReActorMaskHelper, ReActorImageDuplicator nodes added. No longer requires InsightFace C++ build tools."
+  },
+  {
+    "method": "build_faceswap_mtb",
+    "category": "node_pack",
+    "name": "ComfyUI-Faceless (FaceFusion in ComfyUI)",
+    "source": "github",
+    "url": "https://github.com/jeffy5/comfyui-faceless-node",
+    "risk": "medium",
+    "confidence": 0.70,
+    "notes": "Last updated 2026-04-03. Brings FaceFusion pipeline (including HyperSwap) into ComfyUI natively. Evaluate as alternative to MTB face swap nodes."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "node_pack",
+    "name": "facerestore_advanced",
+    "source": "github",
+    "url": "https://github.com/flickleafy/facerestore_advanced",
+    "risk": "medium",
+    "confidence": 0.72,
+    "notes": "Drop-in replacement for facerestore_cf node. Same CodeFormer/GFPGAN models with 15+ quality metrics, automatic fallback, caching. Test fallback logic in batch workflows before production use."
+  },
+  {
+    "method": "build_photo_restore",
+    "category": "node_pack",
+    "name": "facerestore_advanced",
+    "source": "github",
+    "url": "https://github.com/flickleafy/facerestore_advanced",
+    "risk": "medium",
+    "confidence": 0.72,
+    "notes": "Better quality gating via 15+ metrics improves the CodeFormer post-processing step in photo restore pipeline."
+  },
+  {
+    "method": "build_klein_face_detail",
+    "category": "node_pack",
+    "name": "ComfyUI v0.23.0 — MediaPipe Face Detection (native)",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/ComfyUI/pull/14009",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Released 2026-06-01. Dependency-free 478-point FaceMesh, BlazeFace detectors, FaceBlendshapes — all in ComfyUI core as safetensors. Zero install cost. Replaces less precise YOLO/RetinaFace detectors."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "node_pack",
+    "name": "ComfyUI v0.23.0 — MediaPipe Face Detection (native)",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/ComfyUI/pull/14009",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "More accurate face detection masks upstream of CodeFormer/GFPGAN. In ComfyUI core."
+  },
+  {
+    "method": "build_klein_headswap",
+    "category": "node_pack",
+    "name": "GHOST 2.0 + Ghost2_Comfyui",
+    "source": "github",
+    "url": "https://github.com/Holasyb918/Ghost2_Comfyui",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "Paper 2025-02-25. Full head swap (Aligner + Blender modules). ComfyUI node unofficial but available. Alternative to Klein Flux2 for one-shot scenarios. Fits 16 GB."
+  },
+  {
+    "method": "build_rembg_v3",
+    "category": "checkpoint",
+    "name": "BEN2",
+    "source": "huggingface",
+    "url": "https://huggingface.co/PramaLLC/BEN2",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Confidence-Guided Matting pipeline; better hair/fine-edge matting. 1.13 GB; 1080p in ~6s. Already in ComfyUI-RMBG alongside RMBG-2.0. Add as selectable model if not already present."
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "checkpoint",
+    "name": "BiRefNet v2 variants (matting/portrait/2K)",
+    "source": "github",
+    "url": "https://fal.ai/models/fal-ai/birefnet/v2",
+    "risk": "low",
+    "confidence": 0.72,
+    "notes": "Specialized fine-tunes of BiRefNet: General Light 2K, Matting, Portrait. Current BiRefNet-general remains good default; add variants for hair/portrait use cases."
+  },
+  {
+    "method": "build_normal_map",
+    "category": "node_pack",
+    "name": "LBM Depth/Normal (ComfyUI-LBM v1.1.0)",
+    "source": "github",
+    "url": "https://github.com/1038lab/ComfyUI-LBM",
+    "risk": "low",
+    "confidence": 0.82,
+    "notes": "ICCV 2025 Highlight (arXiv 2503.07535). Single-step depth+normal output via Latent Bridge Matching. Node released 2025-05-22. Faster single-step alternative to DSINE/BAE if current normal_map is slow."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "checkpoint",
+    "name": "Hunyuan3D 3.0 (shape-only)",
+    "source": "github",
+    "url": "https://docs.comfy.org/tutorials/partner-nodes/hunyuan3d/hunyuan3d-3-0",
+    "risk": "high",
+    "confidence": 0.82,
+    "notes": "ComfyUI Partner Nodes integration 2026-02-13. Text/image/sketch-to-3D. Shape-only generation likely fits 16 GB (6-10 GB range based on prior versions). Full texture pipeline likely exceeds 16 GB. Test Hunyuan3D-2GP (GPU-poor fork) first."
+  },
+  {
+    "method": "build_hunyuan_3d_textured",
+    "category": "checkpoint",
+    "name": "Hunyuan3D 3.0 (texture — VRAM risk)",
+    "source": "github",
+    "url": "https://docs.comfy.org/tutorials/partner-nodes/hunyuan3d/hunyuan3d-3-0",
+    "risk": "high",
+    "confidence": 0.82,
+    "notes": "Full texture pipeline of Hunyuan3D 3.0 historically needed ~29 GB. VRAM specs for 3.0 not yet fully documented. Likely exceeds 16 GB budget without offloading. Monitor for quantized variant."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "NVIDIA PixelDiT 1300M",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Comfy-Org/PixelDiT",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "Released in ComfyUI v0.23.0 (2026-06-01). CVPR 2026 Best Paper Finalist. 1.3B BF16, single-stage pixel-space DiT (no VAE), 1024px. New backbone option — not Flux quality but fast and VAE-free."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Microsoft Lens 3.8B",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/ComfyUI/pull/14077",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Released in ComfyUI v0.23.0 (2026-06-01). 3.8B dual-stream MMDiT, GPT-OSS-20B text features + FLUX.2 VAE, nvfp4. No access gate. Lens Turbo (distilled) also available."
+  },
+  {
+    "method": "build_qwen_edit",
+    "category": "checkpoint",
+    "name": "Qwen-Image-Edit 20B",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Qwen/Qwen-Image-Edit",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "Open-sourced June 2026. Dedicated editing MMDiT: bilingual text editing in-image, semantic+appearance editing, preserves font/size/style. 20B needs FP8/Q8 on 16 GB; may need CPU offload. ComfyUI nodes: lrzjason/Comfyui-QwenEditUtils."
+  },
+  {
+    "method": "build_cogvideo_video",
+    "category": "checkpoint",
+    "name": "CogVideoX1.5",
+    "source": "github",
+    "url": "https://github.com/kijai/ComfyUI-CogVideoXWrapper",
+    "risk": "low",
+    "confidence": 0.65,
+    "notes": "CogVideoX1.5-5B with higher resolution I2V; GGUF+SageAttention+tiled encoding via kijai wrapper. ComfyUI changelog notes CogVideoX inclusion in May 2026 update. Upgrade if builder targets base CogVideoX."
+  },
+  {
+    "method": "build_video_reactor",
+    "category": "checkpoint",
+    "name": "HyperSwap 256 (via ReActor v0.6.2)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facefusion/models-3.3.0/tree/main",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Same HyperSwap upgrade path as build_faceswap. 2x face resolution on per-frame video swap."
+  },
+  {
+    "method": "build_iclight",
+    "category": "checkpoint",
+    "name": "PIXLRelight (Tier 3 watch)",
+    "source": "github",
+    "url": "https://github.com/mlfarinha/pixlrelight",
+    "risk": "high",
+    "confidence": 0.72,
+    "notes": "Paper 2026-05-18. Physically-based feed-forward relighter; <100ms inference. No ComfyUI node. Standalone script only. Watch for community port. More physically grounded than IC-Light v2."
+  },
+  {
+    "method": "build_supir",
+    "category": "checkpoint",
+    "name": "RealRestorer (Tier 3 watch)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/RealRestorer/RealRestorer",
+    "risk": "low",
+    "confidence": 0.78,
+    "notes": "Paper arXiv 2603.25502 (March 2026). Generalizable restoration on large-scale editing models. No ComfyUI node yet. SUPIR remains best-packaged option. Monitor for community wrapper."
+  },
+  {
+    "method": "build_depth_map_v3",
+    "category": "checkpoint",
+    "name": "AnyDepth (lightweight alternative)",
+    "source": "github",
+    "url": "https://github.com/AIGeeksGroup/AnyDepth",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "arXiv 2601.02760 (2026-01-06). DINOv3 encoder + Simple Depth Transformer; 85-89% fewer params vs DPT. DA3 is still current; AnyDepth is useful as fast preview mode only. Not a quality replacement."
+  },
+  {
+    "method": "build_mochi_video",
+    "category": "checkpoint",
+    "name": "(no update found — consider deprecating)",
+    "source": "github",
+    "url": "https://github.com/genmoai/mochi",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Mochi 1 still at 480p preview (Oct 2024). No update in 8+ months. WAN and LTX have advanced significantly. Recommend evaluating whether build_mochi_video should be maintained or deprecated."
+  },
+  {
+    "method": "build_framepack_video",
+    "category": "checkpoint",
+    "name": "(no update found)",
+    "source": "github",
+    "url": "https://github.com/lllyasviel/FramePack",
+    "risk": "low",
+    "confidence": 0.70,
+    "notes": "No release since FramePack-F1/P1 in 2025. Monitor lllyasviel/FramePack/releases directly."
+  },
+  {
+    "method": "build_style_transfer",
+    "category": "checkpoint",
+    "name": "FLUX.2 Dev multi-reference (matured)",
+    "source": "github",
+    "url": "https://blogs.nvidia.com/blog/rtx-ai-garage-flux-2-comfyui/",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "FLUX.2 Dev multi-reference (up to 10 refs) matured in June 2026 with NVIDIA FP8 guide reducing VRAM 40%. RTX 5060 Ti confirmed compatible. Useful for style transfer without extra LoRAs."
+  },
+  {
+    "method": "build_detail_hallucinate",
+    "category": "node_pack",
+    "name": "ComfyUI v0.23.0 — MediaPipe Face Detection (native)",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/ComfyUI/pull/14009",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Native face detection improves face-targeting in detail hallucination pipeline."
+  },
+  {
+    "method": "build_save_face_model",
+    "category": "node_pack",
+    "name": "ReActor v0.6.x — FACE_MODEL_NAME output",
+    "source": "github",
+    "url": "https://github.com/Gourieff/ComfyUI-ReActor",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Minor: Load Face Model node now outputs FACE_MODEL_NAME string, enabling downstream model routing."
+  }
+]
