@@ -1,0 +1,192 @@
+[
+  {
+    "method": "build_supir",
+    "category": "node_pack",
+    "name": "NVIDIA PiD (Pixel Diffusion Decoder)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/nvidia/PiD",
+    "risk": "low",
+    "confidence": 0.97,
+    "notes": "IN 7-DAY WINDOW (May 25 2026 weights; May 27 ComfyUI node; June 2 SDXL checkpoint). Drop-in pixel-diffusion VAE decoder replacement that simultaneously decodes and upscales 4x/8x in one step. Compatible with SDXL (SUPIR backbone), Flux, Klein, SD3, ZIT. ComfyUI nodes: Merserk/ComfyUI-PiD, tsolful/ComfyUI-PiD. VRAM: ComfyUI staged pipeline stable on 12 GB, RTX 5060 Ti 16 GB comfortable. arXiv:2605.23902."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Microsoft Lens / Lens-Turbo",
+    "source": "huggingface",
+    "url": "https://huggingface.co/microsoft/Lens",
+    "risk": "low",
+    "confidence": 0.97,
+    "notes": "IN 7-DAY WINDOW (May 25 2026 weights; ComfyUI PR #14077 merged ~May 26-27). Dual-stream MMDiT, 3.8B params, MIT license. Variants: Lens-Turbo (4 steps, 0.84s/image), Lens (20 steps), Lens-Base (50 steps). Up to 1440x1440. Lens-Turbo confirmed on 16 GB without CPU offload. Comfy-Org weights at hf.co/Comfy-Org/Lens. arxiv:2605.21573."
+  },
+  {
+    "method": "build_wan_video_blockswap",
+    "category": "node_pack",
+    "name": "Wan2GP v11.88",
+    "source": "github",
+    "url": "https://github.com/deepbeepmeep/Wan2GP",
+    "risk": "low",
+    "confidence": 0.99,
+    "notes": "IN 7-DAY WINDOW (May 27-29 2026). Launcher update. Changes: MKV+MOV output containers, ProRes422/MOV input, LoRA format fixes, LoRA inpainting crash fix, animate LoRA support, keyboard toolbar, Finetune Creator/Editor. No workflow JSON change required. Also applies to build_wan_video_blockswap_t2v."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "node_pack",
+    "name": "ComfyUI-ReActor v0.6.2 + HyperSwap 1c",
+    "source": "github",
+    "url": "https://github.com/Gourieff/ComfyUI-ReActor",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Released April 25 2026. HyperSwap 1a/1b/1c ONNX support (256px native vs inswapper_128 128px). New Restore Face Advanced node (restoration targets only swapped faces). HyperSwap weights at facefusion/facefusion-labs HF. VRAM: ~2-4 GB ONNX. Upgrades build_faceswap, build_faceswap_model. Also improve build_face_restore and build_photo_restore."
+  },
+  {
+    "method": "build_pulid_flux",
+    "category": "node_pack",
+    "name": "ComfyUI-PuLID-Flux2 v0.6.2",
+    "source": "github",
+    "url": "https://github.com/iFayens/ComfyUI-PuLID-Flux2",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Released ~May 20 2026. First PuLID for FLUX.2 Klein 4B/9B. Auto-detects Klein 4B/9B/FLUX.2 Dev. Klein 4B ~6-8 GB, Klein 9B ~12-14 GB — both fit 16 GB. Weights: hf.co/Fayens/Pulid-Flux2. Supersedes FLUX.1-only PuLID implementations."
+  },
+  {
+    "method": "build_sam3_segment",
+    "category": "checkpoint",
+    "name": "SAM 3.1",
+    "source": "github",
+    "url": "https://github.com/facebookresearch/sam3",
+    "risk": "low",
+    "confidence": 0.93,
+    "notes": "Released March 27 2026. Object Multiplex multi-object tracking. 2x speed (16->32 FPS), half VRAM (8 GB->4 GB FP16) vs SAM 3.0. HF: facebook/sam3.1. Also applies to build_sam3_mask and build_sam3_extract."
+  },
+  {
+    "method": "build_depth_map_v3",
+    "category": "checkpoint",
+    "name": "Depth Anything 3",
+    "source": "github",
+    "url": "https://depth-anything-3.github.io/",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "Released November 14 2025. DINOv2 encoder; depth + camera pose + 3D geometry. Beats DA2 on monocular depth. Small model well under 16 GB. ComfyUI node: Ltamann/ComfyUI-DepthAnythingV3-TBG. arXiv:2511.10647."
+  },
+  {
+    "method": "build_hunyuan_video",
+    "category": "checkpoint",
+    "name": "HunyuanVideo 1.5",
+    "source": "huggingface",
+    "url": "https://huggingface.co/tencent/HunyuanVideo-1.5",
+    "risk": "medium",
+    "confidence": 0.95,
+    "notes": "Released November 24 2025. Lighter DiT + SSTA attention. Glyph-aware text encoding. Built-in video super-resolution. 800K DL, 993 likes. Gated license. ComfyUI node update needed for 1.5 checkpoint format."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "LTX-2.3 (ltx-2-3-fast)",
+    "source": "github",
+    "url": "https://ltx.io/model/ltx-2-3",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "Released March 5 2026. 22B params, Apache 2.0. ltx-2-3-fast in FP8/NVFP4 likely fits 16 GB. Up to 4K/50fps/20s with stereo 24kHz audio. No standalone ComfyUI node confirmed at audit date; check github.com/Lightricks/LTX-Video."
+  },
+  {
+    "method": "build_seedv2r",
+    "category": "node_pack",
+    "name": "FlashVSR v1.1",
+    "source": "github",
+    "url": "https://github.com/OpenImagingLab/FlashVSR",
+    "risk": "medium",
+    "confidence": 0.90,
+    "notes": "Released November 2025. CVPR 2026. One-step 4x video super-res, ~17 FPS on A100 at 768x1408. Low-VRAM variant; >=12 GB. ComfyUI: 1038lab/ComfyUI-FlashVSR. HF: JunhaoZhuang/FlashVSR-v1.1."
+  },
+  {
+    "method": "build_upscale",
+    "category": "node_pack",
+    "name": "NVIDIA RTX VSR ComfyUI Node",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Released March 22 2026. RTX hardware video upscale (dedicated engine, not CUDA). RTX 5060 Ti supported; WSL2 issue tracked. Complementary speed pass — not a diffusion quality replacement."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "checkpoint",
+    "name": "Hunyuan3D-Omni",
+    "source": "huggingface",
+    "url": "https://huggingface.co/tencent/Hunyuan3D-Omni",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "Released August 2025. 3.3B params. Controllable 3D from point clouds, voxels, bounding boxes, skeletal poses. 10 GB VRAM shape-only. Also applies to build_hunyuan_3d_textured. GitHub: Tencent-Hunyuan/Hunyuan3D-Omni."
+  },
+  {
+    "method": "build_qwen_edit",
+    "category": "checkpoint",
+    "name": "HiDream-O1-Image-Dev-2604",
+    "source": "huggingface",
+    "url": "https://huggingface.co/HiDream-ai/HiDream-O1-Image-Dev-2604",
+    "risk": "medium",
+    "confidence": 0.90,
+    "notes": "Released May 14 2026. Pixel-native 8B UiT; no external VAE; instruction editing, personalization, storyboard gen; up to 2048x2048. FP8 ~10 GB (drbaph/HiDream-O1-Image-Dev-2604-FP8). MIT. ComfyUI native. Cannot use existing VAE/T5 paths — new build_hidream_edit builder required."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "checkpoint",
+    "name": "WAN 2.7",
+    "source": "github",
+    "url": "https://github.com/Wan-Video",
+    "risk": "medium",
+    "confidence": 0.78,
+    "notes": "Cloud launch April 22 2026; open weights NOT yet released June 3 2026. 27B total/14B active MoE. T2V+I2V+Reference-to-Video+instruction editing. First+last frame, 9-image I2V. Monitor hf.co/Wan-AI. ETA late June-July 2026."
+  },
+  {
+    "method": "build_qwen_edit",
+    "category": "checkpoint",
+    "name": "Qwen-Image-2.0",
+    "source": "huggingface",
+    "url": "https://huggingface.co/papers/2605.10730",
+    "risk": "high",
+    "confidence": 0.80,
+    "notes": "Paper May 11 2026. Qwen3-VL encoder + MMDiT. Up to 1K token instructions; text-rich editing, multilingual typography. Weights NOT yet public June 3 2026. Monitor hf.co/Qwen. Will supersede build_qwen_edit backbone."
+  },
+  {
+    "method": "build_supir",
+    "category": "checkpoint",
+    "name": "RealRestorer",
+    "source": "huggingface",
+    "url": "https://huggingface.co/RealRestorer/RealRestorer",
+    "risk": "high",
+    "confidence": 0.85,
+    "notes": "Released March 2026. Step1X-Edit DiT + Flux-VAE. 9 degradation types; no text prompt needed. Apache 2.0 code / non-commercial weights. VRAM: ~16-20 GB borderline — validate before wiring. GitHub: yfyang007/RealRestorer. arXiv:2603.25502."
+  },
+  {
+    "method": "build_supir",
+    "category": "node_pack",
+    "name": "LucidFlux",
+    "source": "huggingface",
+    "url": "https://huggingface.co/W2GenAI/LucidFlux",
+    "risk": "medium",
+    "confidence": 0.87,
+    "notes": "Sep 2025; ComfyUI Oct 2025; ICLR 2026. Flux.1 DiT + SigLip; caption-free; 8-12 GB via ComfyUI. GitHub: W2GenAI-Lab/LucidFlux."
+  },
+  {
+    "method": "build_klein_headswap",
+    "category": "lora",
+    "name": "BFS Head LoRA V5 (Klein/Qwen2511)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap",
+    "risk": "high",
+    "confidence": 0.80,
+    "notes": "Released March 29 2026. LoRA for Qwen Image Edit 2509/2511 and FLUX.2 Klein 4B/9B. Head V5 trained 5500+ steps on Qwen 2511. Video variant available. Diffusion-edit approach; no dedicated ComfyUI node — manual workflow needed. Klein 4B: ~6-8 GB; 9B: ~12-14 GB."
+  },
+  {
+    "method": "build_klein_headswap",
+    "category": "node_pack",
+    "name": "DirectSwap video head swap",
+    "source": "huggingface",
+    "url": "https://huggingface.co/papers/2512.09417",
+    "risk": "high",
+    "confidence": 0.72,
+    "notes": "December 2025. Mask-free diffusion video head swap; motion-aware reconstruction loss. No public ComfyUI node. Also: Controllable One-Shot Video Head Swapping (hf.co/papers/2506.16852, Jun 2025). Monitor for ComfyUI port."
+  }
+]
