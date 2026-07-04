@@ -1,0 +1,182 @@
+[
+  {
+    "method": "build_wan_video",
+    "category": "checkpoint",
+    "name": "Bernini-R",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Comfy-Org/Bernini-R",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Tier 1. ByteDance WAN 2.2-T2V-A14B with in-context reference conditioning (IC-RoPE + APG). ComfyUI v0.25.0 native support June 16 2026. Enables T2V/I2V/V2V/R2V from one checkpoint — V2V and R2V are capabilities absent from current Spellcaster WAN builders. GGUF Q5/Q8 at neuregex/Bernini-R-GGUF fits 16 GB RTX 5060 Ti at 720p. fp8 needs 24 GB (not viable). New builder build_bernini_video needed. Node pack: ComfyUI-BerniniR (neuregex) or native v0.25.0 nodes."
+  },
+  {
+    "method": "build_wan22_t2v",
+    "category": "checkpoint",
+    "name": "Bernini-R",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Comfy-Org/Bernini-R",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Tier 1. Same as build_wan_video — Bernini-R unifies T2V+I2V+V2V+R2V on WAN 2.2 backbone. See build_wan_video entry."
+  },
+  {
+    "method": "build_wan_animate_video",
+    "category": "checkpoint",
+    "name": "SCAIL-2",
+    "source": "github",
+    "url": "https://github.com/zai-org/SCAIL-2",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Tier 2. Skeleton-free character motion transfer — no pose maps required. WAN 2.1 14B backbone. ComfyUI v0.25.0 native June 16 2026. GGUF required on 16 GB (bf16 peaks 47 GB); community confirms Q5 viable on RTX. GGUF weights at realrebelai/SCAIL-2_GGUF. Different capability class from build_video_reactor (face swap). Suggested new builder: build_scail2_animate. Not a replacement for existing WAN builders."
+  },
+  {
+    "method": "build_sam3_segment",
+    "category": "checkpoint",
+    "name": "SAM 3.1",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Comfy-Org/sam3.1",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Tier 2. Meta SAM 3.1 with shared-memory multi-object multiplexing. Released March 27 2026. Comfy-Org repackaged as sam3.1_multiplex_fp16.safetensors. Native ComfyUI core nodes: SAM3_Detect, SAM3_VideoTrack, SAM3_TrackToMask, SAM3_TrackPreview. Drop-in checkpoint upgrade. Still-image safe at 8-10 GB. Video tracking 18-25 GB — skip video tracking on 16 GB."
+  },
+  {
+    "method": "build_sam3_mask",
+    "category": "checkpoint",
+    "name": "SAM 3.1",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Comfy-Org/sam3.1",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Tier 2. Drop-in checkpoint upgrade from SAM 3.0 to sam3.1_multiplex_fp16.safetensors. See build_sam3_segment entry."
+  },
+  {
+    "method": "build_sam3_extract",
+    "category": "checkpoint",
+    "name": "SAM 3.1",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Comfy-Org/sam3.1",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Tier 2. Drop-in checkpoint upgrade from SAM 3.0 to sam3.1_multiplex_fp16.safetensors. See build_sam3_segment entry."
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "node_pack",
+    "name": "BiRefNet native ComfyUI core (v0.21.0+)",
+    "source": "github",
+    "url": "https://blog.comfy.org/p/new-open-source-models-now-in-comfyui",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Tier 2. BiRefNet added to ComfyUI core in v0.21.0 (May 11 2026). Action: remove ComfyUI_BiRefNet_ll / viperyl/ComfyUI-BiRefNet custom node dependency and switch to native nodes. Supports BiRefNet-general, BiRefNet-lite, BiRefNet-HR, BiRefNet-Portrait. Apache 2.0 weights via Comfy-Org/BiRefNet. VRAM: 2-4 GB general; 6-8 GB HR. Not a new model — dependency simplification only."
+  },
+  {
+    "method": "build_depth_map_v3",
+    "category": "checkpoint",
+    "name": "MoGe-2",
+    "source": "github",
+    "url": "https://github.com/zade23/ComfyUI-MoGe2",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Tier 2. Microsoft MoGe-2 yields metric-scale depth + normals + point cloud + FOV in a single forward pass. Consolidates build_depth_map_v3 + build_normal_map. 6-8 GB ViT-L. ComfyUI-MoGe2 node by zade23. HF model: Ruicheng/moge-2-vitl-normal. DA3 still preferable for video depth consistency across arbitrary viewpoints; MoGe-2 wins on per-image metric accuracy. ComfyUI v0.22.0 (May 20) added MoGe v1 native support."
+  },
+  {
+    "method": "build_normal_map",
+    "category": "checkpoint",
+    "name": "MoGe-2",
+    "source": "github",
+    "url": "https://github.com/zade23/ComfyUI-MoGe2",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Tier 2. MoGe-2 consolidates depth + normal estimation into a single pass. See build_depth_map_v3 entry."
+  },
+  {
+    "method": "build_pulid_flux",
+    "category": "node_pack",
+    "name": "ComfyUI-PuLID-Flux2 v0.6.2",
+    "source": "github",
+    "url": "https://github.com/iFayens/ComfyUI-PuLID-Flux2",
+    "risk": "low",
+    "confidence": 0.75,
+    "notes": "Tier 2. First PuLID implementation for FLUX.2 / Klein 4B+9B+Dev. Auto model detection. InsightFace AntelopeV2 + EVA-CLIP. Improved face recognition, fewer artifacts. TeaCache/WaveSpeed compatible. Original PuLID-for-FLUX ComfyUI workflow formally discontinued on Civitai. VRAM: Klein 9B + overhead ~17-18 GB — weight streaming recommended. v0.6.2 exact date not pinned but actively maintained in 2026. Confidence 0.75 due to date ambiguity."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Ideogram 4.0",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Comfy-Org/Ideogram-4",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "Tier 2. Released June 3 2026 (outside window). 9.3B single-stream DiT. Day-0 ComfyUI support (Comfy-Org/Ideogram-4, 170 likes). fp8 ~13 GB; nf4 ~10 GB — both fit 16 GB. GGUF at leejet/ideogram-4-GGUF (19.5K downloads). Class-leading text rendering, bbox layout JSON prompts, native transparency. Turbo LoRA ostris/ideogram_4_turbotime_lora (June 17, in window) reduces to 2-4 steps. Non-commercial license — commercial use needs separate agreement. No inpainting/ControlNet ecosystem yet. Confidence 0.75 that it warrants integration vs established Flux."
+  },
+  {
+    "method": "build_colorize",
+    "category": "checkpoint",
+    "name": "ColorFLUX",
+    "source": "github",
+    "url": "https://arxiv.org/abs/2603.28162",
+    "risk": "medium",
+    "confidence": 0.70,
+    "notes": "Tier 3. CVPR 2026 paper (arXiv March 30 2026). FLUX-based old photo colorization with structure-color decoupling + Progressive Direct Preference Optimization (Pro-DPO). Outperforms DDColor, CtrlColor, DeOldify on DeQA, VisualQuality-R1, and aesthetics benchmarks. Weights NOT YET PUBLIC as of June 22 2026. FLUX-based inference ~12-16 GB quantized (borderline on 16 GB). Monitor post-CVPR 2026 for code + weights release."
+  },
+  {
+    "method": "build_ddcolor",
+    "category": "checkpoint",
+    "name": "ColorFLUX",
+    "source": "github",
+    "url": "https://arxiv.org/abs/2603.28162",
+    "risk": "medium",
+    "confidence": 0.70,
+    "notes": "Tier 3. Same as build_colorize — ColorFLUX is the candidate DDColor replacement. Weights not yet public. Monitor."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "checkpoint",
+    "name": "Hunyuan3D 3.0",
+    "source": "github",
+    "url": "https://docs.comfy.org/tutorials/partner-nodes/hunyuan3d/hunyuan3d-3-0",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Tier 3. Hunyuan3D 3.0 open-sourced Sep 2025; ComfyUI partner nodes February 2026. 1536^3 geometric resolution (3x over v2). Shape-only local: ~11.5 GB — fits 16 GB. Full textured local: ~24.5 GB — OVER BUDGET. ComfyUI partner node uses API-based inference. Hunyuan3D 3.1 API-only on Tencent global platform. Monitor for open-source 3.1 weights."
+  },
+  {
+    "method": "build_hunyuan_3d_textured",
+    "category": "checkpoint",
+    "name": "Hunyuan3D 3.0",
+    "source": "github",
+    "url": "https://docs.comfy.org/tutorials/partner-nodes/hunyuan3d/hunyuan3d-3-0",
+    "risk": "high",
+    "confidence": 0.85,
+    "notes": "Tier 3. Full textured pipeline requires ~24.5 GB — OVER 16 GB budget for local inference. Shape-only (11.5 GB) is feasible. Textured output requires API-based partner node or cloud offload."
+  },
+  {
+    "method": "build_rembg_v3",
+    "category": "checkpoint",
+    "name": "V-RMBG 3.0 (Bria)",
+    "source": "github",
+    "url": "https://www.prnewswire.com/news-releases/bria-launches-v-rmbg-3-0-state-of-the-art-video-background-removal-model-302796516.html",
+    "risk": "high",
+    "confidence": 0.85,
+    "notes": "Tier 3. June 10 2026 press release — VIDEO background removal only (temporal-aware architecture, previous-frame alpha mask carry-forward, 9x faster claimed). No still-image RMBG-3.0 announced. No public HuggingFace weights — commercial API / on-prem deployment only. No ComfyUI node confirmed. Do NOT conflate with still-image build_rembg_v3. Monitor Bria for a still-image RMBG-3.0 announcement."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "checkpoint",
+    "name": "Wan 2.7",
+    "source": "github",
+    "url": "https://comfyui.org/en/wan27-is-now-available-in-comfyui",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "Tier 3 — NOT new in June 15-22 window (released Mar/Apr 2026). ModelScope weights only; no Comfy-Org/Wan_2.7_ComfyUI_Repackaged on HuggingFace. Same 14B VRAM profile as WAN 2.2. ComfyUI partner nodes exist. Watch for HF repackage before committing pipeline work. Wan 3.0 (60B, 4K target, Apache 2.0) pre-announced but not yet released as of June 22 2026."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "checkpoint",
+    "name": "HunyuanWorld-Mirror 2.0",
+    "source": "github",
+    "url": "https://github.com/Tencent-Hunyuan/HunyuanWorld-Mirror",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "Tier 3. April 16 2026, ICML 2026 acceptance. Feed-forward 3D reconstruction (not generation) — image to point cloud + depth + normals + 3D Gaussians in one pass. Augments not replaces build_hunyuan_3d_mesh. ComfyUI node by cedarconnor. VRAM unconfirmed (~8-12 GB estimated). Watch VRAM confirmation before wiring."
+  }
+]
