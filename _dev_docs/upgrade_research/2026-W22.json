@@ -1,0 +1,332 @@
+[
+  {
+    "method": "build_klein_repose",
+    "category": "lora",
+    "name": "RefControl FLUX.2-Klein-9B reference-depth LoRA",
+    "source": "huggingface",
+    "url": "https://huggingface.co/thedeoxen/refcontrol-FLUX.2-klein-9B-reference-depth-lora",
+    "risk": "low",
+    "confidence": 0.93,
+    "notes": "Created 2026-05-27. Fuses depth map + reference image identity into Klein 9B via trigger 'refcontrol'. Drop-in LoRA — no new nodes needed. 4B companion at thedeoxen/refcontrol-FLUX.2-klein-4B-reference-depth-lora. Directly fills depth-guided identity-preserving repose gap."
+  },
+  {
+    "method": "build_klein_img2img_ref",
+    "category": "lora",
+    "name": "RefControl FLUX.2-Klein-9B reference-depth LoRA",
+    "source": "huggingface",
+    "url": "https://huggingface.co/thedeoxen/refcontrol-FLUX.2-klein-9B-reference-depth-lora",
+    "risk": "low",
+    "confidence": 0.93,
+    "notes": "Same LoRA as build_klein_repose. Also applicable to img2img_ref pipeline for identity+structure control."
+  },
+  {
+    "method": "build_klein_detail",
+    "category": "lora",
+    "name": "tinyhands FLUX.2-Klein-9B hand-correction LoRA",
+    "source": "huggingface",
+    "url": "https://huggingface.co/SOLRICKS/tinyhands-flux2-klein-9b-lora",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Created 2026-05-24, updated 2026-05-29. Corrects hand anatomy in Klein 9B outputs. Drop-in LoRA. Also applicable to build_klein_face_detail."
+  },
+  {
+    "method": "build_klein_face_detail",
+    "category": "lora",
+    "name": "tinyhands FLUX.2-Klein-9B hand-correction LoRA",
+    "source": "huggingface",
+    "url": "https://huggingface.co/SOLRICKS/tinyhands-flux2-klein-9b-lora",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Same tinyhands LoRA — applicable to face+hand detail passes."
+  },
+  {
+    "method": "build_klein_virtual_tryon",
+    "category": "checkpoint",
+    "name": "FLUX VTO by Black Forest Labs",
+    "source": "github",
+    "url": "https://bfl.ai",
+    "risk": "medium",
+    "confidence": 0.95,
+    "notes": "Announced 2026-05-26. Purpose-trained garment/avatar consistency model. Currently API-only — no open weights confirmed. Watch https://bfl.ai/models. Tier 3 until weights drop."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "HiDream-O1-Image Dev (8B pixel-space unified transformer)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Comfy-Org/HiDream-O1-Image",
+    "risk": "medium",
+    "confidence": 0.98,
+    "notes": "Released 2026-05-08; native ComfyUI v0.22.0 support 2026-05-20. 8B model: t2i + instruction edit + subject personalization + long-text. Dev variant ~10 GB BF16 fits 16 GB. Warrants new build_hidream_txt2img builder. Different architecture from SDXL/Flux — no VAE, no external CLIP/T5."
+  },
+  {
+    "method": "build_img2img",
+    "category": "checkpoint",
+    "name": "FLUX.2-dev SDNQ dynamic-4bit quantization",
+    "source": "huggingface",
+    "url": "https://huggingface.co/OzzyGT/FLUX2_dev_sdnq_dynamic_4bit",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Created 2026-05-30 (today). SDNQ Sub-channel Dynamic Non-uniform Quantization: 50-75% VRAM reduction vs BF16. 4-bit ~8-10 GB; 8-bit ~12-14 GB. Requires comfyui-sdnq node pack. Drop-in FLUX.2-dev weight replacement with headroom for ControlNet/LoRA stacking."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "node_pack",
+    "name": "ComfyUI-ReActor v0.7.0-a2",
+    "source": "github",
+    "url": "https://github.com/Gourieff/ComfyUI-ReActor/releases",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Released ~2026-05-12. New: ReActorSetWeight (0-100% blend per source), Restore Face Advanced (face-only restoration filter), face similarity checking node, FACE_MODEL_NAME output, HyperSwap model support. git pull to upgrade. Impacts build_faceswap, build_faceswap_model, build_face_restore, build_photo_restore, build_photobooth, build_video_reactor, build_klein_headswap."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "checkpoint",
+    "name": "HyperSwap 1b/1c 256px ONNX",
+    "source": "github",
+    "url": "https://github.com/facefusion/facefusion",
+    "risk": "medium",
+    "confidence": 0.60,
+    "notes": "Model weights from Dec 2025; active adoption solidified in ReActor v0.7.0-a2 timeframe. 256px internal resolution vs inswapper_128 (128px) — sharper facial detail. Three variants: 1a/1b/1c for identity/attribute tradeoff. Requires placing ONNX in ComfyUI/models/hyperswap/ and updating build_faceswap model path param."
+  },
+  {
+    "method": "build_faceswap_mtb",
+    "category": "node_pack",
+    "name": "InsightFace 1.0 Python package",
+    "source": "github",
+    "url": "https://www.insightface.ai/guides/insightface-1-0-tutorial",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Released 2026-05-23. Packaging cleanup — removes C++/Cython face3d build extension, moves optional deps to extras. No new buffalo_l model weights. Validate buffalo_l auto-download path compatibility before upgrading pip dep in production."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "node_pack",
+    "name": "ReActor Restore Face Advanced (v0.7.0-a2)",
+    "source": "github",
+    "url": "https://github.com/Gourieff/ComfyUI-ReActor/releases",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Part of ReActor v0.7.0-a2. Face Restore Filter limits restoration to the swapped face region only, reducing over-sharpening on surrounding skin/hair. Immediate quality improvement for build_face_restore and build_photo_restore."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "checkpoint",
+    "name": "NTIRE 2026 Face Restoration challenge winners",
+    "source": "github",
+    "url": "https://ntire-face.github.io/2026/",
+    "risk": "medium",
+    "confidence": 0.80,
+    "notes": "Challenge concluded March 2026; paper arXiv:2604.10532 April 2026. Winner model weights NOT YET RELEASED — expected post-CVPR June 2026. Watch https://www.codabench.org/competitions/13507/ for releases. Will likely outperform current GFPGan/CodeFormer. Tier 3 until weights drop."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "node_pack",
+    "name": "ComfyUI v0.22.2/0.22.3 (Desktop v0.9.3/v0.9.4)",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/ComfyUI/releases",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "v0.22.2 released 2026-05-23; v0.22.3 released 2026-05-28. LTX improvements: VRAM optimization with guide_mask, IC-LoRA downscaling for LTXVAddGuide, optional attention_mask input, downscale_ratio_temporal for temporal processing. Drop-in ComfyUI core update."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "node_pack",
+    "name": "kijai/ComfyUI-WanVideoWrapper bug-fix commits (2026-05-23/24)",
+    "source": "github",
+    "url": "https://github.com/kijai/ComfyUI-WanVideoWrapper/commits/main/",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Commits 2026-05-23 (LongCatAvatar 1.5 initial support) and 2026-05-24 (.disabled duplicate-count fix + bare exception cleanup). The .disabled fix is directly relevant to Wan builders if disabled model slots are in use. git pull to apply. All build_wan_* builders affected."
+  },
+  {
+    "method": "build_wan_animate_video",
+    "category": "checkpoint",
+    "name": "LongCat-Video-Avatar 1.5 (MIT, audio-driven avatar)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/meituan-longcat/LongCat-Video-Avatar-1.5",
+    "risk": "high",
+    "confidence": 0.95,
+    "notes": "HF repo created 2026-05-21; kijai WanVideoWrapper initial support 2026-05-23. v1.5 uses Whisper-Large (vs Wav2Vec2 in v1.0), shared-base + LoRA scheme (lower VRAM), INT8 quantized DiT. FP8/MLX quants uploaded 2026-05-26-28 by community. VRAM on 16 GB UNCONFIRMED — no benchmark yet. Requires longcat_avatar branch of wrapper + MelBandRoFormer audio separation. Tier 3 until VRAM confirmed."
+  },
+  {
+    "method": "build_seedvr2_video_upscale",
+    "category": "node_pack",
+    "name": "SeedVR2 NVFP4 Blackwell support (PR #486)",
+    "source": "github",
+    "url": "https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler/pull/486",
+    "risk": "medium",
+    "confidence": 0.65,
+    "notes": "PR open ~Jan 2026, still unmerged as of 2026-05-30. Adds NVFP4 (E2M1 + E4M3) quantization for Blackwell GPUs. Testing on RTX 5070 Ti (16 GB): ~1.91 FPS, ~11-12 GB peak VRAM. RTX 5060 Ti shares Blackwell arch — directly applicable. ~2x throughput vs current path. Tier 3 until merged."
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "node_pack",
+    "name": "BiRefNet native in ComfyUI v0.21.0",
+    "source": "huggingface",
+    "url": "https://huggingface.co/ZhengPeng7/BiRefNet",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "ComfyUI v0.21.0 released 2026-05-11 adds native BiRefNetSegmentation node. Eliminates viperyl/ComfyUI-BiRefNet third-party dependency. Model weights unchanged (220M params, MIT license, ZhengPeng7/BiRefNet). Node plumbing change only — swap custom node for built-in node in affected workflows."
+  },
+  {
+    "method": "build_layer_blend",
+    "category": "node_pack",
+    "name": "BiRefNet native masking (ComfyUI v0.21.0)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/ZhengPeng7/BiRefNet",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Native BiRefNet node improves mask edge quality for layer blend compositing. Handles hair, fur, transparent edges, and camouflaged objects better than prior models."
+  },
+  {
+    "method": "build_magic_eraser",
+    "category": "checkpoint",
+    "name": "Netflix VOID video inpainting (Apache 2.0)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/netflix/void-model",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "Native in ComfyUI v0.22.0. CogVideoX-based two-pass object removal. Pass 1 alone ~14 GB borderline. Primarily a video tool but physics-aware spatial understanding may improve static frame object removal vs LaMa. Apache 2.0 license. Tier 3 — evaluate for static quality before wiring."
+  },
+  {
+    "method": "build_lama_remove",
+    "category": "checkpoint",
+    "name": "Netflix VOID video inpainting (Apache 2.0)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/netflix/void-model",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "Same VOID model as build_magic_eraser. Spatially-aware removal vs LaMa's texture interpolation. Tier 3 until static frame quality validated."
+  },
+  {
+    "method": "build_sam3_segment",
+    "category": "checkpoint",
+    "name": "SAM 3.1 Multiplex",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facebook/sam3.1",
+    "risk": "medium",
+    "confidence": 0.80,
+    "notes": "Native ComfyUI PR merged ~April 2026. 7x faster multi-object tracking via Multiplex shared-memory approach. Bit-packed mask output, object-ID overlays. HF repo is GATED — license acceptance required before download. Browse Templates → Utility → SAM 3.1 for reference workflows."
+  },
+  {
+    "method": "build_sam3_mask",
+    "category": "checkpoint",
+    "name": "SAM 3.1 Multiplex",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facebook/sam3.1",
+    "risk": "medium",
+    "confidence": 0.80,
+    "notes": "Same SAM 3.1 upgrade as build_sam3_segment."
+  },
+  {
+    "method": "build_sam3_extract",
+    "category": "checkpoint",
+    "name": "SAM 3.1 Multiplex",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facebook/sam3.1",
+    "risk": "medium",
+    "confidence": 0.80,
+    "notes": "Same SAM 3.1 upgrade. Multiplex bit-packed masks improve extraction precision for build_sam3_extract."
+  },
+  {
+    "method": "build_normal_map",
+    "category": "node_pack",
+    "name": "Code2Collapse ComfyUI-CustomNodePacks (72 VFX nodes)",
+    "source": "github",
+    "url": "https://github.com/Code2Collapse/ComfyUI-CustomNodePacks",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Featured 2026-05-27 (within window). Includes depth warp, normal-to-curvature, EXR I/O, render pass compositing, SAM2.1/SAM3 nodes, ViT-Matte alpha matting, LUT tools, temporal mask propagation, spline editors. Additive VFX layer — no replacement of existing nodes."
+  },
+  {
+    "method": "build_lut",
+    "category": "node_pack",
+    "name": "Code2Collapse ComfyUI-CustomNodePacks (EXR/LUT tools)",
+    "source": "github",
+    "url": "https://github.com/Code2Collapse/ComfyUI-CustomNodePacks",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Same VFX pack as above. EXR I/O and professional LUT application nodes augment build_lut pipeline. Featured 2026-05-27."
+  },
+  {
+    "method": "build_color_match",
+    "category": "node_pack",
+    "name": "Code2Collapse ComfyUI-CustomNodePacks (color/compositing)",
+    "source": "github",
+    "url": "https://github.com/Code2Collapse/ComfyUI-CustomNodePacks",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Same VFX pack. Render pass compositing and EXR color tools augment build_color_match and build_klein_color_match."
+  },
+  {
+    "method": "build_colorize",
+    "category": "checkpoint",
+    "name": "M2Retinexformer (multi-modal low-light enhancement)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/YoussefAboelwafa/M2Retinexformer",
+    "risk": "medium",
+    "confidence": 0.90,
+    "notes": "Paper published + HF updated 2026-05-14. Extends Retinexformer with depth/luminance/semantic guidance. ~4-6 GB VRAM. No ComfyUI node yet — prototype using existing Retinexformer wrapper pattern. Provides a low-light pre-pass that improves DDColor/build_colorize on underexposed historical footage. NTIRE 2024/2025/2026 Retinexformer win record."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "checkpoint",
+    "name": "Hunyuan3D 2.5 (Dynamic UV Unwrap, 25% latency reduction)",
+    "source": "github",
+    "url": "https://github.com/Tencent-Hunyuan/Hunyuan3D-2",
+    "risk": "medium",
+    "confidence": 0.65,
+    "notes": "Announced ~2026-04-23; ComfyUI 2.1 nodes in early May 2026. Dynamic UV Unwrap and Texture Refinement nodes require ComfyUI 2.1+. Geometry ~6 GB fine; texture ~16 GB borderline — use --lowvram. Weights reportedly backward-compatible with 2.x. HF tencent/Hunyuan3D-2 may be under different repo for 2.5."
+  },
+  {
+    "method": "build_hunyuan_3d_textured",
+    "category": "checkpoint",
+    "name": "Hunyuan3D 2.5 (improved PBR texture, reduced UV artifacts)",
+    "source": "github",
+    "url": "https://github.com/Tencent-Hunyuan/Hunyuan3D-2",
+    "risk": "medium",
+    "confidence": 0.65,
+    "notes": "Texture fidelity improvement is the primary 2.5 upgrade. PBR quality and reduced UV seam artifacts via Dynamic UV Unwrap. Same notes as build_hunyuan_3d_mesh re VRAM and ComfyUI 2.1 requirement."
+  },
+  {
+    "method": "build_supir",
+    "category": "checkpoint",
+    "name": "RealRestorer (StepFun / SUSTech, 9-degradation DiT restorer)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/RealRestorer/RealRestorer",
+    "risk": "high",
+    "confidence": 0.75,
+    "notes": "Paper 2026-03-26, HF weights 2026-03-29. Apache 2.0 code; non-commercial weight license. Based on Step1X-Edit DiT + Flux-VAE. Handles blur, rain, reflection, low-light, noise, haze, moire, flare, artifact in one model. ~16 GB borderline. No ComfyUI node yet. Best long-term build_supir replacement when wrapper appears — watch https://github.com/yfyang007/RealRestorer. Tier 3."
+  },
+  {
+    "method": "build_klein_auto_inpaint",
+    "category": "checkpoint",
+    "name": "SAM 3.1 Multiplex (faster segment step)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facebook/sam3.1",
+    "risk": "medium",
+    "confidence": 0.80,
+    "notes": "build_klein_auto_inpaint uses SAM3 for mask generation. SAM 3.1 Multiplex upgrade improves segment step speed and accuracy. Same gated license procedure as other SAM 3.1 entries."
+  },
+  {
+    "method": "build_klein_sam3_inpaint",
+    "category": "checkpoint",
+    "name": "SAM 3.1 Multiplex + BiRefNet native",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facebook/sam3.1",
+    "risk": "medium",
+    "confidence": 0.80,
+    "notes": "SAM 3.1 improves segment step; native BiRefNet (ComfyUI v0.21.0) improves edge mask quality for the inpaint step. Both are separate upgrades applicable together."
+  },
+  {
+    "method": "build_depth_map_v3",
+    "category": "checkpoint",
+    "name": "DepthAnything v3 — ALREADY IN STACK",
+    "source": "huggingface",
+    "url": "https://depth-anything-3.github.io/",
+    "risk": "low",
+    "confidence": 0.50,
+    "notes": "NO-FIND: DA3 appears to already be deployed in Spellcaster (build_depth_map_v3 default is da3_large.safetensors). ComfyUI-DepthAnythingV3 by PozzettiAndrea is the current wrapper. No new DA3 release this week. Flagged to confirm DA3 checkpoint is truly in use."
+  }
+]
