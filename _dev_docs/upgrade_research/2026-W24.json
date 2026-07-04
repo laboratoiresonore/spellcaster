@@ -1,0 +1,222 @@
+[
+  {
+    "method": "build_sam3_segment",
+    "category": "checkpoint",
+    "name": "SAM 3.1 — Object Multiplex (Meta, March 2026)",
+    "source": "github",
+    "url": "https://ai.meta.com/blog/segment-anything-model-3/",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "NOVEL (not in 2026-06-12 baseline). SAM 3.1 adds Object Multiplex: joint multi-object tracking in single forward pass. 7x faster than SAM 3.0, ~4 GB VRAM FP16 (down from prior). Existing ComfyUI SAM3 nodes (ComfyUI-TBG-SAM3, ComfyUI-Easy-Sam3, comfyui_sam3) already support 3.1 weights. Drop-in checkpoint swap. Applies to build_sam3_mask and build_sam3_extract as well."
+  },
+  {
+    "method": "build_klein_headswap",
+    "category": "lora",
+    "name": "BFS-Best-Face-Swap IC-LoRA (FLUX.2-klein-9B + Qwen-Image-Edit, June 8 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/chfm/BFS-Best-Face-Swap",
+    "risk": "medium",
+    "confidence": 0.82,
+    "notes": "NOVEL (not in 2026-06-12 baseline). Canonical: Alissonerdx/BFS-Best-Face-Swap (April 2026); June 8 mirrors confirm active adoption. IC-LoRA on FLUX.2-klein-9B; face-only and full-head modes. Requires: UnetLoaderGGUF, TextEncodeQwenImageEditPlus, FaceSegment, InpaintCropImproved, InpaintStitchImproved. FP8 GGUF 9B ~13-14 GB — tight on 16 GB. Prefer Klein 4B base (~8-10 GB). New Tier-2 builder candidate build_bfs_headswap."
+  },
+  {
+    "method": "build_faceswap_mtb",
+    "category": "lora",
+    "name": "BFS-Best-Face-Swap-Video IC-LoRA (LTX-2.3, June 7 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Native72/BFS-Best-Face-Swap-Video",
+    "risk": "medium",
+    "confidence": 0.80,
+    "notes": "NOVEL (not in 2026-06-12 baseline). Canonical: Alissonerdx/BFS-Best-Face-Swap-Video. IC-LoRA for LTX-Video 2.3 enabling temporally-consistent diffusion-based video face swap. Uses LTX-2.3 temporal latent consistency. LTX-2.3 GGUF ~12-14 GB feasible on 16 GB. New Tier-2 builder candidate build_bfs_video_faceswap. Applies to build_video_reactor as well."
+  },
+  {
+    "method": "build_wan_flf",
+    "category": "checkpoint",
+    "name": "WAN 2.6 Reference-to-Video (March 2026, ComfyUI native)",
+    "source": "github",
+    "url": "https://blog.comfy.org/p/wan26-reference-to-video",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "NOVEL (not in 2026-06-12 baseline — WAN 2.7 was captured but not WAN 2.6 R2V). Reference video conditioning: learns motion, camera, visual style from 1-2 reference clips. Up to 1080p. ComfyUI Workflow Library has native R2V workflow. WAN 2.6 5B fits 16 GB via BlockSwap. New Tier-2 builder build_wan26_r2v. Applies to build_wan_animate_video."
+  },
+  {
+    "method": "build_depth_map_v3",
+    "category": "checkpoint",
+    "name": "Meta HyDen-DA2 (depth estimation, April 24 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facebook/hyden-da2-relative-depth",
+    "risk": "medium",
+    "confidence": 0.80,
+    "notes": "NOVEL (not in 2026-06-12 baseline). Hybrid CNN+ViT encoder on DepthAnything v2. 10x faster at 4K vs prior SOTA. No ComfyUI node yet. GitHub: https://github.com/facebookresearch/metadepth. DA3 remains operational fallback. Good candidate for a custom node wrap that covers both depth and normals."
+  },
+  {
+    "method": "build_normal_map",
+    "category": "checkpoint",
+    "name": "Meta HyDen-MoGeV2-SN (surface normals, May 21 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facebook/hyden-mogev2-surface-normal",
+    "risk": "medium",
+    "confidence": 0.80,
+    "notes": "NOVEL (not in 2026-06-12 baseline). Surface normals head in the HyDen family (same backbone as HyDen-DA2). No ComfyUI node yet. Same node wrap opportunity as depth. Also: HyDen-MoGeV2-MP (metric 3D pointmaps): https://huggingface.co/facebook/hyden-mogev2-metric-point"
+  },
+  {
+    "method": "build_rembg_v3",
+    "category": "checkpoint",
+    "name": "Bria V-RMBG 3.0 — video background removal (June 10 2026, API-only)",
+    "source": "github",
+    "url": "https://www.prnewswire.co.uk/news-releases/bria-launches-v-rmbg-3-0-state-of-the-art-video-background-removal-model-302796520.html",
+    "risk": "low",
+    "confidence": 0.72,
+    "notes": "NOVEL IN-WINDOW (June 10 2026). Temporally-aware video background removal — uses previous frame output as context. 63% win rate vs. competitors, 9x faster. API-only: no local weights released as of 2026-06-13. Prior baseline erroneously stated RMBG-3.0 did not exist. Monitor https://huggingface.co/briaai for checkpoint release. Tier 3."
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "checkpoint",
+    "name": "ToonOut BiRefNet ONNX (anime-optimized, June 12 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/sprited/birefnet-toonout-onnx",
+    "risk": "low",
+    "confidence": 0.78,
+    "notes": "NOVEL IN-WINDOW (June 12 2026). ONNX export of ToonOut (BiRefNet fine-tuned on 1228 anime images). 99.5% pixel accuracy vs 95.3% general BiRefNet on anime content. ONNX enables CPU or GPU inference. Domain-specific — only useful for anime/illustration sources. Tier 3. Original weights: https://huggingface.co/joelseytre/toonout"
+  },
+  {
+    "method": "build_framepack_video",
+    "category": "checkpoint",
+    "name": "VideoMAR — Autoregressive I2V with Continuous Tokens (June 2026)",
+    "source": "huggingface",
+    "url": "https://arxiv.org/abs/2506.14168",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "NOVEL (not in 2026-06-12 baseline). Decoder-only AR I2V using continuous tokens (no VQ). Beats Cosmos I2V on VBench-I2V with 9.3% parameters. Code released June 2026: https://github.com/inclusionAI/Ming-VideoMAR. No ComfyUI node yet. Tier 3."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "checkpoint",
+    "name": "LongLive-RAG — Retrieval-Augmented Long Video (June 1 2026, WAN 2.2 backbone)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/papers/2606.02553",
+    "risk": "medium",
+    "confidence": 0.73,
+    "notes": "NOVEL (not in 2026-06-12 baseline). Addresses temporal drift in WAN 2.2 autoregressive generation using RAG over latent history. Code: https://github.com/qixinhu11/LongLive-RAG. No ComfyUI node yet. Most relevant to build_wan_flf (long-form generation). Tier 3."
+  },
+  {
+    "method": "build_wan_video_blockswap",
+    "category": "checkpoint",
+    "name": "LongLive-2.0 (NVIDIA NVFP4 WAN, May 25 2026)",
+    "source": "huggingface",
+    "url": "https://arxiv.org/abs/2605.18739",
+    "risk": "medium",
+    "confidence": 0.74,
+    "notes": "NOVEL (not in 2026-06-12 baseline). 5B model, NVFP4 training + inference. RTX 5060 Ti has Blackwell NVFP4 support. 2-step and 4-step distilled variants. No ComfyUI node confirmed yet. NVIDIA NVlabs: https://github.com/NVlabs/LongLive. Tier 3."
+  },
+  {
+    "method": "build_seedvr2_video_upscale",
+    "category": "checkpoint",
+    "name": "DiffST — Spatiotemporal-Aware Diffusion VSR (May 13 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/papers/2605.13182",
+    "risk": "low",
+    "confidence": 0.70,
+    "notes": "NOVEL (not in 2026-06-12 baseline). One-step sampling VSR with cross-frame context aggregation. No ComfyUI node yet. Monitor for checkpoint release. Tier 3."
+  },
+  {
+    "method": "build_seedvr2_video_upscale",
+    "category": "checkpoint",
+    "name": "OSDEnhancer — One-Step Space-Time VSR (May 19 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/papers/2601.20308",
+    "risk": "low",
+    "confidence": 0.70,
+    "notes": "NOVEL (not in 2026-06-12 baseline). First one-step diffusion method for real-world space-time VSR. TR-SE MoE + bidirectional VAE decoder. No ComfyUI node yet. Tier 3."
+  },
+  {
+    "method": "build_iclight",
+    "category": "checkpoint",
+    "name": "LightLab — Diffusion-Based Light Source Control (May 14 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/papers/2505.09608",
+    "risk": "medium",
+    "confidence": 0.72,
+    "notes": "NOVEL (not in 2026-06-12 baseline). Finer-grained light source control than IC-Light. No confirmed ComfyUI node yet. Monitor for node and checkpoint release. Tier 3."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "checkpoint",
+    "name": "CodeFormer++ (Oct 2025 paper, no public weights yet)",
+    "source": "huggingface",
+    "url": "https://arxiv.org/abs/2510.04410",
+    "risk": "low",
+    "confidence": 0.65,
+    "notes": "NOVEL (not in 2026-06-12 baseline). Direct CodeFormer successor: deformable registration + deep metric learning. Better FID and LPIPS without altering identity. No public weights as of 2026-06-13. Tier 3. Watch GitHub for weights release."
+  },
+  {
+    "method": "build_qwen_edit",
+    "category": "checkpoint",
+    "name": "IEAP — Image Editing As Programs (June 4 2026 paper)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/papers/2506.04158",
+    "risk": "medium",
+    "confidence": 0.68,
+    "notes": "NOVEL (not in 2026-06-12 baseline). DiT framework that decomposes editing instructions into atomic operations with lightweight LoRA adapters. VLM Chain-of-Thought planner. No public weights yet. Research context only. Tier 3."
+  },
+  {
+    "method": "build_layer_blend",
+    "category": "checkpoint",
+    "name": "Direct 3D-Aware Object Insertion (June 4 2026 paper)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/papers/2606.06601",
+    "risk": "medium",
+    "confidence": 0.67,
+    "notes": "NOVEL (not in 2026-06-12 baseline). 3D-pose-controlled object compositing via decomposed visual proxies (appearance + geometry + context). 26 HF upvotes. No public weights yet. Relevant to build_generate_anything and build_inpaint. Tier 3."
+  },
+  {
+    "method": "build_klein_img2img",
+    "category": "lora",
+    "name": "FLUX.2 Klein manga colorization LoRA (June 10 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/thedeoxen/FLUX.2-klein-9B-manga-colorization-by-reference-LORA",
+    "risk": "low",
+    "confidence": 0.82,
+    "notes": "NOVEL IN-WINDOW (June 10 2026). img2img LoRA for colorizing manga/comics from a color reference image. Uses Klein 9B. Fits 16 GB FP8. No builder changes — user-selectable LoRA. Tier 3."
+  },
+  {
+    "method": "build_klein_img2img",
+    "category": "lora",
+    "name": "FLUX.2 Klein UnifiedReward-Flex LoRA (June 8 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Leon1000/FLUX.2-klein-base-9B-UnifiedReward-Flex-lora",
+    "risk": "low",
+    "confidence": 0.78,
+    "notes": "NOVEL IN-WINDOW (June 8 2026). Reward-aligned quality LoRA based on UnifiedReward paper (arXiv 2602.02380). Klein 9B base. Improves human preference alignment. User-selectable LoRA. Tier 3."
+  },
+  {
+    "method": "build_klein_img2img",
+    "category": "lora",
+    "name": "FLUX.2 Klein Mythograph Atelier LoRA (June 12 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/kasimakpinar/mythograph-atelier-flux2-klein-lora",
+    "risk": "low",
+    "confidence": 0.75,
+    "notes": "NOVEL IN-WINDOW (June 12 2026). Artistic/fantasy style LoRA for Klein-base-4B. Apache 2.0. Fits 16 GB comfortably. Tier 3."
+  },
+  {
+    "method": "build_video_upscale",
+    "category": "node_pack",
+    "name": "ComfyUI v0.24.1 Load Video regression (operational alert)",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/ComfyUI/issues/14292",
+    "risk": "high",
+    "confidence": 0.90,
+    "notes": "NOVEL OPERATIONAL ALERT (not in 2026-06-12 baseline). ComfyUI v0.24.1 breaks the Load Video node for all non-mp4/m4v/webm formats. Affects all video build methods that load non-standard video formats. Pin to v0.24.0 until the regression is patched. Tier 3 tracking item."
+  },
+  {
+    "method": "build_sam3_segment",
+    "category": "checkpoint",
+    "name": "Meta Sapiens2 — human segmentation + normals (April 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facebook/sapiens2",
+    "risk": "medium",
+    "confidence": 0.73,
+    "notes": "NOVEL (not in 2026-06-12 baseline). ViT family (0.4B-5B) pretrained on 1B human images. Tasks: body-part segmentation, pose, surface normals, 3D pointmaps, matting. ComfyUI node: https://github.com/lassiiter/comfyui-sapiens2. 5B may need offloading on 16 GB; 0.4B fits easily. Alternative to HyDen for human-specific workflows. Tier 3."
+  }
+]
