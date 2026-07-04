@@ -1,0 +1,232 @@
+[
+  {
+    "method": "build_inpaint",
+    "category": "checkpoint",
+    "name": "Moebius",
+    "source": "huggingface",
+    "url": "https://huggingface.co/hustvl/Moebius",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Released Jun 18, 2026 (in-window). 226M params, Apache 2.0, ~1.27 GB weights. Beats FLUX.1-Fill-Dev and SD3.5 Large-Inpainting on Places2/CelebA-HQ/FFHQ. 26 ms/step, >15x faster than 10B models. ~4-6 GB VRAM. ECCV 2026, HUST+VIVO. WebGPU-portable. Tier 1 drop-in for build_inpaint."
+  },
+  {
+    "method": "build_sam3_segment",
+    "category": "checkpoint",
+    "name": "SAM 3.1 (Object Multiplex)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facebook/sam3.1",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "Released Mar 27, 2026. Drop-in weights for SAM 3 (859.9M params, same architecture + Object Multiplex shared-memory bank). 2x FPS (16->32), ~50% VRAM cut (8GB->4GB FP16), up to 7x speedup at 128 objects. ComfyUI native in v0.20.1 (Apr 2026). Gated HF model. Tier 1 for build_sam3_segment, build_sam3_mask, build_sam3_extract."
+  },
+  {
+    "method": "build_sam3_mask",
+    "category": "checkpoint",
+    "name": "SAM 3.1 (Object Multiplex)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facebook/sam3.1",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "Same as build_sam3_segment entry."
+  },
+  {
+    "method": "build_sam3_extract",
+    "category": "checkpoint",
+    "name": "SAM 3.1 (Object Multiplex)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facebook/sam3.1",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "Same as build_sam3_segment entry."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Krea-2 (Raw + Turbo)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/krea/Krea-2-Raw",
+    "risk": "medium",
+    "confidence": 0.82,
+    "notes": "Released Jun 22, 2026 (in-window). New 12B DiT; Krea-2-Raw and Krea-2-Turbo variants. Krea 2 Community License (review non-commercial clauses). 9+ official style LoRAs shipped Jun 19-24. Native ComfyUI v0.26.0 support. VRAM est. 16-24GB FP16 (no official spec). Tier 2 additive builder."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "checkpoint",
+    "name": "WAN 2.7",
+    "source": "github",
+    "url": "https://github.com/Wan-Video/Wan2.7",
+    "risk": "medium",
+    "confidence": 0.80,
+    "notes": "Released Apr 2026 (pre-window carry-over). Apache 2.0. New vs WAN 2.2: 5-image multi-reference, vocal timbre reference, FLF control, video continuation, audio-sync T2V, 1080p x 15s. VRAM 16GB+ with GGUF quantization. Weights on ModelScope only (not HuggingFace as of Jun 2026). Supersedes build_wan_video and build_wan22_t2v. ComfyUI partner nodes available via blog.comfy.org."
+  },
+  {
+    "method": "build_wan22_t2v",
+    "category": "checkpoint",
+    "name": "WAN 2.7",
+    "source": "github",
+    "url": "https://github.com/Wan-Video/Wan2.7",
+    "risk": "medium",
+    "confidence": 0.80,
+    "notes": "Same as build_wan_video entry. WAN 2.7 supersedes both WAN 2.1 and 2.2 T2V paths."
+  },
+  {
+    "method": "build_wan_flf",
+    "category": "checkpoint",
+    "name": "WAN 2.7 (native FLF)",
+    "source": "github",
+    "url": "https://github.com/Wan-Video/Wan2.7",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "WAN 2.7 integrates first-last-frame control natively. Pre-window (Apr 2026). Additive upgrade to build_wan_flf."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "LTX-2.3",
+    "source": "github",
+    "url": "https://github.com/Lightricks/LTX-Video",
+    "risk": "medium",
+    "confidence": 0.87,
+    "notes": "Released Mar 5, 2026 (pre-window). 22B params. Native 4K@50fps, stereo audio. FP8/MXFP8 quantized variants fit 16GB VRAM. DENO ComfyUI nodes v0.7.62 (released Jun 24 -- in-window) add: LTX Model Loader, Sequencer, Multi LoRA Loader, Prompt Guide, Tiled Spatial Upscaler (beta). Tier 2 upgrade."
+  },
+  {
+    "method": "build_video_upscale",
+    "category": "node_pack",
+    "name": "comfyui-deno-custom-nodes v0.7.62 (RTX Video Super Resolution)",
+    "source": "github",
+    "url": "https://github.com/Deno2026/comfyui-deno-custom-nodes",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Released Jun 24, 2026 (in-window). RTX Video Super Resolution via NVIDIA Tensor Core hardware; single-pass and 2-pass modes; upscales to 4K ~30x faster than software upscalers. RTX 5060 Ti fully eligible. Also includes LTX 2.3 nodes and Wan2.2 reference video editing. Low risk."
+  },
+  {
+    "method": "build_hunyuan_3d_textured",
+    "category": "checkpoint",
+    "name": "TripoSplat",
+    "source": "huggingface",
+    "url": "https://huggingface.co/VAST-AI/TripoSplat",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Integrated in ComfyUI v0.25.0 on Jun 16, 2026 (one day pre-window). VAST-AI. DINOv3 ViT-H/16+ encoder + Flux2 VAE, flow-matching denoiser, Octree Gaussian VAE decoder. Single image -> 3D Gaussian Splat output (PLY/SPLAT/SPZ/KSPLAT). ~8GB VRAM. Native ComfyUI -- no extra node pack. Additive Gaussian Splat path alongside HunyuanDiT mesh."
+  },
+  {
+    "method": "build_wan_animate_video",
+    "category": "checkpoint",
+    "name": "SCAIL-2",
+    "source": "huggingface",
+    "url": "https://huggingface.co/zai-org/SCAIL-2",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "Integrated in ComfyUI v0.25.0 on Jun 16, 2026. ByteDance / zai-org. End-to-end reference-image-driven character animation; supports character replacement and multi-character scenarios without intermediate pose. GGUF quantized available. ~16GB VRAM with quant. ComfyUI node: ComfyUI-WanAnimatePlus (github.com/wuwukaka/ComfyUI-WanAnimatePlus). Tier 2 additive."
+  },
+  {
+    "method": "build_depth_map_v3",
+    "category": "node_pack",
+    "name": "DA3 native in ComfyUI v0.25.0",
+    "source": "github",
+    "url": "https://github.com/bytedance-seed/depth-anything-3",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Integrated in ComfyUI v0.25.0 (Jun 16, 2026). Same DA3 model weights; adds multi-view depth estimation mode. DA3-Streaming mode <12GB VRAM. Native path removes custom-node dependency. ICLR 2026. Tier 2 infra upgrade."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "node_pack",
+    "name": "ComfyUI-Flux-FaceIR",
+    "source": "github",
+    "url": "https://github.com/cosmicrealm/ComfyUI-Flux-FaceIR",
+    "risk": "medium",
+    "confidence": 0.70,
+    "notes": "Released Apr 7, 2026 (pre-window carry-over). Flux.2-klein-4B LoRA for blind face restoration and reference-guided restoration. Complements CodeFormer. Klein-4B base ~8-12GB VRAM. Tier 2 additive."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "checkpoint",
+    "name": "HyperSwap 1c in ComfyUI-ReActor v0.6.2",
+    "source": "github",
+    "url": "https://github.com/Gourieff/ComfyUI-ReActor",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "ReActor v0.6.2 (Apr 25, 2025) added HyperSwap 1c support (hyperswap_1c_256.onnx). Drop-in model download to existing ReActor install. Also added GPEN 1024/2048 and ReActorFaceBoost node. Not a June 2026 release but important carry-over. Tier 1-equivalent for faceswap quality improvement."
+  },
+  {
+    "method": "build_inpaint",
+    "category": "node_pack",
+    "name": "civitai-comfy-nodes v0.2.0",
+    "source": "github",
+    "url": "https://github.com/civitai/civitai-comfy-nodes",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Released Jun 17, 2026 (in-window). ~160 nodes across 8 categories exposing Civitai cloud Orchestration API: image/video/audio generation, upscaling, training, captioning, moderation. Zero local VRAM (cloud compute). Enables cloud-fallback for heavy models. Tier 2 additive general capability."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Z-Image Turbo (S3-DiT)",
+    "source": "civitai",
+    "url": "https://civitai.com/models/2168935/z-image-turbo",
+    "risk": "medium",
+    "confidence": 0.62,
+    "notes": "Alibaba Tongyi. 6B params, S3-DiT (Scalable Single-Stream DiT), Apache 2.0. ~8GB VRAM at FP8. Active on CivitAI. No confirmed ComfyUI node pack as of Jun 2026 -- community integrations likely imminent. Tier 3 monitor."
+  },
+  {
+    "method": "build_style_transfer",
+    "category": "checkpoint",
+    "name": "FLUX.1-Kontext-dev + Shakker-Labs style LoRAs",
+    "source": "huggingface",
+    "url": "https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev",
+    "risk": "high",
+    "confidence": 0.65,
+    "notes": "Kontext released May 2025 (not new); 5 new Shakker-Labs style LoRAs released Jun 2026 (sketch, pixel, bioluminescence, illustration, flat cartoon). Full Kontext model ~24GB; NVFP4 variant reduces VRAM. 135K downloads, 2674 likes. Relevant for style transfer but needs VRAM testing on 16GB. Tier 3."
+  },
+  {
+    "method": "build_seedvr2_video_upscale",
+    "category": "node_pack",
+    "name": "FlashVSR (CVPR 2026)",
+    "source": "github",
+    "url": "https://github.com/1038lab/ComfyUI-FlashVSR",
+    "risk": "medium",
+    "confidence": 0.65,
+    "notes": "CVPR 2026. Real-time 17fps diffusion VSR at 768x1408 on A100. 2x and 4x upscaling. VRAM-optimized community variant (naxci1/ComfyUI-FlashVSR_Stable) targets 8-24GB. Multiple ComfyUI node packs available. Not a June 17-24 release. Tier 3 monitor."
+  },
+  {
+    "method": "build_rembg_v3",
+    "category": "checkpoint",
+    "name": "Fibo-Edit-RMBG",
+    "source": "huggingface",
+    "url": "https://huggingface.co/briaai/Fibo-Edit-RMBG",
+    "risk": "high",
+    "confidence": 0.58,
+    "notes": "Released Feb 8, 2026. BRIA AI. 8B DiT-based alpha matting (Fibo-Edit pipeline); produces fine-edge alpha mattes (hair strands, netting, wire, semi-transparent). Better than RMBG-2.0 on complex edges. Gated HF. Estimated 16GB+ VRAM (8B base). No ComfyUI node confirmed. Tier 3 monitor."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "node_pack",
+    "name": "Hunyuan3D 3.0 ComfyUI Partner Nodes",
+    "source": "github",
+    "url": "https://blog.comfy.org/p/hunyuan-3d-30-in-comfyui-state-of",
+    "risk": "medium",
+    "confidence": 0.78,
+    "notes": "Available as ComfyUI Partner Nodes since Feb 13, 2026. 3D-DiT architecture; hierarchical sculpting; up to 1536^3 resolution; built-in auto-rigging. Supersedes HunyuanDiT 3D 2.x for mesh quality. Full textured pipeline VRAM likely >=16GB (2.x required 29GB); shape-only mode may fit 16GB -- needs testing. Tier 3 (VRAM uncertain)."
+  },
+  {
+    "method": "build_colorize",
+    "category": "lora",
+    "name": "LTX-2.3-22b-IC-LoRA-Colorization",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Lightricks/LTX-2.3-22b-IC-LoRA-Colorization",
+    "risk": "high",
+    "confidence": 0.55,
+    "notes": "Released Jun 17, 2026 (in-window). IC-LoRA (rank 128) on 22B LTX-2.3 base for video colorization. Restores natural color to grayscale/monochrome video. VRAM 24-80GB -- well exceeds 16GB budget. Monitor for quantized variants. Tier 3."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Krea-2 LoRAs (9 official + community)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/krea/Krea-2-LoRA-retroanime",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Batch of 9+ official Krea-2 style LoRAs released Jun 19-24, 2026 (in-window): retroanime, softwatercolor, neondrip, rainywindow, dotmatrix, darkbrush, kidsdrawing, sunsetblur, vintagetarot. Community additions: isometric-3D (linoyts), yarn-art (linoyts). Additive value once Krea-2 base model is wired up. Low risk as style-only LoRAs."
+  }
+]
