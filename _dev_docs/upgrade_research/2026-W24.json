@@ -1,0 +1,362 @@
+[
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "LTX-2.3 distilled FP8 (22B, 8-step)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Lightricks/LTX-2.3-fp8",
+    "risk": "low",
+    "confidence": 0.93,
+    "notes": "Direct replacement for ltx arch checkpoint. Distilled FP8 variant confirmed on RTX 5060 Ti 16 GB at 768p. 8-step inference, 20-second clips, redesigned VAE, NVFP8 2x speed on RTX 50-series. Released 2026-03-05. ComfyUI-LTXVideo node required: https://github.com/Lightricks/ComfyUI-LTXVideo"
+  },
+  {
+    "method": "build_wan22_t2v",
+    "category": "checkpoint",
+    "name": "WAN 2.7 (14B, 1080p, audio-visual)",
+    "source": "modelscope",
+    "url": "https://blog.comfy.org/p/wan27-is-now-available-in-comfyui",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Supersedes WAN 2.2. Adds 1080p native, ref-to-video (5 subjects), video edit/style, audio-driven video, 5000-char prompts. GGUF INT8 fits 16 GB VRAM. Weights on ModelScope + community HF GGUF repacks. Requires WanVideoWrapper (Kijai). Applies to all wan22/wan_video/wan_flf/wan_animate/wan_blockswap builders."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "checkpoint",
+    "name": "WAN 2.7 (14B, 1080p, audio-visual)",
+    "source": "modelscope",
+    "url": "https://blog.comfy.org/p/wan27-is-now-available-in-comfyui",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Same as build_wan22_t2v. See that entry."
+  },
+  {
+    "method": "build_wan_flf",
+    "category": "checkpoint",
+    "name": "WAN 2.7 (14B, 1080p, audio-visual)",
+    "source": "modelscope",
+    "url": "https://blog.comfy.org/p/wan27-is-now-available-in-comfyui",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "WAN 2.7 includes first-last-frame interpolation mode. Same family upgrade."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Illustrious-XL v2.0 (natural language prompts)",
+    "source": "civitai",
+    "url": "https://civitai.com/models/1369089/illustrious-xl-20",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Released 2026-06-08 (within 7-day window). Adds natural language support to Illustrious; v1.x needed danbooru tags. Checkpoint path unchanged; prompt mode logic needs version-branching. Apply to build_img2img with illustrious preset as well."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Chroma1-HD (1024 px, 2.5x speed)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/lodestones/Chroma1-HD",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Released 2026-06-01 (within 7-day window). High-res Chroma variant: 1024 px native, 2.5x speed vs quantised FLUX. Same special CLIP type, no pipeline changes. Add chroma_v10HD.safetensors as chroma preset model option."
+  },
+  {
+    "method": "build_controlnet_gen",
+    "category": "controlnet",
+    "name": "Shakker-Labs FLUX.1-dev ControlNet Union Pro 2.0",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0",
+    "risk": "low",
+    "confidence": 0.87,
+    "notes": "Best-in-class multi-mode Flux ControlNet. 300k steps, 20M images. Adds soft_edge mode; removes tile mode vs v1. FP8 community variant available. Update flux ControlNet default and add soft_edge to mode enum."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "onnx_model",
+    "name": "HyperSwap 256px (1a / 1b / 1c variants)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facefusion/models-3.3.0",
+    "risk": "low",
+    "confidence": 0.93,
+    "notes": "Drop-in into ComfyUI-ReActor v0.6.2 (already in Spellcaster). 2x native resolution (256 vs 128 px). Place in models/hyperswap/. Variants: 1a=speed, 1b=balanced, 1c=quality. ResearchRAIL-MS license: non-commercial use only. Applies also to build_faceswap_model."
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "checkpoint",
+    "name": "BiRefNet_HR (2048 px training, SDPA optimised)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/ZhengPeng7/BiRefNet_HR",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Sept 2025 SDPA attention update reduces VRAM vs prior version. Trained at 2048x2048, sharper masks on high-res inputs (>1024 px). Same BiRefNet pipeline. Add as model option; prefer HR for high-res inputs."
+  },
+  {
+    "method": "build_hunyuan_3d_textured",
+    "category": "checkpoint",
+    "name": "Hunyuan3D-2.1 (PBR materials: albedo + metallic + roughness)",
+    "source": "huggingface",
+    "url": "https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1",
+    "risk": "medium",
+    "confidence": 0.95,
+    "notes": "Open weights + training code. PBR output is significant quality jump. Native texture gen requires ~21 GB VRAM; mmgp/Hunyuan3D-2GP offloading enables 16 GB. Shape-only fits 10 GB. Applies to build_hunyuan_3d_mesh (shape quality improvement). Released June 2025 but not yet in Spellcaster."
+  },
+  {
+    "method": "build_pulid_flux",
+    "category": "node_pack",
+    "name": "ComfyUI-PuLID-Flux2 v0.6.2 (Klein 4B/9B native)",
+    "source": "github",
+    "url": "https://github.com/iFayens/ComfyUI-PuLID-Flux2",
+    "risk": "low",
+    "confidence": 0.75,
+    "notes": "v0.6.2 adds native FLUX.2 Klein 4B/9B weight support. Enables build_pulid_flux on Klein backbone. InsightFace + EVA-CLIP still required for face embedding. Klein 4B fits comfortably in 16 GB."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Ideogram 4.0 NF4 (9.3B, Qwen3-VL-8B text encoder, JSON prompts)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/ideogram-ai/ideogram-4-nf4",
+    "risk": "medium",
+    "confidence": 0.97,
+    "notes": "New Tier-2 builder build_ideogram4 needed. NF4 variant confirmed on 16 GB. Day-0 ComfyUI v0.24.0 (2026-06-03). New DualModelGuider, Ideogram4Scheduler, CFGOverride nodes. Structured JSON prompt interface (colour palettes, bounding boxes). Non-commercial license (Ideogram Non-Commercial Agreement)."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Microsoft Lens / Lens-Turbo (3.8B, MIT, FLUX.2 VAE)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/microsoft/Lens",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "New Tier-2 builder build_lens needed. 3.8B dual-stream MMDiT, MIT licensed, GPT-OSS-20B text encoder, reuses FLUX.2 VAE. Lens-Turbo = 4-step distilled. Day-0 ComfyUI v0.23.0 (2026-06-01). Ideal for LoRA fine-tuning."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "NVIDIA PixelDiT-1300M (VAE-free, Gemma-2-2B-IT text encoder)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/nvidia/PixelDiT-1300M-1024px",
+    "risk": "medium",
+    "confidence": 0.93,
+    "notes": "New Tier-2 builder build_pixeldit needed. 1.3B VAE-free pixel-space DiT; 5.25 GB checkpoint. Day-0 ComfyUI v0.23.0 (2026-06-01). Eliminates VAE encode/decode entirely; Gemma-2 text encoder is new. CVPR 2026 Best Paper Finalist."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "checkpoint",
+    "name": "SkyReels V3 V2V-14B (video extension)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Skywork/SkyReels-V3-V2V-14B",
+    "risk": "medium",
+    "confidence": 0.82,
+    "notes": "New Tier-2 builder build_skyreels_v3_v2v needed. Video-to-video extension (14B). Via WanVideoWrapper (Kijai Pusa workflow). FP8 scaled weights at https://huggingface.co/Kijai/WanVideo_comfy_fp8_scaled. BlockSwap enables 16 GB. Also: R2V-14B (multi-subject), A2V-19B (lip-sync)."
+  },
+  {
+    "method": "build_video_upscale",
+    "category": "checkpoint",
+    "name": "FlashVSR v1.1 (CVPR 2026, LCSA streaming architecture)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/JunhaoZhuang/FlashVSR-v1.1",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "CVPR 2026. Locality-Constrained Sparse Attention + TCDecoder. ~12x faster than prior diffusion VSR. 2x/4x upscaling. Fits 16 GB with tiling or TCDecoder variant. ComfyUI nodes: https://github.com/1038lab/ComfyUI-FlashVSR and https://github.com/naxci1/ComfyUI-FlashVSR_Stable. Requires LCSA module -- verify node version."
+  },
+  {
+    "method": "build_seedvr2_video_upscale",
+    "category": "node_pack",
+    "name": "SeedVR2 7B v2.5 (4-node breaking arch change)",
+    "source": "github",
+    "url": "https://github.com/comfyorg/comfyui_seedvr2",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "v2.5 breaks existing single-node SeedVR2 workflows -- rebuild required. 7B quality upgrade via BlockSwap feasible on 16 GB. Smart FP8 (BF16 arithmetic only). GGUF 4-bit for 7B also available. Prefer official ComfyOrg repo over numz fork for long-term support. Applies to build_seedv2r."
+  },
+  {
+    "method": "build_lama_remove",
+    "category": "checkpoint",
+    "name": "LBM - Latent Bridge Matching (ICCV 2025 Highlight, single-step)",
+    "source": "github",
+    "url": "https://github.com/gojasper/LBM",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "ICCV 2025 Highlight. NFE=1 (single-step) object removal. ~8-10 GB VRAM. Outperforms LaMa and SDXL-Inpainting on RORD. New builder build_lbm_remove for fast path. LaMa stays as lightweight/batch fallback. Weights at gojasper org."
+  },
+  {
+    "method": "build_magic_eraser",
+    "category": "checkpoint",
+    "name": "OmniPaint (ICCV 2025, FLUX.1-dev LoRA dual removal+insertion)",
+    "source": "github",
+    "url": "https://github.com/yeates/OmniPaint",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "ICCV 2025. Built on FLUX.1-dev + LoRA. CycleFlow training for dual insertion/removal. Outperforms LaMa on complex scenes. ~12-16 GB VRAM. No dedicated ComfyUI node yet; use via FLUX inpaint workflow with OmniPaint LoRA. New builder build_omnipaint_remove."
+  },
+  {
+    "method": "build_rembg",
+    "category": "checkpoint",
+    "name": "BEN2 - Background Erase Network v2 (Confidence-Guided Matting)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/PramaLLC/BEN2",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "Confidence-Guided Matting refiner targets uncertain pixels. Best for hair matting and fine edges. ~4-6 GB VRAM. ComfyUI node: https://github.com/PramaLLC/BEN2_ComfyUI. Also in ComfyUI-RMBG v3.0.0 unified pack. New builder build_rembg_ben2."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "lora",
+    "name": "IConFace (FLUX.2 Klein LoRA, identity-aware face restorer)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/zhangjinyang/IConFace",
+    "risk": "medium",
+    "confidence": 0.78,
+    "notes": "arXiv 2605.02814 (May 2026). First FLUX.2-Klein face restorer with public weights. Two modes: blind restoration and reference-aware (AdaFace IR50 anchor). Requires Klein-base-4B (~10 GB) + iconface_lora.safetensors. No dedicated ComfyUI node yet. Candidate for new build_face_restore_iconface builder."
+  },
+  {
+    "method": "build_video_upscale",
+    "category": "node_pack",
+    "name": "NVIDIA RTX Nodes (RTX Video Super Resolution + NVFP4/FP8)",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "GDC 2026. RTX VSR: hardware-accelerated real-time upscaling on RTX GPUs. NVFP4: 2.5x speed, 60% VRAM reduction on RTX 50-series (RTX 5060 Ti explicitly supported). Install via ComfyUI Manager 'RTX' search. Also affects LTX-2.3 and WAN builders via NVFP8."
+  },
+  {
+    "method": "build_klein_img2img",
+    "category": "lora",
+    "name": "FLUX.2 Klein Edit LoRA (gen+edit unified adapter)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/blog/black-forest-labs/flux-2-klein-lora",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "BFL Build Small Hackathon (June 5-15 2026). Edit LoRAs accept reference image + natural language instruction -- require additional reference-image input vs standard style LoRAs. Klein LoRA loader must branch on LoRA type (edit vs style). WaveSpeedAI Klein-4B Edit LoRA: https://wavespeed.ai/blog/posts/introducing-wavespeed-ai-flux-2-klein-4b-edit-lora-on-wavespeedai/"
+  },
+  {
+    "method": "build_sam3_segment",
+    "category": "node_pack",
+    "name": "ComfyUI-RMBG v3.0.0 (unified SAM3 + RMBG-2.0 + BiRefNet + BEN2 node pack)",
+    "source": "github",
+    "url": "https://github.com/1038lab/ComfyUI-RMBG",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Jan 1 2026. Single node pack unifying: RMBG-2.0, BEN, BEN2, BiRefNet, SDMatte, SAM, SAM2, SAM3, GroundingDINO. Reduces maintenance burden across build_rembg_* and build_sam3_*. Actively maintained."
+  },
+  {
+    "method": "build_photo_restore",
+    "category": "library_release",
+    "name": "InsightFace 1.0 (removes C++ build tools dependency)",
+    "source": "github",
+    "url": "https://www.insightface.ai/guides/insightface-1-0-tutorial",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Released 2026-05-23. Removes face3d Cython/C++ extension from default install. No API changes. Fixes most common Spellcaster install failure on clean Windows. Update requirements: insightface>=1.0. Applies to all face swap and restoration builders."
+  },
+  {
+    "method": "build_seedv2r",
+    "category": "node_pack",
+    "name": "SeedVR2 7B v2.5 (4-node breaking arch change)",
+    "source": "github",
+    "url": "https://github.com/comfyorg/comfyui_seedvr2",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Same upgrade as build_seedvr2_video_upscale. See that entry."
+  },
+  {
+    "method": "build_wan22_t2v",
+    "category": "checkpoint",
+    "name": "Wan 3.0 MoE 60B (14B active) -- MONITOR ONLY",
+    "source": "github",
+    "url": "https://flowith.io/blog/wan-3-0-world-class-text-to-video-open-source-free-2026/",
+    "risk": "medium",
+    "confidence": 0.70,
+    "notes": "Tier 3. 4K output, 30-second clips. API available April 2026; open weights expected Q2 2026 but NOT CONFIRMED as of 2026-06-12. ComfyUI node support unconfirmed. Do not adopt until weights confirmed and WanVideoWrapper updated."
+  },
+  {
+    "method": "build_qwen_edit",
+    "category": "checkpoint",
+    "name": "Qwen-Image-2.0 (20B, 2K native, Lightning LoRA 4-step)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Qwen/Qwen-Image-Edit",
+    "risk": "high",
+    "confidence": 0.88,
+    "notes": "Tier 3. 20B+ parameters; FP8 marginal at 16 GB VRAM without GGUF. Lightning LoRA enables 4-step edits. Qwen-Image InstantX inpainting ControlNet: https://comfy.org/workflows/image_qwen_image_instantx_inpainting_controlnet-15538e51d812/. Monitor for GGUF quantization."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "research_benchmark",
+    "name": "NTIRE 2026 Real-World Face Restoration (AdaFace replaces ArcFace as identity standard)",
+    "source": "github",
+    "url": "https://github.com/jkwang28/NTIRE2026_RealWorld_Face_Restoration",
+    "risk": "high",
+    "confidence": 0.72,
+    "notes": "Tier 3. Defines current SOTA ceiling; top methods require >16 GB VRAM. Key signal: AdaFace is replacing ArcFace in new face restoration pipelines. DeSC-Face (#5, uses FLUX.2 Klein LoRA) is most feasible at 16 GB but code is confidential. Monitor for public weight releases."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "research_model",
+    "name": "BlazeEdit (Google, 195M, 5 editing tasks, CVPR 2026)",
+    "source": "github",
+    "url": "https://arxiv.org/abs/2605.28067",
+    "risk": "high",
+    "confidence": 0.72,
+    "notes": "Tier 3. No public weights. Presented CVPR 2026-06-06 (within window). 195M param text-free multi-task editor: removal, outpainting, tone correction, relighting, sticker gen. Task-selector replaces text prompt. Watch for Google Research open-source release."
+  },
+  {
+    "method": "build_hunyuan_3d_textured",
+    "category": "paper_only",
+    "name": "Hunyuan3D-2.5 (paper only -- no weights confirmed)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/papers/2506.16504",
+    "risk": "high",
+    "confidence": 0.72,
+    "notes": "Tier 3 / SKIP. Tencent appears to have paused open-weight releases for 2.5 (confirmed via GitHub issues #316, #232). Hunyuan3D-2.1 (Tier 1) is the actionable upgrade. Watch Tencent-Hunyuan/Hunyuan3D-2 for weight announcement."
+  },
+  {
+    "method": "build_depth_map_v3",
+    "category": "node_pack",
+    "name": "ComfyUI-DepthAnythingV3 (multi-view + 3D point cloud)",
+    "source": "github",
+    "url": "https://github.com/PozzettiAndrea/ComfyUI-DepthAnythingV3",
+    "risk": "low",
+    "confidence": 0.93,
+    "notes": "No-find for depth: Spellcaster already uses da3_large.safetensors. This ComfyUI node (Nov 2025) unlocks multi-view cross-attention for video depth consistency and 3D point cloud export as a new capability. No DA4 found."
+  },
+  {
+    "method": "build_supir",
+    "category": "checkpoint",
+    "name": "SUPIR (no update) -- STILL SOTA",
+    "source": "github",
+    "url": "https://arxiv.org/abs/2401.13627",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "No-find. No SUPIR v2 or open replacement found in window or recent months. NTIRE 2026 efficient SR challenge covers pure upscaling (SPANV2), not restoration+generation. SUPIR remains best open-source restoration pipeline."
+  },
+  {
+    "method": "build_ddcolor",
+    "category": "checkpoint",
+    "name": "DDColor (no update) -- STILL SOTA",
+    "source": "github",
+    "url": "https://arxiv.org/abs/2212.11613",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "No-find. No DDColor successor in survey window. Oct 2025 frequency-correction paper (arXiv 2510.23399) re-optimises DDColor but introduces no new model architecture."
+  },
+  {
+    "method": "build_rembg_v3",
+    "category": "checkpoint",
+    "name": "RMBG-2.0 (no RMBG-3.0) -- STILL SOTA",
+    "source": "huggingface",
+    "url": "https://huggingface.co/briaai/RMBG-2.0",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "No-find. No RMBG-3.0 exists. BRIA's newest model is briaai/Fibo-Edit (8B generative DiT for image editing, released 2026-01-16). RMBG-2.0 remains BRIA's latest background removal model."
+  },
+  {
+    "method": "build_faceswap_mtb",
+    "category": "checkpoint",
+    "name": "MTB faceswap (no update) -- STILL SOTA",
+    "source": "github",
+    "url": "",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "No-find. No MTB faceswap update found in window."
+  }
+]
