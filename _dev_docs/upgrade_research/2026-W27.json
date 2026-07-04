@@ -1,0 +1,282 @@
+[
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Krea 2 Turbo FP8 (12B DiT, Qwen3-VL encoder)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/krea/Krea-2-Turbo",
+    "risk": "medium",
+    "confidence": 0.95,
+    "notes": "Biggest model release this cycle. Needs new backbone in architectures.py + new build_krea2_txt2img and build_krea2_img2img. ComfyUI 0.26+ required. vladmandic uint4 quant also on HF (krea/Krea-2-Raw for LoRA training target). Tier 3 — significant arch work needed."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "FLUX.2-dev INT8 tensorwise",
+    "source": "huggingface",
+    "url": "https://huggingface.co/LAXMAYDAY/FLUX.2-dev-int8-tensorwise",
+    "risk": "low",
+    "confidence": 0.7,
+    "notes": "Created July 3, 2026. Drop-in VRAM-saver for FLUX.2-dev path. Zero downloads/likes — treat as provisional. No code change needed; model weight swap only. Monitor for adoption."
+  },
+  {
+    "method": "build_txt2img,build_img2img,build_inpaint,build_klein_img2img,build_klein_inpaint",
+    "category": "checkpoint",
+    "name": "FLUX.2-small-decoder (fast VAE decode for all FLUX.2/Klein)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/black-forest-labs/FLUX.2-small-decoder",
+    "risk": "low",
+    "confidence": 0.9,
+    "notes": "Released April 6, 2026; 196K downloads. Faster VAE decode at slight quality tradeoff. Add vae_fast=True flag to load_model_stack(). TIER 1 — ship soon."
+  },
+  {
+    "method": "build_iclight",
+    "category": "checkpoint",
+    "name": "IC-Light V2 (Flux-based, 16-channel VAE)",
+    "source": "github",
+    "url": "https://github.com/lllyasviel/IC-Light/discussions/98",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Announced January 29, 2026. Flux architecture dramatically improves photoreal relighting vs SD1.5 v1. Foreground-conditional model available. fal.ai has deployed endpoint. Needs build_iclight_v2 + ComfyUI-IC-Light-Native node. Keep build_iclight (SD1.5) for stylized cases. TIER 2."
+  },
+  {
+    "method": "build_kontext_img_edit",
+    "category": "checkpoint",
+    "name": "FLUX.1 Kontext dev (reference-image instruction editing)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Architecture already registered as flux_kontext in architectures.py. Missing: build_kontext_img_edit builder surfacing FluxKontextImageScale + reference latent injection. worksimpli/FLUX.1-Kontext-img-edit confirms the node pattern. Low risk — no arch changes needed. TIER 2."
+  },
+  {
+    "method": "build_klein_img2img_ref,build_klein_headswap,build_klein_virtual_tryon",
+    "category": "checkpoint",
+    "name": "FLUX.2-Klein-9B-KV (2.5x faster multi-reference via KV cache)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/black-forest-labs/FLUX.2-klein-9b-kv",
+    "risk": "medium",
+    "confidence": 0.9,
+    "notes": "Released March 9, 2026; 10.8K downloads; FP8 variant also on HF. Needs Flux2KleinKVPipeline new arch key in architectures.py and separate loader path. vladmandic uint4 quants created July 1, 2026. TIER 3 — 1-2 weeks."
+  },
+  {
+    "method": "build_supir,build_upscale",
+    "category": "node_pack",
+    "name": "PiD — Pixel Diffusion Decoder (NVIDIA, CVPR 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/nvidia/PiD",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "Paper arXiv 2605.23902; HF checkpoint June 2, 2026. Generative VAE decode: 8 denoising steps in pixel space, 4x (512→2048) or 8x output. ComfyUI-PiD node available. 2K fits 16 GB (~13 GB peak); 4K will OOM. New build_pid_decode builder; best as quality-upgrade step after build_supir. TIER 2."
+  },
+  {
+    "method": "build_sam3_segment,build_sam3_mask,build_sam3_extract",
+    "category": "checkpoint",
+    "name": "SAM 3.1 Multiplex (Meta, native ComfyUI PR #13408)",
+    "source": "github",
+    "url": "https://ai.meta.com/blog/segment-anything-model-3/",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "Released March 27, 2026. Checkpoint: sam3.1_multiplex_fp16.safetensors. New SAM3_Detect, SAM3_VideoTrack, SAM3_TrackToMask nodes natively in ComfyUI. Update default checkpoint name in builders. TIER 1 — ship soon."
+  },
+  {
+    "method": "build_face_restore,build_photo_restore,build_klein_face_detail",
+    "category": "lora",
+    "name": "IConFace — reference-aware face restoration LoRA on Klein-base-4B",
+    "source": "huggingface",
+    "url": "https://huggingface.co/zhangjinyang/IConFace",
+    "risk": "medium",
+    "confidence": 0.9,
+    "notes": "Paper arXiv 2605.02814, May 4, 2026. iconface_lora.safetensors, LoRA rank 16. Two modes: blind restoration and reference-aware (1-3 ref images). ComfyUI node: github.com/cosmicrealm/ComfyUI-Flux-FaceIR. Reference-aware mode unique — no equivalent in current stack. New build_klein_face_restore builder. TIER 2."
+  },
+  {
+    "method": "build_faceswap,build_faceswap_model",
+    "category": "checkpoint",
+    "name": "HyperSwap 256 ONNX models (FaceFusion Labs, in ReActor)",
+    "source": "github",
+    "url": "https://github.com/Gourieff/ComfyUI-ReActor",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "256px vs 128px for inswapper. hyperswap_1a/1b/1c_256.onnx in ComfyUI/models/hyperswap/. Issue #183 (broken) filed — stability uncertain. Document as swap_model option; no code change. Recommend 1b variant. TIER 2."
+  },
+  {
+    "method": "build_faceswap,build_faceswap_model",
+    "category": "checkpoint",
+    "name": "ReSwapper 128/256 (somanchiu, open-licensed, in ReActor)",
+    "source": "github",
+    "url": "https://github.com/somanchiu/ReSwapper",
+    "risk": "low",
+    "confidence": 0.8,
+    "notes": "Open-source reproduction of inswapper architecture. reswapper_128.onnx / reswapper_256.onnx. Weaker identity similarity than inswapper_128 but open-licensed. Drop-in swap_model param value. TIER 1."
+  },
+  {
+    "method": "build_face_restore,build_photo_restore",
+    "category": "checkpoint",
+    "name": "GPEN-BFR-512 / GPEN-BFR-1024 (in ReActor May 2026)",
+    "source": "github",
+    "url": "https://github.com/Gourieff/ComfyUI-ReActor",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "ReActor May 12, 2026 update. Drop GPEN-BFR-512.onnx / GPEN-BFR-1024.onnx in models folder. Better face similarity than CodeFormer in many cases. Already usable via model_name param — no code change needed. Document in docstrings. TIER 1."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "LTX-2.3 (Lightricks, full architecture replacement of 0.9.x)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Lightricks/LTX-2.3",
+    "risk": "medium",
+    "confidence": 0.95,
+    "notes": "LTX-2 released Jan 6, 2026; LTX-2.3 March 5, 2026 (Apache 2.0). Joint audio+video, built-in spatial/temporal latent upscalers, up to 4K/50FPS/20s. Kijai FP8 comfy weights: huggingface.co/Kijai/LTX2.3_comfy. GGUF Q4 also available. New build_ltx2_video builder; keep build_ltx_video for 0.9.x compat. TIER 2."
+  },
+  {
+    "method": "build_wan_video,build_wan22_t2v",
+    "category": "checkpoint",
+    "name": "WAN 2.7 (Alibaba, 14B MoE, audio-driven, multi-person)",
+    "source": "github",
+    "url": "https://github.com/Wan-Video/Wan2.7",
+    "risk": "medium",
+    "confidence": 0.9,
+    "notes": "Cloud release April 22, 2026; open weights May 20, 2026 (Apache 2.0, Wan-AI/Wan2.7-T2V-14B on ModelScope). Up to 5 reference persons, vocal timbre input, audio-driven. FP8/GGUF Q4 for 16 GB. ComfyUI partner nodes are cloud API — local needs manual weight pull. New build_wan27_video builder. TIER 3 — 2-4 weeks."
+  },
+  {
+    "method": "build_wan22_t2v",
+    "category": "lora",
+    "name": "WAN 2.2 Lightning 4-step distillation",
+    "source": "huggingface",
+    "url": "https://huggingface.co/lightx2v/Wan2.2-Lightning",
+    "risk": "low",
+    "confidence": 0.9,
+    "notes": "4-step distilled WAN 2.2 variant. Same VRAM as base WAN 2.2. Existing WAN 2.2 ComfyUI nodes work. Add lightning=True / steps=4 + checkpoint name to build_wan22_t2v. TIER 1."
+  },
+  {
+    "method": "build_hunyuan_video",
+    "category": "checkpoint",
+    "name": "HunyuanVideo 1.5 (8.3B params, 14 GB VRAM, fits RTX 5060 Ti cleanly)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/tencent/HunyuanVideo-1.5",
+    "risk": "medium",
+    "confidence": 0.9,
+    "notes": "Released November 21, 2025. 8.3B params down from 13B. 14 GB VRAM — fits 16 GB without quantization. Repacks: 3loso3/ and LawrenceBoudreau/ on HF. SOTA visual quality at release. Node compat check recommended before flagging as Tier 1. TIER 1 (pending local verification)."
+  },
+  {
+    "method": "build_seedvr2_video_upscale",
+    "category": "checkpoint",
+    "name": "SeedVR2 v2.5 (ICLR 2026, 60% VRAM reduction, 3B/7B variants)",
+    "source": "github",
+    "url": "https://github.com/IceClear/SeedVR2",
+    "risk": "medium",
+    "confidence": 0.9,
+    "notes": "ICLR 2026 accepted. 60% VRAM reduction vs v1. FP8 and GGUF Q4/Q8 quantizations. Breaking node-layout change — workflows must be recreated. ComfyUI node: github.com/numz/ComfyUI-SeedVR2_VideoUpscaler. TIER 3 — breaking change requires workflow rebuild."
+  },
+  {
+    "method": "build_supir",
+    "category": "checkpoint",
+    "name": "RealRestorer (StepFun, 9 degradation types, DiT-based)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/RealRestorer/RealRestorer",
+    "risk": "medium",
+    "confidence": 0.82,
+    "notes": "Paper arXiv 2603.25502, March 26, 2026. Handles blur, rain, reflection, low-light, denoising, haze, moire, flare, compression. Based on Step1X-Edit DiT + Flux-VAE. Fixed 1024×1024. No ComfyUI node exists yet — would need to write one. New build_realrestorer builder. TIER 3."
+  },
+  {
+    "method": "build_klein_headswap",
+    "category": "lora",
+    "name": "BFS-Best-Face-Swap Head V5 LoRA (Qwen-Image-Edit-2511 + Klein)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/chfm/BFS-Best-Face-Swap",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Created June 8, 2026. Head V5 on Qwen-2511 is recommended tier. Multiple LoRA variants: Face V1, Head V1-V5. Better lighting/tone consistency than ONNX swapper approach. Generative (not pixel-faithful) — different tradeoff than current build_klein_headswap. Validate quality before wiring. TIER 3."
+  },
+  {
+    "method": "build_video_upscale",
+    "category": "checkpoint",
+    "name": "FlashVSR v1.1 (CVPR 2026, streaming-capable diffusion upscaler)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/JunhaoZhuang/FlashVSR-v1.1",
+    "risk": "low",
+    "confidence": 0.9,
+    "notes": "v1.1 with temporal stability improvements; CVPR 2026 accepted. One-step diffusion with locality-constrained sparse attention; streaming per-frame mode for low VRAM. ComfyUI nodes: ComfyUI_FlashVSR, ComfyUI-FlashVSR_Ultra_Fast, WaveSpeed node. New build_flashvsr_upscale builder. TIER 2."
+  },
+  {
+    "method": "build_video_upscale",
+    "category": "node_pack",
+    "name": "NVIDIA RTX Video Super Resolution (ComfyUI official partner node)",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI",
+    "risk": "low",
+    "confidence": 0.9,
+    "notes": "NVIDIA GDC announcement late June 2026 (within 7-day window). Tensor-core acceleration; 30x faster than diffusion upscalers; perfect for RTX 5060 Ti; zero VRAM overhead for upscale step. Clarity/artifact correction only — no detail synthesis. New build_rtx_upscale builder or fast-mode flag on build_video_upscale. TIER 2."
+  },
+  {
+    "method": "build_wan22_s2v",
+    "category": "checkpoint",
+    "name": "WAN 2.2 Sound/Speech-to-Video (WanSoundImageToVideo node)",
+    "source": "github",
+    "url": "https://docs.comfy.org/tutorials/video/wan/wan2-2-s2v",
+    "risk": "medium",
+    "confidence": 0.95,
+    "notes": "Native ComfyUI support; WanSoundImageToVideo node. wan2.2_s2v_14B_fp8_scaled.safetensors at 12-14 GB VRAM. New modality: audio-driven talking-head video from static image + audio clip. New build_wan22_s2v builder. TIER 2."
+  },
+  {
+    "method": "build_skyreels_v3",
+    "category": "checkpoint",
+    "name": "SkyReels-V3 R2V-14B / V2V-14B (WanPipeline-based, multi-subject ref)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Skywork/SkyReels-V3-R2V-14B",
+    "risk": "medium",
+    "confidence": 0.8,
+    "notes": "Released January 29, 2026 (Apache 2.0). R2V (Reference-to-Video, 1-4 ref images) and V2V at 14B fit 16 GB via GGUF. A2V at 19B is borderline. VACE_SkyReels_V3_R2V_Merge GGUF (902 downloads) compatible with WAN BlockSwap infrastructure. New build_skyreels_v3 builder. TIER 3."
+  },
+  {
+    "method": "build_facefusion",
+    "category": "node_pack",
+    "name": "FaceFusion 3.7.0 (HyperSwap-based, multi-frame-aware)",
+    "source": "github",
+    "url": "https://github.com/facefusion/facefusion",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Released June 30, 2026 (within 7-day window). v3.7.0 adds multi-frame-aware processors, auto face-selector, CoreML perf. Uses HyperSwap 256 as default swapper. Unofficial ComfyUI node: github.com/huygiatrng/Facefusion_comfyui. New build_facefusion builder (separate from build_faceswap). TIER 3."
+  },
+  {
+    "method": "build_canonswap_video",
+    "category": "checkpoint",
+    "name": "CanonSwap — video face swap via canonical space modulation (paper)",
+    "source": "huggingface",
+    "url": "https://hf.co/papers/2507.02691",
+    "risk": "high",
+    "confidence": 0.95,
+    "notes": "Paper published July 3, 2026 (today). Temporal consistency via canonical space decoupling. Project: luoxyhappy.github.io/CanonSwap/. No weights, no ComfyUI node. Would be first video face swap builder in Spellcaster. Watch for weights release in 4-8 weeks. TIER 3."
+  },
+  {
+    "method": "build_topaz_upscale",
+    "category": "node_pack",
+    "name": "Topaz Astra 2 + Bloom (official ComfyUI partner nodes)",
+    "source": "github",
+    "url": "https://blog.comfy.org/p/topazs-flagship-upscale-models-in",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Official ComfyUI partner integration. Astra 2 tuned for GenAI video; Bloom for 8K image + face enhancement. Requires Topaz Video AI license (paid). New build_topaz_upscale builder. TIER 3 — requires license."
+  },
+  {
+    "method": "build_sama_matte",
+    "category": "checkpoint",
+    "name": "SAMA — Segment and Matte Anything (Walmart Tech, paper only)",
+    "source": "huggingface",
+    "url": "https://hf.co/papers/2601.12147",
+    "risk": "medium",
+    "confidence": 0.45,
+    "notes": "Paper January 17, 2026. Simultaneous segmentation mask + alpha matte from text prompt, no trimap. No public weights, no ComfyUI node. Would enable new build_sama_matte builder. Monitor for weights release. TIER 3 — paper only."
+  },
+  {
+    "method": "build_depth_map_v3,build_sam3_segment,build_normal_map",
+    "category": "checkpoint",
+    "name": "Vision Banana (Google DeepMind — closed source, not locally usable)",
+    "source": "github",
+    "url": "https://vision-banana.github.io/",
+    "risk": "high",
+    "confidence": 0.08,
+    "notes": "Paper arXiv 2604.20329, April 22, 2026. Single model beats SAM 3 on segmentation, DA3 on metric depth. Closed source — Google API/AI Studio only. No local weights. Not actionable. Watch for open weights. TIER 3 — blocked."
+  }
+]
