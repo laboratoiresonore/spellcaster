@@ -1047,6 +1047,26 @@ _reg("hunyuan_video",
      scene_group="video",
      registered=True)
 
+# HunyuanVideo-1.5 — Tencent's 8.3B successor (late-Nov 2025). Native
+# ComfyUI support (no Kijai wrapper required): UNETLoader /
+# UnetLoaderGGUF + DualCLIPLoader[type=hunyuan_video_15] + VAELoader +
+# EmptyHunyuanVideo15Latent / HunyuanVideo15ImageToVideo + KSampler +
+# VAEDecode. Runs comfortably 8-12 GB at Q4-Q8 GGUF and 720p — fits
+# 16 GB RTX 5060 Ti where the original 13B does not. Wired into
+# `build_hunyuan_video(..., hunyuan_version="1.5")` as the opt-in path.
+# Calibration: null (pending real-data passes).
+_reg("hunyuan_video_15",
+     loader="unet", sampler="ksampler",  # native UNETLoader + KSampler
+     clip_mode="dual", vae_mode="separate",  # DualCLIPLoader + VAELoader
+     supports_negative=True,  # v1.5 is NOT distilled (unlike v1.0)
+     default_resolution=(848, 480),
+     default_cfg=1.0, default_steps=30, default_denoise=1.0,
+     default_sampler="euler", default_scheduler="simple",
+     # Same builder as v1.0; pass hunyuan_version="1.5" to select.
+     supported_methods=("video_gen", "video_img2video"),
+     scene_group="video",
+     registered=True)
+
 # Mochi-1 — Genmo's 10B Apache-2.0 video model (Oct 2024). Wrapper pack:
 # ComfyUI-MochiWrapper (Kijai). Mochi* nodes: MochiSampler, MochiDecode,
 # MochiTextEncode, MochiModelLoader, MochiVAELoader, MochiSigmaSchedule,

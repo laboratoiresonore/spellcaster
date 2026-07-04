@@ -7013,7 +7013,9 @@ def build_klein_color_match(target_filename, reference_filename,
 
 def build_sam3_segment(image_filename, prompt, confidence=0.6,
                        output_mode="Merged", mask_expand=0, mask_blur=0,
-                       invert=False) -> dict:
+                       invert=False, sam3_backend="wrapper",
+                       ckpt_name="sam3.1.safetensors",
+                       refine_iterations=2) -> dict:
     """SAM3 Segment — detect a subject by text and return its mask.
 
     Uses SAM3's text-prompted segmentation to find any subject in the
@@ -7027,39 +7029,81 @@ def build_sam3_segment(image_filename, prompt, confidence=0.6,
         prompt (str): What to detect, e.g. "person", "shirt", "hair",
             "background", "cat". Empty string = auto-detect all.
         confidence (float): Detection threshold (0.0-1.0, default 0.6).
+            For core_native this maps to SAM3_Detect's `threshold`.
         output_mode (str): "Merged" (all matches as one mask) or
-            "Separate" (one mask per instance).
+            "Separate" (one mask per instance). wrapper-only — core_native
+            uses individual_masks=False (Merged) always.
         mask_expand (int): Pixels to grow the mask outward.
         mask_blur (int): Gaussian blur on mask edges.
         invert (bool): Invert the mask (select everything EXCEPT target).
+            wrapper-only — core_native has no invert_output; callers wanting
+            inversion should post-process with InvertMask if needed.
+        sam3_backend (str): Which SAM3 implementation to emit.
+            "wrapper" (default) — existing third-party SAM3 node pack
+            (class_type "SAM3Segment"). Preserves current behavior;
+            zero change for existing callers.
+            "core_native" — ComfyUI's built-in SAM 3.1 nodes from
+            comfy_extras/nodes_sam3.py (PR #13408, merged 2026-04-23).
+            Uses CheckpointLoaderSimple + CLIPTextEncode + SAM3_Detect.
+            ~2x faster, dependency-free, supports 16-object multiplexing.
+            Opt in only when the user's ComfyUI is recent enough.
+        ckpt_name (str): SAM 3.1 checkpoint filename (core_native only).
+            Default "sam3.1.safetensors".
+        refine_iterations (int): SAM decoder refinement passes for
+            core_native (0-5, default 2). 0 = use raw detector masks.
 
     Returns:
         dict: ComfyUI workflow. Output is a mask saved as image.
 
-    Requires: SAM3 node pack.
+    Requires: SAM3 node pack (wrapper) OR ComfyUI >= PR #13408 (core_native).
     """
     nf = NodeFactory()
 
     img_id = nf.load_image(image_filename, node_id="1")
 
-    sam3_id = nf._add("SAM3Segment", {
-        "prompt": prompt,
-        "output_mode": output_mode,
-        "confidence_threshold": confidence,
-        "max_segments": 0,
-        "segment_pick": 0,
-        "mask_blur": 0,
-        "mask_offset": 0,
-        "device": "Auto",
-        "invert_output": invert,
-        "unload_model": False,
-        "background": "Alpha",
-        "background_color": "#222222",
-        "image": [img_id, 0],
-    }, node_id="10")
+    # Why: ComfyUI PR #13408 — SAM 3.1 native, 2x faster.
+    # Ground truth: comfy_extras/nodes_sam3.py — SAM3_Detect takes a MODEL
+    # (loaded via CheckpointLoaderSimple) + IMAGE + CONDITIONING (text via
+    # CLIPTextEncode) + threshold + refine_iterations + individual_masks.
+    # Outputs: (Mask, BoundingBox) — slot 0 is MASK (not slot 1!).
+    if sam3_backend == "core_native":
+        ckpt_id = nf._add("CheckpointLoaderSimple", {
+            "ckpt_name": ckpt_name,
+        }, node_id="8")
+        cond_id = nf._add("CLIPTextEncode", {
+            "clip": [ckpt_id, 1],
+            "text": prompt,
+        }, node_id="9")
+        sam3_id = nf._add("SAM3_Detect", {
+            "model": [ckpt_id, 0],
+            "image": [img_id, 0],
+            "conditioning": [cond_id, 0],
+            "threshold": float(confidence),
+            "refine_iterations": int(refine_iterations),
+            "individual_masks": False,
+        }, node_id="10")
+        # core_native: MASK is on slot 0 (Mask, BoundingBox)
+        mask_ref = [sam3_id, 0]
+    else:
+        sam3_id = nf._add("SAM3Segment", {
+            "prompt": prompt,
+            "output_mode": output_mode,
+            "confidence_threshold": confidence,
+            "max_segments": 0,
+            "segment_pick": 0,
+            "mask_blur": 0,
+            "mask_offset": 0,
+            "device": "Auto",
+            "invert_output": invert,
+            "unload_model": False,
+            "background": "Alpha",
+            "background_color": "#222222",
+            "image": [img_id, 0],
+        }, node_id="10")
+        # wrapper: MASK is on slot 1 (image-on-alpha, mask)
+        mask_ref = [sam3_id, 1]
 
     # Optionally expand + blur the mask
-    mask_ref = [sam3_id, 1]
     if mask_expand > 0 or mask_blur > 0:
         grow_id = nf._add("GrowMaskWithBlur", {
             "expand": mask_expand,
@@ -7079,8 +7123,18 @@ def build_sam3_segment(image_filename, prompt, confidence=0.6,
         "mask": mask_ref,
     }, node_id="20")
 
-    # Save the segmented subject (foreground on alpha from SAM3 slot 0)
-    nf.save_image_websocket([sam3_id, 0], node_id="30", label="sam3_subject")
+    if sam3_backend == "core_native":
+        # core_native has no foreground-on-alpha output; compose the
+        # original image with the mask via JoinImageWithAlpha so callers
+        # still get a "sam3_subject" image alongside the mask.
+        subject_id = nf._add("JoinImageWithAlpha", {
+            "image": [img_id, 0],
+            "alpha": mask_ref,
+        }, node_id="21")
+        nf.save_image_websocket([subject_id, 0], node_id="30", label="sam3_subject")
+    else:
+        # Save the segmented subject (foreground on alpha from SAM3 slot 0)
+        nf.save_image_websocket([sam3_id, 0], node_id="30", label="sam3_subject")
     # Save the mask as a separate image
     nf.save_image_websocket([mask_img, 0], node_id="31", label="sam3_mask")
 
@@ -7092,7 +7146,9 @@ def build_sam3_segment(image_filename, prompt, confidence=0.6,
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_sam3_extract(image_filename, prompt="person", confidence=0.6,
-                       auto_crop=False) -> dict:
+                       auto_crop=False, sam3_backend="wrapper",
+                       ckpt_name="sam3.1.safetensors",
+                       refine_iterations=2) -> dict:
     """SAM3 Extract — detect a subject, remove background.
 
     Combines SAM3 segmentation with BiRefNet background removal.
@@ -7108,15 +7164,70 @@ def build_sam3_extract(image_filename, prompt="person", confidence=0.6,
         confidence (float): Detection threshold.
         auto_crop (bool): If True, crop to subject bounds. Default False
             to preserve position when importing as a GIMP layer.
+        sam3_backend (str): Which SAM3 implementation to emit.
+            "wrapper" (default) — BiRefNet RMBG path as today; the
+            "SAM3" in the name refers to the historical wrapper pack
+            preflight. Zero change for existing callers.
+            "core_native" — ComfyUI core SAM 3.1 (PR #13408) drives
+            the extract using `prompt` + `confidence`, producing a
+            tighter mask than BiRefNet for text-targeted subjects.
+            Uses CheckpointLoaderSimple + CLIPTextEncode + SAM3_Detect,
+            then JoinImageWithAlpha to compose the subject on alpha.
+            ~2x faster than wrapper SAM3, dependency-free.
+        ckpt_name (str): SAM 3.1 checkpoint filename (core_native only).
+            Default "sam3.1.safetensors".
+        refine_iterations (int): SAM decoder refinement passes for
+            core_native (0-5, default 2). 0 = use raw detector masks.
 
     Returns:
         dict: ComfyUI workflow.
 
-    Requires: SAM3 node pack + BiRefNet RMBG.
+    Requires: SAM3 node pack + BiRefNet RMBG (wrapper) OR
+        ComfyUI >= PR #13408 (core_native).
     """
     nf = NodeFactory()
 
     img_id = nf.load_image(image_filename, node_id="1")
+
+    # Why: ComfyUI PR #13408 — SAM 3.1 native, 2x faster.
+    # Ground truth: SAM3_Detect outputs (Mask, BoundingBox) — slot 0 is
+    # MASK. No image-on-alpha output, so we compose subject via
+    # JoinImageWithAlpha(image, mask) from comfy_extras/nodes_compositing.
+    if sam3_backend == "core_native":
+        ckpt_id = nf._add("CheckpointLoaderSimple", {
+            "ckpt_name": ckpt_name,
+        }, node_id="8")
+        cond_id = nf._add("CLIPTextEncode", {
+            "clip": [ckpt_id, 1],
+            "text": prompt,
+        }, node_id="9")
+        sam3_id = nf._add("SAM3_Detect", {
+            "model": [ckpt_id, 0],
+            "image": [img_id, 0],
+            "conditioning": [cond_id, 0],
+            "threshold": float(confidence),
+            "refine_iterations": int(refine_iterations),
+            "individual_masks": False,
+        }, node_id="10")
+        mask_ref = [sam3_id, 0]
+
+        # Compose original RGB image with the SAM3 mask as alpha to get
+        # foreground-on-transparent (no separate RMBG step needed).
+        subject_id = nf._add("JoinImageWithAlpha", {
+            "image": [img_id, 0],
+            "alpha": mask_ref,
+        }, node_id="15")
+        output_ref = [subject_id, 0]
+
+        if auto_crop:
+            crop_id = nf._add("ImageCropByMask", {
+                "image": output_ref,
+                "mask": mask_ref,
+            }, node_id="20")
+            output_ref = [crop_id, 0]
+
+        nf.save_image_websocket(output_ref, node_id="30")
+        return nf.build()
 
     # BiRefNet background removal (higher quality than SAM3's built-in)
     rmbg_id = nf._add("BiRefNetRMBG", {
@@ -8465,9 +8576,38 @@ def build_hunyuan_video(prompt_text, seed, *,
                         # Output
                         fps=24,
                         crf=19,
-                        filename_prefix="spellcaster_hunyuan") -> dict:
-    """HunyuanVideo (Tencent 13B) text-to-video / image-to-video via Kijai's
-    ComfyUI-HunyuanVideoWrapper.
+                        filename_prefix="spellcaster_hunyuan",
+                        # ── HunyuanVideo-1.5 (opt-in, 8.3B, 16-GB friendly) ──
+                        hunyuan_version="1",
+                        negative_text="",
+                        clip_l_name="clip_l.safetensors",
+                        llm_name="llava_llama3_fp8_scaled.safetensors",
+                        sampler_name="euler",
+                        scheduler="simple",
+                        cfg=1.0) -> dict:
+    """HunyuanVideo text-to-video / image-to-video.
+
+    Two paths, selected by `hunyuan_version`:
+
+    * `"1"` (DEFAULT — preserves prior behavior): Tencent's original
+      ~13B HunyuanVideo via Kijai's ComfyUI-HunyuanVideoWrapper
+      (HyVideo* node family). Needs ~26 GB VRAM at bf16 or 16 GB with
+      fp8 + block-swap; effectively cloud-only on a 16 GB workstation.
+
+    * `"1.5"` (OPT-IN): Tencent's HunyuanVideo-1.5 (8.3B, late-Nov
+      2025), wired via ComfyUI's native nodes (UNETLoader /
+      UnetLoaderGGUF + DualCLIPLoader[hunyuan_video_15] + VAELoader +
+      EmptyHunyuanVideo15Latent / HunyuanVideo15ImageToVideo + KSampler
+      + VAEDecode). Runs comfortably on 16 GB at Q4-Q8 GGUF and 720p.
+      Pass `hy_model="hunyuan_video_1.5_Q5_K_M.gguf"` (or similar) +
+      `vae_name="hunyuan_video_15_vae.safetensors"` + the two text
+      encoders (`llm_name`, `clip_l_name`).
+
+    Below describes the v1.0 (Kijai-wrapper) path. For v1.5 see the
+    branch comment in-source.
+
+    Original v1.0 docstring: HunyuanVideo (Tencent 13B) text-to-video /
+    image-to-video via Kijai's ComfyUI-HunyuanVideoWrapper.
 
     Supports both modes via the optional `image_filename`:
       * T2V (default) — synthesises a video from prompt alone
@@ -8527,6 +8667,13 @@ def build_hunyuan_video(prompt_text, seed, *,
         enable_vae_tiling: tiled decode for low VRAM.
         fps, crf: video encode params.
         filename_prefix: VHS output prefix.
+        hunyuan_version: `"1"` (default, original 13B via Kijai wrapper) or
+            `"1.5"` (8.3B, native ComfyUI nodes, 16-GB friendly).
+        negative_text: negative prompt (v1.5 only — v1.0 is distilled).
+        clip_l_name / llm_name: text-encoder filenames for v1.5
+            DualCLIPLoader (CLIP-L + llava-llama3). Ignored for v1.0.
+        sampler_name / scheduler / cfg: KSampler knobs for v1.5
+            (defaults euler / simple / cfg=1.0 per ComfyUI workflow).
 
     Returns:
         ComfyUI workflow dict.
@@ -8537,6 +8684,117 @@ def build_hunyuan_video(prompt_text, seed, *,
     _assert_method_for_preset({"arch": "hunyuan_video"}, method)
     nf = NodeFactory()
 
+    # ── HunyuanVideo-1.5 (opt-in) ────────────────────────────────────────
+    # Why: HunyuanVideo-1.5 8.3B fits 16 GB; original 13B requires ~60 GB
+    # headless. v1.5 uses ComfyUI's native nodes (no Kijai wrapper) — the
+    # node class names below were sourced from ComfyUI's stock
+    # `comfy_extras/nodes_hunyuan.py` (HunyuanVideo15ImageToVideo,
+    # EmptyHunyuanVideo15Latent) + nodes.py (DualCLIPLoader with
+    # type="hunyuan_video_15"). GGUF loader is the standard
+    # `UnetLoaderGGUF` from city96/ComfyUI-GGUF — same convention used
+    # elsewhere in this file (e.g. build_qwen_edit).
+    # TODO: verify node class name when ComfyUI v0.21+ is confirmed installed
+    if str(hunyuan_version) == "1.5":
+        # 1. Diffusion model (GGUF preferred for 16 GB; fall back to
+        #    UNETLoader for full-precision safetensors).
+        if str(hy_model).lower().endswith(".gguf"):
+            model_id = nf._add("UnetLoaderGGUF", {
+                "unet_name": hy_model,
+            }, node_id="1")
+        else:
+            model_id = nf._add("UNETLoader", {
+                "unet_name": hy_model,
+                "weight_dtype": "default",
+            }, node_id="1")
+
+        # 2. Dual text encoders (llava-llama3 + clip-l). The native
+        #    DualCLIPLoader `type="hunyuan_video_15"` recipe loads both.
+        dclip_id = nf._add("DualCLIPLoader", {
+            "clip_name1": llm_name,
+            "clip_name2": clip_l_name,
+            "type": "hunyuan_video_15",
+        }, node_id="2")
+
+        # 3. VAE
+        vae_id = nf._add("VAELoader", {
+            "vae_name": vae_name,
+        }, node_id="3")
+
+        # 4. Positive + negative conditioning
+        pos_id = nf._add("CLIPTextEncode", {
+            "clip": [dclip_id, 0],
+            "text": prompt_text,
+        }, node_id="4")
+        neg_id = nf._add("CLIPTextEncode", {
+            "clip": [dclip_id, 0],
+            "text": negative_text,
+        }, node_id="5")
+
+        # 5. Latent (T2V) or I2V conditioning + latent
+        if image_filename:
+            img_id = nf.load_image(image_filename, node_id="6")
+            # HunyuanVideo15ImageToVideo bakes the start image into the
+            # positive/negative conditionings and emits an empty 1.5-shape
+            # latent. clip_vision_output is optional and skipped here.
+            i2v_id = nf._add("HunyuanVideo15ImageToVideo", {
+                "positive":   [pos_id, 0],
+                "negative":   [neg_id, 0],
+                "vae":        [vae_id, 0],
+                "width":      int(width),
+                "height":     int(height),
+                "length":     int(num_frames),
+                "batch_size": 1,
+                "start_image": [img_id, 0],
+            }, node_id="7")
+            pos_ref = [i2v_id, 0]
+            neg_ref = [i2v_id, 1]
+            latent_ref = [i2v_id, 2]
+        else:
+            empty_id = nf._add("EmptyHunyuanVideo15Latent", {
+                "width":      int(width),
+                "height":     int(height),
+                "length":     int(num_frames),
+                "batch_size": 1,
+            }, node_id="7")
+            pos_ref = [pos_id, 0]
+            neg_ref = [neg_id, 0]
+            latent_ref = [empty_id, 0]
+
+        # 6. KSampler — v1.5 is NOT distilled (unlike v1.0), so CFG ≥ 1.0
+        #    is meaningful. Default cfg=1.0 follows ComfyUI's reference
+        #    workflow; bump to 3-7 if negative prompt should bite harder.
+        samp_id = nf._add("KSampler", {
+            "model":         [model_id, 0],
+            "positive":      pos_ref,
+            "negative":      neg_ref,
+            "latent_image":  latent_ref,
+            "seed":          int(seed),
+            "steps":         int(steps),
+            "cfg":           float(cfg),
+            "sampler_name":  sampler_name,
+            "scheduler":     scheduler,
+            "denoise":       1.0,
+        }, node_id="8")
+
+        # 7. Decode + video combine
+        dec_id = nf._add("VAEDecode", {
+            "samples": [samp_id, 0],
+            "vae":     [vae_id, 0],
+        }, node_id="9")
+        nf.update({
+            "10": {"class_type": "VHS_VideoCombine",
+                   "inputs": {"images": [dec_id, 0],
+                              "frame_rate": int(fps),
+                              "loop_count": 0,
+                              "filename_prefix": filename_prefix,
+                              "format": "video/h264-mp4",
+                              "save_output": True,
+                              "pix_fmt": "yuv420p",
+                              "crf": int(crf)}},
+        })
+        return nf.build()
+
+    # ── HunyuanVideo 1.0 (original, Kijai wrapper) ───────────────────────
     # 1a. Optional block swap args
     block_swap_ref = None
     if use_block_swap:
@@ -9824,8 +10082,9 @@ def build_qwen_edit(image_filename, unet_name, clip_name, vae_name,
                     denoise=1.0, shift=1.73, cfg_norm=0.5,
                     image2_filename=None, image3_filename=None,
                     sam3_prompt=None, sam3_invert=False,
-                    sam3_confidence=0.6, sam3_expand=4, sam3_blur=4) -> dict:
-    """Qwen Image Edit 2509 — instruction-driven edits via TextEncodeQwenImageEditPlus.
+                    sam3_confidence=0.6, sam3_expand=4, sam3_blur=4,
+                    qwen_edit_version="2509") -> dict:
+    """Qwen Image Edit 2509 / 2511 — instruction-driven edits via TextEncodeQwenImageEditPlus.
 
     Sibling to Flux Kontext. The user supplies an instruction prompt
     ("make the sky orange", "remove the sign", "add sunglasses") and an image;
@@ -9856,9 +10115,14 @@ def build_qwen_edit(image_filename, unet_name, clip_name, vae_name,
     Args:
         image_filename: the image to edit.
         unet_name: Qwen Image Edit UNET filename (e.g.
-            "qwen-image-edit_2509.safetensors").
+            "qwen-image-edit_2509.safetensors"). When ``qwen_edit_version="2511"``,
+            this is overridden by the canonical 2511 filename
+            ("qwen_image_edit_2511_bf16.safetensors").
         clip_name: Qwen CLIP filename (e.g.
             "qwen_2.5_vl_7b_fp8_scaled.safetensors"). Loaded with type=qwen_image.
+            TODO: confirm 2511 uses the same text encoder as 2509 — Comfy docs
+            list the same `qwen_2.5_vl_7b_fp8_scaled.safetensors` for both, so
+            no override is wired here.
         vae_name: Qwen VAE filename (e.g. "qwen_image_vae.safetensors").
         prompt_text: edit instruction in plain English.
         seed: sampler seed.
@@ -9872,6 +10136,13 @@ def build_qwen_edit(image_filename, unet_name, clip_name, vae_name,
             when sam3_prompt is set, the edit is composited back onto the
             original image using a SAM3 mask — so "change just the jacket"
             works without painting a mask.
+        qwen_edit_version: which Qwen-Image-Edit release to target. Allowed
+            values: ``"2509"`` (default, current behavior — uses the
+            caller-supplied ``unet_name`` as-is) and ``"2511"`` (opt-in —
+            overrides ``unet_name`` with the canonical
+            ``qwen_image_edit_2511_bf16.safetensors``). 2511 has better
+            character/multi-person consistency, integrated LoRA support, and
+            stronger geometric reasoning than 2509.
 
     Returns:
         ComfyUI workflow dict.
@@ -9881,6 +10152,14 @@ def build_qwen_edit(image_filename, unet_name, clip_name, vae_name,
     present on the server. Nunchaku / fp8 quantization support is optional —
     the standard UNETLoader handles fp16, fp8, and GGUF variants alike.
     """
+    # Why: 2511 has better multi-person consistency + integrated LoRA support
+    if qwen_edit_version == "2511":
+        unet_name = "qwen_image_edit_2511_bf16.safetensors"
+    elif qwen_edit_version != "2509":
+        raise ValueError(
+            f"qwen_edit_version must be '2509' or '2511', got {qwen_edit_version!r}"
+        )
+
     nf = NodeFactory()
 
     # Model / CLIP / VAE loaders
