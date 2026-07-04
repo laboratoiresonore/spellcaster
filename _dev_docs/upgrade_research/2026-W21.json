@@ -1,0 +1,322 @@
+[
+  {
+    "method": "build_ltx_video",
+    "category": "node_pack",
+    "name": "ComfyUI v0.22.0",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/ComfyUI/releases",
+    "risk": "low",
+    "confidence": 0.98,
+    "notes": "Released 2026-05-20 (within window). Key changes for spellcaster: (1) LTX-2.3 peak VRAM reduction when guide_mask is active — directly benefits build_ltx_video; (2) downscaled IC-LoRA support added to LTXVAddGuide; (3) optional attention_mask input; (4) native MoGe-2 geometry nodes (metric depth + normals); (5) HiDream-O1 area conditioning; (6) BiRefNet background-removal bug fix; (7) Stable Audio 3. Also relevant to build_depth_map_v3, build_normal_map, build_rembg_birefnet, build_layer_blend, build_hunyuan_3d_mesh."
+  },
+  {
+    "method": "build_depth_map_v3",
+    "category": "architecture",
+    "name": "MoGe-2 (native in ComfyUI v0.22.0)",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/ComfyUI/releases",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "MoGe-2 (NeurIPS 2025) now natively integrated in ComfyUI v0.22.0 (2026-05-20, within window). Single ~0.2 s inference provides metric-scale 3D point map, high-quality surface normals, and affine-invariant depth — replaces DA3-large and a separate normal-map model. Fits comfortably in 16 GB VRAM. Also relevant to build_normal_map."
+  },
+  {
+    "method": "build_normal_map",
+    "category": "architecture",
+    "name": "MoGe-2 (native in ComfyUI v0.22.0)",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/ComfyUI/releases",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Same MoGe-2 node available from v0.22.0 provides both depth and normals. Replaces separate normal-map preprocessor in build_normal_map. Metric scale also useful for downstream 3D prep. One model replaces two."
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "node_pack",
+    "name": "BiRefNet native ComfyUI (v0.21.0, bug-fixed in v0.22.0)",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/ComfyUI/releases/tag/v0.21.0",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "BiRefNet background/foreground segmentation natively integrated in ComfyUI v0.21.0 (2026-05-11). Bug fixed in v0.22.0 (2026-05-20, within window). Drop custom-node dependency (ComfyUI_BiRefNet_ll / ComfyUI-RMBG). Place birefnet.safetensors in models/background_removal/. Directly relevant to build_rembg_birefnet and build_layer_blend mask-prep step."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "onnx_model",
+    "name": "HyperSwap 256 px ONNX models (hyperswap_1a/1b/1c_256.onnx)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facefusion/models-3.3.0",
+    "risk": "low",
+    "confidence": 0.93,
+    "notes": "Three variants (~403 MB each) by FaceFusion Labs. Released with FaceFusion 3.3.0 (2025-06-22); ComfyUI-ReActor support landed in v0.6.2 (2026-04-25). Operates at 256 px — 2× inswapper_128's 128 px resolution; directly addresses inswapper's main quality ceiling. Place in ComfyUI/models/hyperswap/; select from existing ReActor node dropdown. Drop-in for all build_faceswap*, build_photobooth, build_video_reactor."
+  },
+  {
+    "method": "build_save_face_model",
+    "category": "node_pack",
+    "name": "ComfyUI-ReActor v0.7.0 ALPHA2 (InsightFace-free core)",
+    "source": "github",
+    "url": "https://github.com/Gourieff/ComfyUI-ReActor",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Released 2026-04-25 (outside window). Redesigned ReActor Core removes mandatory InsightFace / C++ Build Tools dependency — historically the main install friction point. NumPy 1.x and 2.x compatible. Also adds Face Similarity node, improved gender detection, refined face index logic, HyperSwap support, and 'Restore Face Advanced' node. Upgrade from v0.6.x is low risk and highly recommended for build_faceswap*, build_face_restore, build_photo_restore, build_photobooth, build_save_face_model."
+  },
+  {
+    "method": "build_sam3_segment",
+    "category": "architecture",
+    "name": "SAM 3.1",
+    "source": "github",
+    "url": "https://ai.meta.com/blog/segment-anything-model-3/",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Released 2026-03-27 by Meta (outside window, but highest-ROI upgrade for build_sam3_*). Introduces Object Multiplex: all tracked objects processed in one forward pass with shared memory and global reasoning. Halves VRAM usage and doubles speed vs SAM3. ~848M params. API-compatible upgrade — swap checkpoint, verify ComfyUI-CustomNodePacks v1.30.4 (2026-05-15) supports SAM 3.1. Also relevant to build_sam3_mask, build_sam3_extract, build_klein_sam3_inpaint, build_magic_eraser."
+  },
+  {
+    "method": "build_sam3_mask",
+    "category": "node_pack",
+    "name": "Code2Collapse/ComfyUI-CustomNodePacks v1.30.4",
+    "source": "github",
+    "url": "https://github.com/Code2Collapse/ComfyUI-CustomNodePacks",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "v1.30.4 released 2026-05-15 (within window). 72-node production suite covering SAM2.1 and SAM3 segmentation with multi-mask picker, alpha matting (ViTMatte + MatAnyone2 backends), inpaint crop/stitch, VFX tools (EXR I/O, LUT application, render-pass compositing), video mask propagation, temporal anchors. Labeled 'experimental'. Directly augments build_sam3_segment/mask/extract and build_lut. Also relevant to build_rembg_v3."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "architecture",
+    "name": "HiDream-O1-Image-Dev-2604",
+    "source": "huggingface",
+    "url": "https://huggingface.co/HiDream-ai/HiDream-O1-Image-Dev-2604",
+    "risk": "medium",
+    "confidence": 0.92,
+    "notes": "Distilled checkpoint released 2026-05-14 (within window). 8B pixel-space Unified Transformer — no VAE, no separate text encoder. 28-step distilled, #8 open-weights T2I arena on launch. FP8 variant fits ≤12 GB VRAM. Native ComfyUI support in v0.21.1 (2026-05-13). FP8 weights: drbaph/HiDream-O1-Image-FP8. Also supports instruction editing, subject personalization, storyboard. Requires new build_hidream_txt2img builder — different workflow topology (no VAE encode/decode). Community pack HiDream_O1-ComfyUI v0.2.3 (2026-05-15) adds LoRA training nodes."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "node_pack",
+    "name": "HiDream_O1-ComfyUI community node pack v0.2.3",
+    "source": "github",
+    "url": "https://github.com/Saganaki22/HiDream_O1-ComfyUI",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Released 2026-05-15 (within window). Wraps HiDream-O1 with: HiDreamO1ModelLoader, HiDreamO1ReferenceImages, HiDreamO1PatchSeamSmoothing, ModelNoiseScale, SamplerLCM, and LoRA training pipeline. Works alongside native v0.21.1 support. Only relevant if adopting HiDream-O1 architecture."
+  },
+  {
+    "method": "build_frame_assembly",
+    "category": "checkpoint",
+    "name": "LongCat-Video-Avatar-1.5",
+    "source": "huggingface",
+    "url": "https://huggingface.co/meituan-longcat/LongCat-Video-Avatar-1.5",
+    "risk": "medium",
+    "confidence": 0.95,
+    "notes": "Released 2026-05-21 (within window). Audio-driven talking-head / avatar video by Meituan. 13.6B diffusers, MIT license. Wav2Vec2 → Whisper-Large upgrade for lip sync. Supports AT2V (audio+text→video), ATI2V (audio+text+image→video), video continuation. 8-step distilled; FP8 ~8 GB, FP16 ~16 GB. Integrated in Wan2GP 2026-05-22. Adds talking-head/avatar capability not currently covered by any build_* method. Needs new builder, e.g., build_avatar_video."
+  },
+  {
+    "method": "build_wavespeed_upscale",
+    "category": "checkpoint",
+    "name": "FlashVSR (CVPR 2026) — WaveSpeed ComfyUI node",
+    "source": "github",
+    "url": "https://github.com/OpenImagingLab/FlashVSR",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "FlashVSR one-step diffusion VSR from CVPR 2026 (OpenImagingLab). Locality-constrained sparse attention: ~12× speedup vs prior one-step VSR, ~17 FPS at 768×1408 on A100. Available as WaveSpeed ComfyUI node (wavespeed-flash-vsr-node). Within-window event: Wan2GP added FlashVSR two-pass rendering mode 2026-05-21 (2× upscale at 6 GB VRAM, 4× with more headroom). Does not supersede SeedVR2 — different quality/speed tradeoff. Extends build_wavespeed_upscale; could also add build_flashvsr_upscale."
+  },
+  {
+    "method": "build_hunyuan_3d_textured",
+    "category": "node_pack",
+    "name": "Pixal3D-ComfyUI (Saganaki22)",
+    "source": "github",
+    "url": "https://github.com/Saganaki22/Pixal3D-ComfyUI",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "Released 2026-05-21 (within window). ComfyUI integration for TencentARC Pixal3D (SIGGRAPH 2026). Pixel-aligned back-projection for near-reconstruction-fidelity PBR-textured 3D from a single image. Textured GLB export; Windows support. Underlying Pixal3D has low-VRAM mode (1024 resolution) but exact ceiling unknown (TRELLIS.2 backbone). Evaluate against Hunyuan3D-2.1 on 16 GB before wiring. Also relevant to build_hunyuan_3d_mesh."
+  },
+  {
+    "method": "build_rembg_v3",
+    "category": "architecture",
+    "name": "Sapiens2 Matting Model (facebook/sapiens2)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/collections/facebook/sapiens2",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Meta released Sapiens2 matting checkpoint 2026-05-15 (within window; other Sapiens2 tasks Apr 27). Family of ViTs pretrained on 1B human images, native 1K resolution (hierarchical to 4K). Better than Sapiens v1 on pose (+4 mAP), body-part seg (+24.3 mIoU), normals (45.6% lower error). Human-specific matting (not general background removal). Model sizes 0.4B–5B; 1B variant likely ~8–12 GB. ComfyUI nodes: kijai/ComfyUI-Sapiens2 and lassiiter/comfyui-sapiens2. VRAM needs testing on RTX 5060 Ti 16 GB."
+  },
+  {
+    "method": "build_rembg_v3",
+    "category": "architecture",
+    "name": "MatAnyone2 (CVPR 2026 Highlight)",
+    "source": "github",
+    "url": "https://github.com/pq-yang/MatAnyone2",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "CVPR 2026 Highlight. Code + HF demo released 2026-03 (outside window). Human video matting without green screen — preserves hair strands, semi-transparency, motion blur. BiRefNet for auto-masking + guided filter edge refinement. Multiple ComfyUI nodes: spiritform/comfy-matanyone2, FuouM/ComfyUI-MatAnyone (MatAnyoneV2 node). Also a backend in Code2Collapse v1.30.4 (2026-05-15). Fits 16 GB. Candidate for new build_video_matte builder."
+  },
+  {
+    "method": "build_supir",
+    "category": "architecture",
+    "name": "RealRestorer (StepFun)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/RealRestorer/RealRestorer",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Released 2026-03-29 by StepFun (outside window). Built on Step1X-Edit DiT + Flux-VAE. Handles 9 degradation types at 1024×1024: blur, rain, reflection, low-light, denoising, haze, moiré, flare, artifact repair. #1 open-source on RealIR-Bench. Code: Apache 2.0. Model weights: non-commercial academic license — cannot replace build_supir for commercial use. No ComfyUI node found. VRAM ~12–16 GB (Flux-VAE). Also relevant to build_seedv2r."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "architecture",
+    "name": "WAN 2.7 (API-only via ComfyUI Partner Nodes)",
+    "source": "github",
+    "url": "https://blog.comfy.org/p/wan27-is-now-available-in-comfyui",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "WAN 2.7 by Alibaba released 2026-04-26 via ComfyUI Partner Nodes (cloud API only; outside window). Improvements over 2.6: better image quality, audio sync, motion dynamics, stylization, first/last frame, 15-second 1080p clips, native audio. No open local weights as of 2026-05-23. Expected mid-to-late Q2 2026 based on Alibaba's historical pattern. VRAM unknown. When weights drop, all build_wan_* workflows will need migration from WAN 2.2 checkpoints. Highest-priority Tier-3 watch item."
+  },
+  {
+    "method": "build_wan22_t2v",
+    "category": "lora",
+    "name": "airdude/tfg-video-dpo-wan22-r8 (DPO LoRA for Wan2.2-T2V)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/airdude/tfg-video-dpo-wan22-r8",
+    "risk": "medium",
+    "confidence": 0.60,
+    "notes": "Created 2026-05-16 (within window). DPO-trained LoRA (rank 8, PEFT) on Wan2.2-T2V-A14B-Diffusers. Only 12 downloads — likely personal/research fine-tune. Could improve prompt adherence on T2V outputs. Low confidence in production quality without community validation. Low risk to test; medium risk to integrate without evaluation."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "checkpoint",
+    "name": "VideoRLVR-Wan2.2 (DarthZhu, arxiv 2605.15458)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/DarthZhu/VideoRLVR-Wan2.2",
+    "risk": "high",
+    "confidence": 0.70,
+    "notes": "Released 2026-05-21 (within window). RL fine-tuned Wan2.2-TI2V-5B (flow-GRPO on video reasoning tasks). Both base and final RL checkpoints. 5B model fits on 16 GB. Only 17 downloads — research prototype, not production-ready. Risk 'high': untested in workflow context, may produce unexpected behavior on non-reasoning prompts."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "lora",
+    "name": "attikidd/BFS-Best-Face-Swap (Qwen Image Edit 2511 LoRA)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/attikidd/BFS-Best-Face-Swap",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Released 2026-05-19 (within window). LoRA adapter for Qwen-Image-Edit-2511 and Flux.2 Klein performing face and head swaps via diffusion editing — no ONNX inswapper required. Tagged comfyui, bfs, flux, klein, face-swap, head-swap. Fork of the Alissonerdx BFS series. Different paradigm: identity conditioned during generation, not post-processed. 8 downloads. Relevant to build_klein_headswap as an alternative workflow."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "lora",
+    "name": "Muapi/bfs-best-face-swap (LTX-Video 2.3 face-swap LoRA)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Muapi/bfs-best-face-swap",
+    "risk": "high",
+    "confidence": 0.45,
+    "notes": "Created 2026-05-23 (within window — today). Text-to-video LoRA on LTX-Video 2.3 tagged face-swap. Zero downloads/likes, zero documentation at scan time. Likely another variant of the BFS-Video series ported to LTX-Video 2.3. Highly experimental — no community validation. High risk."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "lora",
+    "name": "BFS-Best-Face-Swap-Video (Alissonerdx, LTX-Video 2.3 IC-LoRA)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap-Video",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "Released 2026-01-24 (outside window). 306 likes — highest-engagement face-swap LoRA. IC-LoRA for LTX-Video 2.3 performing head/face swap inside the video diffusion model via latent identity injection and High-Noise Power Law timestep distribution. Last modified 2026-03-27. Many forks. Requires ComfyUI-BFSNodes for V3 workflow. Different paradigm from ONNX/ReActor: generation-time identity, not post-processing. Context for within-window Muapi variant."
+  },
+  {
+    "method": "build_faceid_img2img",
+    "category": "node_pack",
+    "name": "ComfyUI-PuLID-Flux2 (iFayens)",
+    "source": "github",
+    "url": "https://github.com/iFayens/ComfyUI-PuLID-Flux2",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Released 2026-03-21 (outside window). First PuLID implementation with full Flux.2 Klein 9B/4B and Flux.2 Dev support. Uses InsightFace + EVA-CLIP for face embedding, injects identity tokens into DiT double blocks. Prevents image darkening seen in earlier implementations. Relevant for build_faceid_img2img and build_photobooth on Klein presets. Directly augments existing build_pulid_flux path."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "node_pack",
+    "name": "facerestore_advanced",
+    "source": "github",
+    "url": "https://github.com/flickleafy/facerestore_advanced",
+    "risk": "medium",
+    "confidence": 0.60,
+    "notes": "Release date uncertain (~2026-05, approximate). Complete refactor of facerestore_cf. Adds 15+ quality metrics (SSIM, artifact scoring, 68-point landmark analysis), dual CodeFormer/GFPGAN support with intelligent fallback, fidelity slider (0.0–1.0), and result caching. 8 commits, no formal release tags. Candidate replacement for facerestore_cf in build_face_restore and build_photo_restore. Verify creation date before committing."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "architecture",
+    "name": "Pixal3D (TencentARC, SIGGRAPH 2026)",
+    "source": "github",
+    "url": "https://github.com/TencentARC/Pixal3D",
+    "risk": "medium",
+    "confidence": 0.80,
+    "notes": "Inference code released ~2026-05-01 (outside window; SIGGRAPH 2026 accepted April). Pixel-aligned back-projection for near-reconstruction-fidelity PBR-textured 3D from a single image. Official HF Space: TencentARC/Pixal3D. Low-VRAM mode at 1024 resolution; standard at 1536. Exact VRAM ceiling unknown (TRELLIS.2 backbone). ComfyUI node Pixal3D-ComfyUI (Saganaki22, 2026-05-21, within window) provides the integration path. Potential challenger to Hunyuan3D-2.x for single-image-to-3D."
+  },
+  {
+    "method": "build_sam3_segment",
+    "category": "architecture",
+    "name": "SAM 3.1",
+    "source": "github",
+    "url": "https://ai.meta.com/blog/segment-anything-model-3/",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Released 2026-03-27 (outside window). Object Multiplex bundles all tracked objects into one forward pass with shared memory — halves VRAM vs SAM3, doubles speed. ~848M params. Drop-in upgrade: swap checkpoint, verify ComfyUI-CustomNodePacks v1.30.4 (2026-05-15) for SAM 3.1 compatibility. Also relevant to build_sam3_mask, build_sam3_extract, build_klein_sam3_inpaint."
+  },
+  {
+    "method": "build_style_transfer",
+    "category": "checkpoint",
+    "name": "Hassaku XL (Illustrious) v3.0 WIP",
+    "source": "civitai",
+    "url": "https://civitai.com/models/140272/hassaku-xl-illustrious",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "Updated 2026-05-18 (within window). WIP Illustrious-SDXL anime checkpoint. Merges Illustrious-XL with v2.2; improves character knowledge and handles newer/missing characters. Bright distinct anime style. WIP label — quality may be inconsistent. Drop-in for SDXL Illustrious workflows when stable."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Nova Anime XL IL v19.0 (Illustrious)",
+    "source": "civitai",
+    "url": "https://civitai.com/models/376130/nova-anime-xl",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Released 2026-05-12 (outside window by 4 days). Illustrious-based SDXL checkpoint. v19.0 adds higher contrast, sharper background detail. Merge of NoobAI EPS v1.1 + Illustrious v2.0-stable + ChenkinNoob v0.5 DARE. FP16, 6.46 GB. 1.6M+ downloads. Euler a, CFG 4.5, 20 steps, 1344px height, Danbooru tags. Drop-in for Illustrious SDXL workflows."
+  },
+  {
+    "method": "build_magic_eraser",
+    "category": "architecture",
+    "name": "Netflix VOID — Video Object and Interaction Deletion",
+    "source": "huggingface",
+    "url": "https://huggingface.co/netflix/void-model",
+    "risk": "high",
+    "confidence": 0.95,
+    "notes": "Released 2026-04-03 by Netflix (Apache 2.0). Two-pass CogVideoX-based diffusion — removes objects plus physical interactions (shadows, reflections, falling objects). Native ComfyUI support in v0.21.0. VRAM-BLOCKED: requires 40 GB+ (A100/H100). RTX 5060 Ti 16 GB is insufficient. Best-in-class video object removal (64.8% vs Runway 18.4%). Also relevant to build_lama_remove for future video inpainting."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "node_pack",
+    "name": "ComfyUI-TurboQuant (KV-cache compression)",
+    "source": "github",
+    "url": "https://github.com/Scottcjn/ComfyUI-TurboQuant",
+    "risk": "medium",
+    "confidence": 0.70,
+    "notes": "Updated ~2026-05-18 (within window, approximate). TQ3 KV-cache compression: Lloyd-Max quantization + Fast Walsh-Hadamard Transform, compressing attention KV tensors to ~3.5-bit effective (~4.5–4.6× VRAM savings). Most impactful for LTX-2.3 22B (barely fits V100 32 GB without it). Less critical on 16 GB RTX 5060 Ti for still-image workflows. Only 4 commits, no release tags — very early stage. Issue #13188 open on ComfyUI core for native integration."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "architecture",
+    "name": "GLM-Image (ZhipuAI / Z.ai) — 16B",
+    "source": "huggingface",
+    "url": "https://huggingface.co/zai-org/GLM-Image",
+    "risk": "high",
+    "confidence": 0.65,
+    "notes": "Released 2026-01-14 (outside window). 16B hybrid autoregressive-diffusion (9B GLM-4 + 7B diffusion decoder). Best-in-class text rendering (0.9116 word accuracy on CVTG-2K). MIT license. VRAM-BLOCKED: 16B FP16 exceeds 16 GB budget; FP8 option unclear. No native ComfyUI support (issue #13161 open as of 2026-03-26). Monitor for quantized variants and official ComfyUI integration."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "node_pack",
+    "name": "Wan2GP v11.77+ (week of 2026-05-16)",
+    "source": "github",
+    "url": "https://github.com/deepbeepmeep/Wan2GP",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "Dense updates 2026-05-16 through 2026-05-23 (within window). Additions: LTX2 Prompt Relay (time-range prompts for multi-shot), LTX2 EditAnything, ID LoRA for LTX2 Distilled, LongCat Avatar 1.5 integration, FlashVSR two-pass mode (2× at 6 GB VRAM, 4× with more), SeeVDC post-processing, DramaBox support, image post-processing. Not a ComfyUI node pack — standalone WebUI runner. Relevant if any production workflows run via Wan2GP. FlashVSR two-pass integration is the key new upscaling addition."
+  }
+]
