@@ -1,0 +1,322 @@
+[
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "i1 (3B fully-open DiT, Princeton)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/zlab-princeton/i1-3B",
+    "risk": "medium",
+    "confidence": 0.97,
+    "notes": "Published June 9, 2026 — within audit window. 3B params; fully open weights+data+code; outperforms all prior open T2I models by 29.5pp avg on GenEval/DPG/PRISM/CVTG-2K/LongText. Fits 16 GB. New builder needed."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Ideogram 4.0 (9.3B NextDiT, non-commercial)",
+    "source": "comfyui-blog",
+    "url": "https://blog.comfy.org/p/ideogram-4-day-0-support-in-comfyui",
+    "risk": "medium",
+    "confidence": 0.97,
+    "notes": "Released June 3, 2026. Day-0 ComfyUI support via v0.24.0. 9.3B NextDiT/Lumina2-family with Qwen3-VL-8B text encoder. Non-commercial license. Best-in-class typography + JSON layout prompts. New Ideogram4Scheduler node needed."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Microsoft Lens (3.8B, 4-step Turbo variant)",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/ComfyUI/issues/14048",
+    "risk": "medium",
+    "confidence": 0.92,
+    "notes": "Released May 20, 2026. ComfyUI PR #14077 landed native support. GPT-OSS-20B MoE text encoder; dense-caption pretraining; 3.8B at 19% compute of 6B+ models. Lens-Turbo = 4 steps. Fits 16 GB well."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "HiDream-O1-Image (8B pixel-native UiT, MIT)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/HiDream-ai/HiDream-O1-Image",
+    "risk": "high",
+    "confidence": 0.85,
+    "notes": "Released May 8, 2026. MIT. Pixel-level Unified Transformer — no external VAE or text encoder; works in raw pixel space. Ranked #1 open-weights model on Artificial Analysis T2I Arena at launch. ComfyUI native workflow at docs.comfy.org. Novel architecture — high integration risk."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Nucleus-Image (17B MoE / ~2B active, sparse DiT)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/NucleusAI/Nucleus-Image",
+    "risk": "high",
+    "confidence": 0.80,
+    "notes": "Released April 14, 2026. arXiv:2604.12163. First fully-open sparse MoE diffusion transformer; 64 routed experts; Qwen3-VL-8B text encoder. Matches Qwen-Image / Seedream 3.0 on GenEval. No native ComfyUI nodes confirmed."
+  },
+  {
+    "method": "build_iclight",
+    "category": "checkpoint",
+    "name": "UniRelight (NVIDIA/UofT, 7B video relighting)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/nvidia/UniRelight",
+    "risk": "high",
+    "confidence": 0.75,
+    "notes": "NeurIPS 2025 paper; arXiv:2506.15673. 7B Transformer; 480x848; jointly estimates albedo + relit output in single pass. Supersedes IC-Light for video. No ComfyUI node yet. May stress 16 GB at FP16 — FP8 quantization needed."
+  },
+  {
+    "method": "build_iclight",
+    "category": "checkpoint",
+    "name": "Relit-LiVE (video relighting, May 2026)",
+    "source": "huggingface",
+    "url": "https://hf.co/papers/2605.06658",
+    "risk": "high",
+    "confidence": 0.72,
+    "notes": "May 7, 2026 paper. Avoids intrinsic decomposition; raw reference image injection; per-frame environment prediction in single diffusion pass. Code at github.com/zhuxing0/Relit-LiVE. No ComfyUI node."
+  },
+  {
+    "method": "build_klein_auto_inpaint",
+    "category": "checkpoint",
+    "name": "FLUX.2-Klein NVFP4 / FP8 quantized weights",
+    "source": "comfyui-blog",
+    "url": "https://blogs.nvidia.com/blog/rtx-ai-garage-flux-2-comfyui/",
+    "risk": "low",
+    "confidence": 0.93,
+    "notes": "NVFP4 and FP8 variants for FLUX.2 Klein 4B/9B; confirmed in ComfyUI June 2026 changelog. Up to 2.5x speed + 60% lower memory vs default precision. Drop-in for all build_klein_* pipelines on RTX 50-series. Already same model — speed optimization only."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "checkpoint",
+    "name": "Wan 2.7",
+    "source": "comfyui-blog",
+    "url": "https://blog.comfy.org/p/wan27-is-now-available-in-comfyui",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "Released ~April 22, 2026. Apache 2.0. Supersedes WAN 2.1 and 2.2 with FLF, 9-grid multi-image, instruction editing, 1080p/15s, audio, 5000-char prompts. ComfyUI partner nodes (v0.18.5). Kijai NVfp4 variant (May 28) for RTX 50-series. GGUF Q8 for 16 GB. Action: update all 6 WAN builders."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "checkpoint",
+    "name": "Wan 3.0 (27B MoE, not yet released)",
+    "source": "github",
+    "url": "https://wan3pro.com/",
+    "risk": "high",
+    "confidence": 0.55,
+    "notes": "Announced, weights not confirmed public as of June 15, 2026. 27B MoE; 4K; 30-sec clips; Apache 2.0 planned. VRAM: 24 GB+ at fp16. API via Together AI. Monitor Wan-AI HuggingFace org."
+  },
+  {
+    "method": "build_wan_video_blockswap",
+    "category": "checkpoint",
+    "name": "Kijai/WanVideo_comfy_nvfp4 (NVfp4 quantized WAN)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Kijai/WanVideo_comfy_nvfp4",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Uploaded May 28, 2026. NVfp4 format for Blackwell (RTX 50-series) tensor cores. Reduces VRAM for blockswap builds. Not a new model — quantization optimization for RTX 5060 Ti specifically."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "LTX-2.3 (Lightricks, 22B)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Lightricks/LTX-2.3",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Released March 5, 2026. 5.9M downloads, 1377 likes. I2V + T2V + audio-to-video + video-to-audio. 16 GB viable at FP8 dev checkpoints. Official ComfyUI node: Lightricks/ComfyUI-LTXVideo. Direct successor to LTX-Video 1.x — update build_ltx_video."
+  },
+  {
+    "method": "build_seedvr2_video_upscale",
+    "category": "checkpoint",
+    "name": "FlashVSR v1.1 (CVPR 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/JunhaoZhuang/FlashVSR-v1.1",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "v1.1 released April 1, 2026. CVPR 2026. Apache 2.0. 23.1K downloads. One-step diffusion streaming VSR; 3x faster than SeedVR2; locality-constrained sparse attention. Fits 16 GB with tiling. ComfyUI: 1038lab/ComfyUI-FlashVSR. Complementary to SeedVR2 (better for AI-generated footage). Add as new build_flashvsr_video_upscale builder."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "checkpoint",
+    "name": "DreamID-V (ByteDance, image + video face swap)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/XuGuo699/DreamID-V",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Released January 2026. Apache 2.0. Diffusion Transformer face swap with temporal consistency via curriculum RL. Outperforms inswapper_128 on identity similarity and attribute preservation. Image (DreamID) and video (DreamID-V) variants. Credible successor to ReActor/inswapper_128."
+  },
+  {
+    "method": "build_klein_headswap",
+    "category": "lora",
+    "name": "BFS-Best-Face-Swap (Flux2 Klein LoRA, June 8)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/chfm/BFS-Best-Face-Swap",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "IN AUDIT WINDOW: June 8, 2026. LoRA adapter for Qwen-Image-Edit-2511 and Flux2 Klein enabling face/head swap with natural tone blending. Two new HF repos on June 8. Also: BFS-Best-Face-Swap-Video for LTX-2.3. Needs evaluation before integrating; test against DreamID-V."
+  },
+  {
+    "method": "build_faceid_img2img",
+    "category": "checkpoint",
+    "name": "AuraFace v1 (fal, commercial-safe FaceID)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/fal/AuraFace-v1",
+    "risk": "low",
+    "confidence": 0.78,
+    "notes": "Commercial-safe open-source identity encoder (ArcFace variant) with IP-Adapter for SD1.5. Gaining traction in 2026 as h94/IP-Adapter-FaceID commercial-safe replacement. Released Aug 2024 but newly relevant for users with commercial licensing concerns."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "lora",
+    "name": "ilkerzgi/face-swap (Flux.2-Klein LoRA, 10K+ downloads)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/ilkerzgi/face-swap",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Released April 13, 2026. 10.3K downloads. LoRA for black-forest-labs/FLUX.2-klein-9B enabling diffusion-native face swap. Production-tested; integrates with existing Klein pipeline. Higher fidelity than GAN-based inswapper_128 for photorealistic subjects."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "node_pack",
+    "name": "ComfyUI v0.23.0 MediaPipe face detection node",
+    "source": "comfyui-blog",
+    "url": "https://blog.comfy.org/p/new-template-library-and-partner",
+    "risk": "low",
+    "confidence": 0.68,
+    "notes": "June 1, 2026. Dependency-free reimplementation of Google MediaPipe face detection as native ComfyUI node. Relevant for face detection steps in swap/restore pipelines without requiring insightface."
+  },
+  {
+    "method": "build_supir",
+    "category": "checkpoint",
+    "name": "RealRestorer (StepFun / SUSTech, 9 degradation types)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/RealRestorer/RealRestorer",
+    "risk": "medium",
+    "confidence": 0.90,
+    "notes": "Released March 29, 2026. Diffusers-based pipeline fine-tuned on Step1X-Edit covering blur, rain, reflection, low-light, denoising, haze, moire, flare, artifacts at 1024x1024. Broader degradation coverage than SUPIR. Needs diffusers wrapper node for ComfyUI."
+  },
+  {
+    "method": "build_sam3_segment",
+    "category": "checkpoint",
+    "name": "SAM 3.1 (Meta, Object Multiplex, March 2026)",
+    "source": "github",
+    "url": "https://github.com/facebookresearch/sam3",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Released March 27, 2026. Apache 2.0. Object Multiplex: up to 16 tracked objects in single forward pass; 7x faster multi-object throughput; 32 FPS on H100. Drop-in checkpoint replacement for SAM 3. Multiple ComfyUI nodes updated (ComfyUI-TBG-SAM3, yolain/ComfyUI-Easy-Sam3). Update checkpoint path in all three SAM3 builders."
+  },
+  {
+    "method": "build_sam3_segment",
+    "category": "checkpoint",
+    "name": "EfficientSAM3.1 / SAM3.1-LiteText",
+    "source": "github",
+    "url": "https://github.com/SimonZeng7108/efficientsam3",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Released April 13, 2026. HuggingFace integration. Progressive knowledge distillation; up to 88% text encoder parameter reduction. Edge-friendly variant of SAM 3.1. Lower priority than main SAM 3.1 upgrade."
+  },
+  {
+    "method": "build_normal_map",
+    "category": "checkpoint",
+    "name": "Sapiens2 (Meta, human-centric vision transformers)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facebook/sapiens2",
+    "risk": "medium",
+    "confidence": 0.95,
+    "notes": "Released April 24, 2026 (normals/seg); May 15 (matting). CC-BY-NC-SA 4.0. 0.4B-5B ViT family on 1B human images. 45.6% error reduction for surface normals; +24.3 mIoU segmentation vs Sapiens v1. Human-centric — upgrading build_normal_map for portrait workflows. No dedicated ComfyUI node confirmed yet."
+  },
+  {
+    "method": "build_depth_map_v3",
+    "category": "checkpoint",
+    "name": "Depth Anything 3 (ICLR 2026, DA3-BASE)",
+    "source": "github",
+    "url": "https://depth-anything-3.github.io/",
+    "risk": "medium",
+    "confidence": 0.92,
+    "notes": "ICLR 2026. Weights: depth-anything/DA3-BASE on HuggingFace. Single plain DINOv2 transformer; spatially consistent geometry from arbitrary views (monocular or multi-view, with or without camera poses). 35.7% camera pose accuracy gain; 23.6% geometric accuracy over DA2. Existing DepthAnythingV2Preprocessor node won't load DA3 directly — new node needed."
+  },
+  {
+    "method": "build_magic_eraser",
+    "category": "checkpoint",
+    "name": "Netflix VOID (video object deletion, quadmask)",
+    "source": "comfyui-blog",
+    "url": "https://blog.comfy.org/p/new-open-source-models-now-in-comfyui",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Announced May 14, 2026 via ComfyUI blog. Netflix open-sourced VOID: video inpainting that removes subject + causally linked elements (shadows, reflections, downstream motion) via 4-value quadmask rather than binary mask. Adjacent to build_magic_eraser / build_rembg for video removal use cases."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "checkpoint",
+    "name": "Hunyuan3D 2.5 (LATTICE 10B shape, PBR textures)",
+    "source": "huggingface",
+    "url": "https://arxiv.org/abs/2506.16504",
+    "risk": "medium",
+    "confidence": 0.90,
+    "notes": "Released April 23, 2025; paper arXiv:2506.16504 (June 23, 2025). LATTICE: 10B shape foundation model. PBR textures via multi-view architecture. 25% latency reduction. Supersedes Hunyuan3D 2.0 which current builders use. Tencent GitHub: Tencent-Hunyuan/Hunyuan3D-2.5. No dedicated ComfyUI custom node confirmed."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "node_pack",
+    "name": "Hunyuan 3D 3.0 ComfyUI partner node",
+    "source": "comfyui-blog",
+    "url": "https://blog.comfy.org/p/hunyuan-3d-30-in-comfyui-state-of",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Tencent Hunyuan 3D 3.0 (September 2025) became available as ComfyUI partner node in early 2026. Cloud-API based. Text-to-3D, image-to-3D, multi-view (2-4 shots) to 3D with PBR maps and 3D parts decomposition. API-only — not local weights."
+  },
+  {
+    "method": "build_colorize",
+    "category": "checkpoint",
+    "name": "ColorFLUX (CVPR 2026, FLUX-based colorization)",
+    "source": "github",
+    "url": "https://arxiv.org/pdf/2603.28162",
+    "risk": "high",
+    "confidence": 0.70,
+    "notes": "CVPR 2026 paper. Structure-color decoupling for old photo colorization on FLUX.1 with SigLip vision encoder + LoRA rank-32. No public HuggingFace model repo confirmed as of June 15, 2026. Potentially supersedes DDColor when weights drop."
+  },
+  {
+    "method": "build_normal_map",
+    "category": "checkpoint",
+    "name": "RoSE (monocular normals via shading sequence, Feb 2026)",
+    "source": "huggingface",
+    "url": "https://hf.co/papers/2602.09929",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "Published February 10, 2026. Reformulates normal estimation as shading sequence estimation via image-to-video generative models; resolves 3D misalignment in prior methods. SOTA on standard benchmarks. No ComfyUI node."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "checkpoint",
+    "name": "High-Fidelity Diffusion Face Swapping (arXiv:2503.22179)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/papers/2503.22179",
+    "risk": "medium",
+    "confidence": 0.70,
+    "notes": "March 2025 paper. Decoupled condition injection + post-training refinement for diffusion face swapping. No public weights. Represents field direction away from GAN-based inswapper_128."
+  },
+  {
+    "method": "build_seedvr2_video_upscale",
+    "category": "checkpoint",
+    "name": "SeedVR2 v2.5 (ByteDance, 60% VRAM reduction)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/ByteDance-Seed/SeedVR2-7B",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Released ~Nov 2025 (before audit window). 3B and 7B variants. 60% VRAM reduction, 2-3x faster than v1. Official ComfyUI node: numz/ComfyUI-SeedVR2_VideoUpscaler. Check if current builder uses v2.5 weights or v1."
+  },
+  {
+    "method": "build_photobooth",
+    "category": "checkpoint",
+    "name": "FaithfulFaces (pose-faithful face ID in T2V, May 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/papers/2605.04702",
+    "risk": "medium",
+    "confidence": 0.65,
+    "notes": "May 6, 2026 paper. Pose-shared identity alignment + Euler angle embeddings for face ID consistency in text-to-video. Potential upgrade path for identity-preserving video workflows. No public weights yet."
+  },
+  {
+    "method": "build_wavespeed_upscale",
+    "category": "checkpoint",
+    "name": "WaveSpeed LTX-2 19B Video Upscaler (API, June 12)",
+    "source": "github",
+    "url": "https://wavespeed.ai/blog/posts/introducing-wavespeed-ai-ltx-2-19b-video-upscaler-on-wavespeedai/",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "IN AUDIT WINDOW: June 12, 2026. WaveSpeedAI LTX-2-based cloud video upscaler with temporal consistency and motion-aware 4K upscaling. API-only — no open weights. Could signal future open-source LTX-2 upscaling."
+  }
+]
