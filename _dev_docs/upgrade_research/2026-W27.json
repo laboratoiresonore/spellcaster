@@ -1,0 +1,604 @@
+{
+  "meta": {
+    "week": "2026-W27",
+    "report_date": "2026-07-04",
+    "search_window_start": "2026-06-27",
+    "search_window_end": "2026-07-04",
+    "hardware_budget": "RTX 5060 Ti, 16 GB VRAM",
+    "baseline": "none — first report, no prior upgrade_research files",
+    "generated_by": "spellcaster-daily-sota-review automated routine"
+  },
+  "findings": [
+    {
+      "id": "W27-001",
+      "tier": 1,
+      "category": "image-gen",
+      "name": "FLUX.2 Klein NVFP4 quantisation",
+      "method_keys": [
+        "build_klein_txt2img",
+        "build_klein_img2img",
+        "build_klein_inpaint",
+        "build_klein_outpaint",
+        "build_klein_upscale",
+        "build_klein_face_detail",
+        "build_klein_sam3_inpaint",
+        "build_klein_style_transfer",
+        "build_klein_controlnet",
+        "build_klein_ipadapter",
+        "build_klein_ipadapter_face",
+        "build_klein_pulid",
+        "build_klein_depth_controlnet",
+        "build_klein_pose_controlnet",
+        "build_klein_edge_controlnet",
+        "build_klein_normal_controlnet"
+      ],
+      "current_backbone": "FLUX.2 Klein 4B/9B BF16 / GGUF quants",
+      "still_sota": "partial — speedup available",
+      "replacement": "FLUX.2 Klein NVFP4 + FP8 official ComfyUI support",
+      "source_url": "https://blogs.nvidia.com/blog/rtx-ai-garage-flux-2-comfyui/",
+      "in_window": true,
+      "release_date": "2026-06-30",
+      "confidence": 0.85,
+      "risk": "low",
+      "vram_estimate_gb": 7.15,
+      "licence": "FLUX.2 non-commercial",
+      "action": "Download klein_4b_nvfp4.safetensors via ComfyUI model manager; update build_klein_* preset checkpoint path. No workflow restructuring needed.",
+      "notes": "NVFP4: 2.7× speedup, 55% VRAM reduction vs BF16 on Blackwell GPUs. Klein 9B FP8 ~18 GB — needs offload. Ships with ComfyUI v0.27.0."
+    },
+    {
+      "id": "W27-002",
+      "tier": 1,
+      "category": "segmentation",
+      "name": "SAM 3.1 Object Multiplex",
+      "method_keys": [
+        "build_sam3_segment",
+        "build_sam3_mask",
+        "build_sam3_extract",
+        "build_magic_eraser",
+        "build_klein_sam3_inpaint"
+      ],
+      "current_backbone": "SAM 3",
+      "still_sota": "no — upgrade available",
+      "replacement": "SAM 3.1 Object Multiplex (Meta AI)",
+      "source_url": "https://ai.meta.com/blog/segment-anything-model-3/",
+      "in_window": false,
+      "release_date": "2026-03-27",
+      "confidence": 0.95,
+      "risk": "low",
+      "vram_estimate_gb": 4.0,
+      "licence": "Apache-2.0",
+      "action": "Download SAM 3.1 checkpoint from Meta AI / HF; replace SAM3 checkpoint path in server config. Drop-in; no API changes.",
+      "notes": "32 FPS (from 16 FPS). 4 GB VRAM FP16 (from 8 GB). Joint multi-object tracking in single forward pass. Outside strict window but first audit — checkpoint version must be verified on server."
+    },
+    {
+      "id": "W27-003",
+      "tier": 1,
+      "category": "face-swap",
+      "name": "HyperSwap 256 ONNX",
+      "method_keys": [
+        "build_faceswap",
+        "build_faceswap_model",
+        "build_video_reactor"
+      ],
+      "current_backbone": "inswapper_128.onnx (via ComfyUI-ReActor)",
+      "still_sota": "partial",
+      "replacement": "HyperSwap 256 ONNX (1a/1b/1c)",
+      "source_url": "https://huggingface.co/facefusion/models-3.3.0",
+      "in_window": true,
+      "release_date": "2026-06-30",
+      "confidence": 0.92,
+      "risk": "low",
+      "vram_estimate_gb": null,
+      "licence": "permissive (FaceFusion model weights)",
+      "action": "Download hyperswap_256_1c.onnx from facefusion/models-3.3.0 on HF. Change swap_model param in build_faceswap/build_video_reactor callers. Verify ComfyUI-ReActor version >= 0.6.2.",
+      "notes": "2× resolution vs inswapper_128. FaceFusion 3.7.0 (June 30, in window) validated weights. ReActor v0.6.2 (April 25 2026) added HyperSwap node support. VRAM neutral (ONNX inference)."
+    },
+    {
+      "id": "W27-004",
+      "tier": 2,
+      "category": "image-editing",
+      "name": "Boogu-Image-0.1-Edit-Turbo",
+      "method_keys": [
+        "build_txt2img",
+        "build_img2img",
+        "build_generate_anything"
+      ],
+      "current_backbone": "SDXL / Flux1.dev / Klein (Flux2)",
+      "still_sota": "partial — new architecture",
+      "replacement": "Boogu-Image-0.1-Edit-Turbo (new builder: build_boogu_edit)",
+      "source_url": "https://huggingface.co/Boogu/Boogu-Image-0.1-Edit-Turbo",
+      "in_window": true,
+      "release_date": "2026-06-30",
+      "confidence": 0.88,
+      "risk": "medium",
+      "vram_estimate_gb": 10.0,
+      "licence": "Apache-2.0",
+      "action": "Install boogu-project/ComfyUI-Boogu node pack or use ComfyUI v0.26.0+ native nodes. Add new build_boogu_edit builder. CPU offload text encoder to fit 16 GB.",
+      "notes": "10B unified image-gen + instruction-driven edit. 4-step distilled. FP8 ~10 GB + ~10.5 GB TE (sequential offload). No dedicated inpaint mode yet. Potential second instruction-edit engine alongside build_qwen_edit."
+    },
+    {
+      "id": "W27-005",
+      "tier": 2,
+      "category": "infrastructure",
+      "name": "ComfyUI v0.27.0",
+      "method_keys": ["all"],
+      "current_backbone": "ComfyUI (prior version)",
+      "still_sota": "n/a",
+      "replacement": "ComfyUI v0.27.0",
+      "source_url": "https://github.com/Comfy-Org/ComfyUI/releases",
+      "in_window": true,
+      "release_date": "2026-06-30",
+      "confidence": 0.99,
+      "risk": "low",
+      "vram_estimate_gb": null,
+      "licence": "GPL-3.0",
+      "action": "Upgrade ComfyUI on server. No breaking changes expected. Enables NVFP4 Klein (W27-001) and int8 LoRA improvements.",
+      "notes": "New features: int8 convrot for RTX Turing+, int8 LoRA apply optimised, memory leak fixes, new nodes: Seed, ConditioningMultiply, Bounding Box Canvas. NVIDIA NVFP4 integration ships with this version."
+    },
+    {
+      "id": "W27-006",
+      "tier": 2,
+      "category": "upscale",
+      "name": "RTX VSR node (comfyui-deno-custom-nodes v0.7.67)",
+      "method_keys": [
+        "build_upscale",
+        "build_upscale_blend",
+        "build_video_upscale"
+      ],
+      "current_backbone": "4x-UltraSharp et al.",
+      "still_sota": "partial",
+      "replacement": "comfyui-deno-custom-nodes RTX VSR node",
+      "source_url": "https://github.com/Deno2026/comfyui-deno-custom-nodes",
+      "in_window": true,
+      "release_date": "2026-07-03",
+      "confidence": 0.70,
+      "risk": "low",
+      "vram_estimate_gb": null,
+      "licence": "unknown",
+      "action": "Install comfyui-deno-custom-nodes v0.7.67. Requires nvidia-vfx Python package on server. Chain RTX VSR after existing upscale nodes.",
+      "notes": "Hardware-accelerated 2–4× VSR on Blackwell Tensor Cores via NVIDIA nvvfx library. Also includes LTX 2.3 and WAN 2.2 helper nodes. Low VRAM overhead — operates on decoded frames."
+    },
+    {
+      "id": "W27-007",
+      "tier": 2,
+      "category": "video-gen",
+      "name": "LTX-Video ICLoRA adapters",
+      "method_keys": [
+        "build_ltx_video"
+      ],
+      "current_backbone": "LTX-Video 0.9.x",
+      "still_sota": "partial",
+      "replacement": "LTX-Video ICLoRA adapters (pose / depth / canny)",
+      "source_url": "https://huggingface.co/Lightricks/LTX-Video-ICLoRA-pose-13b-0.9.7",
+      "in_window": false,
+      "release_date": "2025-07-01",
+      "confidence": 0.85,
+      "risk": "medium",
+      "vram_estimate_gb": null,
+      "licence": "Lightricks LTX-Video licence",
+      "action": "Add inject_ltx_iclora() composite to build_ltx_video, analogous to existing inject_controlnet(). Three adapter weights available on HF.",
+      "notes": "Pose / depth / canny ControlNet-style LoRAs for LTX 13B. Weights on HF since Jul 2025. Requires new injection path in builder — additive change."
+    },
+    {
+      "id": "W27-008",
+      "tier": 2,
+      "category": "video-upscale",
+      "name": "SeedVR2 V2.5 BlockSwap",
+      "method_keys": [
+        "build_seedv2r",
+        "build_seedvr2_video_upscale"
+      ],
+      "current_backbone": "SeedVR2",
+      "still_sota": "partial",
+      "replacement": "SeedVR2 V2.5 + BlockSwap CPU offloading",
+      "source_url": "https://civitai.com/models/2495719",
+      "in_window": false,
+      "release_date": "2026-03-27",
+      "confidence": 0.75,
+      "risk": "low",
+      "vram_estimate_gb": 14.0,
+      "licence": "unknown",
+      "action": "Install numz/ComfyUI-SeedVR2_VideoUpscaler wrapper. Add block_swap argument to build_seedv2r / build_seedvr2_video_upscale if not already present.",
+      "notes": "CPU block-offloading; 12–14 GB peak VRAM. Community ComfyUI wrapper. First audit — verify builders expose block-swap param."
+    },
+    {
+      "id": "W27-009",
+      "tier": 3,
+      "category": "image-gen",
+      "name": "Krea-2-RAW / Krea-2-Turbo",
+      "method_keys": [
+        "build_txt2img",
+        "build_style_transfer",
+        "build_generate_anything"
+      ],
+      "current_backbone": "SDXL / Flux1.dev",
+      "still_sota": "partial",
+      "replacement": "Krea-2-Turbo (potential build_krea2_txt2img builder)",
+      "source_url": "https://huggingface.co/krea/Krea-2-Turbo",
+      "in_window": false,
+      "release_date": "2026-06-22",
+      "confidence": 0.75,
+      "risk": "medium",
+      "vram_estimate_gb": 12.0,
+      "licence": "Krea research licence (NOT Apache-2.0, commercial restrictions)",
+      "action": "Evaluate Krea research licence for commercial use before adding. 12.9B FP8 at 12 GiB fits 16 GB. If licence acceptable, add build_krea2_txt2img.",
+      "notes": "12.9B dense DiT. Qwen3-VL encoder. 8-step Turbo at ~2 s/image on RTX 5060 Ti. Rivals FLUX.1 on prompt adherence. Released 5 days before window — near-miss."
+    },
+    {
+      "id": "W27-010",
+      "tier": 3,
+      "category": "segmentation",
+      "name": "SAM2Matting",
+      "method_keys": [
+        "build_sam3_segment",
+        "build_sam3_mask",
+        "build_sam3_extract",
+        "build_rembg_v3"
+      ],
+      "current_backbone": "SAM 3",
+      "still_sota": "partial",
+      "replacement": "SAM2Matting (decoupled tracker → matting head)",
+      "source_url": "https://huggingface.co/papers/2606.27339",
+      "in_window": false,
+      "release_date": "2026-06-25",
+      "confidence": 0.65,
+      "risk": "medium",
+      "vram_estimate_gb": null,
+      "licence": "unknown — paper only",
+      "action": "Watch for code/weights release. Wire into build_sam3_mask/extract when ComfyUI node lands. Expected Q3 2026.",
+      "notes": "Paper June 25 2026 (2 days before window). No weights or ComfyUI nodes yet. Region-proposal bridge + matting head; quality improvement on hair/fur edges vs binary SAM masks."
+    },
+    {
+      "id": "W27-011",
+      "tier": 3,
+      "category": "face-restore",
+      "name": "NTIRE 2026 Face Restoration Challenge winners",
+      "method_keys": [
+        "build_face_restore",
+        "build_photo_restore"
+      ],
+      "current_backbone": "CodeFormer v0.1.0",
+      "still_sota": "uncertain",
+      "replacement": "NTIRE 2026 winners (AdaFace/perceptual SOTA)",
+      "source_url": "https://huggingface.co/papers/2604.10532",
+      "in_window": false,
+      "release_date": "2026-04-15",
+      "confidence": 0.60,
+      "risk": "low",
+      "vram_estimate_gb": null,
+      "licence": "unknown — paper only",
+      "action": "Monitor for public weights Q3 2026. When available, benchmark vs CodeFormer; update build_face_restore checkpoint.",
+      "notes": "April 15 2026 (CVPRW). No public weights yet. Also: ComfyUI-ReActor v0.6.2 adds GPEN 1024/2048 (usable now — see W27-016)."
+    },
+    {
+      "id": "W27-012",
+      "tier": 3,
+      "category": "upscale",
+      "name": "NTIRE 2026 Efficient Super-Resolution Challenge winners",
+      "method_keys": [
+        "build_upscale",
+        "build_upscale_blend"
+      ],
+      "current_backbone": "4x-UltraSharp et al.",
+      "still_sota": "uncertain",
+      "replacement": "NTIRE 2026 ESR winners",
+      "source_url": "https://github.com/Amazingren/NTIRE2026_ESR",
+      "in_window": false,
+      "release_date": "2026-06-01",
+      "confidence": 0.55,
+      "risk": "low",
+      "vram_estimate_gb": null,
+      "licence": "unknown — paper only",
+      "action": "Monitor github.com/Amazingren/NTIRE2026_ESR for lightweight checkpoint releases Q3 2026.",
+      "notes": "CVPRW June 2026. No winner checkpoints released yet. Likely to include efficient lightweight upscale models."
+    },
+    {
+      "id": "W27-013",
+      "tier": 3,
+      "category": "video-gen",
+      "name": "HunyuanVideo 1.5",
+      "method_keys": [
+        "build_hunyuan_video"
+      ],
+      "current_backbone": "HunyuanVideo 13B (Dec 2024 via Kijai wrapper)",
+      "still_sota": "partial",
+      "replacement": "HunyuanVideo 1.5 (SSTA architecture + built-in VSR)",
+      "source_url": "https://huggingface.co/tencent/HunyuanVideo-1.5",
+      "in_window": false,
+      "release_date": "2025-11-18",
+      "confidence": 0.70,
+      "risk": "medium",
+      "vram_estimate_gb": null,
+      "licence": "Tencent HunyuanVideo community licence",
+      "action": "Probe Kijai wrapper /object_info for model_version=1.5 parameter. If supported, update build_hunyuan_video default checkpoint. 1,011 likes / 2.4K downloads on HF.",
+      "notes": "1,011 likes / 2.4K downloads. SSTA architecture + built-in video super-resolution. Lighter than original 13B. Nov 2025 release, last-modified Dec 2025."
+    },
+    {
+      "id": "W27-014",
+      "tier": 3,
+      "category": "normal-map",
+      "name": "Sapiens2 (Meta AI)",
+      "method_keys": [
+        "build_normal_map"
+      ],
+      "current_backbone": "ComfyUI normal-map preprocessors",
+      "still_sota": "partial",
+      "replacement": "Sapiens2 0.4B–5B",
+      "source_url": "https://github.com/facebookresearch/sapiens2",
+      "in_window": false,
+      "release_date": "2026-04-27",
+      "confidence": 0.70,
+      "risk": "medium",
+      "vram_estimate_gb": null,
+      "licence": "Meta research licence",
+      "action": "Monitor for ComfyUI-Sapiens2 node pack. 0.4B fits 16 GB. Wire into build_normal_map when node available. Q3 2026.",
+      "notes": "ICLR 2026. Native 1K resolution; 8.63° mean angular error at 0.4B. Covers depth, pose, albedo in addition to normals. No confirmed ComfyUI node pack yet."
+    },
+    {
+      "id": "W27-015",
+      "tier": 3,
+      "category": "3d",
+      "name": "TRELLIS 2 (microsoft/TRELLIS.2-4B)",
+      "method_keys": [
+        "build_hunyuan_3d_mesh",
+        "build_hunyuan_3d_textured"
+      ],
+      "current_backbone": "Hunyuan3D",
+      "still_sota": "partial",
+      "replacement": "TRELLIS 2 (4B param, O-Voxel sparse voxel, PBR materials)",
+      "source_url": "https://huggingface.co/microsoft/TRELLIS.2-4B",
+      "in_window": false,
+      "release_date": "2025-11-30",
+      "confidence": 0.65,
+      "risk": "medium",
+      "vram_estimate_gb": 16.0,
+      "licence": "MIT",
+      "action": "Monitor for ComfyUI node pack. 12–16 GB VRAM — marginal on 16 GB. No ComfyUI node confirmed yet. Q3 2026.",
+      "notes": "4B param; O-Voxel sparse voxel; PBR materials; 1536³ resolution. Dec 16 2025 paper. Competitive with Hunyuan3D on quality; PBR is differentiator."
+    },
+    {
+      "id": "W27-016",
+      "tier": 3,
+      "category": "video-upscale",
+      "name": "FlashVSR v1.1 (Alibaba / CVPR 2026)",
+      "method_keys": [
+        "build_seedv2r",
+        "build_seedvr2_video_upscale"
+      ],
+      "current_backbone": "SeedVR2",
+      "still_sota": "uncertain",
+      "replacement": "FlashVSR v1.1",
+      "source_url": "https://github.com/OpenImagingLab/FlashVSR",
+      "in_window": false,
+      "release_date": "2026-06-01",
+      "confidence": 0.55,
+      "risk": "medium",
+      "vram_estimate_gb": null,
+      "licence": "unknown",
+      "action": "Confirm VRAM on RTX 5060 Ti before evaluation. A100-only benchmarks so far. Monitor H2 2026.",
+      "notes": "One-step diffusion streaming VSR. ~17 FPS @768×1408 on A100. VRAM on RTX 5060 Ti unconfirmed. CVPR 2026."
+    },
+    {
+      "id": "W27-017",
+      "tier": 3,
+      "category": "color",
+      "name": "CanonCGT (reference-based colour grading)",
+      "method_keys": [
+        "build_color_match",
+        "build_lut"
+      ],
+      "current_backbone": "DDColor / manual LUT",
+      "still_sota": "uncertain",
+      "replacement": "CanonCGT",
+      "source_url": "https://arxiv.org/pdf/2606.01638",
+      "in_window": false,
+      "release_date": "2026-06-01",
+      "confidence": 0.50,
+      "risk": "medium",
+      "vram_estimate_gb": null,
+      "licence": "unknown — preprint only",
+      "action": "Monitor for weights/code H2 2026. No weights yet.",
+      "notes": "Reference-based colour grading via canonical pivot. June 2026 preprint. No weights or ComfyUI node."
+    },
+    {
+      "id": "W27-018",
+      "tier": 3,
+      "category": "face-swap",
+      "name": "DiffSwap++",
+      "method_keys": [
+        "build_faceswap",
+        "build_video_reactor"
+      ],
+      "current_backbone": "inswapper_128.onnx (via ReActor)",
+      "still_sota": "uncertain",
+      "replacement": "DiffSwap++ (diffusion-based face swap)",
+      "source_url": null,
+      "in_window": false,
+      "release_date": "2025-11-01",
+      "confidence": 0.45,
+      "risk": "medium",
+      "vram_estimate_gb": null,
+      "licence": "unknown",
+      "action": "Monitor for ComfyUI node pack H2 2026. No node yet.",
+      "notes": "Diffusion-based face swap. No ComfyUI node confirmed."
+    },
+    {
+      "id": "W27-019",
+      "tier": 3,
+      "category": "video-gen",
+      "name": "FreeLong++ (training-free long WAN video)",
+      "method_keys": [
+        "build_wan_video",
+        "build_wan22_t2v"
+      ],
+      "current_backbone": "WAN 2.2",
+      "still_sota": "uncertain",
+      "replacement": "FreeLong++ technique",
+      "source_url": null,
+      "in_window": false,
+      "release_date": "2025-06-01",
+      "confidence": 0.50,
+      "risk": "medium",
+      "vram_estimate_gb": null,
+      "licence": "unknown",
+      "action": "Monitor for ComfyUI inference node H2 2026.",
+      "notes": "Training-free long video generation technique for WAN. Needs ComfyUI inference node."
+    },
+    {
+      "id": "W27-020",
+      "tier": 3,
+      "category": "lora",
+      "name": "Portrait Engine FLUX2 Klein LoRA V4",
+      "method_keys": [
+        "build_klein_face_detail"
+      ],
+      "current_backbone": "Klein (Flux2)",
+      "still_sota": "partial",
+      "replacement": "Portrait Engine FLUX2 Klein LoRA V4 (Civitai)",
+      "source_url": "https://civitai.com/",
+      "in_window": false,
+      "release_date": "2026-06-23",
+      "confidence": 0.70,
+      "risk": "low",
+      "vram_estimate_gb": null,
+      "licence": "Civitai community licence",
+      "action": "Download from Civitai and test against build_klein_face_detail. Released 4 days before window.",
+      "notes": "4 days before window. Download and test for build_klein_face_detail portrait quality uplift."
+    },
+    {
+      "id": "W27-021",
+      "tier": 3,
+      "category": "inpaint",
+      "name": "ComfyUI-Smart-Image-Crop-and-Stitch",
+      "method_keys": [
+        "build_inpaint",
+        "build_outpaint"
+      ],
+      "current_backbone": "current inpaint pipeline",
+      "still_sota": "partial",
+      "replacement": "ComfyUI-Smart-Image-Crop-and-Stitch wrapper node",
+      "source_url": "https://github.com/HallettVisual/ComfyUI-Smart-Image-Crop-and-Stitch",
+      "in_window": false,
+      "release_date": "2026-06-25",
+      "confidence": 0.60,
+      "risk": "low",
+      "vram_estimate_gb": null,
+      "licence": "unknown",
+      "action": "Verify exact release date then trial on build_inpaint. Estimated 2 days before window.",
+      "notes": "Mask-driven crop → inpaint → stitch with blend modes. Additive wrapper node; no model change. Exact release date uncertain."
+    },
+    {
+      "id": "W27-022",
+      "tier": 3,
+      "category": "face-restore",
+      "name": "GPEN 1024/2048 via ComfyUI-ReActor v0.6.2",
+      "method_keys": [
+        "build_face_restore",
+        "build_faceswap"
+      ],
+      "current_backbone": "CodeFormer v0.1.0 (512 px)",
+      "still_sota": "partial",
+      "replacement": "GPEN 1024/2048 face restoration",
+      "source_url": "https://github.com/Gourieff/comfyui-reactor-node",
+      "in_window": false,
+      "release_date": "2026-04-25",
+      "confidence": 0.80,
+      "risk": "low",
+      "vram_estimate_gb": null,
+      "licence": "ReActor node: Apache-2.0",
+      "action": "Expose GPEN 1024/2048 as a preset option via face_restore_model param in build_face_restore and build_faceswap. Available now via ReActor v0.6.2.",
+      "notes": "Higher resolution than CodeFormer 512 px. Usable now — one-param change. April 25 2026 ReActor release."
+    }
+  ],
+  "no_finds": [
+    {
+      "query": "New Flux checkpoint from BFL",
+      "result": "not found",
+      "notes": "FLUX.2 Klein BF16/GGUF current; NVFP4 speedup covered in W27-001."
+    },
+    {
+      "query": "WAN 2.3 / WAN 3.x",
+      "result": "not found",
+      "notes": "WAN 2.2 remains current. No new WAN version found on HF, GitHub, or ModelScope."
+    },
+    {
+      "query": "SUPIR v2 / new SUPIR checkpoint",
+      "result": "not found",
+      "notes": "ComfyUI-SUPIR node updated May 13 2026 (composable nodes, lower memory) — no new checkpoint."
+    },
+    {
+      "query": "RMBG-3.0 / BEN3",
+      "result": "not found",
+      "notes": "RMBG-2.0 and BEN2 remain current."
+    },
+    {
+      "query": "Depth Anything V4",
+      "result": "not found",
+      "notes": "DA3-LARGE-1.1 (Dec 2025) already integrated; current."
+    },
+    {
+      "query": "CogVideoX update",
+      "result": "not found"
+    },
+    {
+      "query": "FramePack 2.0",
+      "result": "not found"
+    },
+    {
+      "query": "Mochi update",
+      "result": "not found"
+    },
+    {
+      "query": "Lumina-Image 3.0",
+      "result": "not found"
+    },
+    {
+      "query": "New Qwen Image Edit version",
+      "result": "not found",
+      "notes": "Qwen-Image-Edit 20B exceeds 16 GB budget."
+    },
+    {
+      "query": "New PuLID version",
+      "result": "not found",
+      "notes": "PuLID Flux v0.9.1 current."
+    },
+    {
+      "query": "IC-Light v2",
+      "result": "not found"
+    },
+    {
+      "query": "LTX base model 0.9.9+",
+      "result": "not found",
+      "notes": "0.9.8-13B-distilled latest."
+    },
+    {
+      "query": "New MTB face-swap weights",
+      "result": "not found",
+      "notes": "June 27 2026 commit was trivial typo fix only."
+    },
+    {
+      "query": "InsightFace backbone update",
+      "result": "not found",
+      "notes": "InsightFace 1.0 (May 23 2026) added desktop GUI; no new model weights."
+    }
+  ],
+  "coverage_gaps": [
+    "Civitai partially covered; full weekly scrape at civitai.com/models?sort=Newest&period=Week recommended for LoRA-level findings.",
+    "ComfyUI Registry / blog.comfy.org covered by sub-agents; no major new announcements beyond listed items.",
+    "HF Hub author-filter limitation: author=black-forest-labs + keyword and author=Wan-AI + keyword returned 0 results; broad-keyword fallback used. Some very-recent org uploads may have been missed."
+  ],
+  "summary": {
+    "tier1_count": 3,
+    "tier2_count": 5,
+    "tier3_count": 14,
+    "no_finds_count": 15,
+    "in_window_count": 6,
+    "top_actions": [
+      "W27-001: Download FLUX.2 Klein NVFP4 via ComfyUI model manager; update all build_klein_* presets.",
+      "W27-003: Download hyperswap_256_1c.onnx; one-param change in build_faceswap / build_video_reactor.",
+      "W27-002: Verify SAM 3.1 checkpoint on server — may already be updated.",
+      "W27-004: Evaluate Boogu-Image-0.1-Edit-Turbo for new build_boogu_edit builder (Apache-2.0).",
+      "W27-005: Upgrade ComfyUI to v0.27.0 to unlock int8 + NVFP4 support."
+    ]
+  }
+}
