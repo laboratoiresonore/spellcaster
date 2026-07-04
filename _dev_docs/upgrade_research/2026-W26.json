@@ -1,0 +1,152 @@
+[
+  {
+    "method": "build_inpaint",
+    "category": "checkpoint",
+    "name": "Moebius 0.22B",
+    "source": "huggingface",
+    "url": "https://huggingface.co/hustvl/Moebius",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "ECCV 2026; MIT license; 226M params; 15x faster than FLUX.1-Fill-Dev (11.9B); 26ms/step on single GPU. Also covers build_outpaint, build_magic_eraser, build_lama_remove. ONNX available (simonw/Moebius-ONNX). Tier 1."
+  },
+  {
+    "method": "build_qwen_edit",
+    "category": "checkpoint",
+    "name": "Qwen-Image-Edit 20B",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Qwen/Qwen-Image-Edit",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "Alibaba Tongyi; open-sourced 2026-06-25. Qwen2.5-VL condition encoder + VAE Encoder for appearance. Semantic, appearance, and bilingual text editing. 20B may need int8 quant on 16GB RTX 5060 Ti. Direct architectural target for build_qwen_edit. Tier 1."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Krea 2 Turbo",
+    "source": "huggingface",
+    "url": "https://huggingface.co/krea/Krea-2-Turbo",
+    "risk": "medium",
+    "confidence": 0.97,
+    "notes": "Open weights 2026-06-22. 12B dense DiT; Qwen3-VL encoder + Qwen Image VAE. 8-step distilled (~2s/2K img). FP8 fits 16GB. Proprietary community license (commercial free <$1M revenue). Requires ComfyUI >= 0.26.0. New builder needed. Tier 2."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Krea 2 Raw",
+    "source": "huggingface",
+    "url": "https://huggingface.co/krea/Krea-2-Raw",
+    "risk": "medium",
+    "confidence": 0.97,
+    "notes": "Open weights 2026-06-22. Unrestrained base variant of Krea 2; optimised for fine-tuning and diverse outputs. Same Qwen3-VL + Qwen VAE architecture as Turbo. Tier 2."
+  },
+  {
+    "method": "build_qwen_edit",
+    "category": "checkpoint",
+    "name": "Boogu-Image (base/edit/turbo) + TextEncodeBooguEdit node",
+    "source": "huggingface",
+    "url": "https://comfyui.org/en/boogu-image",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "Native in ComfyUI 0.26.0 (2026-06-23). Qwen3-VL-8B + FLUX.1 VAE; double-stream MMDiT. TextEncodeBooguEdit supports negative prompts + reference images. Bilingual. Sibling architecture to build_qwen_edit; could extend or complement. Tier 2."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "checkpoint",
+    "name": "HyperSwap 1a_256.onnx (speed)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facefusion/models-3.3.0",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "FaceFusion 3.3.0 face swap ONNX at 256x256 (2x vs inswapper_128). Speed variant. Accessible via ComfyUI-ReActor >= 0.6.x (2026-05-12). Models go in ComfyUI/models/hyperswap/. Additive — inswapper_128 unchanged. Also affects build_faceswap_model, build_faceswap_mtb. Tier 2."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "checkpoint",
+    "name": "HyperSwap 1b_256.onnx (balanced)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facefusion/models-3.3.0",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "FaceFusion 3.3.0. Balanced speed/quality. ReActor >= 0.6.x. Tier 2."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "checkpoint",
+    "name": "HyperSwap 1c_256.onnx (quality)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facefusion/models-3.3.0",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "FaceFusion 3.3.0. Maximum realism variant. ReActor >= 0.6.x. Tier 2."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "LTX-Video-0.9.8-13B-distilled",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Lightricks/LTX-Video-0.9.8-13B-distilled",
+    "risk": "medium",
+    "confidence": 0.90,
+    "notes": "Released 2025-07-17; ComfyUI-LTXVideo node updated 2026-05. 13B distilled (6x vs 2B). Supports 60s video. ICLoRAs for pose/canny/depth/detail at v0.9.8 (165K downloads on detailer). Tier 2 checkpoint upgrade."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "lora",
+    "name": "LTX-Video-ICLoRA-detailer-13b-0.9.8",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Lightricks/LTX-Video-ICLoRA-detailer-13b-0.9.8",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "2025-07-16. 165K downloads. Detail-enhancing ICLoRA for LTX 0.9.8 13B. Companion: pose (0.9.7), canny (0.9.7), depth (0.9.7) ICLoRAs also available. Tier 2."
+  },
+  {
+    "method": "build_seedvr2_video_upscale",
+    "category": "node_pack",
+    "name": "ComfyUI-SeedVR2 1-Click v1.8b",
+    "source": "github",
+    "url": "https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler",
+    "risk": "medium",
+    "confidence": 0.80,
+    "notes": "2026-06-14. New 1-Click GUI; FP8/GGUF; BlockSwap for 8GB VRAM. SeedVR2.5 backbone (ICLR 2026). Full release promised by maintainer — may arrive this week. Also affects build_seedv2r. Pin check needed. Tier 2."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "checkpoint",
+    "name": "Wan 2.7 (14B MoE)",
+    "source": "github",
+    "url": "https://github.com/Wan-Video/Wan2.7",
+    "risk": "high",
+    "confidence": 0.70,
+    "notes": "April 2026. Apache 2.0. 14B MoE; T2V, I2V, reference-to-video, instruction editing. ComfyUI partner node active. ModelScope weights; HF mirror arriving. VRAM FLAG: 24GB+ without GGUF — exceeds 16GB RTX 5060 Ti budget. Also affects build_wan22_t2v, build_wan_flf, build_wan_animate_video, build_wan_video_blockswap, build_wan_video_blockswap_t2v. Tier 3 (VRAM blocker)."
+  },
+  {
+    "method": "build_sam3_segment",
+    "category": "checkpoint",
+    "name": "SAM 3.1 + native ComfyUI nodes",
+    "source": "github",
+    "url": "https://docs.comfy.org/tutorials/utility/video-segment-sam3",
+    "risk": "medium",
+    "confidence": 0.78,
+    "notes": "March 2026. Meta SAM 3.1 adds shared-memory multi-object multiplex tracking; faster than SAM3. Native ComfyUI nodes: SAM3_Detect, SAM3_VideoTrack, SAM3_TrackToMask, SAM3_TrackPreview. Checkpoint: sam3.1_multiplex_fp16. Also affects build_sam3_mask, build_sam3_extract, build_magic_eraser, build_klein_sam3_inpaint. Tier 3."
+  },
+  {
+    "method": "build_depth_map_v3",
+    "category": "checkpoint",
+    "name": "InfiniDepth (CVPR 2026)",
+    "source": "github",
+    "url": "https://github.com/zju3dv/InfiniDepth",
+    "risk": "medium",
+    "confidence": 0.65,
+    "notes": "Inference code March 2026; training code April 2026. Arbitrary-res (up to 16K) monocular depth via neural implicit fields. Produces metric depth, normal maps, and 3DGS from single RGB. No dedicated ComfyUI node confirmed yet. Also affects build_normal_map. Tier 3 (no node yet)."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "checkpoint",
+    "name": "NTIRE 2026 Face Restoration Challenge Winners",
+    "source": "huggingface",
+    "url": "https://huggingface.co/papers/2604.10532",
+    "risk": "low",
+    "confidence": 0.70,
+    "notes": "April 2026 challenge; 10 teams; AdaFace-style identity conditioning. No public checkpoint yet — watch for team code/model drops. Also affects build_photo_restore. Tier 3."
+  }
+]
