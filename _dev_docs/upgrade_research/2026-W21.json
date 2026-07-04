@@ -1,0 +1,252 @@
+[
+  {
+    "method": "build_faceswap",
+    "category": "checkpoint",
+    "name": "HyperSwap_1c_256.onnx",
+    "source": "github",
+    "url": "https://github.com/facefusion/facefusion/releases/tag/3.6.1",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "Drop-in replacement for inswapper_128.onnx. 2× output resolution (256 vs 128). Three quality variants: 1a=speed, 1b=balanced, 1c=quality. Already supported by ComfyUI-ReActor via models/hyperswap directory. Released Apr 19, 2026 in FaceFusion 3.6.1. Action: update default swap_model arg."
+  },
+  {
+    "method": "build_faceswap_mtb",
+    "category": "checkpoint",
+    "name": "HyperSwap_1c_256.onnx",
+    "source": "github",
+    "url": "https://github.com/facefusion/facefusion/releases/tag/3.6.1",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "Same as build_faceswap entry. Drop-in ONNX slot upgrade."
+  },
+  {
+    "method": "build_video_reactor",
+    "category": "checkpoint",
+    "name": "HyperSwap_1c_256.onnx",
+    "source": "github",
+    "url": "https://github.com/facefusion/facefusion/releases/tag/3.6.1",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Swap model slot upgrade only; ReActor v0.6.0 (May 21, just outside window) also adds ReActorSetWeight node for per-source strength control."
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "node_pack",
+    "name": "Comfy-Org/BiRefNet native repackage",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Comfy-Org/BiRefNet",
+    "risk": "low",
+    "confidence": 0.9,
+    "notes": "Official Comfy-Org repackage of ZhengPeng7/BiRefNet. Announced May 14 (blog.comfy.org); HF last modified May 19. Identical weights — eliminates custom-node dependency. Action: switch loader node to native ComfyUI BiRefNet loader."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "checkpoint",
+    "name": "OSDFace (One-Step Diffusion Face Restoration)",
+    "source": "github",
+    "url": "https://github.com/jkwang28/OSDFace",
+    "risk": "medium",
+    "confidence": 0.8,
+    "notes": "CVPR 2025. VRE + VQ dictionary + GAN adversarial loss; single-step diffusion. Significantly outperforms CodeFormer/GFPGAN on perceptual quality and identity consistency. ~10 GB VRAM. No ComfyUI node yet — requires wrapping. Monitor for node release."
+  },
+  {
+    "method": "build_photo_restore",
+    "category": "checkpoint",
+    "name": "NTIRE 2026 Face Restoration Challenge winners",
+    "source": "github",
+    "url": "https://arxiv.org/abs/2604.10532",
+    "risk": "medium",
+    "confidence": 0.65,
+    "notes": "Top methods from NTIRE 2026 (Apr 2026). Blend OSDFace-style one-step diffusion + IQA-guided pixel optimisation. Individual team weights partially public. No unified ComfyUI node. Competition SOTA for blind face restoration. ~8 GB typical."
+  },
+  {
+    "method": "build_sam3_segment",
+    "category": "checkpoint",
+    "name": "SAM 3.1 (Segment Anything Model 3.1)",
+    "source": "github",
+    "url": "https://github.com/facebookresearch/sam3",
+    "risk": "medium",
+    "confidence": 0.87,
+    "notes": "Meta, released Mar 27 2026. Object Multiplex: ~7× faster, ~½ VRAM vs SAM3 for 128+ objects. Promptable Concept Segmentation: text-prompt without clicks. ~848M params, ~3.4 GB weights, ~7 GB inference VRAM. Apache 2.0. Weights on HF. Direct upgrade — same task, same API shape."
+  },
+  {
+    "method": "build_sam3_mask",
+    "category": "checkpoint",
+    "name": "SAM 3.1",
+    "source": "github",
+    "url": "https://github.com/facebookresearch/sam3",
+    "risk": "medium",
+    "confidence": 0.87,
+    "notes": "Same as build_sam3_segment entry."
+  },
+  {
+    "method": "build_sam3_extract",
+    "category": "checkpoint",
+    "name": "SAM 3.1",
+    "source": "github",
+    "url": "https://github.com/facebookresearch/sam3",
+    "risk": "medium",
+    "confidence": 0.87,
+    "notes": "Same as build_sam3_segment entry."
+  },
+  {
+    "method": "build_magic_eraser",
+    "category": "checkpoint",
+    "name": "SAM 3.1 (segmentation step)",
+    "source": "github",
+    "url": "https://github.com/facebookresearch/sam3",
+    "risk": "medium",
+    "confidence": 0.82,
+    "notes": "SAM 3.1 upgrade applies to the segmentation component only. LaMa removal step is unchanged. Partial upgrade."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "HiDream-O1-Image-Dev-2604",
+    "source": "huggingface",
+    "url": "https://huggingface.co/HiDream-ai/HiDream-O1-Image-Dev-2604",
+    "risk": "medium",
+    "confidence": 0.82,
+    "notes": "Released May 14 2026. 8B pixel-level UiT (no VAE, no separate CLIP). Distilled 28-step Dev variant. FP8 community quant (~10 GB VRAM) from drbaph/HiDream-O1-Image-Dev-2604-FP8. Supports txt2img + instruction editing + multi-ref personalization. ComfyUI v0.21.1 native support (May 13). Non-commercial / research license. Additive new builder — does not supersede Flux/Klein. ArXiv: 2605.11061."
+  },
+  {
+    "method": "build_img2img",
+    "category": "checkpoint",
+    "name": "HiDream-O1-Image-Dev-2604",
+    "source": "huggingface",
+    "url": "https://huggingface.co/HiDream-ai/HiDream-O1-Image-Dev-2604",
+    "risk": "medium",
+    "confidence": 0.8,
+    "notes": "Same model; HiDream-O1 supports instruction-based editing natively. Additive — needs new build_hidream_o1 builder."
+  },
+  {
+    "method": "build_photobooth",
+    "category": "lora",
+    "name": "BFS-Best-Face-Swap LoRA (Qwen-Image-Edit-2511)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Danderlin/BFS-Best-Face-Swap-final",
+    "risk": "medium",
+    "confidence": 0.65,
+    "notes": "Community forks released May 18–19 2026. Diffusers LoRA on Qwen-Image-Edit-2511 (20B base) for generative face/head swap. ~20 GB BF16 / ~12 GB FP8. Different paradigm from inswapper (generative edit vs. landmark extraction). Complement to existing photobooth path. FP8 path needed for 16 GB budget."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "checkpoint",
+    "name": "Wan 2.7",
+    "source": "github",
+    "url": "https://github.com/Wan-Video",
+    "risk": "high",
+    "confidence": 0.78,
+    "notes": "Alibaba Tongyi Lab. 27B total / 14B active MoE DiT + Flow Matching. Unified T2V+I2V+FLF2V+VideoEdit in one model. 1080p, 15s clips, native audio, up to 5 reference inputs. Apache 2.0 promised. CRITICAL: API-only as of 2026-05-20 — NO open weights on HF or GitHub. Open weights expected mid-to-late Q2 2026. Would supersede all Wan 2.2 builders when weights drop."
+  },
+  {
+    "method": "build_wan22_t2v",
+    "category": "checkpoint",
+    "name": "Wan 2.7",
+    "source": "github",
+    "url": "https://github.com/Wan-Video",
+    "risk": "high",
+    "confidence": 0.78,
+    "notes": "Same as build_wan_video entry. T2V path would be superseded."
+  },
+  {
+    "method": "build_wan_flf",
+    "category": "checkpoint",
+    "name": "Wan 2.7 FLF2V",
+    "source": "github",
+    "url": "https://github.com/Wan-Video",
+    "risk": "high",
+    "confidence": 0.75,
+    "notes": "Wan 2.7 ships native FLF2V (first-last-frame-to-video). Same API-only caveat. Would supersede build_wan_flf when open weights available."
+  },
+  {
+    "method": "build_wan_animate_video",
+    "category": "checkpoint",
+    "name": "Wan 2.7",
+    "source": "github",
+    "url": "https://github.com/Wan-Video",
+    "risk": "high",
+    "confidence": 0.72,
+    "notes": "Same as build_wan_video entry. API-only; pending open weights."
+  },
+  {
+    "method": "build_wan_video_blockswap",
+    "category": "checkpoint",
+    "name": "Wan 2.7",
+    "source": "github",
+    "url": "https://github.com/Wan-Video",
+    "risk": "high",
+    "confidence": 0.72,
+    "notes": "Same as build_wan_video entry."
+  },
+  {
+    "method": "build_wan_video_blockswap_t2v",
+    "category": "checkpoint",
+    "name": "Wan 2.7",
+    "source": "github",
+    "url": "https://github.com/Wan-Video",
+    "risk": "high",
+    "confidence": 0.72,
+    "notes": "Same as build_wan_video entry."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "Sulphur-2-Base",
+    "source": "huggingface",
+    "url": "https://huggingface.co/SulphurAI/Sulphur-2-base",
+    "risk": "low",
+    "confidence": 0.7,
+    "notes": "Released May 3 2026 (outside strict 7-day window). 9B T2V/I2V fine-tune on LTX 2.3 (~125K video clips). 1.2M HF downloads, 1196 likes. Full BF16 ~32 GB; GGUF/FP8 quantised fits 16 GB. Complement to LTX 2.3 base — quality-focused derivative, not a replacement. Evaluate as alternate preset checkpoint."
+  },
+  {
+    "method": "build_supir",
+    "category": "checkpoint",
+    "name": "RealRestorer (StepFun)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/RealRestorer/RealRestorer",
+    "risk": "high",
+    "confidence": 0.72,
+    "notes": "Released Mar 26 2026. 9 degradation types in one pass (blur, rain, reflection, low-light, denoising, haze, moiré, flare, artifacts). Step1X-Edit DiT + Flux-VAE backbone. Substantially outperforms SUPIR on RealIR-Bench. Non-commercial academic license. ~20 GB full — OUT-OF-BUDGET. Wait for FP8/GGUF quantised variant. ArXiv 2603.25502."
+  },
+  {
+    "method": "build_seedv2r",
+    "category": "checkpoint",
+    "name": "RealRestorer (StepFun)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/RealRestorer/RealRestorer",
+    "risk": "high",
+    "confidence": 0.7,
+    "notes": "Same as build_supir entry. Would supersede SeedV2R on blind all-in-one restoration benchmarks when quantised path available."
+  },
+  {
+    "method": "build_depth_map_v3",
+    "category": "checkpoint",
+    "name": "DA3-GIANT (Depth Anything 3 flagship)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/collections/depth-anything/depth-anything-3",
+    "risk": "low",
+    "confidence": 0.75,
+    "notes": "Same Dec 2025 generation as existing da3_large baseline. DA3-GIANT is the flagship variant with ~10% ETH3D improvement. Released alongside ICLR 2026. ~8 GB VRAM. Drop-in weight swap — confirm class compatibility with current depth_map_v3 node."
+  },
+  {
+    "method": "build_hunyuan_3d_textured",
+    "category": "lora",
+    "name": "UniTEX Flux LoRA (CVPR 2026)",
+    "source": "github",
+    "url": "https://github.com/YixunLiang/UniTEX",
+    "risk": "medium",
+    "confidence": 0.6,
+    "notes": "CVPR 2026 accepted. Texture generation via Flux LoRA on arbitrary geometry without UV mapping. Partial LoRA weights released; full LTM withheld until ECCV Dec 2026 submission deadline. Current release has artefacts vs. paper figures. Re-evaluate after Dec 2026. ~16 GB for full Flux inference. ArXiv 2505.23253."
+  },
+  {
+    "method": "build_video_reactor",
+    "category": "lora",
+    "name": "BFS-Best-Face-Swap-Video V3 (LTX-2.3 IC-LoRA)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/ivrlab/BFS-Best-Face-Swap-Video",
+    "risk": "medium",
+    "confidence": 0.62,
+    "notes": "Released May 4 2026. IC-LoRA on LTX-2.3 for video head/face swap. V3 adds persistent-template conditioning (frame-0 head-swap anchors identity through sequence). Generative — hallucinates texture vs. extractive inswapper approach. VRAM ~24 GB full; FP8 path recommended. Complement to build_video_reactor, not a replacement. Second entry for this method."
+  }
+]
