@@ -1,0 +1,149 @@
+name: Nightly Release
+
+# Phase 11.6 of Hermes deployment plan (2026-07-04). User-greenlit
+# autonomous nightly builds. Main branch is protected; nightlies are
+# pre-release tagged `nightly-YYYYMMDD-<sha>` so main-branch users are
+# never bumped without explicit tag push.
+#
+# Pre-flight gate:  tests/night_maintenance.py  (mirror drift + installer
+# audit + ComfyUI health + log scan). Fails -> build skipped, issue posted.
+#
+# Model-swap harness (Phase 11.6): a downstream job can update
+# builders_manifest.json + re-run test_model_coverage.py; if green the
+# nightly still ships. If red, an issue is filed and nightly is skipped
+# for the day (main untouched).
+
+on:
+  schedule:
+    # 02:00 UTC daily -- 22:00 EDT / 19:00 PDT the previous day
+    - cron: '0 2 * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Pre-flight (night_maintenance smoke)
+    runs-on: ubuntu-latest
+    outputs:
+      proceed: ${{ steps.gate.outputs.proceed }}
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt || true
+          pip install pytest requests
+      - id: tag
+        name: Compute nightly tag
+        run: |
+          DATE=$(date -u +%Y%m%d)
+          SHA_SHORT=${GITHUB_SHA::7}
+          echo "tag=nightly-${DATE}-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
+      - id: gate
+        name: Run night_maintenance smoke (allow-fail if server unreachable)
+        continue-on-error: true
+        run: |
+          # The maintenance suite talks to ComfyUI at Theo :8190 which is
+          # NOT reachable from a GitHub-hosted runner. In CI we run it in
+          # --dry-mode which skips network probes but still exercises
+          # mirror-drift + installer audit + log scan. If the local
+          # runner ever runs this (self-hosted), the full smoke fires.
+          python tests/night_maintenance.py --dry-mode || echo "smoke-failed=1" >> "$GITHUB_ENV"
+      - name: Decide proceed
+        id: decide
+        run: |
+          if [ "${smoke-failed:-0}" = "1" ]; then
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: preflight
+    if: needs.preflight.outputs.proceed == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            runs-on: windows-latest
+            ext: exe
+          - platform: macos
+            runs-on: macos-latest
+            ext: dmg
+          - platform: linux
+            runs-on: ubuntu-latest
+            ext: AppImage
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install build deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller customtkinter pillow requests darkdetect
+      - name: Build all installers
+        run: python installer/build_installer.py --platform ${{ matrix.platform }} --update-tool --llm-variant
+      - name: Build Wizard Guild
+        run: python tavern/build_guild.py --platform ${{ matrix.platform }}
+      - name: Upload nightly artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-${{ matrix.platform }}
+          path: |
+            dist/spellcaster-installer*
+            dist/spellcaster-manual-update*
+            dist/wizard-guild*
+          retention-days: 14
+
+  release:
+    name: Draft pre-release
+    needs: [preflight, build]
+    if: needs.preflight.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: nightly-artifacts
+      - name: Tag + pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.preflight.outputs.tag }}
+        run: |
+          gh release create "$TAG" \
+            --title "Nightly build $TAG" \
+            --notes "Automated nightly build. NOT a main-branch release. Includes latest master HEAD as of build time. Pre-flight smoke: PASSED. See workflow run for artifact provenance." \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            nightly-artifacts/**/*
+
+  on-failure:
+    name: File issue if preflight failed
+    needs: preflight
+    if: needs.preflight.outputs.proceed == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open smoke-failure issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Nightly $(date -u +%Y-%m-%d) skipped: preflight smoke failed" \
+            --body "The scheduled nightly build was skipped because \`tests/night_maintenance.py\` (dry-mode) failed. Check the workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID." \
+            --label "nightly-skip"

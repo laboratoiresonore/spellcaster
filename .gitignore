@@ -176,3 +176,7 @@ tavern/shotboard.json
 
 # Secret token used by the local dev /v1/dev/* endpoints — never commit
 auth_token
+
+# Session-noise + local scratch (2026-07-04 Hermes autonomy)
+CLAUDE.md.bak-*
+DGXspark.md
