@@ -1,0 +1,252 @@
+[
+  {
+    "method": "build_hunyuan_video",
+    "category": "checkpoint",
+    "name": "HunyuanVideo-1.5",
+    "source": "huggingface",
+    "url": "https://huggingface.co/tencent/HunyuanVideo-1.5",
+    "risk": "low",
+    "confidence": 0.9,
+    "notes": "8.3B replaces 13B baseline; adds I2V + integrated SR DiT; ~14 GB FP8 with CPU text-encoder offload; Comfy-Org single-file repackage Feb 2026. Tier 1."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "checkpoint",
+    "name": "HyperSwap 256 + ReActor v0.6.2 (hyperswap_1b_256.onnx)",
+    "source": "github",
+    "url": "https://github.com/Gourieff/ComfyUI-ReActor/releases/tag/v0.6.2",
+    "risk": "low",
+    "confidence": 0.9,
+    "notes": "256-px output supersedes inswapper_128; no C++ build tools; drop-in ONNX; released 2026-04-25. Also applies to build_faceswap_mtb and build_video_reactor. Tier 1."
+  },
+  {
+    "method": "build_seedv2r",
+    "category": "checkpoint",
+    "name": "SeedVR2-3B (one-step diffusion restoration)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/ByteDance-Seed/SeedVR2-3B",
+    "risk": "medium",
+    "confidence": 0.95,
+    "notes": "ICLR 2026 (arXiv 2506.05301); one-step removes multi-step latency; 3B at ~8 GB VRAM with block-swap+VAE tiling; comfortable on RTX 5060 Ti 16 GB. Tier 1."
+  },
+  {
+    "method": "build_hunyuan_3d_textured",
+    "category": "checkpoint",
+    "name": "Hunyuan3D 2.1 (PBR textures)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/tencent/Hunyuan3D-2",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Adds PBR albedo/metallic/roughness/normal to Hunyuan3D 2.0; fully open-sourced Jun 2025; ComfyUI wrappers mature; within 16 GB VRAM. Tier 1."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Ideogram 4.0 (ideogram-ai/ideogram-4-fp8 + ideogram-4-nf4)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/ideogram-ai/ideogram-4-fp8",
+    "risk": "low",
+    "confidence": 0.97,
+    "notes": "9.3B DiT with Qwen3-VL-8B encoder; nf4 ~10 GB VRAM; JSON layout control (bounding boxes, hex palettes); strong text rendering; non-commercial license; native ComfyUI v0.24.0. Released 2026-06-03. Tier 2."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "node_pack",
+    "name": "ComfyUI v0.24.0 (Ideogram4Scheduler, DualModelGuider, CFGOverride, PiD variants)",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/ComfyUI/releases/tag/v0.24.0",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Core release 2026-06-03; ships Ideogram 4 pipeline day-0 + PiD decoders for Flux/SDXL/SD3. Tier 2."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Microsoft Lens-Turbo 3.8B",
+    "source": "huggingface",
+    "url": "https://huggingface.co/microsoft/Lens",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "3.8B MIT; 4-step; GPT-OSS-20B MoE text encoder; FLUX.2 VAE; ~7 GB BF16; native ComfyUI v0.23.0. Released 2026-05-20; newly operational during window. Tier 2."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "node_pack",
+    "name": "ComfyUI v0.23.0 (Lens, PixelDiT, MediaPipe, Flux Try-On/Erase, Gaussian Splat)",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/ComfyUI/releases/tag/v0.23.0",
+    "risk": "low",
+    "confidence": 0.93,
+    "notes": "Released 2026-06-01; multi-threaded loading, Lens pipeline, native MediaPipe, PixelDiT/PiD nodes, Flux Virtual Try-On/Erase, Gaussian Splat output. Tier 2."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "NVIDIA PixelDiT 1300M",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Comfy-Org/PixelDiT",
+    "risk": "low",
+    "confidence": 0.82,
+    "notes": "1.3B pixel-space DiT packaged as 5.2 GB single-file checkpoint; rapid prototyping; pairs with PiD decoder for 512→2048 upscaling. Released 2026-06-02. Tier 2."
+  },
+  {
+    "method": "build_img2img",
+    "category": "node_pack",
+    "name": "PiD Pixel Diffusion Decoder (ComfyUI v0.24.0 native)",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/ComfyUI/pull/14103",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "4-step 512→2048 upscaling decoder for Flux 1/2, SDXL, SD3, QwenImage; minimal VRAM overhead; inject post-sample in img2img/inpaint/outpaint. Tier 2."
+  },
+  {
+    "method": "build_depth_map_v3",
+    "category": "checkpoint",
+    "name": "SurGe surge-large",
+    "source": "huggingface",
+    "url": "https://huggingface.co/karimknaebel/surge-large",
+    "risk": "low",
+    "confidence": 0.97,
+    "notes": "DINOv2-Large 366M fine-tune improving surface normals/local geometry; complements DA3 rather than replacing it; CC-BY-NC-4.0. Released 2026-06-02 (in-window). Tier 2."
+  },
+  {
+    "method": "build_wavespeed_upscale",
+    "category": "node_pack",
+    "name": "Deno comfyui-deno-custom-nodes v0.7.28 (RTX VSR + LTX 2.3 loaders)",
+    "source": "github",
+    "url": "https://github.com/Deno2026/comfyui-deno-custom-nodes",
+    "risk": "low",
+    "confidence": 0.9,
+    "notes": "v0.7.27 June 2 / v0.7.28 June 3 (in-window); RTX Video Super Resolution (driver-level, near-zero VRAM), LTX 2.3 loader, Wan 2.2 edit nodes. Windows/NVIDIA only for RTX VSR. Tier 2."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "lora",
+    "name": "BFS Best Face Swap LoRA (Alissonerdx/BFS-Best-Face-Swap)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap",
+    "risk": "medium",
+    "confidence": 0.8,
+    "notes": "MIT LoRA for Qwen-Image-Edit and Flux.2 Klein; engine-free face/head swap in build_klein_headswap pipeline; 354K downloads; released 2026-03-08. Tier 2."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "checkpoint",
+    "name": "WAN2.2-14B-Rapid-AllInOne (Phr00t distilled)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Phr00t/WAN2.2-14B-Rapid-AllInOne",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Community distill of Wan 2.2 I2V 14B; single-file checkpoint; faster inference; 16 GB FP8/blockswap compatible; 1593 likes; updated 2026-04-06. Tier 2."
+  },
+  {
+    "method": "new_builder",
+    "category": "checkpoint",
+    "name": "LongCat-Video-Avatar-1.5 (audio-driven avatar)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/meituan-longcat/LongCat-Video-Avatar-1.5",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "Audio-image-to-video avatar; Whisper lip-sync; 8-step distilled; FP8/INT8 ~12-14 GB; HF update June 4 (in-window); needs new build_avatar_video. Tier 2."
+  },
+  {
+    "method": "build_klein_face_detail",
+    "category": "node_pack",
+    "name": "ComfyUI Native MediaPipe (BlazeFace + FaceMesh + ARKit blendshapes)",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/ComfyUI/releases/tag/v0.23.0",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Dependency-free Apache safetensors in ComfyUI v0.23.0; improves face-crop/mask quality for build_klein_face_detail and build_detail_hallucinate; zero VRAM overhead. Tier 2."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "checkpoint",
+    "name": "Wan 2.7 (27B MoE / 14B active)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Wan-AI",
+    "risk": "medium",
+    "confidence": 0.82,
+    "notes": "27B MoE/14B active; unifies T2V/I2V/FLF/R2V/instruction-edit; Apache 2.0; same active VRAM as Wan 2.2; ComfyUI partner nodes available per blog.comfy.org. Caveat: official HF weights not confirmed at query time. Tier 3 until verified."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "LTX-2.3 22B (FP8 1080p / 4K Pro)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Lightricks/LTX-Video",
+    "risk": "high",
+    "confidence": 0.85,
+    "notes": "22B; 1080p FP8 near 16 GB boundary; 4K Pro needs 44 GB; native audio generation; released 2026-03-05. Tier 3 (marginal VRAM — benchmark before wiring)."
+  },
+  {
+    "method": "build_wan_video_blockswap",
+    "category": "checkpoint",
+    "name": "Wan2.2-NVFP4-Sparse (lightx2v Blackwell-distilled I2V)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/lightx2v/Wan2.2-NVFP4-Sparse",
+    "risk": "medium",
+    "confidence": 0.92,
+    "notes": "Blackwell NVFP4+sparse-attention distilled; >50x speedup on RTX 5090; needs LightX2V framework (not native ComfyUI). Updated June 9 (in-window). Tier 3 until ComfyUI native support."
+  },
+  {
+    "method": "new_builder",
+    "category": "checkpoint",
+    "name": "NVIDIA Cosmos3-Nano 15.75B (omnimodal video+audio)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/nvidia/Cosmos3-Nano",
+    "risk": "high",
+    "confidence": 0.72,
+    "notes": "Video+audio omnimodal; 16 GB consumer VRAM unconfirmed; updated June 1 (edge of window). Tier 3 — needs community VRAM benchmark on RTX 5060 Ti."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "checkpoint",
+    "name": "Hunyuan3D 2.5 LATTICE (10B, 4K PBR)",
+    "source": "arxiv",
+    "url": "https://huggingface.co/papers/2506.16504",
+    "risk": "high",
+    "confidence": 0.4,
+    "notes": "Weights not yet public (GitHub issue #316 open); paper dated June 2026. Tier 3 watch."
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "technique",
+    "name": "FlowDIS (flow-matching dichotomous segmentation)",
+    "source": "arxiv",
+    "url": "https://arxiv.org/abs/2605.05077",
+    "risk": "high",
+    "confidence": 0.55,
+    "notes": "Picsart AI Research; language-guided DIS with flow matching; no public weights as of 2026-06-09. Tier 3 watch."
+  },
+  {
+    "method": "new_builder",
+    "category": "technique",
+    "name": "SwapAnyHead (video head swap, ICCV 2025)",
+    "source": "arxiv",
+    "url": "https://arxiv.org/abs/2506.16852",
+    "risk": "high",
+    "confidence": 0.4,
+    "notes": "Alibaba/Tongyi diffusion one-shot video head swap; project page only; no public weights. Tier 3 watch."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "technique",
+    "name": "NTIRE 2026 Real-World Face Restoration Challenge winners",
+    "source": "arxiv",
+    "url": "https://arxiv.org/abs/2604.10532",
+    "risk": "high",
+    "confidence": 0.35,
+    "notes": "9 top-team methods beat CodeFormer; no public model checkpoint indexed as of 2026-06-09. Tier 3 watch."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "node_pack",
+    "name": "ComfyUI_JR_DreamID-V v0.4.0-jr (diffusion video face swap)",
+    "source": "github",
+    "url": "https://github.com/Goldlionren/ComfyUI_JR_DreamID-V/releases/tag/v0.4.0-jr",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "DiT-based video face swap stabilised for 16 GB via FFN chunking; Feb 2026; needs DreamID-V backbone and new infrastructure. Tier 3 medium-term."
+  }
+]
