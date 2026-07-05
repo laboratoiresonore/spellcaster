@@ -45,3 +45,22 @@ SKIP_LEAK_CHECK=1 git commit ...
 
 Audit override commits afterwards. Real intent: sanitize the file, don't
 override.
+
+---
+
+## `pre-push` — HERMES-EDITS-CODE HARD RULE enforcement (2026-07-04)
+
+Blocks pushes on `hermes/*` diff branches unless:
+
+1. `_audit/hermes-edits/<slug>.md` (plan doc) exists at HEAD
+2. `_audit/hermes-edits/<slug>-pr-body.md` (drafted PR body) exists at HEAD
+3. Plan doc has at least one test-evidence line (`- [x]`, `PASS:`, `**evidence**:`, `running:`)
+
+**And** blocks direct pushes by Hermes-owned author identities (per HARD
+RULE: Hermes commits, Claude pushes post-audit). Non-Hermes authors
+(user, Claude) can push freely once the plan+PR-body files are present.
+
+**Bypass** (Claude post-audit, exceptional cases): `git push --no-verify`
+or commit under a non-Hermes author identity.
+
+**Scope**: only `hermes/*` branches. Regular feature branches unaffected.

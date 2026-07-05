@@ -1,0 +1,86 @@
+#!/bin/bash
+# Phase 11.5b -- HERMES-EDITS-CODE HARD RULE enforcement (2026-07-04, rev 2).
+#
+# Rejects any push from a `hermes/<yyyymmdd>-<slug>` diff branch unless:
+#   1. `_audit/hermes-edits/<slug>.md` (the plan) is present at HEAD
+#   2. `_audit/hermes-edits/<slug>-pr-body.md` (the drafted PR body) is present
+#   3. There is at least one non-empty test-evidence line in the plan
+#
+# Also enforces the invariant that Hermes NEVER pushes directly. The rule:
+# if the commit author matches a Hermes-owned identity AND the branch
+# starts with `hermes/`, the push is BLOCKED and the user is asked to
+# route it through a Claude-side audit + push instead.
+#
+# Non-Hermes-authored pushes (user, Claude) are unaffected.
+#
+# Activate: `git config --local core.hookspath .githooks`
+set -eu
+
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+HEAD_AUTHOR="$(git log -1 --format='%an <%ae>')"
+
+# Only enforce on hermes/* branches
+case "$BRANCH" in
+  hermes/*) ;;
+  *) exit 0 ;;
+esac
+
+# Rule 1: block direct pushes by any actor whose identity matches Hermes-owned.
+# Hermes-owned identities: contains "hermes" or "Hermes" or the specific
+# hermes-agent no-reply address. Extend if your fleet uses others.
+case "$HEAD_AUTHOR" in
+  *hermes*|*Hermes*|*hermes-agent*|*noreply@anthropic.com*)
+    cat >&2 <<EOF
+[pre-push] BLOCKED: Hermes-authored commit on hermes/* branch.
+
+Author: $HEAD_AUTHOR
+Branch: $BRANCH
+
+Per HERMES-EDITS-CODE HARD RULE (\`~/.claude/CLAUDE.md\`, rev 2, 2026-07-04):
+Hermes commits but NEVER pushes. Push happens only after Claude's deep-audit
+pass on the local commits.
+
+Route the push through a Claude session:
+  1. Ask Claude to review the branch: \`git log $BRANCH ^main --stat\`
+  2. Claude runs the audit checklist (PII / SFW-NSFW / secret-file / plan coverage)
+  3. Claude decides push vs revert
+  4. Claude pushes iff clean
+
+To bypass this hook (Claude-authored push, post-audit): commit under a
+non-Hermes author identity OR use \`git push --no-verify\` (audit trail
+is on you).
+EOF
+    exit 1
+    ;;
+esac
+
+# Rule 2: plan doc + PR body drafted
+SLUG="${BRANCH#hermes/}"
+# Strip repo prefix if branch shape is hermes/<repo>/<date>-<slug>
+case "$SLUG" in
+  */*) SLUG="${SLUG##*/}" ;;
+esac
+PLAN="_audit/hermes-edits/${SLUG}.md"
+PR_BODY="_audit/hermes-edits/${SLUG}-pr-body.md"
+
+if [ ! -f "$PLAN" ]; then
+  echo "[pre-push] BLOCKED: missing plan doc at $PLAN" >&2
+  echo "[pre-push] per HERMES-EDITS-CODE Stage 3, every hermes/* branch needs a plan file" >&2
+  exit 2
+fi
+
+if [ ! -f "$PR_BODY" ]; then
+  echo "[pre-push] BLOCKED: missing PR body at $PR_BODY" >&2
+  echo "[pre-push] per HERMES-EDITS-CODE Stage 8, Claude drafts PR body locally before pushing" >&2
+  exit 3
+fi
+
+# Rule 3: at least one non-comment, non-empty evidence line
+# (either a checked box, a 'PASS' marker, or a test-run reference)
+if ! grep -qE '^\s*(- \[x\]|PASS:|\*\*evidence\*\*:|running:)' "$PLAN"; then
+  echo "[pre-push] BLOCKED: no test-evidence line in $PLAN" >&2
+  echo "[pre-push] per HERMES-EDITS-CODE Stage 5, plan must record at least one PASSED test" >&2
+  exit 4
+fi
+
+exit 0
