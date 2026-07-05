@@ -1,0 +1,242 @@
+[
+  {
+    "method": "build_wan_video_blockswap",
+    "category": "checkpoint",
+    "name": "WanVideo_comfy_nvfp4 (Kijai)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Kijai/WanVideo_comfy_nvfp4",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "NVFP4-quantized WAN weights, created May 28 2026. RTX 5060 Ti (Blackwell GB206) has native FP4 Tensor Cores — first quantization format to exploit them. ~50% VRAM reduction vs BF16; no code change beyond model path. Tier 1."
+  },
+  {
+    "method": "build_wan_video_blockswap_t2v",
+    "category": "checkpoint",
+    "name": "WanVideo_comfy_nvfp4 (Kijai) — T2V variant",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Kijai/WanVideo_comfy_nvfp4",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Same NVFP4 checkpoint applies to T2V blockswap builder. Tier 1."
+  },
+  {
+    "method": "build_wan_animate_video",
+    "category": "checkpoint",
+    "name": "Wan2.2-Animate-14B",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Wan-AI/Wan2.2-Animate-14B",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "331K downloads, 1196 likes. 14B MoE; major update Nov 2025. Upgrade from WAN 2.1 Animate via existing block-swap node at 10-14 GB FP8. Tier 1."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "LTX-Video-0.9.8-13B-distilled FP8",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Lightricks/LTX-Video-0.9.8-13B-distilled",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "35K DL. Distilled (4-8 steps) 13B model; FP8 ~13-14 GB — tight on 16 GB but RTX 5060 Ti has native FP8 matmul. Substantially better quality than the 2B base. Also see LTX-2.3 FP8 distilled for full multimodal upgrade. Tier 1."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "checkpoint",
+    "name": "PMRF blind face restoration",
+    "source": "huggingface",
+    "url": "https://huggingface.co/ohayonguy/PMRF_blind_face_image_restoration",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "45.9K DL, MIT license, 6 demo Spaces. Posterior mean regularized flow matching; beats CodeFormer on FID, LPIPS, NIQE. Best available production-ready face restoration alternative. Tier 1."
+  },
+  {
+    "method": "build_framepack_video",
+    "category": "checkpoint",
+    "name": "FramePack F1",
+    "source": "github",
+    "url": "https://github.com/HM-RunningHub/ComfyUI_RH_FramePack",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "F1 = forward-only prediction model. Better motion dynamics, faster generation, improved MP4 compression. ComfyUI_RH_FramePack wrapper updated April 2026. 6 GB+ VRAM. Tier 1."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Krea-2-Turbo (+ Projector Scale LoRA)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/krea/Krea-2-Turbo",
+    "risk": "medium",
+    "confidence": 0.95,
+    "notes": "Released Jun 23 2026. Flow-matching architecture; 99K DL. Projector LoRA (Beinsezii/Krea-2-Turbo-Projector-Scale-LoRA-Diffusers) updated 2026-07-05 [7d] is mandatory for quality. INT8 variant (AX1Y2JP/Krea-2-Turbo-INT8-ConvRot, also [7d]) fits 4-6 GB. Requires new build_krea2_txt2img builder + diffusers Krea2Pipeline. Tier 2."
+  },
+  {
+    "method": "build_qwen_edit",
+    "category": "checkpoint",
+    "name": "FLUX.1-Kontext-dev",
+    "source": "huggingface",
+    "url": "https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev",
+    "risk": "medium",
+    "confidence": 0.95,
+    "notes": "2.9M DL, arxiv:2506.15742, ~June 2026. In-context image editing: reference image + text instruction in one pass. BF16 ~20 GB (too large); FP8/INT8 community variants ~12-16 GB (borderline). Gated on HF. Supersedes build_qwen_edit in instruction-following quality. Tier 2."
+  },
+  {
+    "method": "NEW",
+    "category": "checkpoint",
+    "name": "Wan2.2-TI2V-5B (text+image to video)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "88K DL, 683 likes, fal-ai/replicate/wavespeed inference live. 5B dense model in BF16 ~10 GB — fits 16 GB without quantization. Hybrid text+image conditioning fills gap between build_wan22_t2v (text-only) and build_wan_video (image-only). New builder: build_wan_ti2v. Tier 2."
+  },
+  {
+    "method": "NEW",
+    "category": "checkpoint",
+    "name": "Wan2.2-S2V-14B (audio-to-video)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Wan-AI/Wan2.2-S2V-14B",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "118K DL, 444 likes, arxiv:2508.18621. Audio/sound-driven video from reference image + audio track. A14B MoE FP8 + block-swap ~10-12 GB. No existing Spellcaster builder covers audio-conditioned generation. New builder: build_wan_s2v. Tier 2."
+  },
+  {
+    "method": "build_video_upscale",
+    "category": "node_pack",
+    "name": "NVIDIA RTX Video Super Resolution",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Official Comfy-Org node, updated March 2026. 30x faster than ESRGAN upscalers for 4K. Runs on RTX Tensor Cores (RTX 5060 Ti qualifies). Install via ComfyUI Manager. Applies to build_upscale and build_wavespeed_upscale as complementary speed-optimized path. Tier 2."
+  },
+  {
+    "method": "build_hunyuan_3d_textured",
+    "category": "checkpoint",
+    "name": "Hunyuan3D 2.1 (PBR materials)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/tencent/Hunyuan3D-2",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "3.3M DL. June 2026 paper. PBR (physically-based rendering) material synthesis: UV-unwrap + roughness/metallic/normal maps. kijai wrapper: github.com/kijai/ComfyUI-Hunyuan3DWrapper. Production-ready for Blender/Unity import. Tier 2."
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "node_pack",
+    "name": "ComfyUI-RMBG v3.0.0 (BiRefNet_lite-matting + BiRefNet_dynamic)",
+    "source": "github",
+    "url": "https://github.com/1038lab/ComfyUI-RMBG",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "v3.0.0 released Jan 2026. Adds BiRefNet_lite-matting (hair/fur specialist) and BiRefNet_dynamic (video-frame-oriented). Real-time background replacement added. Update node pack to v3.0.0 to unlock. Tier 2."
+  },
+  {
+    "method": "build_klein_headswap",
+    "category": "lora",
+    "name": "BFS-Best-Face-Swap IC-LoRA (Qwen-Image-Edit-2511)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/chfm/BFS-Best-Face-Swap",
+    "risk": "high",
+    "confidence": 0.80,
+    "notes": "MIT license, tagged 'flux 2 / flux / klein'. IC-LoRA on Qwen-Image-Edit-2511 for text-guided head/face replacement. Multiple forks Jun 8-17 2026. ~12-15 GB VRAM. REQUIRES ETHICS REVIEW AND CONSENT GATE before shipping. Tier 2."
+  },
+  {
+    "method": "NEW",
+    "category": "lora",
+    "name": "BFS-Best-Face-Swap-Video + ByteDance/Bernini-R (video head swap)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap-Video",
+    "risk": "high",
+    "confidence": 0.85,
+    "notes": "[7d] Forks at douple/ and atcassano2007/ created Jun 28-30 2026. Bernini-R (ByteDance/Bernini-R, Apache 2.0, May 21 2026, arxiv:2605.22344) provides MLLM planner + DiT renderer; IC-LoRA injects face/head appearance into video. ~8-12 GB. Qualitative step-change over inswapper_128.onnx for video. REQUIRES ETHICS REVIEW, CONSENT GATE, AND WATERMARKING. New builder: build_bernini_headswap_video. Tier 2."
+  },
+  {
+    "method": "build_seedvr2_video_upscale",
+    "category": "node_pack",
+    "name": "SeedVR2 v2.5 (4-node architecture + GGUF)",
+    "source": "github",
+    "url": "https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "v2.5 adds 4-node modular architecture, GGUF 4-bit quantization, FP8 with last-block in FP16 for artifact reduction, memory optimizations. 16 GB compatible. numz/SeedVR2_comfyUI on HF (1.9M DL). Tier 2 (node pack version update)."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "LTX-2.3 FP8 distilled v1.1 (Kijai) — full multimodal upgrade",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Lightricks/LTX-2.3",
+    "risk": "medium",
+    "confidence": 0.90,
+    "notes": "7.8M DL, released March 5 2026, updated April 13 2026. 22B model with native audio+video+4K at 50fps/20s. FP8 distilled v1.1 (Kijai, ltx-2.3-22b-distilled-1.1_transformer_only_fp8_scaled.safetensors) runs on 16 GB with RTX 50-series native FP8. More ambitious than 0.9.8-13B path. Full multimodal requires ComfyUI-LTXVideo node update. Tier 2 (node update needed for audio)."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "LTX-Video-spatial-upscaler-0.9.8 (latent-space upscaler)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/linoyts/LTX-Video-spatial-upscaler-0.9.8",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "2.9K DL, diffusers-native LTXLatentUpsamplePipeline. Latent-space video spatial upscaling pairs naturally with build_ltx_video. ~3-5 GB (upsampler-only). Extends build_ltx_video with a 2-stage generation+upscale workflow. Tier 2."
+  },
+  {
+    "method": "build_wan22_t2v",
+    "category": "checkpoint",
+    "name": "WAN 2.7 via ComfyUI Partner Nodes (1.3B variant)",
+    "source": "github",
+    "url": "https://blog.comfy.org/p/wan27-is-now-available-in-comfyui",
+    "risk": "medium",
+    "confidence": 0.80,
+    "notes": "[7d] ComfyUI Partner Nodes integration. WAN 2.7 (April 2026) adds audio+video, multi-person inputs, 3x3 grid synthesis. 14B needs 24 GB+ VRAM — out of budget. 1.3B fits 16 GB with visible quality gap vs WAN 2.2 A14B. Monitor for NVFP4 variant. Tier 3."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "architecture",
+    "name": "Hunyuan3D 2.5 (paper; no weights)",
+    "source": "arxiv",
+    "url": "https://arxiv.org/abs/2506.16504",
+    "risk": "high",
+    "confidence": 0.80,
+    "notes": "June 2026 paper — ultimate detail 3D assets. No local weights released. Hunyuan3D 2.1 is current open-source version. Monitor tencent/Hunyuan3D-2 for weight release. Tier 3."
+  },
+  {
+    "method": "build_seedvr2_video_upscale",
+    "category": "architecture",
+    "name": "SwiftVR: Real-Time One-Step Video Restoration (paper; no weights)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/papers/2606.09516",
+    "risk": "medium",
+    "confidence": 0.70,
+    "notes": "June 8 2026 paper. 26 FPS at 1080p on RTX 5090 (consumer GPU comparable to 5060 Ti). Pure dense SDPA — no custom kernels, portable. Would supersede SeedVR2 on latency when weights land. Watch h-oliday.github.io/SwiftVR. Tier 3."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "checkpoint",
+    "name": "CodeFormer++ (paper; no weights)",
+    "source": "arxiv",
+    "url": "https://arxiv.org/abs/2510.04410",
+    "risk": "high",
+    "confidence": 0.75,
+    "notes": "Oct 2025 paper. Outperforms CodeFormer on FID, LPIPS, NIQE via deformable registration + deep metric learning. NTIRE 2026 participant. No official ComfyUI node or downloadable weights found. Monitor. Tier 3."
+  },
+  {
+    "method": "NEW",
+    "category": "architecture",
+    "name": "DreamID-V: Video face swap via DiT + Identity-Coherence RL (paper)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/papers/2601.01425",
+    "risk": "medium",
+    "confidence": 0.70,
+    "notes": "Jan 2026, 53 upvotes. Modality-Aware Conditioning + RL training for temporal identity consistency in video face swap. IDBench-V benchmark. No confirmed public checkpoint. Tier 3."
+  },
+  {
+    "method": "build_detail_hallucinate",
+    "category": "architecture",
+    "name": "4KAgent: Agentic 4K upscaling with integrated face restore (paper)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/papers/2507.07105",
+    "risk": "high",
+    "confidence": 0.65,
+    "notes": "Jul 2025, 107 upvotes. Agentic quality-aware pipeline using mixture-of-expert policy (NIQE/MUSIQ/PSNR guidance). Embeds face restore step. Recursive single-step; consumer hardware target. No confirmed checkpoint — watch 4kagent.github.io. Tier 3."
+  }
+]
