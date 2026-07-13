@@ -1,0 +1,222 @@
+[
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "LTX-2.3-nvfp4 (Lightricks official Blackwell FP4 checkpoint)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Lightricks/LTX-2.3-nvfp4",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "Tier 1 -- drop-in supersession. LTX-2.3 22B any-to-any model supersedes the original LTX-Video 2B. Main HF repo lastModified Jul 9 2026 (in-window); community distilled/resharded variants appeared Jul 10-11. nvfp4 checkpoint created March 2026 by Lightricks for NVIDIA Blackwell; 13.8K downloads confirms active use. RTX 5060 Ti is Blackwell so FP4 tensor cores are available; estimated ~11 GB VRAM for transformer alone. Requires MXFP4 support in diffusers -- verify before wiring. W22 T2-E tracked LTX-Video-0.9.7-dev (2B community mirror); this is a wholly different, larger-generation model."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "LTX-2.3 BF16 / FP8 full checkpoint (Lightricks/LTX-2.3)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Lightricks/LTX-2.3",
+    "risk": "medium",
+    "confidence": 0.8,
+    "notes": "Tier 3 -- VRAM blocker. BF16 checkpoint ~44 GB; FP8 variant ~22 GB; both exceed 16 GB budget on RTX 5060 Ti. 783K downloads (FP8) confirm wide adoption on 24+ GB cards. Use nvfp4 path (see record above) for 16 GB deployment. In-window: lastModified Jul 9 2026."
+  },
+  {
+    "method": "new:build_boogu_txt2img",
+    "category": "checkpoint",
+    "name": "Boogu-Image-0.1-Base + Boogu-Image-0.1-Turbo (Apache-2.0, 10B)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Boogu/Boogu-Image-0.1-Base",
+    "risk": "low",
+    "confidence": 0.8,
+    "notes": "Tier 2 -- additive new builder. Single-Stream DiT 10B model for text-to-image. Apache-2.0 license. FP8-scaled fits 16 GB with sequential CPU offload; 24 GB preferred for unquantized. Released Jun 16 2026; Turbo variant (4-step distilled) in same family. Native ComfyUI support confirmed. Complements HiDream-O1 (W22 T2-B) -- different architecture (standard latent-diffusion vs. HiDream pixel-native). Propose new build_boogu_txt2img method."
+  },
+  {
+    "method": "new:build_boogu_edit",
+    "category": "checkpoint",
+    "name": "Boogu-Image-0.1-Edit-Turbo (Apache-2.0, 10B, Jul 8 hotfix IN-WINDOW)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Boogu/Boogu-Image-0.1-Edit-Turbo",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Tier 2 -- additive new builder. IN-WINDOW: Jul 8 2026 hotfix fixes severe image quality degradation and broken object-removal from the original Jun 16 release. 4-step distilled instruction-based image editing; unified with generation in one model family. 10B, FP8 fits 16 GB. Native ComfyUI integration. Propose new build_boogu_edit method. Fills unified-edit gap alongside build_qwen_edit."
+  },
+  {
+    "method": "new:build_ltx_cinemagraph",
+    "category": "lora",
+    "name": "LTX-2.3-22b-LoRA-Cinemagraph (Lightricks official IC-LoRA)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Lightricks/LTX-2.3-22b-LoRA-Cinemagraph",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Tier 2 -- additive new builder. IN-WINDOW: created Jul 5, updated Jul 6 2026. Official Lightricks IC-LoRA for selective-motion / cinemagraph effects (subject moves, background stays). Gated HF model (access request required). Two Lightricks demo Spaces confirm active maintenance. Requires LTX-2.3 base (T1-A upgrade first). VRAM: same as nvfp4 path (~11 GB via Blackwell FP4). New capability distinct from build_wan_flf (semantic first-last-frame interpolation). Propose new build_ltx_cinemagraph method or cinemagraph mode in build_ltx_video."
+  },
+  {
+    "method": "build_video_upscale",
+    "category": "lora",
+    "name": "LTX-2.3-22b-IC-LoRA-Pixel-Spatial-Upscaler (Lightricks official)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Lightricks/LTX-2.3-22b-IC-LoRA-Pixel-Spatial-Upscaler",
+    "risk": "medium",
+    "confidence": 0.7,
+    "notes": "Tier 3. Official Lightricks IC-LoRA for video spatial super-resolution using LTX-2.3 as generative upscaler backbone. Created Jun 23 2026 (outside window but newly surfaced). Gated model. Full diffusion-pass upscaling vs. frame-by-frame ESRGAN -- quality likely higher but compute much heavier. Only viable on 16 GB via nvfp4 base (T1-A required). Monitor alongside T1-A deployment."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "node_pack",
+    "name": "Seedream 5 Pro (ByteDance ComfyUI partner node, Jul 8 2026)",
+    "source": "github",
+    "url": "https://blog.comfy.org/p/seedream-50-pro",
+    "risk": "high",
+    "confidence": 0.9,
+    "notes": "Tier 3. IN-WINDOW: added as ComfyUI partner node in v0.27.1 on Jul 8 2026. Features: deep-thinking prompt reasoning, real-time web search, point/lasso/sketch editing, layer separation, native 2K, on-image text in 10+ languages. NOT a local model -- cloud API (requires ByteDance API key). Risk=high because cloud dependency is architecturally incompatible with Spellcaster local-inference model."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "checkpoint",
+    "name": "MobileWan (Qualcomm AI Research, arxiv:2607.06173)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/papers/2607.06173",
+    "risk": "high",
+    "confidence": 0.4,
+    "notes": "Tier 3. IN-WINDOW: paper published Jul 7 2026. Compresses WAN 2.2 5B for mobile via recurrent reformulation, causal linear attention, learnable head pruning, step distillation, memory-optimised VAE. Generates 5s 480x832 @16 FPS in 20 seconds on mobile. VBench 83.79. No public checkpoint confirmed at survey time; project page at qualcomm-ai-research.github.io/mobilewan. Architectural signal that WAN 5B can be compressed without major quality loss."
+  },
+  {
+    "method": "build_wan_animate_video",
+    "category": "node_pack",
+    "name": "drozbay/Wan2.2-S2V-14B-module (Jul 11 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/drozbay/Wan2.2-S2V-14B-module",
+    "risk": "medium",
+    "confidence": 0.45,
+    "notes": "Tier 3. IN-WINDOW: created Jul 11 2026. Community ComfyUI module wrapping Wan-AI/Wan2.2-S2V-14B (speech/sound-to-video). Base model at BF16 ~28 GB; FP8 ~14 GB (marginal for 16 GB). 0 downloads at survey time; unproven stability. Not a new model, just a ComfyUI integration. Relevant if Spellcaster adds audio-driven video generation to WAN stack."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "lora",
+    "name": "rzgar/Wan2.2-IS2V (Image+Sound-to-Video finetune, Jul 12 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/rzgar/Wan2.2-IS2V",
+    "risk": "high",
+    "confidence": 0.35,
+    "notes": "Tier 3. IN-WINDOW: created Jul 12 2026. Community finetune of WAN 2.2 I2V A14B adding simultaneous image+audio conditioning. 4 likes, 0 downloads. Very early and unproven. WAN 2.2 A14B at BF16 ~28 GB exceeds 16 GB budget unless quantised."
+  },
+  {
+    "method": "build_depth_map_v3",
+    "category": "checkpoint",
+    "name": "ZipDepth (ECCV 2026, arxiv:2607.08771)",
+    "source": "github",
+    "url": "https://arxiv.org/abs/2607.08771",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "Tier 3. IN-WINDOW: submitted Jul 9 2026. 6.1M-parameter zero-shot monocular depth model, knowledge-distilled from DA3-Large across 14.1M images. Best accuracy/efficiency trade-off among lightweight models. NOT a quality replacement for DA3-large -- explicitly a mobile/embedded compression. DA3 still wins on quality for RTX 5060 Ti. Weights: github.com/fabiotosi92/ZipDepth."
+  },
+  {
+    "method": "build_sam3_segment",
+    "category": "technique",
+    "name": "SAM-MT (multi-target video segmentation, arxiv:2607.08688)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/papers/2607.08688",
+    "risk": "low",
+    "confidence": 0.78,
+    "notes": "Tier 3. IN-WINDOW: featured Jul 8 2026. Multi-target VIDEO object segmentation built on SAM2 (not SAM3). Per-target queries with decoupled masked attention and sparse memory; >36 FPS for 10 simultaneous targets. Critical caveat: SAM2-based not SAM3 -- does not supersede Spellcaster SAM3 pipeline. Focus is video tracking, not static image segmentation. No public weights."
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "checkpoint",
+    "name": "BEN2-ONNX (square-zero-labs, Jul 10 2026 format update)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/square-zero-labs/BEN2-ONNX",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Tier 3. IN-WINDOW: lastModified Jul 10 2026 (created Feb 13 2026). ONNX/transformers.js repackaging of existing BEN2 model (PramaLLC/BEN2, MIT). Format-only update enabling browser/CPU inference; no segmentation quality change. BiRefNet native migration (W22 T1-B) is the actionable upgrade for build_rembg_birefnet."
+  },
+  {
+    "method": "build_hunyuan_3d_textured",
+    "category": "technique",
+    "name": "Ink3D / OrbitPainter + TextureOptimizer (ECCV 2026, arxiv:2607.01222)",
+    "source": "github",
+    "url": "https://arxiv.org/abs/2607.01222",
+    "risk": "medium",
+    "confidence": 0.6,
+    "notes": "Tier 3. Near-window: Jul 1 2026. Two-stage texture pipeline: OrbitPainter generates 360-degree orbit-scan video of an object; TextureOptimizer neural-bakes frames onto a pre-existing mesh. Does NOT generate geometry -- requires mesh input. Complements rather than replaces Hunyuan3D. No HF model weights confirmed. VRAM unknown."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "node_pack",
+    "name": "FaceFusion 3.7.1 (Jul 5 2026, one day before window)",
+    "source": "github",
+    "url": "https://github.com/facefusion/facefusion/releases/tag/3.7.1",
+    "risk": "low",
+    "confidence": 0.6,
+    "notes": "Tier 3. Near-window: released Jul 5 2026. Minor patch fixing frame distribution regression from 3.7.0 and image-to-image with two simultaneous processors. Standalone pipeline, not a ComfyUI node. HyperSwap_1a_256 is its default swapper -- same upgrade as W22 T1-D covers for ComfyUI-ReActor."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "technique",
+    "name": "IConFace (Identity-Structure Asymmetric Conditioning, arxiv:2605.02814)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/papers/2605.02814",
+    "risk": "medium",
+    "confidence": 0.45,
+    "notes": "Tier 3. Outside window (May 4 2026) but not in W22. AdaFace identity anchor + degraded cross-attention + low-rank residuals. Unified reference-aware and no-reference face restoration paths. NTIRE 2026 placement. No public code or weights. Potential CodeFormer successor. Also relevant to build_photo_restore."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Ideogram 4 (9.3B, NF4/FP8, Jun 3 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/ideogram-ai/ideogram-4-nf4",
+    "risk": "high",
+    "confidence": 0.85,
+    "notes": "Tier 3. Outside window (Jun 3 2026) but not in W22; newly surfaced this cycle. Ranked #1 among open-weight models on DesignArena; best-in-class text rendering; native 2K. NF4 fits 16 GB with offloading. HARD BLOCKER: Ideogram Non-Commercial Model Agreement -- commercial deployment requires separate paid license. Do not wire unless licensing is resolved. Also relevant to build_generate_anything."
+  },
+  {
+    "method": "build_inpaint",
+    "category": "checkpoint",
+    "name": "PixelHacker (0.8B inpainting, arxiv:2504.20438, Apr 2026)",
+    "source": "github",
+    "url": "https://github.com/hustvl/PixelHacker",
+    "risk": "medium",
+    "confidence": 0.6,
+    "notes": "Tier 3. Outside window (Apr 2026) but not in W22. 0.8B diffusion inpainting using Latent Categories Guidance; 116 foreground + 21 background semantic categories. No ComfyUI node exists. ECCV'26 follow-up 'Moebius' accepted but not released. Different strength from LaMa (semantic consistency vs. texture fill). Also relevant to build_magic_eraser, build_lama_remove."
+  },
+  {
+    "method": "build_klein_headswap",
+    "category": "lora",
+    "name": "BFS Best-Face-Swap-Video IC-LoRA community forks (Jul 9-11 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap-Video",
+    "risk": "medium",
+    "confidence": 0.55,
+    "notes": "Tier 3. IN-WINDOW: multiple forks created Jul 9-11 2026 -- but these are copies of the Jan 24 2026 original (last modified Jun 20). No new model released in window, only community forks. IC-LoRA for LTX-2/Bernini-R video head-swap with first-frame identity conditioning. 14B base marginal for 16 GB. Apache-2.0 (Bernini-R). Different from build_klein_headswap (static image vs. video)."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "node_pack",
+    "name": "HyperSwap 256 (1a/1b/1c) via ComfyUI-ReActor v0.6.2",
+    "source": "github",
+    "url": "https://github.com/Gourieff/ComfyUI-ReActor",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "ALREADY KNOWN -- logged W22 T1-D. Not a novel W29 finding. 2x pixel resolution over inswapper_128. Models at huggingface.co/facefusion/models-3.3.0. FaceFusion 3.7.1 (Jul 5) is a minor patch on same underlying model family."
+  },
+  {
+    "method": "build_klein_headswap",
+    "category": "node_pack",
+    "name": "ComfyUI-PuLID-Flux2 v0.6.2 (iFayens) -- native Klein 4B/9B weights",
+    "source": "github",
+    "url": "https://github.com/iFayens/ComfyUI-PuLID-Flux2",
+    "risk": "low",
+    "confidence": 0.7,
+    "notes": "ALREADY KNOWN -- logged W22 T1-A (migration required from discontinued sipie800 fork). Also relevant to build_klein_face_detail, build_faceid_img2img, build_pulid_flux. No new update to v0.6.2 found in W29 window."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "HiDream-O1-Image (8B MIT, pixel-native UiT)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/HiDream-ai/HiDream-O1-Image",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "ALREADY KNOWN -- logged W22 T2-B. New W29 T2-A (Boogu-Image) is complementary not redundant. No new HiDream-O1 release in W29 window. FP8 ~10 GB VRAM; MIT license; ComfyUI via Saganaki22/HiDream_O1-ComfyUI."
+  }
+]
