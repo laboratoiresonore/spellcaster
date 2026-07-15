@@ -1,0 +1,502 @@
+[
+  {
+    "method": "build_faceswap",
+    "category": "checkpoint",
+    "name": "HyperSwap 1C 256 (ONNX)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facefusion/models-3.3.0",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Drop-in replacement for inswapper_128.onnx via ReActor v0.6.2. Higher face-embedding cosine similarity. Removes Insightface/C++ Build Tools dependency. In-window: ReActor v0.6.2 shipped April 2026; HyperSwap ONNX first in FaceFusion 3.3.0 (June 2025). Tier 1."
+  },
+  {
+    "method": "build_video_reactor",
+    "category": "checkpoint",
+    "name": "HyperSwap 1C 256 (ONNX)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facefusion/models-3.3.0",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Same upgrade as build_faceswap — HyperSwap 1C flows through the video reactor builder via ReActor. Tier 1."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "checkpoint",
+    "name": "GPEN 1024/2048 (via ReActor v0.6.2)",
+    "source": "github",
+    "url": "https://github.com/Gourieff/ComfyUI-ReActor/releases",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "GPEN at 1024 or 2048 resolution bundled in ReActor v0.6.2. Quality uplift over CodeFormer/GFPGAN. Same invocation interface. Tier 1."
+  },
+  {
+    "method": "build_faceswap_model",
+    "category": "node_pack",
+    "name": "ReActor Core v0.6.2 (no Insightface dep)",
+    "source": "github",
+    "url": "https://github.com/Gourieff/ComfyUI-ReActor/releases",
+    "risk": "medium",
+    "confidence": 0.92,
+    "notes": "ReActor Core changes face model creation pipeline; removes Insightface dep. Verify face-model file format compat before deploying. Also adds Face Similarity verification node."
+  },
+  {
+    "method": "build_sam3_segment",
+    "category": "checkpoint",
+    "name": "SAM 3.1 (Object Multiplex)",
+    "source": "github",
+    "url": "https://github.com/facebookresearch/sam3",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "4x throughput improvement via shared-memory joint multi-object tracking. sam3.1-tiny runs >60 FPS on L4. Same prompt interface. Released March 27 2026. Tier 1."
+  },
+  {
+    "method": "build_sam3_mask",
+    "category": "checkpoint",
+    "name": "SAM 3.1 (Object Multiplex)",
+    "source": "github",
+    "url": "https://github.com/facebookresearch/sam3",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Same SAM 3.1 upgrade as build_sam3_segment. Tier 1."
+  },
+  {
+    "method": "build_sam3_extract",
+    "category": "checkpoint",
+    "name": "SAM 3.1 (Object Multiplex)",
+    "source": "github",
+    "url": "https://github.com/facebookresearch/sam3",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Same SAM 3.1 upgrade as build_sam3_segment. Tier 1."
+  },
+  {
+    "method": "build_magic_eraser",
+    "category": "checkpoint",
+    "name": "SAM 3.1 (Object Multiplex) — segmentation step",
+    "source": "github",
+    "url": "https://github.com/facebookresearch/sam3",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "SAM 3.1 speed improvement flows through to the eraser's segmentation step. Tier 1 (dependency upgrade)."
+  },
+  {
+    "method": "build_seedv2r",
+    "category": "checkpoint",
+    "name": "SeedVR2 v2.5 GGUF Q8_0",
+    "source": "huggingface",
+    "url": "https://huggingface.co/AInVFX/SeedVR2_comfyUI",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "GGUF Q8_0 drops peak VRAM from 24 GB to ~12 GB; Q4_K_M drops to ~8 GB. torch.compile optimization. Q8_0 fits RTX 5060 Ti 16 GB cleanly. Release: November 2025; still active. Tier 1."
+  },
+  {
+    "method": "build_seedvr2_video_upscale",
+    "category": "checkpoint",
+    "name": "SeedVR2 v2.5 GGUF Q8_0",
+    "source": "huggingface",
+    "url": "https://huggingface.co/AInVFX/SeedVR2_comfyUI",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Same GGUF upgrade as build_seedv2r. Tier 1."
+  },
+  {
+    "method": "build_inpaint",
+    "category": "node_pack",
+    "name": "LanPaint v1.5.3",
+    "source": "github",
+    "url": "https://github.com/scraed/LanPaint",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Training-free universal inpaint for any diffusion model (SD1.5/SDXL/Flux/Krea-2/Wan2.2). No new checkpoints needed. Guidance 1.0-2.0 for distilled models. Tier 1."
+  },
+  {
+    "method": "build_outpaint",
+    "category": "node_pack",
+    "name": "LanPaint v1.5.3",
+    "source": "github",
+    "url": "https://github.com/scraed/LanPaint",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "v1.5.3 added outpaint capability. Training-free. Tier 1."
+  },
+  {
+    "method": "build_lama_remove",
+    "category": "node_pack",
+    "name": "LanPaint v1.5.3",
+    "source": "github",
+    "url": "https://github.com/scraed/LanPaint",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Could supplement or replace LaMa path with diffusion-based inpaint. Tier 1 (additive)."
+  },
+  {
+    "method": "build_klein_inpaint",
+    "category": "node_pack",
+    "name": "LanPaint v1.5.3 (Flux path)",
+    "source": "github",
+    "url": "https://github.com/scraed/LanPaint",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "LanPaint Flux path is compatible with Klein Flux2 backbone. Tier 1 (additive)."
+  },
+  {
+    "method": "build_generate_anything",
+    "category": "node_pack",
+    "name": "ComfyUI-JiT-Flux2 (training-free spatial acceleration)",
+    "source": "github",
+    "url": "https://github.com/xmarre/ComfyUI-JiT-Flux2",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "CVPR 2026. Plug-in node, no weight changes. Dynamically allocates compute to high-density regions. For FLUX.1-dev and FLUX.2-klein-base-9B. Tier 1 (speed)."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "node_pack",
+    "name": "ComfyUI-JiT-Flux2 (Flux path acceleration)",
+    "source": "github",
+    "url": "https://github.com/xmarre/ComfyUI-JiT-Flux2",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Same JiT acceleration node for Flux path of build_txt2img. Tier 1 (speed)."
+  },
+  {
+    "method": "build_video_upscale",
+    "category": "node_pack",
+    "name": "NVIDIA RTX Video Super Resolution ComfyUI node",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Official Comfy-Org node. Hardware-native 4K upscale via RTX Tensor Cores. 30x faster than software alternatives. Additive: artifact reduction, not detail hallucination. RTX 5060 Ti supported. Tier 1."
+  },
+  {
+    "method": "build_upscale",
+    "category": "node_pack",
+    "name": "NVIDIA RTX Video Super Resolution ComfyUI node",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Same RTX VSR node as build_video_upscale. Additive as a post-processing step. Tier 1."
+  },
+  {
+    "method": "build_depth_map_v3",
+    "category": "node_pack",
+    "name": "ComfyUI-DepthAnythingV3 node update (June 6 2026)",
+    "source": "github",
+    "url": "https://github.com/PozzettiAndrea/ComfyUI-DepthAnythingV3",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Node update adds improved normalization and multi-view cross-attention for temporal consistency. Same DA3 weights. Tier 1 (node update only)."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "node_pack",
+    "name": "LTX-2 Context Windows (ComfyUI v0.27.0)",
+    "source": "github",
+    "url": "https://docs.comfy.org/changelog",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Long-video sampling without OOM. IC-LoRA guide splicing. Added June 30 2026 in v0.27.0. Tier 1 (node/feature addition to existing builder)."
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "checkpoint",
+    "name": "BiRefNet HR-matting (2048px variant)",
+    "source": "github",
+    "url": "https://github.com/zhengpeng7/birefnet",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Same architecture, trained at 2048x2048 for high-res matting. Add as model selection option. Released Feb 2025; relevant for high-res workflows on 5060 Ti."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "checkpoint",
+    "name": "Wan 2.7 (API/cloud only)",
+    "source": "civitai",
+    "url": "https://wavespeed.ai/blog/posts/wan-2-7-coming-soon-major-upgrade/",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "API/partner node only; no local open weights on ModelScope or HuggingFace as of July 15. First-last-frame, multi-subject, 1080p native. Tier 3 — monitor for open weight release."
+  },
+  {
+    "method": "build_wan22_t2v",
+    "category": "checkpoint",
+    "name": "Wan 2.7 (API/cloud only)",
+    "source": "civitai",
+    "url": "https://wavespeed.ai/blog/posts/wan-2-7-coming-soon-major-upgrade/",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Wan 2.7 T2V mode would supersede Wan 2.2 but no local weights available. Tier 3."
+  },
+  {
+    "method": "build_wan_flf",
+    "category": "checkpoint",
+    "name": "Wan 2.7 FLF mode (API only)",
+    "source": "civitai",
+    "url": "https://wavespeed.ai/blog/posts/wan-2-7-coming-soon-major-upgrade/",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Wan 2.7 includes FLF capability but API only. Existing FLF builder remains best local option. Tier 3."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "checkpoint",
+    "name": "AnyFlow 1.3B / 14B (NVIDIA, Wan2.1 backbone)",
+    "source": "huggingface",
+    "url": "https://github.com/NVlabs/AnyFlow",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Any-step video diffusion (1–N steps). 1.3B fits 16 GB; 14B needs quant (none confirmed July 15). Diffusers-native. No confirmed stable ComfyUI wrapper. Tier 3 — promote to Tier 2 when ComfyUI node confirmed."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "checkpoint",
+    "name": "LingBot-Video Dense 1.3B",
+    "source": "huggingface",
+    "url": "https://github.com/Robbyant/lingbot-video",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "STRICTLY IN WINDOW: Released July 9 2026. Apache 2.0. T2V + I2V DiT. #1 open-source on RBench vs Wan 2.2/HunyuanVideo 1.5. Community ComfyUI node: realrebelai/LingBot_ComfyUI. 1.3B fits 16 GB. New builder: build_lingbot_video. Tier 2."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "checkpoint",
+    "name": "Motif-Video 2B",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Motif-Technologies/Motif-Video-2B",
+    "risk": "medium",
+    "confidence": 0.82,
+    "notes": "Best open-source VBench score at 2B scale (83.76%). 720p 121 frames. diffusers pipeline merged July 2026. No confirmed ComfyUI node yet. Tier 3 — promote when ComfyUI node lands."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Krea-2 Turbo",
+    "source": "huggingface",
+    "url": "https://huggingface.co/krea/Krea-2-Turbo",
+    "risk": "medium",
+    "confidence": 0.92,
+    "notes": "12B new-arch DiT (Krea2Pipeline, not Flux/SDXL). Top-10 Arena Elo. ~2s generation. Active LoRA ecosystem (15+ LoRAs appeared July 14-15). VRAM gap: BF16 needs ~24 GB — hold until GGUF/FP8 quant confirmed. Tier 2 (pending quant)."
+  },
+  {
+    "method": "build_style_transfer",
+    "category": "checkpoint",
+    "name": "Krea-2 Raw (style-reference architecture)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/krea/Krea-2-Raw",
+    "risk": "medium",
+    "confidence": 0.92,
+    "notes": "Krea-2's moodboard/style-reference input is a direct fit for build_style_transfer. Custom commercial-friendly license (not Apache 2.0 — verify before prod). Same VRAM gap as Turbo. Tier 2 (pending quant)."
+  },
+  {
+    "method": "build_img2img",
+    "category": "checkpoint",
+    "name": "Boogu-Image-0.1 Edit-Turbo FP8",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Boogu/Boogu-Image-0.1-Edit-Turbo",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "10B unified T2I+instruction-edit. Qwen3VL 8B encoder. 4-step Turbo. Hotfixed July 8-9 (in window). FP8 variant fits 16 GB. Official ComfyUI node: ComfyUI-Boogu. Consider new build_boogu_edit or extend build_img2img. Tier 2."
+  },
+  {
+    "method": "build_qwen_edit",
+    "category": "checkpoint",
+    "name": "Boogu-Image-0.1 Edit-Turbo FP8",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Boogu/Boogu-Image-0.1-Edit-Turbo",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "Qwen3VL encoder vs Qwen2-VL; evaluate quality parity before replacing build_qwen_edit. Hotfix July 9 is in window. Tier 2."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Z-Image-Turbo (6B S3-DiT)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Tongyi-MAI/Z-Image-Turbo",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Apache 2.0. 6B Alibaba S3-DiT. 2-3s at 1024x1024. Bilingual text rendering. GGUF community quant appeared July 15 (in window). Fits 16 GB in BF16. Active LoRA ecosystem. New builder: build_zimage_txt2img. Tier 2."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "checkpoint",
+    "name": "DreamID-V Wan-1.3B-Faster",
+    "source": "huggingface",
+    "url": "https://huggingface.co/XuGuo699/DreamID-V",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "DiT-based face swap (ECCV 2026). Better occlusion + fine detail vs ONNX. Explicit 16 GB variant. ComfyUI nodes: ComfyUI_RH_DreamID-V, ComfyUI_JR_DreamID-V. Tight on VRAM in full pipeline. New builder: build_faceswap_dreamidv. Tier 2."
+  },
+  {
+    "method": "build_hunyuan_3d_textured",
+    "category": "node_pack",
+    "name": "Tripo v3.0 + Mesh Segmentation v2.0",
+    "source": "github",
+    "url": "https://docs.comfy.org/tutorials/partner-nodes/tripo/model-generation",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Added ComfyUI v0.27.0 June 30. Cleaner geometry + PBR textures. Mesh Segmentation v2.0 is net-new capability (mesh part extraction). API-backed. Tier 2."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "node_pack",
+    "name": "Tripo v3.0 + Mesh Segmentation v2.0",
+    "source": "github",
+    "url": "https://docs.comfy.org/tutorials/partner-nodes/tripo/model-generation",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Same Tripo upgrade as textured builder. API-backed. New build_tripo_3d builder may be cleaner than extending existing HunyuanVideo 3D builders. Tier 2."
+  },
+  {
+    "method": "build_hunyuan_3d_textured",
+    "category": "node_pack",
+    "name": "Meshy 6 (PBR + auto-rigging + animation)",
+    "source": "github",
+    "url": "https://blog.comfy.org/p/generate-high-fidelity-3d-models",
+    "risk": "medium",
+    "confidence": 0.90,
+    "notes": "Official ComfyUI partner node since Jan 2026. Full pipeline: generation → refine → PBR texture → rig → animate → GLB export. Capabilities beyond current HunyuanVideo 3D scope. API-backed. Tier 2."
+  },
+  {
+    "method": "build_supir",
+    "category": "checkpoint",
+    "name": "RealRestorer (FLUX-based restoration)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/RealRestorer/RealRestorer",
+    "risk": "medium",
+    "confidence": 0.80,
+    "notes": "FLUX-based real-world image restoration; preserves semantic structure. Potentially supersedes SUPIR (SDXL). VRAM needs 16 GB verification. arXiv 2603.25502. Tier 3 — benchmark VRAM first."
+  },
+  {
+    "method": "build_img2img",
+    "category": "node_pack",
+    "name": "ComfyUI-piFlow v1.1.3 (pi-Flow 4-step sampling)",
+    "source": "github",
+    "url": "https://github.com/Lakonik/ComfyUI-piFlow",
+    "risk": "low",
+    "confidence": 0.82,
+    "notes": "4-step pi-Flow + FLUX.2 multi-image editing + GGUF + Qwen-Image support. Training-free. Additive capability to build_img2img for multi-image editing. Tier 2."
+  },
+  {
+    "method": "build_detail_hallucinate",
+    "category": "lora",
+    "name": "Qwen Hyper-Realistic Portrait LoRA",
+    "source": "huggingface",
+    "url": "https://huggingface.co/prithivMLmods/Qwen-Image-Edit-2511-Hyper-Realistic-Portrait",
+    "risk": "medium",
+    "confidence": 0.70,
+    "notes": "Pore-level skin texture, moisture effects, identity-preserving realism. Additive post-pass on Qwen image-edit stack (~12-14 GB). Tier 2."
+  },
+  {
+    "method": "build_detail_hallucinate",
+    "category": "lora",
+    "name": "Qwen Ultra-Realistic Portrait LoRA",
+    "source": "huggingface",
+    "url": "https://huggingface.co/prithivMLmods/Qwen-Image-Edit-2511-Ultra-Realistic-Portrait",
+    "risk": "medium",
+    "confidence": 0.70,
+    "notes": "Cinematic/glamour portraits with directional lighting, subsurface scattering, microhair detail. Additive post-pass. Tier 2."
+  },
+  {
+    "method": "build_klein_headswap",
+    "category": "checkpoint",
+    "name": "GSwap (3D Gaussian head swapping)",
+    "source": "github",
+    "url": "https://arxiv.org/abs/2603.23168",
+    "risk": "high",
+    "confidence": 0.60,
+    "notes": "3D Gaussian portrait priors embedded in SMPL-X. 3D-consistent head/torso. No public weights or ComfyUI node as of July 15. Tier 3 — watch facebookresearch/GSwap."
+  },
+  {
+    "method": "build_klein_headswap",
+    "category": "checkpoint",
+    "name": "AHS (Adaptive Head Synthesis)",
+    "source": "github",
+    "url": "https://hf.co/papers/2604.15857",
+    "risk": "high",
+    "confidence": 0.55,
+    "notes": "Self-supervised head swap with synthetic augmentation. No weights. Tier 3."
+  },
+  {
+    "method": "build_photo_restore",
+    "category": "checkpoint",
+    "name": "TimeWeaver (age-consistent reference restoration)",
+    "source": "github",
+    "url": "https://arxiv.org/abs/2603.22701",
+    "risk": "high",
+    "confidence": 0.65,
+    "notes": "First reference-based restoration supporting cross-age refs. Transformer-based ID-Fusion. Two training-free techniques. No confirmed weights yet. Tier 3."
+  },
+  {
+    "method": "build_rembg_v3",
+    "category": "checkpoint",
+    "name": "SAMA (unified segment + matte)",
+    "source": "github",
+    "url": "https://arxiv.org/abs/2601.12147",
+    "risk": "high",
+    "confidence": 0.60,
+    "notes": "SAM + matting in one model via MVLE. No weights or ComfyUI node. High priority when available — could replace build_rembg + build_sam3 two-step. Tier 3."
+  },
+  {
+    "method": "build_seedv2r",
+    "category": "checkpoint",
+    "name": "FlashVSR v1.1 (CVPR 2026 streaming VSR)",
+    "source": "github",
+    "url": "https://github.com/OpenImagingLab/FlashVSR",
+    "risk": "medium",
+    "confidence": 0.65,
+    "notes": "One-step diffusion streaming VSR. CVPR 2026. Community ComfyUI node: 1038lab/ComfyUI-FlashVSR. Optimized for A100; RTX 5060 Ti 16 GB may struggle without GGUF quant. Tier 3."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "node_pack",
+    "name": "Rodin Gen-2 (ComfyUI nightly)",
+    "source": "github",
+    "url": "https://github.com/comfyanonymous/ComfyUI/pull/9994",
+    "risk": "medium",
+    "confidence": 0.70,
+    "notes": "Image-to-3D API node in ComfyUI nightly. GLB export, material params, polygon count. API-backed. Exact merge date uncertain (likely June-July 2026). Promote to Tier 2 when in stable release."
+  },
+  {
+    "method": "build_photobooth",
+    "category": "node_pack",
+    "name": "ByteDance Virtual Portrait Library (ComfyUI v0.27.1)",
+    "source": "github",
+    "url": "https://docs.comfy.org/changelog",
+    "risk": "medium",
+    "confidence": 0.90,
+    "notes": "STRICTLY IN WINDOW: Added July 8 2026 in v0.27.1. ByteDance portrait synthesis partner node. Investigate whether portrait embeddings can feed build_photobooth pipeline. Tier 3 until integration path confirmed."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Seedream 5.0 Pro (cloud T2I with layer separation)",
+    "source": "github",
+    "url": "https://blog.comfy.org/p/seedream-50-pro",
+    "risk": "low",
+    "confidence": 0.98,
+    "notes": "STRICTLY IN WINDOW: Added July 8 2026 in ComfyUI v0.27.1. Layer-separation output (10+ transparent PNGs from one call). Spatial markup input. Cloud API only (Volcano Engine/BytePlus/fal). New builder: build_seedream_gen. Tier 2 (cloud)."
+  },
+  {
+    "method": "build_depth_map_v3",
+    "category": "checkpoint",
+    "name": "DepthAnything-AC (adverse condition depth)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/ghost233lism/DepthAnything-AC",
+    "risk": "low",
+    "confidence": 0.75,
+    "notes": "DA-V2 fine-tune for robustness under adverse weather/low-light. Additive specialization. Released July 2025; still relevant. Tier 3 (specialization only)."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "lora",
+    "name": "MeanFlowNFT LoRA (RL-aligned SD3.5-medium)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Harahan/MeanFlowNFT",
+    "risk": "high",
+    "confidence": 0.55,
+    "notes": "STRICTLY IN WINDOW: Created July 14 2026. First RL reward-tilted LoRA for SD3.5-medium on HuggingFace. Single community upload, no validation. Experimental — monitor for additional uploads and peer review. Tier 3."
+  }
+]
