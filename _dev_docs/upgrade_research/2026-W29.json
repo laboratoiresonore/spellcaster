@@ -1,0 +1,282 @@
+[
+  {
+    "method": "build_txt2img",
+    "category": "node_pack",
+    "name": "nvidia/PiD v1.5 (PixelDiT pixel decoder)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/nvidia/PiD",
+    "risk": "medium",
+    "confidence": 0.8,
+    "notes": "Pixel-space diffusion decoder replacing VAE for 2K-4K output in one pass. ComfyUI v0.28.0 ships native node. Additive: +4-8 GB VRAM on top of base model (~20 GB total with FLUX.2). Released Jul 9, 2026. IN-WINDOW."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "lora",
+    "name": "judge-in-the-loop-flux-lora (GRPO/RLAIF quality booster)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/thedinaiym/judge-in-the-loop-flux-lora",
+    "risk": "medium",
+    "confidence": 0.7,
+    "notes": "Flux.1-dev LoRA trained with GRPO + RLAIF (AI judge in training loop). 31 downloads, live on fal-ai/replicate/wavespeed. Novel training paradigm. Additive quality booster. Jul 11, 2026. IN-WINDOW."
+  },
+  {
+    "method": "build_inpaint",
+    "category": "checkpoint",
+    "name": "LUSTIFY SDXL NSFW Checkpoint v2.0 Inpainting",
+    "source": "huggingface",
+    "url": "https://huggingface.co/mrlonelydwarf/LUSTIFY-SDXL-NSFW-checkpoint-v2-0-INPAINTING",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "SDXL inpaint checkpoint v2.0. 124 downloads within days. Supersedes v1.x for NSFW inpaint. Content-policy review required before production use. Jul 14, 2026. IN-WINDOW."
+  },
+  {
+    "method": "build_outpaint",
+    "category": "lora",
+    "name": "xocialize/outpaint-FLUX.2-klein-4B-lora",
+    "source": "huggingface",
+    "url": "https://huggingface.co/xocialize/outpaint-FLUX.2-klein-4B-lora",
+    "risk": "medium",
+    "confidence": 0.7,
+    "notes": "Outpainting LoRA for Klein 4B (Apache 2.0). 13 downloads. Additive Klein 4B outpaint path; standard SDXL path unchanged. Jul 14, 2026. IN-WINDOW."
+  },
+  {
+    "method": "build_outpaint",
+    "category": "lora",
+    "name": "xocialize/zoom-FLUX.2-klein-4B-lora",
+    "source": "huggingface",
+    "url": "https://huggingface.co/xocialize/zoom-FLUX.2-klein-4B-lora",
+    "risk": "medium",
+    "confidence": 0.65,
+    "notes": "Zoom-out/infinite-zoom LoRA for Klein 4B (Apache 2.0). 11 downloads. Complements build_outpaint for animated zoom-out. Jul 14, 2026. IN-WINDOW."
+  },
+  {
+    "method": "build_magic_eraser",
+    "category": "lora",
+    "name": "xocialize/object-remove-FLUX.2-klein-4B-lora",
+    "source": "huggingface",
+    "url": "https://huggingface.co/xocialize/object-remove-FLUX.2-klein-4B-lora",
+    "risk": "medium",
+    "confidence": 0.7,
+    "notes": "Generative object/foreground removal inpainting LoRA on Klein 4B (Apache 2.0). May outperform LaMa at scene completion. Additive. Jul 14, 2026. IN-WINDOW."
+  },
+  {
+    "method": "build_layer_blend",
+    "category": "lora",
+    "name": "xocialize/background-remove-FLUX.2-klein-4B-lora",
+    "source": "huggingface",
+    "url": "https://huggingface.co/xocialize/background-remove-FLUX.2-klein-4B-lora",
+    "risk": "medium",
+    "confidence": 0.65,
+    "notes": "Background removal LoRA for Klein 4B (Apache 2.0). 10 downloads. Additive to build_layer_blend pipeline. Jul 14, 2026. IN-WINDOW."
+  },
+  {
+    "method": "build_img2img",
+    "category": "lora",
+    "name": "xocialize/consistence-edit-FLUX.2-klein-4B-lora",
+    "source": "huggingface",
+    "url": "https://huggingface.co/xocialize/consistence-edit-FLUX.2-klein-4B-lora",
+    "risk": "medium",
+    "confidence": 0.7,
+    "notes": "Consistency-preserving editing LoRA on Klein 4B (Apache 2.0). 15 downloads. Useful for subject-preserving edits in img2img. Jul 14, 2026. IN-WINDOW."
+  },
+  {
+    "method": "build_klein_virtual_tryon",
+    "category": "lora",
+    "name": "xocialize/tryon-FLUX.2-klein-4B-lora",
+    "source": "huggingface",
+    "url": "https://huggingface.co/xocialize/tryon-FLUX.2-klein-4B-lora",
+    "risk": "medium",
+    "confidence": 0.6,
+    "notes": "Virtual try-on LoRA for Klein 4B (Apache 2.0). 0 downloads — very fresh. Additive for fashion/product use cases. Jul 15, 2026. IN-WINDOW."
+  },
+  {
+    "method": "build_controlnet_gen",
+    "category": "controlnet",
+    "name": "xocialize/refcontrol-FLUX.2-klein-4B-pose-lora",
+    "source": "huggingface",
+    "url": "https://huggingface.co/xocialize/refcontrol-FLUX.2-klein-4B-pose-lora",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "Pose ControlNet as LoRA on Klein 4B (Apache 2.0). 7 downloads, 2 likes — best ratio in xocialize suite. Additive Klein 4B pose-control path. Jul 12, 2026. IN-WINDOW."
+  },
+  {
+    "method": "build_klein_img2img",
+    "category": "checkpoint",
+    "name": "FLUX.2-klein-9B-OrbitQuant-W4A4",
+    "source": "huggingface",
+    "url": "https://huggingface.co/WaveCut/FLUX.2-klein-9B-OrbitQuant-W4A4",
+    "risk": "medium",
+    "confidence": 0.6,
+    "notes": "W4A4 quant of Klein 9B via OrbitQuant (arxiv:2607.02461). ~10 GB VRAM vs 29 GB BF16. Paper brand-new (Jul 2); no independent quality benchmarks. 117 downloads. Tier 3 — monitor. Jul 10, 2026. IN-WINDOW."
+  },
+  {
+    "method": "build_klein_img2img",
+    "category": "checkpoint",
+    "name": "FLUX.2-klein-4B-GGUF",
+    "source": "huggingface",
+    "url": "https://huggingface.co/adithya-balaji/FLUX.2-klein-4B-GGUF",
+    "risk": "low",
+    "confidence": 0.8,
+    "notes": "GGUF-quantized Klein 4B for sd.cpp. ~5 GB VRAM. Apache 2.0. Additive: requires sd.cpp runtime, not ComfyUI Flux2KleinPipeline. Jul 10, 2026. IN-WINDOW."
+  },
+  {
+    "method": "build_klein_img2img",
+    "category": "checkpoint",
+    "name": "FLUX.2-klein-9B-KV-INT8-ConvRot-ComfyUI",
+    "source": "huggingface",
+    "url": "https://huggingface.co/wraps/FLUX.2-klein-9B-KV-INT8-ConvRot-ComfyUI",
+    "risk": "medium",
+    "confidence": 0.55,
+    "notes": "INT8 KV-cache + ConvRot quantization of Klein 9B packaged for ComfyUI. ~16 GB VRAM. Single-author, 0 downloads — needs community validation. Jul 15, 2026. IN-WINDOW."
+  },
+  {
+    "method": "build_klein_img2img",
+    "category": "checkpoint",
+    "name": "FLUX.2-klein-4B-INT8-ConvRot-ComfyUI",
+    "source": "huggingface",
+    "url": "https://huggingface.co/wraps/FLUX.2-klein-4B-INT8-ConvRot-ComfyUI",
+    "risk": "medium",
+    "confidence": 0.55,
+    "notes": "Same ConvRot-INT8 recipe applied to Klein 4B. ~8 GB VRAM. Single-author, 0 downloads. Same verification caveat as 9B variant. Jul 15, 2026. IN-WINDOW."
+  },
+  {
+    "method": "build_seedvr2_video_upscale",
+    "category": "node_pack",
+    "name": "ComfyUI v0.28.0 — native SeedVR2 video upscaling node",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/ComfyUI/releases",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "SeedVR2 7B promoted to first-party ComfyUI node (comfyorg/comfyui_seedvr2). Replaces numz community wrapper. Same model. GGUF Q4_K_M: ~7-8 GB VRAM for 1080p. DROP-IN. Jul 15, 2026. IN-WINDOW."
+  },
+  {
+    "method": "build_wan_animate_video",
+    "category": "checkpoint",
+    "name": "Wan-Dancer-14B",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Wan-AI/Wan-Dancer-14B",
+    "risk": "medium",
+    "confidence": 0.8,
+    "notes": "Hierarchical music-to-dance i2v on Wan 2.1 i2v 14B backbone. Apache 2.0. arXiv 2607.09581 (Jul 10). Additive new capability. VRAM: 24 GB BF16 — exceeds 16 GB budget. Hold until GGUF quants ship. Jul 13, 2026. IN-WINDOW."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "LTX-2.3 (Lightricks, 22B)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Lightricks/LTX-2.3",
+    "risk": "low",
+    "confidence": 0.9,
+    "notes": "Major upstream update released Mar 5, 2026 (OUTSIDE WINDOW but highly actionable). 22B params, new VAE, portrait 9:16 native, 48 fps option, official FP8 quants, integrated spatial + temporal upscalers. Supersedes LTX-Video-0.9.8."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "node_pack",
+    "name": "FaceFusion 3.7.1",
+    "source": "github",
+    "url": "https://github.com/facefusion/facefusion/releases/tag/3.7.1",
+    "risk": "low",
+    "confidence": 0.9,
+    "notes": "Bug-fix release. Fixes frame distribution performance regression and i2i 2-processor crash from 3.7.0. Drop-in from 3.7.0. Jul 5, 2026 (near-window)."
+  },
+  {
+    "method": "build_klein_headswap",
+    "category": "lora",
+    "name": "BFS-Best-Face-Swap-Video (Alissonerdx / Bernini-R ic-LoRA)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap-Video",
+    "risk": "medium",
+    "confidence": 0.8,
+    "notes": "Video head-swap ic-LoRA on ByteDance/Bernini-R backbone (migrated from LTX-2.3). 2.9K downloads, 359 likes. Requires ComfyUI-BFSNodes. ~16 GB VRAM. Non-commercial license. Jun 20, 2026 (near-window). Additive video headswap mode."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "node_pack",
+    "name": "ComfyUI-Flux-FaceIR (Klein 4B diffusion-prior face restoration)",
+    "source": "github",
+    "url": "https://github.com/cosmicrealm/ComfyUI-Flux-FaceIR",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "Klein 4B as face restoration backbone. Two modes: aligned-face-patch + full-image RetinaFace. Significantly better on heavily degraded faces vs CodeFormer per NTIRE 2026. Requires 5 model files. ~12 GB VRAM. Additive. ~Apr 2026 (OUTSIDE WINDOW but newly relevant)."
+  },
+  {
+    "method": "build_sam3_segment",
+    "category": "checkpoint",
+    "name": "facebook/sam3.1 (SAM 3.1 Object Multiplex)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facebook/sam3.1",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "7x faster inference at 128 objects vs SAM3. Improved VOS on 6/7 benchmarks. Gated (Meta license required). Drop-in checkpoint swap for build_sam3_segment/mask/extract. ~10 GB VRAM. Mar 27, 2026 (OUTSIDE WINDOW — highest-priority upgrade across all builders)."
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "checkpoint",
+    "name": "Comfy-Org/BiRefNet (Jul 14 update)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Comfy-Org/BiRefNet",
+    "risk": "low",
+    "confidence": 0.8,
+    "notes": "Official ComfyUI-org BiRefNet packaging updated Jul 14. MIT license. Pull latest; verify whether weights or only config changed. Jul 14, 2026. IN-WINDOW."
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "checkpoint",
+    "name": "dummy9996/birefnet-bf16-all-models",
+    "source": "huggingface",
+    "url": "https://huggingface.co/dummy9996/birefnet-bf16-all-models",
+    "risk": "low",
+    "confidence": 0.7,
+    "notes": "BF16 merge of full ZhengPeng7 BiRefNet suite (7 specializations) in single ComfyUI file. Useful for fast specialization switching. Additive. Jul 14, 2026. IN-WINDOW."
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "checkpoint",
+    "name": "nobg/BiRefNet-Finetuned",
+    "source": "huggingface",
+    "url": "https://huggingface.co/nobg/BiRefNet-Finetuned",
+    "risk": "low",
+    "confidence": 0.6,
+    "notes": "BiRefNet fine-tuned on nobg proprietary dataset. Requires nobg Python library — not a drop-in for standard loaders. Additive only if adding nobg inference path. Jul 12, 2026. IN-WINDOW."
+  },
+  {
+    "method": "build_rembg_v3",
+    "category": "checkpoint",
+    "name": "briaai/V-RMBG-3.0",
+    "source": "github",
+    "url": "https://www.prnewswire.com/news-releases/bria-launches-v-rmbg-3-0-302796516.html",
+    "risk": "medium",
+    "confidence": 0.7,
+    "notes": "Video-temporal rembg with temporal consistency, 63%+ win-rate vs competitors. Commercial API only — no OSS weights. Watch briaai HF org. Jun 10, 2026 (OUTSIDE WINDOW)."
+  },
+  {
+    "method": "build_colorize",
+    "category": "checkpoint",
+    "name": "ColorFLUX (CVPR 2026)",
+    "source": "huggingface",
+    "url": "https://arxiv.org/abs/2603.28162",
+    "risk": "medium",
+    "confidence": 0.5,
+    "notes": "FLUX-backbone archival photo colorization. Structure-color decoupling + Progressive DPO. CVPR 2026. No public weights confirmed as of Jul 16. Monitor for release. Mar 30, 2026 (OUTSIDE WINDOW)."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "checkpoint",
+    "name": "TencentARC/Pixal3D",
+    "source": "huggingface",
+    "url": "https://huggingface.co/TencentARC/Pixal3D",
+    "risk": "high",
+    "confidence": 0.8,
+    "notes": "SIGGRAPH 2026. Image-to-3D on TRELLIS.2 backbone with PBR textures. MIT license. Better geometry + textures than Hunyuan3D-2.x. BUT 24 GB VRAM — exceeds 16 GB RTX 5060 Ti budget. Monitor for GGUF/FP8 quants. May 24, 2026 (OUTSIDE WINDOW)."
+  },
+  {
+    "method": "build_faceid_img2img",
+    "category": "checkpoint",
+    "name": "Fayens/Pulid-Flux2 (PuLID II for FLUX.2 Klein)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Fayens/Pulid-Flux2",
+    "risk": "medium",
+    "confidence": 0.6,
+    "notes": "First PuLID implementation targeting FLUX.2 Klein 4B/9B. Two weight variants: v1 and v2 (v2 recommended). MIT license. Only 16 likes — low community adoption. Ecosystem appears to be moving toward Qwen-Image-Edit + BFS LoRA paradigm. Mar 26, 2026 (OUTSIDE WINDOW)."
+  }
+]
