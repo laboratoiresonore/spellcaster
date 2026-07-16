@@ -66,6 +66,8 @@ _Selection criteria: strongest HF trending score cross-referenced with concrete 
 - next scheduled run: 2026-07-18 (48h)
 - **failures**:
   - `tools/upgrade_research.py` — file missing from checkout `laboratoiresonore/spellcaster@ccef78a`. Digest fell back to WebSearch + HF MCP.
-  - Gmail MCP — server present but **requires OAuth** which cannot be completed in this non-interactive sandbox. Digest not emailed; operator will find it in git + Drive.
+  - Gmail MCP — server present but **requires OAuth** which cannot be completed in this non-interactive sandbox. Digest not emailed.
+  - Google-Drive MCP — same OAuth expiry. Backup copy not written to `spellcaster-ecosystem-digests/`. **Operator: re-authorize the Gmail and Google-Drive connectors in claude.ai settings so the next digest can hit all three delivery channels.**
+  - Delivery this run: **git branch + PR only** (branch `digest/2026-07-16`, PR #126 against `main`).
   - `comfy_manager` + `local_llm` — LAN-only, expected skip.
 - baseline drift check: `build_*` count = **77** (baseline was 73 as of 2026-05-13) — repo has grown by 4 builders; not a regression.
