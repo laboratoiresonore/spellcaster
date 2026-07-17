@@ -1,0 +1,362 @@
+[
+  {
+    "method": "build_klein_img2img,build_klein_inpaint,build_klein_refine,build_klein_repose,build_klein_headswap,build_klein_blend,build_klein_detail,build_klein_face_detail,build_klein_scene_img2img,build_klein_color_match,build_klein_virtual_tryon,build_klein_generate_object,build_klein_batch_variations,build_klein_auto_inpaint,build_klein_sam3_inpaint,build_txt2img,build_img2img",
+    "category": "checkpoint",
+    "name": "NVIDIA PiD v1.5 (Pixel Diffusion Decoder)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/nvidia/PiD",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "~IN-WINDOW (Jul 9). Drop-in VAE decode replacement for FLUX.2 / Klein 4B/9B. Use checkpoint 2kto4k_v1pt5 (fixes corner artifacts and colour drift vs v1.0). Adds ~2 GB VRAM; output up to 4K. Native ComfyUI since v0.27.0. Tier 1 priority for all Klein builders."
+  },
+  {
+    "method": "build_faceswap,build_faceswap_model",
+    "category": "checkpoint",
+    "name": "HyperSwap_1c_256.onnx (FaceFusion Labs)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facefusion/models-3.3.0",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "OUTSIDE WINDOW (May 2026). Drop-in replacement for inswapper_128.onnx in ReActor. 256-px crop vs 128-px; confirmed quality uplift. Place in ReActor models directory. No workflow changes required. Use _1a for speed, _1c for quality."
+  },
+  {
+    "method": "build_sam3_segment,build_sam3_mask,build_sam3_extract",
+    "category": "checkpoint",
+    "name": "SAM 3.1 (facebook/sam3.1) — Object Multiplex",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facebook/sam3.1",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "OUTSIDE WINDOW (Mar 2026). Drop-in checkpoint upgrade. Object Multiplex: ~7x faster at 128 simultaneous objects; single-object quality equivalent to SAM3. Same directory structure. 72K downloads confirm production stability. ComfyUI nodes: yolain/ComfyUI-Easy-Sam3."
+  },
+  {
+    "method": "build_depth_map_v3",
+    "category": "checkpoint",
+    "name": "Depth Anything 3 v1.1 (DA3-LARGE-1.1)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/depth-anything/DA3-LARGE-1.1",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "OUTSIDE WINDOW (Dec 2025). Refined DA3-LARGE checkpoint (Apache-2.0). Also DA3-Streaming for long-video depth under 12 GB. PozzettiAndrea ComfyUI-DepthAnythingV3 already supports v1.1. Straightforward weight swap."
+  },
+  {
+    "method": "build_seedvr2_video_upscale,build_face_restore,build_photo_restore,build_detail_hallucinate,build_seedv2r",
+    "category": "node_pack",
+    "name": "ComfyUI v0.28.0 — native SeedVR2 + MediaPipe",
+    "source": "github",
+    "url": "https://github.com/comfy-org/ComfyUI/releases/tag/v0.28.0",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "IN-WINDOW (Jul 15). Core ComfyUI release. Adds: native SeedVR2 image+video upscaling (PR #14424), native MediaPipe face detection (BlazeFace, FaceMesh 478-landmark, ARKit blendshapes), PiD 1.5 support, --models-directory flag. Keep custom SeedVR2 node for GGUF/streaming. VAE fix may require v0.28.1 patch."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "lora",
+    "name": "LTX-2.3-22b-LoRA-Foley-V2A (Lightricks)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Lightricks/LTX-2.3-22b-LoRA-Foley-V2A",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "IN-WINDOW (Jul 15). Official Lightricks Foley LoRA. Adds synchronised sound-effect generation (footsteps, impacts, ambience, weather) to silent video. Weight-file swap only; same VRAM envelope as LTX-2.3 22B base. Use step-500 checkpoint. Community workflow: FuzzPuppy/LTX-2.3-Foley-Workflow."
+  },
+  {
+    "method": "build_txt2img,build_generate_anything",
+    "category": "checkpoint",
+    "name": "Krea-2-Turbo (12B, 8-step distilled)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/krea/Krea-2-Turbo",
+    "risk": "medium",
+    "confidence": 0.82,
+    "notes": "OUTSIDE WINDOW (Jun 22-23). 12B single-stream DiT; FP8 ~12 GB; native 2K; ~2-3s on consumer GPU. 1 500+ community LoRAs. ComfyUI native nodes since v0.27.0 (Jun 30). Krea Community License: free commercial for studios <50 seats. Qwen3-VL encoder + Qwen Image VAE. Best near-term SDXL successor candidate."
+  },
+  {
+    "method": "build_txt2img,build_generate_anything",
+    "category": "checkpoint",
+    "name": "NVIDIA PixelDiT 1.3B (VAE-free, CVPR 2026)",
+    "source": "github",
+    "url": "https://github.com/NVlabs/PixelDiT",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "OUTSIDE WINDOW (Jun 30 via ComfyUI v0.27.0). 1.3B, ~5-6 GB total (model + Gemma-2B encoder). VAE-free pixel-space DiT. CVPR 2026 Best Paper Finalist. Comfy-Org official repack available. 1024px cap. Ideal lightweight draft builder."
+  },
+  {
+    "method": "build_txt2img,build_generate_anything,build_qwen_edit,build_magic_eraser,build_style_transfer,build_inpaint",
+    "category": "checkpoint",
+    "name": "Boogu-Image-0.1 (Base/Turbo/Edit/Edit-Turbo, Apache-2.0)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Boogu/Boogu-Image-0.1-Edit-Turbo",
+    "risk": "medium",
+    "confidence": 0.87,
+    "notes": "IN-WINDOW (technical report arXiv:2607.13125, Jul 16; hotfix Jul 8). Apache-2.0. Unified gen+edit: object removal, style transfer, inpainting, poster layers, bilingual text. ~14 GB FP8 Turbo. ComfyUI via kijai PR #14523. Needs community stress-testing before production use."
+  },
+  {
+    "method": "build_txt2img,build_generate_anything",
+    "category": "checkpoint",
+    "name": "ByteDance Seedream 5.0 Pro (cloud Partner Node)",
+    "source": "github",
+    "url": "https://docs.comfy.org/tutorials/partner-nodes/bytedance/seedream-5-pro",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "~IN-WINDOW (ComfyUI v0.27.1, Jul 8). Cloud API only; zero local VRAM. Deep-thinking prompt reasoning, web-search augmented generation, native 2048px, pixel-level editing, 10+ design layers, multilingual in-image text. Adds API cost dependency."
+  },
+  {
+    "method": "build_txt2img,build_generate_anything",
+    "category": "checkpoint",
+    "name": "Ideogram 4 open weights (9.3B, NF4/FP8/GGUF)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/ideogram-ai/ideogram-4-nf4",
+    "risk": "medium",
+    "confidence": 0.72,
+    "notes": "OUTSIDE WINDOW (Jun 3). Best open-weight model for text-in-image (signage, logos, QR codes). NF4 ~12 GB; FP8 exactly 16 GB (tight). Ideogram Community License — verify commercial use restrictions. GGUF community quantisations available."
+  },
+  {
+    "method": "build_txt2img,build_img2img,build_generate_anything",
+    "category": "checkpoint",
+    "name": "HiDream-O1-Image-Dev (8B, MIT, FP8 ~10 GB)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/HiDream-ai/HiDream-O1-Image-Dev",
+    "risk": "low",
+    "confidence": 0.68,
+    "notes": "OUTSIDE WINDOW (May 8). MIT licensed. UiT (Pixel-level Unified Transformer); no external VAE/text encoder. FP8 ~10 GB, leaves ~6 GB headroom. Supports txt2img, instruction editing, subject personalization. Native ComfyUI PR #13817. Good VRAM-efficient alternative to FLUX.2-dev."
+  },
+  {
+    "method": "build_inpaint,build_outpaint,build_lama_remove,build_klein_inpaint",
+    "category": "node_pack",
+    "name": "LanPaint — training-free any-model inpaint node",
+    "source": "github",
+    "url": "https://github.com/scraed/LanPaint",
+    "risk": "low",
+    "confidence": 0.65,
+    "notes": "OUTSIDE WINDOW (Apr 2026). Available via ComfyUI Registry (publisher: scraed). Works with FLUX.2, SDXL, Wan 2.2, Klein, Hunyuan, Z-Image. No additional model weights. Apr 2026 update adds temporally consistent video inpainting. A/B test vs Fooocus inpaint on edge sharpness before replacing."
+  },
+  {
+    "method": "build_pulid_flux",
+    "category": "node_pack",
+    "name": "ComfyUI-PuLID-Flux-Chroma (Apache-2.0 alt)",
+    "source": "github",
+    "url": "https://github.com/PaoloC68/ComfyUI-PuLID-Flux-Chroma",
+    "risk": "medium",
+    "confidence": 0.72,
+    "notes": "OUTSIDE WINDOW (May 16). First PuLID for Chroma (8.9B Apache-2.0 FLUX.1-schnell fork). ~11-12 GB (Chroma FP8 + PuLID overhead). Compliance advantage: Chroma Apache-2.0 vs Klein NSFW license. Verify identity fidelity before production use."
+  },
+  {
+    "method": "build_wan22_t2v,build_wan_video",
+    "category": "checkpoint",
+    "name": "LingBot-Video-Dense-1.3B (Ant Group, #1 RBench open)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/robbyant/lingbot-video-dense-1.3b",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "~IN-WINDOW (Jul 8). 1.3B dense; T2V/I2V/TI2V; Wan 2.2 DiT backbone; ~6 GB VRAM. #1 RBench open-source. Community ComfyUI: realrebelai/LingBot_ComfyUI. FP8: ALXOPENSOURCE/lingbot-video-1.3b-fp8. FastVideo diffusers port Jul 13. Native PR WIP. Robotics-heavy training; verify general cinematic quality."
+  },
+  {
+    "method": "build_wan22_t2v,build_wan_video",
+    "category": "checkpoint",
+    "name": "LingBot-Video-MoE-30B-A3B (Ant Group, GGUF)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/robbyant/lingbot-video-moe-30b-a3b",
+    "risk": "medium",
+    "confidence": 0.82,
+    "notes": "~IN-WINDOW (Jul 8). Sparse MoE; 3B active parameters per pass; ~3x faster than comparable dense. GGUF: realrebelai/LingBot-30B-3B_GGUF_ComfyUI. Requires 24 GB+ system RAM for weight paging even with 8 GB active VRAM. Use 1.3B dense on 16 GB target hardware instead."
+  },
+  {
+    "method": "build_wan_animate_video",
+    "category": "checkpoint",
+    "name": "Wan-AI/Wan-Dancer-14B (music-to-dance)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Wan-AI/Wan-Dancer-14B",
+    "risk": "high",
+    "confidence": 0.92,
+    "notes": "IN-WINDOW (Jul 10). Official Wan-AI music-to-dance model on Wan 2.2 backbone. 149 frames/pass; 720p 30fps. VRAM: ~24 GB (FP8) — EXCEEDS 16 GB BUDGET. No GGUF confirmed. Monitor for community quantised port. ComfyUI template at Comfy-Org/Wan-Dancer. Paper: arXiv:2607.09581."
+  },
+  {
+    "method": "build_wan_flf",
+    "category": "checkpoint",
+    "name": "DreamX-World-5B (Alibaba/FastVideo, camera-controlled world model)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/FastVideo/DreamX-World-5B-Diffusers",
+    "risk": "medium",
+    "confidence": 0.78,
+    "notes": "NEAR-MISS (Jul 6 — 4 days before window). Built on Wan2.2-TI2V-5B; long-horizon up to ~60s video, camera action control, region-guided object placement. ~16 GB (same envelope as Wan2.2-TI2V-5B). No ComfyUI node yet. Cam variant: FastVideo/DreamX-World-5B-Cam-Diffusers. License unconfirmed Apache-2.0 — verify. Paper: arXiv:2606.16993."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh,build_hunyuan_3d_textured",
+    "category": "checkpoint",
+    "name": "TRELLIS.2-4B (Microsoft, PBR mesh, MIT)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/microsoft/TRELLIS.2-4B",
+    "risk": "medium",
+    "confidence": 0.90,
+    "notes": "OUTSIDE WINDOW (Dec 2025). 4B sparse O-Voxel; fully UV-unwrapped PBR mesh in one pass; MIT license; 1.49M downloads. 16 GB exact ceiling on RTX 5060 Ti — run alone. ComfyUI: ComfyUI-Trellis2 (visualbruno) or ComfyUI-TRELLIS2 (PozzettiAndrea). Best Hunyuan3D alternative for PBR output."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "checkpoint",
+    "name": "TripoSplat (VAST-AI, Gaussian-splat 3D, MIT)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/VAST-AI/TripoSplat",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "OUTSIDE WINDOW (May 31). DINOv2 encoder + triplane + flow-matching denoiser; outputs .ply/.splat (not UV mesh). Native GAUSSIAN type in ComfyUI v0.23.0. Template in ComfyUI Template Library. ~8 GB VRAM. MIT. Fast 3D preview; use Hunyuan3D or TRELLIS.2 downstream if UV texture required."
+  },
+  {
+    "method": "build_klein_headswap,build_klein_face_detail",
+    "category": "lora",
+    "name": "BFS-Best-Face-Swap LoRA for Klein (Alissonerdx)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap",
+    "risk": "medium",
+    "confidence": 0.87,
+    "notes": "OUTSIDE WINDOW (Jun 20). IC-LoRA for Klein 4B/9B and Qwen-Image-Edit-2511. FK 4B variant: ~12 GB. 360 HF likes, 2.9K downloads — highest-traction face-swap LoRA for Klein stack. Community forks: justusgeorge10, chfm, PcZerokey. Civitai ComfyUI workflow available. Additive to existing builders."
+  },
+  {
+    "method": "build_klein_headswap,build_faceswap",
+    "category": "lora",
+    "name": "BFS-Best-Face-Swap-Video Bernini-R LoRA (tralaleloss)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/tralaleloss/BFS-Best-Face-Swap-Video",
+    "risk": "high",
+    "confidence": 0.55,
+    "notes": "IN-WINDOW (Jul 11). IC-LoRA for ByteDance/Bernini-R video headswap. Base model 14.3B — ~22 GB VRAM, EXCEEDS BUDGET. Monitor for Q8/FP8 quantised Bernini-R fork. No ComfyUI node for Bernini-R confirmed. Interesting concept; not deployable on 16 GB yet."
+  },
+  {
+    "method": "build_faceid_img2img",
+    "category": "node_pack",
+    "name": "ComfyUI-PuLID-Flux2 v0.6.2 (Klein backend)",
+    "source": "github",
+    "url": "https://github.com/iFayens/ComfyUI-PuLID-Flux2",
+    "risk": "medium",
+    "confidence": 0.78,
+    "notes": "OUTSIDE WINDOW (May 2026). First PuLID for FLUX.2 Klein 4B/9B. InsightFace AntelopeV2 + EVA-CLIP (~800 MB auto-download). Klein 9B + PuLID ~14 GB; 4B path ~10 GB. Improves identity fidelity vs IP-Adapter FaceID. Test Klein 4B path first."
+  },
+  {
+    "method": "build_faceswap,build_faceswap_model,build_faceswap_mtb",
+    "category": "node_pack",
+    "name": "ReActor 0.7.0 ALPHA (InsightFace-free rewrite)",
+    "source": "github",
+    "url": "https://github.com/Gourieff/ComfyUI-ReActor",
+    "risk": "medium",
+    "confidence": 0.80,
+    "notes": "OUTSIDE WINDOW (Apr 2026). ALPHA — removes InsightFace C++ dependency. v0.6.2 stable is the safe current path (+ HyperSwap + GPEN 2048). Face Similarity node useful for quality gates. Do not deploy 0.7.0 ALPHA in production until stable release."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "checkpoint",
+    "name": "IConFace — Reference-Aware Face Restoration (paper only)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/papers/2605.02814",
+    "risk": "high",
+    "confidence": 0.35,
+    "notes": "OUTSIDE WINDOW (May 4). Academic paper only; no public weights. AdaFace identity anchor + degraded cross-attention. Monitor authors (Axi Niu, Jinyang Zhang) and NTIRE 2026 repo jkwang28/NTIRE2026_RealWorld_Face_Restoration for code release."
+  },
+  {
+    "method": "build_photo_restore,build_face_restore",
+    "category": "checkpoint",
+    "name": "RealRestorer (Step1X-Edit finetune, 12.4B)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/RealRestorer/RealRestorer",
+    "risk": "high",
+    "confidence": 0.55,
+    "notes": "OUTSIDE WINDOW (Mar 2026). 12.4B params, ~24 GB VRAM in bf16. English+Chinese prompts. Apache-2.0. 2.7K downloads. Monitor for FP8/Q8 quantised version. Conceptually strong for build_photo_restore but hardware-infeasible at 16 GB currently."
+  },
+  {
+    "method": "build_normal_map,build_depth_map_v3,build_sam3_segment",
+    "category": "checkpoint",
+    "name": "GenCeption — Video Diffusion as General Vision (paper only, ECCV 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/papers/2607.09024",
+    "risk": "high",
+    "confidence": 0.55,
+    "notes": "IN-WINDOW (Jul 10). 73 HF upvotes. ECCV 2026 paper. No model weights released. Authors: Kaiming He, Joao Carreira, Andrew Zisserman. Could unify depth+normals+segmentation into one video-diffusion pass. Monitor genception.github.io for code/weight release post-ECCV."
+  },
+  {
+    "method": "build_rembg,build_rembg_birefnet,build_rembg_v3,build_sam3_segment,build_sam3_mask,build_sam3_extract",
+    "category": "node_pack",
+    "name": "ComfyUI-RMBG v3.0.0 (1038lab — SAM3 + BEN2 + SDMatte)",
+    "source": "github",
+    "url": "https://github.com/1038lab/ComfyUI-RMBG",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "OUTSIDE WINDOW (Jan 2026). All-in-one node: RMBG-2.0, BiRefNet, BEN2, SAM3+GroundingDINO, SDMatte, INSPYRENET. Text-prompted segmentation, face (19-class), clothes (18-class), fashion matting. Consolidates multiple Spellcaster rembg + sam3 builders under one dependency. Actively maintained."
+  },
+  {
+    "method": "build_rembg_v3",
+    "category": "checkpoint",
+    "name": "Bria V-RMBG 3.0 (video background removal, commercial API)",
+    "source": "github",
+    "url": "https://www.prnewswire.com/news-releases/bria-launches-v-rmbg-3-0-state-of-the-art-video-background-removal-model-302796516.html",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "OUTSIDE WINDOW (Jun 10). Temporally-aware video rembg; 63%+ win rate vs competitors; 9x faster. API-only — no open weights confirmed. Relevant if Spellcaster adds video background removal workflow. Monitor Bria HF for open model announcement."
+  },
+  {
+    "method": "build_sam3_segment,build_sam3_extract",
+    "category": "checkpoint",
+    "name": "GeoSAM2 — 3D Part Segmentation (VAST-AI, CVPR 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/VAST-AI/GeoSAM2",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "OUTSIDE WINDOW (Apr 2026). SAM2 + LoRA + residual geometry fusion for 3D part segmentation. Weight: geosam2.pt. No ComfyUI node — requires custom script. Relevant for Hunyuan3D or TripoSplat downstream part-extraction workflows. ~10 GB VRAM."
+  },
+  {
+    "method": "build_depth_map_v3",
+    "category": "checkpoint",
+    "name": "AnyDepth — DINOv3 + SDT lightweight depth (ICLR 2026, paper)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/papers/2601.02760",
+    "risk": "medium",
+    "confidence": 0.55,
+    "notes": "OUTSIDE WINDOW (Jan 2026). Paper only; public weights not confirmed. DINOv3-based, ~4 GB VRAM estimate. Could be lighter than DA3-LARGE-1.1. Monitor arxiv authors' GitHub for weight release."
+  },
+  {
+    "method": "build_sam3_segment",
+    "category": "checkpoint",
+    "name": "3AM — SAM2 with Geometric Consistency for Wide-Baseline Video",
+    "source": "huggingface",
+    "url": "https://huggingface.co/papers/2601.08831",
+    "risk": "medium",
+    "confidence": 0.60,
+    "notes": "OUTSIDE WINDOW (Jan 2026). Integrates MUSt3R 3D features into SAM2. +15.9 IoU on ScanNet++ vs SAM2 for wide-angle scenes. Paper only; weights not confirmed. Monitor jayisaking.github.io/3AM-Page."
+  },
+  {
+    "method": "build_qwen_edit,build_controlnet_gen,build_inpaint",
+    "category": "controlnet",
+    "name": "Qwen-Image DiffSynth ControlNets (canny + depth patches)",
+    "source": "github",
+    "url": "https://www.runcomfy.com/comfyui-nodes/ComfyUI-QwenImageLoraLoader/nunchaku-qwen-image-diffsynth-controlnet",
+    "risk": "low",
+    "confidence": 0.55,
+    "notes": "OUTSIDE WINDOW (Sep 2025). Lightweight model-patch ControlNets for Qwen-Image (canny, depth, inpaint). ~2 GB per patch; stored in models/model_patches. Node: QwenImageDiffsynthControlNet. May already be in stack — verify before treating as new. InstantX also has a standard Qwen ControlNet implementation."
+  },
+  {
+    "method": "build_faceswap,build_faceswap_model",
+    "category": "node_pack",
+    "name": "FaceFusion 3.7.1 (performance patch)",
+    "source": "github",
+    "url": "https://github.com/facefusion/facefusion/releases",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "NEAR-MISS (Jul 5 — 5 days before window). Fixes frame-distribution regression from 3.7.0. HyperSwap 1a/1b/1c_256 remain the backbone. Stability patch only; no new swap model. The FaceFusion ComfyUI node (huygiatrng/Facefusion_comfyui) exposes HyperSwap to ComfyUI."
+  },
+  {
+    "method": "build_klein_headswap,build_faceswap",
+    "category": "checkpoint",
+    "name": "DreamID-V-Wan-1.3B JR fork (video face-swap, 16 GB path)",
+    "source": "github",
+    "url": "https://github.com/Goldlionren/ComfyUI_JR_DreamID-V",
+    "risk": "medium",
+    "confidence": 0.72,
+    "notes": "OUTSIDE WINDOW (Feb 2026). ECCV 2026. Video face-swap DiT; three variants (MediaPipe, DWPose, Faster). JR fork validated on RTX 5060 Ti 16 GB via FFN chunking + VAE micro-batching + T5 CPU offload. T5-XXL (~10 GB) offloads to CPU RAM — ensure 32 GB system RAM. Potential new build_dreamid_video builder."
+  },
+  {
+    "method": "build_faceswap,build_faceswap_model,build_video_reactor",
+    "category": "checkpoint",
+    "name": "wynnn2168/Nano_faceswap (84M diffusion, Jul 17, no docs)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/wynnn2168/Nano_faceswap",
+    "risk": "high",
+    "confidence": 0.25,
+    "notes": "IN-WINDOW (Jul 17 — modified today). 84M param diffusers face-swap. No model card, no documentation, 72 downloads, 4 likes. Architecture tag: diffusers. Unknown quality. Monitor only — do not integrate until author publishes README and benchmarks."
+  }
+]
