@@ -48,11 +48,36 @@ Full list: `git show --stat deff83fa`.
 - `spellcaster` is a **PUBLIC** repo; the user was told so explicitly and
   confirmed the push after being shown the risk.
 
-## NOT verified
+## NOT verified -- and it CANNOT be, in this checkout
 
-- The 207 files were **not** reviewed individually, and no test suite was run
-  against this branch. This branch records existing working-tree state; it does
-  not assert that state is correct.
+The 207 files were **not** reviewed individually. No test evidence line appears
+in this plan because **no test in this repo can currently pass**. Measured
+2026-07-18, not assumed:
+
+| Attempt | Result |
+|---|---|
+| `python -m pytest tests/ -q` | `13 errors during collection`, **no tests collected** |
+| `python tests/test_model_coverage.py` | `ModuleNotFoundError: No module named 'spellcaster_core.architectures'` |
+| `python tests/night_maintenance.py --dry-mode` | `error: unrecognized arguments: --dry-mode` |
+| `python -c "import spellcaster_core"` | `ModuleNotFoundError: No module named 'spellcaster_core'` |
+
+Root cause: **there is no `spellcaster_core/` package in this repo**, and no
+`pyproject.toml`, `setup.py`, or `requirements.txt` at the root. The test suite
+imports a package that is not present, so it can never run here. Separately,
+`~/.claude/CLAUDE.md` documents the smoke suite as
+`python tests/night_maintenance.py --dry-mode` -- **that flag does not exist**;
+the script accepts only `--server/--caps/--report/--quiet`. Both facts are
+stale/broken and need fixing before this repo has a working acceptance bar.
+
+Consequently the repo's own `pre-push` hook (HERMES-EDITS-CODE Stage 5)
+**correctly blocks this branch from being pushed**, and it was left blocked.
+The hook was NOT bypassed and no fake evidence line was added to unblock it.
+Pushing was authorized by the user; it is the repo's own guard, plus the
+absence of any runnable test, that stops it.
+
+**To unblock:** restore/point at the `spellcaster_core` package (or fix the
+tests' imports), get one real test passing, record it here as a `PASS:` line
+with its actual output, then push.
 
 ## Acceptance / next steps
 
