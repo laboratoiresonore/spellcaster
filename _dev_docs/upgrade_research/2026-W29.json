@@ -1,0 +1,182 @@
+[
+  {
+    "method": "build_qwen_edit",
+    "category": "checkpoint",
+    "name": "Boogu-Image-0.1-Edit-Turbo fp8",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Boogu/Boogu-Image-0.1-Edit-Turbo",
+    "risk": "medium",
+    "confidence": 0.90,
+    "notes": "NEW TODAY (Jul 18): Official FP8 weights pushed today. 4-step distilled instruction-driven edit model. Apache-2.0. ComfyUI-Boogu node pack required (github.com/boogu-project/ComfyUI-Boogu). GGUF Q4 ~5-6 GB, FP8 ~10 GB. Direct competitor to build_qwen_edit. arXiv:2607.13125."
+  },
+  {
+    "method": "build_img2img",
+    "category": "checkpoint",
+    "name": "Boogu-Image-0.1-Edit fp8",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Boogu/Boogu-Image-0.1-Edit",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "Weights updated Jul 16. 10.3B instruction-driven editing model. Apache-2.0. FP8 official weights ~10 GB. arXiv:2607.13125 (Jul 14). Requires ComfyUI-Boogu node pack. Also see ComfyUI tutorial at docs.comfy.org/tutorials/image/boogu/boogu-image-0.1."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Boogu-Image-0.1-Turbo fp8",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Boogu/Boogu-Image-0.1-Turbo-fp8",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "Updated Jul 16. 4-step distilled T2I. Apache-2.0. FP8 official ~10 GB, GGUF Q4 ~5-6 GB. Community GGUF: realrebelai/Boogu-Image-Turbo_GGUFs (15.6K downloads). Requires ComfyUI-Boogu node pack."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "node_pack",
+    "name": "ComfyUI v0.28.0 — Save 3D (Advanced) / Save Splat / Save Point Cloud",
+    "source": "github",
+    "url": "https://docs.comfy.org/changelog",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "NEW vs PR #127. Released Jul 15. Adds Save 3D (Advanced), Save Splat, and Save Point Cloud export nodes to ComfyUI core. GLB/OBJ/PLY output. No new weights required. Ships with ComfyUI >= 0.28.0 upgrade."
+  },
+  {
+    "method": "build_hunyuan_3d_textured",
+    "category": "node_pack",
+    "name": "ComfyUI v0.28.0 — Hunyuan3D obj output optional",
+    "source": "github",
+    "url": "https://docs.comfy.org/changelog",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "NEW vs PR #127. Obj output in Hunyuan3D Text/Image-to-3D nodes is now optional, removing mandatory intermediate step that was causing workflow failures. Ships with ComfyUI >= 0.28.0."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "LTXV Audio VAE (LTX23_audio_vae_bf16.safetensors)",
+    "source": "github",
+    "url": "https://docs.comfy.org/changelog",
+    "risk": "low",
+    "confidence": 0.72,
+    "notes": "NEW vs PR #127 (which knew about LTX Foley LoRA — this is different). ComfyUI 0.28.0 adds native LTXV Audio VAE Loader node. Model file goes in models/vae/. Enables audio-conditioned video generation without Lightricks custom node."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "LTXv Spatial Upscaler 0.9.7 (Lightricks)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Lightricks/ltxv-spatial-upscaler-0.9.7",
+    "risk": "medium",
+    "confidence": 0.50,
+    "notes": "Latent-domain spatial upscaler trained on LTX Video representations. Higher fidelity than pixel-space upscalers for LTX-generated content. Present on HF as of Jul 18; exact release date unconfirmed — may predate Jul 11 window."
+  },
+  {
+    "method": "build_photobooth",
+    "category": "node_pack",
+    "name": "ComfyUI-LongCat-Avatar (LongCat Video Avatar 1.5)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/vantagewithai/LongCat-Video-Avatar-1.5-GGUF-ComfyUI",
+    "risk": "medium",
+    "confidence": 0.55,
+    "notes": "NEW — missed in all prior W29 reviews. ComfyUI node released Jul 11 per aggregator. 13.6B audio+image-to-video talking-head model. GGUF Q4 ~12-14 GB (tight on 16 GB). Built on kijai/WanVideo. New capability: audio-driven portrait video. New builder suggested: build_longcat_avatar."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "node_pack",
+    "name": "ComfyUI-facerestore_advanced (flickleafy)",
+    "source": "github",
+    "url": "https://github.com/flickleafy/ComfyUI-facerestore_advanced",
+    "risk": "low",
+    "confidence": 0.25,
+    "notes": "Quality-gated fallback chain: CodeFormer → GFPGAN → GPEN 1024/2048. Reuses existing model weights (no new downloads). SSIM + artifact detection gating. Date unclear. Low-risk evaluation item. Not in any prior W29 review."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "checkpoint",
+    "name": "OSDFace (CVPR 2025)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/jkwang28/OSDFace",
+    "risk": "high",
+    "confidence": 0.10,
+    "notes": "One-step diffusion face restoration. NTIRE 2026 challenge confirms distilled-diffusion approaches beat CodeFormer. Weights uploaded Nov 2024. No ComfyUI node wrapper yet. Watch jkwang28/OSDFace repo. Long-term replacement path for build_face_restore."
+  },
+  {
+    "method": "build_supir",
+    "category": "checkpoint",
+    "name": "RealRestorer (12.4B, Apache-2.0)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/RealRestorer/RealRestorer",
+    "risk": "medium",
+    "confidence": 0.15,
+    "notes": "March 2026 — outside window. 12.4B, Apache-2.0. Covers 9 degradation types. ComfyUI node: github.com/StartHua/Comfyui_RealRestorer. On RTX 5060 Ti 16 GB: use sequential_offload + tile ≤1024px. Not in any prior W29 review."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "checkpoint",
+    "name": "Hunyuan3D-PolyGen (Tencent)",
+    "source": "github",
+    "url": "https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1/issues/111",
+    "risk": "high",
+    "confidence": 0.30,
+    "notes": "Intelligent mesh retopology (clean quad/tri topology) for Hunyuan3D pipeline. Weights NOT open-sourced (GitHub issue #111 unresolved as of Jul 18). Announcement tweet date ambiguous (~Jul 7, 2025 vs 2026). Monitor tencent/Hunyuan3D on HF for weights drop."
+  },
+  {
+    "method": "build_colorize",
+    "category": "checkpoint",
+    "name": "ColorFLUX — structure-color decoupling colorization",
+    "source": "huggingface",
+    "url": "https://arxiv.org/pdf/2603.28162",
+    "risk": "high",
+    "confidence": 0.10,
+    "notes": "March 2026 paper. Better temporal consistency on degraded historic photos vs DDColor. No public weights or ComfyUI node found. Monitor for release."
+  },
+  {
+    "method": "build_supir",
+    "category": "checkpoint",
+    "name": "MiM-DiT — MoE-in-MoE Image Restoration",
+    "source": "huggingface",
+    "url": "https://arxiv.org/abs/2603.02710",
+    "risk": "high",
+    "confidence": 0.10,
+    "notes": "March 2026 paper. Dual MoE routing for 9 degradation types in single pass — could replace SUPIR 5-stage pipeline. No public HF weights or ComfyUI node found. Monitor for weights release."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "checkpoint",
+    "name": "HyperSwap 1a/1b/1c (256 px, ReActor)",
+    "source": "github",
+    "url": "https://github.com/Gourieff/ComfyUI-ReActor/issues/143",
+    "risk": "low",
+    "confidence": 0.30,
+    "notes": "ALREADY KNOWN — PR #124/#127 Tier 1. 256px vs 128px (inswapper_128), same ReActor nodes, new model path. Active rendering bug #226 (black-circle artifact). Hold for bug fix before enabling."
+  },
+  {
+    "method": "build_seedvr2_video_upscale",
+    "category": "node_pack",
+    "name": "ComfyUI v0.28.0 — native SeedVR2 integration",
+    "source": "github",
+    "url": "https://docs.comfy.org/changelog",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "ALREADY KNOWN — PR #127 Tier 1. Promotes SeedVR2 from custom node (numz/ComfyUI-SeedVR2) to ComfyUI core. Stable landing (reverted #14359, merged #14424). GGUF Q4_K_M fits 8 GB."
+  },
+  {
+    "method": "build_sam3_segment",
+    "category": "checkpoint",
+    "name": "SAM 3.1 (facebook/sam3.1)",
+    "source": "huggingface",
+    "url": "https://ai.meta.com/blog/segment-anything-model-3/",
+    "risk": "low",
+    "confidence": 0.50,
+    "notes": "ALREADY KNOWN — PR #124/#127 Tier 1. 2x faster than SAM 3.0. ~4 GB FP16. Gated model — request Meta access at hf.co/facebook/sam3.1 first. Paper published ICLR 2026 Jul 13 (in-window)."
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "checkpoint",
+    "name": "Comfy-Org/BiRefNet — model refresh Jul 14",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Comfy-Org/BiRefNet",
+    "risk": "low",
+    "confidence": 0.72,
+    "notes": "ALREADY KNOWN — PR #125 Tier 1. Same arch/nodes. Pull latest weights from Comfy-Org/BiRefNet repo for quality improvement. MIT licence."
+  }
+]
