@@ -44,17 +44,6 @@
     "notes": "Same as build_hunyuan_3d_mesh — both 3D builders benefit from native export nodes added in v0.28.0."
   },
   {
-    "method": "build_klein_headswap",
-    "category": "node_pack",
-    "name": "ComfyUI-BFSNodes v1.17.0 (alisson-anjos)",
-    "source": "github",
-    "url": "https://github.com/alisson-anjos/ComfyUI-BFSNodes",
-    "release_date": "2026-07-22",
-    "risk": "low",
-    "confidence": 0.92,
-    "notes": "Major BFSNodes update burst this week (July 17-22). July 22: new LTX Multiple Controls node merging guide/mask/identity conditioning into single node. July 20: Entity Sheet 2x2 node for HuMoSet v7 multi-view character sheets. July 17: ArcFace projector dropped; reference_face renamed to reference_image — potential BREAKING CHANGE that may affect build_klein_headswap parameter handling. Required companion node pack for BFS head-swap LoRAs (Flux-Klein / LTX backbone). No VRAM overhead from node pack itself."
-  },
-  {
     "method": "build_upscale",
     "category": "checkpoint",
     "name": "NVIDIA PID v1.5 (PixelDiT pixel-diffusion upscaler)",
@@ -63,18 +52,7 @@
     "release_date": "2026-07-09",
     "risk": "medium",
     "confidence": 0.88,
-    "notes": "CVPR 2026 Best Paper Finalist. Single-stage pixel-space diffusion transformer (no VAE). PID v1.5 provides 2K->4K upscaling in under 1 second; 13 GB peak VRAM (fits 16 GB card). Works with FLUX, FLUX.2, and Qwen-Image latents via PiD Conditioning node (native ComfyUI v0.28.0). NSCLv1 license = non-commercial only — licensing must be cleared before wiring. Additive new builder build_pid_upscale; not a direct replacement for UltraSharp. Comfy-Org/PixelDiT: 198K downloads, 133 likes. ComfyUI-PiD custom node: github.com/Merserk/ComfyUI-PiD."
-  },
-  {
-    "method": "build_video_upscale",
-    "category": "checkpoint",
-    "name": "NVIDIA PID v1.5 per-frame video upscaling",
-    "source": "github",
-    "url": "https://github.com/nv-tlabs/PiD",
-    "release_date": "2026-07-15",
-    "risk": "medium",
-    "confidence": 0.82,
-    "notes": "Same PID v1.5 model applied per-frame in build_video_upscale. Not a temporal upscaler — works like 4x-UltraSharp but diffusion-based. PiD Upscale node supports 2x/4x/6x/8x output. On Ada+/RTX-50xx an FP4/FP8 path gives additional speedup. A/B test against 4x-UltraSharp warranted. NSCLv1 non-commercial license applies."
+    "notes": "CVPR 2026 Best Paper Finalist. Single-stage pixel-space diffusion transformer (no VAE). PID v1.5 provides 2K→4K upscaling in under 1 second; 13 GB peak VRAM (fits 16 GB card). Works with FLUX, FLUX.2, and Qwen-Image latents via PiD Conditioning node (native ComfyUI v0.28.0). NSCLv1 license = non-commercial only — licensing must be cleared before wiring. Additive new builder build_pid_upscale; not a direct replacement for UltraSharp. Comfy-Org/PixelDiT: 198K downloads, 133 likes. ComfyUI-PiD custom node: github.com/Merserk/ComfyUI-PiD."
   },
   {
     "method": "build_upscale_blend",
@@ -85,7 +63,7 @@
     "release_date": "2026-07-09",
     "risk": "medium",
     "confidence": 0.80,
-    "notes": "PID v1.5 could be added as a third upscaler path in build_upscale_blend alongside the existing two traditional upscalers. Same NSCLv1 non-commercial licensing caveat applies."
+    "notes": "PID v1.5 could be added as a third upscaler path in build_upscale_blend alongside the existing two traditional upscalers. Same licensing caveat (NSCLv1 = non-commercial) applies."
   },
   {
     "method": "build_detail_hallucinate",
@@ -97,6 +75,61 @@
     "risk": "medium",
     "confidence": 0.72,
     "notes": "PID 1.5 offers a pixel-diffusion quality path for fine-detail super-resolution that may outperform the current ESRGAN+SDXL approach. Needs benchmark comparison on portrait/face detail before wiring. NSCLv1 license risk same as above."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "LTX-2.3 (Lightricks, 22B, audio-video)",
+    "source": "github",
+    "url": "https://blog.comfy.org/p/ltx-2-open-source-audio-video-ai",
+    "release_date": "2026-03-01",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Outside 7-day window (March 2026) — already-known item. LTX-2.3 generates synced audio+video in one pass; day-0 ComfyUI support. 22B parameters. Full quality needs 16–24 GB VRAM (borderline for RTX 5060 Ti 16 GB); Q4 quantised fits 12 GB. Spellcaster's build_ltx_video likely targets LTX v1.x — should be updated to 2.3. Audio output is new capability not yet reflected in any builder."
+  },
+  {
+    "method": "build_hunyuan_video",
+    "category": "checkpoint",
+    "name": "HunyuanVideo 1.5 (Tencent, 8.3B, 720p, step-distilled)",
+    "source": "github",
+    "url": "https://github.com/Tencent-Hunyuan/HunyuanVideo-1.5",
+    "release_date": "2025-11-20",
+    "risk": "low",
+    "confidence": 0.82,
+    "notes": "Outside 7-day window (Nov 2025) — already-known item. HunyuanVideo 1.5 is lighter (8.3B vs original), supports 720p native output, step-distilled (8–12 inference steps), diverse styles (realistic/anime/3D). Native ComfyUI support. Fits 16 GB VRAM comfortably. Verify whether build_hunyuan_video already targets 1.5 checkpoint — if still on 1.0, this is a Tier 1 upgrade waiting to be made."
+  },
+  {
+    "method": "build_seedvr2_video_upscale",
+    "category": "checkpoint",
+    "name": "SwiftVR (one-step causal video restoration, H-oliday/SwiftVR)",
+    "source": "github",
+    "url": "https://github.com/jungbtc/ComfyUI-SwiftVR",
+    "release_date": "2026-06-09",
+    "risk": "high",
+    "confidence": 0.22,
+    "notes": "Outside 7-day window (June 9, 2026). One-step diffusion video restoration at ~26 FPS (1080p) on RTX 5090 (32 GB VRAM). No confirmed benchmarks for 16 GB VRAM; native ComfyUI PR #14469 still open as of 2026-07-22. Monitor for GGUF/tiling variant before wiring. Potential strong complement or replacement for SeedVR2."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "checkpoint",
+    "name": "TripoSplat (VAST-AI, image to 3D Gaussian Splat, MIT license)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/VAST-AI/TripoSplat",
+    "release_date": "2026-06-01",
+    "risk": "low",
+    "confidence": 0.70,
+    "notes": "Outside 7-day window (June 2026). Native ComfyUI support PR #14210 (kijai). Generates 3D Gaussian splats from a single image; 6.6 GB VRAM in testing. MIT license. Pairs naturally with new native Save Splat node in v0.28.0. Additive new builder build_triposplat would complement existing HunyuanDiT 3D mesh builders. Monitor for stability before wiring."
+  },
+  {
+    "method": "build_klein_headswap",
+    "category": "node_pack",
+    "name": "ComfyUI-BFSNodes v1.17.0 (alisson-anjos)",
+    "source": "github",
+    "url": "https://github.com/alisson-anjos/ComfyUI-BFSNodes",
+    "release_date": "2026-07-22",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "Major BFSNodes update burst this week (July 17–22). July 22: new LTX Multiple Controls node merging guide/mask/identity conditioning into single node. July 20: Entity Sheet 2x2 node for HuMoSet v7 multi-view character sheets. July 17: ArcFace projector dropped; reference_face renamed to reference_image — BREAKING CHANGE that may affect build_klein_headswap parameter handling. Required companion node pack for BFS head-swap LoRAs (Flux-Klein / LTX backbone). No VRAM overhead from node pack itself."
   },
   {
     "method": "build_pulid_flux",
@@ -132,48 +165,26 @@
     "notes": "API-only (no open weights). 30-second single-shot video, 50 multimodal reference inputs, native 4K, audio-video joint generation, 3D camera blockout. No ComfyUI partner node confirmed yet. Monitor for community node — if one ships, a new build_seedance25_video builder would be warranted. No local VRAM cost."
   },
   {
-    "method": "build_ltx_video",
+    "method": "build_video_upscale",
     "category": "checkpoint",
-    "name": "LTX-2.3 (Lightricks, 22B, audio-video)",
+    "name": "NVIDIA PID v1.5 per-frame video upscaling",
     "source": "github",
-    "url": "https://blog.comfy.org/p/ltx-2-open-source-audio-video-ai",
-    "release_date": "2026-03-01",
-    "risk": "medium",
-    "confidence": 0.85,
-    "notes": "Outside 7-day window (March 2026) — already-known item. LTX-2.3 generates synced audio+video in one pass; day-0 ComfyUI support. 22B parameters. Full quality needs 16-24 GB VRAM (borderline for RTX 5060 Ti 16 GB); Q4 quantised fits 12 GB. build_ltx_video likely targets LTX v1.x — should be updated to 2.3. Community MXFP8 quantisation (Swarzox, July 10) may unlock 16 GB compatibility; unverified."
-  },
-  {
-    "method": "build_hunyuan_video",
-    "category": "checkpoint",
-    "name": "HunyuanVideo 1.5 (Tencent, 8.3B, 720p, step-distilled)",
-    "source": "github",
-    "url": "https://github.com/Tencent-Hunyuan/HunyuanVideo-1.5",
-    "release_date": "2025-11-20",
+    "url": "https://github.com/nv-tlabs/PiD",
+    "release_date": "2026-07-15",
     "risk": "low",
     "confidence": 0.82,
-    "notes": "Outside 7-day window (Nov 2025) — already-known item. HunyuanVideo 1.5 is lighter (8.3B vs original), supports 720p native output, step-distilled (8-12 inference steps), diverse styles (realistic/anime/3D). Native ComfyUI support. Fits 16 GB VRAM comfortably. Verify whether build_hunyuan_video already targets 1.5 checkpoint — if still on 1.0, this is a Tier 1 upgrade."
+    "notes": "Same PID v1.5 model as the image upscale entry but applied per-frame in build_video_upscale. Not a temporal upscaler — works like 4x-UltraSharp but diffusion-based. PiD Upscale node supports 2x/4x/6x/8x output. On Ada+/RTX-50xx an FP4/FP8 path gives additional speedup. A/B test against 4x-UltraSharp warranted — diffusion-based decoding should outperform ESRGAN on fine texture and hair. NSCLv1 non-commercial license applies."
   },
   {
-    "method": "build_seedvr2_video_upscale",
+    "method": "build_ltx_video",
     "category": "checkpoint",
-    "name": "SwiftVR (one-step causal video restoration, H-oliday/SwiftVR)",
-    "source": "github",
-    "url": "https://github.com/jungbtc/ComfyUI-SwiftVR",
-    "release_date": "2026-06-09",
-    "risk": "high",
-    "confidence": 0.22,
-    "notes": "Outside 7-day window (June 9, 2026). One-step diffusion video restoration at ~26 FPS (1080p) on RTX 5090 (32 GB VRAM). No confirmed benchmarks for 16 GB VRAM; native ComfyUI PR #14469 still open as of 2026-07-22. Monitor for GGUF/tiling variant before wiring. Potential strong complement or replacement for SeedVR2."
-  },
-  {
-    "method": "build_hunyuan_3d_mesh",
-    "category": "checkpoint",
-    "name": "TripoSplat (VAST-AI, image to 3D Gaussian Splat, MIT license)",
+    "name": "LTX-2.3-22b-distilled MXFP8 community quantisation (Swarzox)",
     "source": "huggingface",
-    "url": "https://huggingface.co/VAST-AI/TripoSplat",
-    "release_date": "2026-06-01",
-    "risk": "low",
-    "confidence": 0.70,
-    "notes": "Outside 7-day window (June 2026). Native ComfyUI support PR #14210 (kijai). Generates 3D Gaussian splats from a single image; 6.6 GB VRAM in testing. MIT license. Pairs naturally with new native Save Splat node in v0.28.0. Additive new builder build_triposplat would complement existing HunyuanDiT 3D mesh builders. Monitor for stability before wiring."
+    "url": "https://huggingface.co/Swarzox/LTX2.3-22b-distilled-video-only-MXFP8",
+    "release_date": "2026-07-10",
+    "risk": "medium",
+    "confidence": 0.65,
+    "notes": "Borderline window (July 10, five days before window start). Experimental MXFP8 community quantisation of LTX-2.3 22B distilled (video-only; audio stripped). Could get 44 GB BF16 footprint under 16 GB with tiling; RTX 5060 Ti supports FP8 but ComfyUI MXFP8 path unverified. If VRAM confirmed, enables build_ltx_video upgrade to 2.3 quality. Labeled experimental. Monitor for community VRAM reports."
   },
   {
     "method": "build_lama_remove",
@@ -185,5 +196,38 @@
     "risk": "low",
     "confidence": 0.75,
     "notes": "Outside 7-day window (April 2026, ComfyUI PR #13403 merged May 6). Two-pass temporal video inpainting: Pass 1 base inpaint + Pass 2 optical-flow warp for consistency. Pairs with SAM3 masks for automated object selection. Not a stills replacement for LaMa — video-specific additive builder build_void_remove would be the right approach. Monitor for VRAM data; no 16 GB benchmark found."
+  },
+  {
+    "method": "build_qwen_edit",
+    "category": "checkpoint",
+    "name": "JoyAI-Image-Edit 16.3B (instruction-based image editor, Apache 2.0)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/joyAI-labs/JoyAI-Image-Edit",
+    "release_date": "2026-07-21",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "In-window (July 21). 16.3B instruction-based image editor with day-0 ComfyUI node (ComfyUI-JoyAI-Image-Edit). Plus variant (July 17) adds multi-image cross-composition. Apache 2.0 license — no commercial friction. Different architecture from build_qwen_edit (instruction-based vs VLM-based); additive new-builder candidate (build_joyai_edit). FP8-quantizable; 16.3B FP8 ≈ 16 GB peak — borderline for RTX 5060 Ti 16 GB. Monitor for tiling/GGUF variant before wiring. URL unverified — confirm HF repo before download."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Anima aesthetic-v1.1 / CyberRealistic Anima v6.0 (Cosmos-Predict2-2B image model)",
+    "source": "huggingface",
+    "url": "",
+    "release_date": "2026-07-16",
+    "risk": "low",
+    "confidence": 0.60,
+    "notes": "In-window: Anima aesthetic-v1.1 (July 16) and CyberRealistic Anima v6.0 (July 18, community fine-tune). Both based on Cosmos-Predict2-2B — primarily a video-gen architecture adapted to still-image synthesis. At 2B parameters this does not compete with Klein 4B/9B or Flux 1 Dev for portrait/cinematic quality. Very low VRAM (~2–4 GB). Not a supersession of any current builder; additive fast/low-VRAM option only. Monitor for ComfyUI node and quality benchmarks before evaluating further. Confidence low — sub-agent report; no confirmed HF URL."
+  },
+  {
+    "method": "build_controlnet_gen",
+    "category": "checkpoint",
+    "name": "Qwen-Image ControlNet Union + Z-Image ControlNet Union FP8",
+    "source": "huggingface",
+    "url": "",
+    "release_date": "2026-07-17",
+    "risk": "low",
+    "confidence": 0.40,
+    "notes": "In-window: Qwen-Image ControlNet Union (July 17) and Z-Image ControlNet Union FP8 (July 21). Unified multi-condition ControlNet adapters (canny+depth+pose+normal in one pass) for Qwen-Image and Z-Image-Turbo backbones respectively. Neither has a confirmed ComfyUI node as of 2026-07-22. Low confidence — reported by image-gen sub-agent; HF URLs unverified. If confirmed, would extend build_controlnet_gen to Qwen/Z-Image paths. Monitor."
   }
 ]
