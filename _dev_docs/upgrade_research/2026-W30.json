@@ -1,0 +1,182 @@
+[
+  {
+    "method": "build_seedvr2_video_upscale",
+    "category": "node_pack",
+    "name": "ComfyUI v0.28.0 native SeedVR2 nodes",
+    "source": "github",
+    "url": "https://comfyui-wiki.com/en/news/2026-07-15-comfyui-v0-28-0",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Already in PR #130 Tier 1. Breaking: old single-node custom graph fails on ComfyUI >=0.28.0. Rebuild with 4-node native layout (Load DiT Model, Load VAE, Upscale Image, Upscale Video). FP8 fits 16 GB."
+  },
+  {
+    "method": "build_seedv2r",
+    "category": "node_pack",
+    "name": "ComfyUI v0.28.0 native SeedVR2 nodes",
+    "source": "github",
+    "url": "https://comfyui-wiki.com/en/news/2026-07-15-comfyui-v0-28-0",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Already in PR #130 Tier 1. Same as build_seedvr2_video_upscale -- both builders reference the now-native SeedVR2 nodes."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "node_pack",
+    "name": "ComfyUI v0.28.0 native Save 3D Advanced / Save Splat / Save Point Cloud",
+    "source": "github",
+    "url": "https://comfyui-wiki.com/en/news/2026-07-15-comfyui-v0-28-0",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Already in PR #130 Tier 1. Three new native nodes ship in v0.28.0: Save 3D Advanced (glTF/OBJ/FBX), Save Splat (3DGS .ply), Save Point Cloud (.ply). Pure node swap; no model download."
+  },
+  {
+    "method": "build_hunyuan_3d_textured",
+    "category": "node_pack",
+    "name": "ComfyUI v0.28.0 native Save 3D Advanced / Save Splat / Save Point Cloud",
+    "source": "github",
+    "url": "https://comfyui-wiki.com/en/news/2026-07-15-comfyui-v0-28-0",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Already in PR #130 Tier 1. Same as build_hunyuan_3d_mesh -- both share the native 3D export nodes."
+  },
+  {
+    "method": "build_klein_headswap",
+    "category": "node_pack",
+    "name": "BFSNodes v1.17.0 reference_image rename",
+    "source": "github",
+    "url": "https://github.com/bash-j/mikey_nodes",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Already in PR #130 Tier 2. Breaking param rename: reference_face -> reference_image. Also adds LTX Multiple Controls node and Entity Sheet 2x2 node. One-line audit needed in builder."
+  },
+  {
+    "method": "build_upscale",
+    "category": "checkpoint",
+    "name": "NVIDIA PiD v1.5 (PixelDiT pixel-diffusion decoder)",
+    "source": "github",
+    "url": "https://github.com/nv-tlabs/PiD",
+    "risk": "medium",
+    "confidence": 0.82,
+    "notes": "Already in PR #130 Tier 2. 2K->4K pixel-space diffusion decoder; no VAE round-trip; RTX Tensor Core accelerated. Blocked by NSCLv1 non-commercial license -- legal review required before wiring. ComfyUI v0.28.0 native PixelDiT nodes available."
+  },
+  {
+    "method": "build_qwen_edit",
+    "category": "checkpoint",
+    "name": "JoyAI-Image-Edit-Plus ComfyUI native packages",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Comfy-Org/JoyAI-Image-Edit",
+    "risk": "medium",
+    "confidence": 0.93,
+    "notes": "Upgraded from PR #130 Tier 3 to Tier 2. Comfy-Org/JoyAI-Image-Edit and jdopensource/JoyAI-Image-Edit-ComfyUI packages live Jul 17-21. Multi-reference (1-5 source images) instruction editing extends build_qwen_edit beyond single-image scope. Apache 2.0. FP8/INT8 fit 16 GB. Base model: Qwen3-VL-8B (16.3B for Plus variant)."
+  },
+  {
+    "method": "build_klein_headswap",
+    "category": "lora",
+    "name": "Krea 2 Identity Edit v1.2 / v1.2.2",
+    "source": "huggingface",
+    "url": "https://huggingface.co/conradlocke/krea2-identity-edit",
+    "risk": "medium",
+    "confidence": 0.90,
+    "notes": "NEW (Jul 17-22). LoRA on Krea 2 Raw (12.9B MMDiT). Instruction-based head/face/eye replacement, outpainting, virtual try-on. ComfyUI nodes: comfyui-krea2edit (github.com/lbouaraba/comfyui-krea2edit). FP8 Turbo ~12 GB fits RTX 5060 Ti (tight). License: Krea 2 Community -- free <$1M revenue, Enterprise above. 523 HF likes. New builder candidate: build_krea2_headswap."
+  },
+  {
+    "method": "build_faceid_img2img",
+    "category": "lora",
+    "name": "Krea 2 Identity Edit v1.2 / v1.2.2",
+    "source": "huggingface",
+    "url": "https://huggingface.co/conradlocke/krea2-identity-edit",
+    "risk": "medium",
+    "confidence": 0.90,
+    "notes": "NEW (Jul 17-22). ref_boost parameter replaces separate FaceID embedding step. See build_klein_headswap record for full details."
+  },
+  {
+    "method": "build_wan_animate_video",
+    "category": "checkpoint",
+    "name": "Wan-Dancer-14B",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Wan-AI/Wan-Dancer-14B",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "NEW (Jul 13, near-window). Apache 2.0; official Wan-AI release. Audio-conditioned dance video: reference-image + music + dance-style text -> 720p/30fps up to ~60s. 5 genres: K-pop, Chinese classical, street, Latin, tap. 14B params; GGUF Q5/FP8 expected to fit 16 GB. No dedicated ComfyUI node confirmed at survey time. New build_wan_dancer_video candidate."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "FLUX 3 (Black Forest Labs multimodal)",
+    "source": "github",
+    "url": "https://bfl.ai/blog/flux-3",
+    "risk": "high",
+    "confidence": 0.90,
+    "notes": "NEW (Jul 23). Unified multimodal model: image + 20-second video with native audio, from a single set of weights (Self-Flow architecture). API early-access only; no public weights. Dev open-weight ETA 'later 2026'. Image path expected 16 GB OK based on FLUX.2 precedent; video+audio path VRAM unknown. No ComfyUI support yet. When weights release: architectural break from current Flux UNET approach, requiring new node types."
+  },
+  {
+    "method": "build_wan22_t2v",
+    "category": "checkpoint",
+    "name": "ShotPlan-Wan2.1-T2V-14B",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Pensioner/ShotPlan-Wan2.1-T2V-14B",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "NEW (Jul 19). Apache 2.0. Fine-tune of Wan2.1-T2V-14B for multi-shot video generation with shot-transition support. Paper: arxiv:2607.17675. No ComfyUI node confirmed. New build_wan_multishot_video candidate when node arrives."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "lora",
+    "name": "LTX-2.3 CrossView Prompt IC-LoRA",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Cseti/LTX2.3-22B_IC-LoRA-CrossView-Prompt",
+    "risk": "low",
+    "confidence": 0.78,
+    "notes": "NEW (Jul 10, near-window). Camera re-angle: reference video + camera-angle text prompt -> new-viewpoint re-render preserving content. Runs on LTX-2.3 22B; FP8 distilled fits 16 GB at 720p. IMPORTANT: load with LTXICLoRALoaderModelOnly + LTXAddVideoICLoRAGuide -- plain LoraLoader breaks Reference Downscale Factor. v0.9 proof-of-concept stage."
+  },
+  {
+    "method": "build_qwen_edit",
+    "category": "checkpoint",
+    "name": "Boogu-Image-0.1-Edit FP8",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Boogu/Boogu-Image-0.1-Edit-fp8",
+    "risk": "medium",
+    "confidence": 0.72,
+    "notes": "NEW FP8 (Jul 24). 10.3B unified instruction edit + generation model. Apache 2.0; bilingual EN/ZH. Technical report arxiv:2607.13125 posted Jul 16. Base weights from June 2026 but FP8 variant posted today makes 16 GB viable. Claims near-closed-source performance at $400K training budget. Alternative to build_qwen_edit backbone."
+  },
+  {
+    "method": "build_klein_auto_inpaint",
+    "category": "node_pack",
+    "name": "ComfyUI-Klein-Toolkit",
+    "source": "github",
+    "url": "https://github.com/pearhoang/ComfyUI-Klein-Toolkit",
+    "risk": "low",
+    "confidence": 0.78,
+    "notes": "NEW (Jul 20). 10-node ComfyUI pack for FLUX.2 Klein 9B: Remove/Fill, Control-Image, Generative Expand (per-side canvas expansion). Requires existing Klein stack (flux-2-klein-9b-fp8 + qwen_3_8b_fp8mixed + flux2-vae). 0 stars; no English README; early-stage. Additive only -- no new weights."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "checkpoint",
+    "name": "Bernini-R + BFS-Best-Face-Swap-Video IC-LoRA",
+    "source": "github",
+    "url": "https://github.com/bytedance/Bernini",
+    "risk": "medium",
+    "confidence": 0.60,
+    "notes": "Background ecosystem (Bernini-R: Jun 2026; N0vice fork Jul 19). ByteDance Wan 2.2 fine-tune for video editing: garment swap, character insertion, video face/head swap via IC-LoRA conditioning. Apache 2.0. ComfyUI nodes exist (docs.comfy.org/tutorials/video/bytedance/bernini-r). ~16B params; 16 GB tight -- FP8/NF4 needed. No current Spellcaster video face-swap method -- this fills that gap. Confidence penalised: core model pre-window."
+  },
+  {
+    "method": "build_wan_animate_video",
+    "category": "node_pack",
+    "name": "ComfyUI v0.28.1 HeyGen Partner Nodes",
+    "source": "github",
+    "url": "https://docs.comfy.org/changelog",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "NEW (Jul 17). API-based avatar video: Avatar Video, Talking Photo, Create Avatar, Video Translate, Text to Speech nodes. Cloud-only; HeyGen API key required; per-second billing. Zero local VRAM. Additive; does not break existing workflows."
+  },
+  {
+    "method": "build_controlnet_gen",
+    "category": "checkpoint",
+    "name": "FLUX.2-dev-Fun-Controlnet-Union-fp8 (community quant)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/dummy9996/FLUX.2-dev-Fun-Controlnet-Union-fp8",
+    "risk": "low",
+    "confidence": 0.60,
+    "notes": "NEW quant (Jul 18). FP8 quantisation of alibaba-pai/FLUX.2-dev-Fun-Controlnet-Union (VideoX-Fun unified ControlNet: canny, depth, pose, HED, MLSD, scribble, inpaint -- one checkpoint). Base model released Dec 2025; this quant drops it into 16 GB territory. Confidence penalised: community quant from unverified account (dummy9996). Validate against official weights before use."
+  }
+]
