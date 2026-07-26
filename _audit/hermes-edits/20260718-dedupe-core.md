@@ -11,7 +11,7 @@ Removed duplicate `spellcaster_core` stub that was shadowing the authoritative p
 71 passed, 3 skipped in 13.47s
 ```
 
-Evidence: running `pytest tests/ -q` confirms 71 passed, 3 skipped
+**evidence**: running `pytest tests/ -q` confirms 71 passed, 3 skipped
 
 ## Changes Made
 
