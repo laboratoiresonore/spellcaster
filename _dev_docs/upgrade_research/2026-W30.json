@@ -1,0 +1,362 @@
+[
+  {
+    "method": "build_rembg_birefnet",
+    "category": "checkpoint",
+    "name": "Lucida (BiRefNet_HR fine-tune)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/egeorcun/lucida",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "IN WINDOW (Jul 24). Drop-in weight swap for BiRefNet-HR. Fine-tuned on 52,882 image/alpha pairs for glass/transparency, camouflage, glow/VFX, illustrations. ComfyUI-RMBG v3.1.0 already wires BiRefNet-Lucida. No builder code change needed. MIT license. 6-8 GB VRAM."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Anima Aesthetic v1.0 (circlestone-labs/Anima)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/circlestone-labs/Anima",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "IN WINDOW (Jul 24). 2B DiT from NVIDIA Cosmos-Predict2-2B-Text2Image. Qwen3-0.6B text encoder + Qwen-Image VAE. Non-photorealistic/anime workloads only. Native ComfyUI via Comfy Org. Non-commercial license. ~8 GB VRAM. Turbo v1.0 also available for faster inference."
+  },
+  {
+    "method": "build_klein_img2img",
+    "category": "checkpoint",
+    "name": "Bonsai Image Ternary 4B (prism-ml/bonsai-image-ternary-4B-unpacked)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/prism-ml/bonsai-image-ternary-4B-unpacked",
+    "risk": "low",
+    "confidence": 0.75,
+    "notes": "Jun 1. Ternary {-1,0,+1} distillation of Flux.2-Klein-4B. 1.21 GB disk vs 7.75 GB FP16. Same Flux2KleinPipeline, Apache 2.0. Applies to ALL build_klein_* methods. ~4-6 GB VRAM. Minor quality regression vs FP16 — good for edge/low-VRAM."
+  },
+  {
+    "method": "build_klein_img2img_ref",
+    "category": "checkpoint",
+    "name": "Bonsai Image Ternary 4B (prism-ml/bonsai-image-ternary-4B-unpacked)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/prism-ml/bonsai-image-ternary-4B-unpacked",
+    "risk": "low",
+    "confidence": 0.75,
+    "notes": "Jun 1. Ternary Klein-4B variant. Applies to all build_klein_* methods. See build_klein_img2img entry for details."
+  },
+  {
+    "method": "build_klein_headswap",
+    "category": "checkpoint",
+    "name": "Bonsai Image Ternary 4B (prism-ml/bonsai-image-ternary-4B-unpacked)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/prism-ml/bonsai-image-ternary-4B-unpacked",
+    "risk": "low",
+    "confidence": 0.75,
+    "notes": "Jun 1. Ternary Klein-4B variant. Applies to all build_klein_* methods. See build_klein_img2img entry for details."
+  },
+  {
+    "method": "build_klein_headswap",
+    "category": "lora",
+    "name": "BFS Best Face Swap LoRA v3 (Alissonerdx/BFS-Best-Face-Swap)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Mar 8 (background). Head V3 is stable recommended variant. MIT license. 545K downloads. Requires Klein 9B base. 6-16 GB VRAM. Verify against _inventory/ LoRA list — may already be in user's collection."
+  },
+  {
+    "method": "build_klein_face_detail",
+    "category": "lora",
+    "name": "BFS Best Face Swap LoRA — Face V1 (Alissonerdx/BFS-Best-Face-Swap)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Mar 8 (background). BFS Face V1 preserves target details while swapping identity. See build_klein_headswap BFS entry for details."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "checkpoint",
+    "name": "HyperSwap 256 (facefusion/models-3.3.0 — hyperswap_1a/1b/1c_256.onnx)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facefusion/models-3.3.0",
+    "risk": "medium",
+    "confidence": 0.90,
+    "notes": "Jul 5 (FaceFusion 3.7.1). 256 px crop vs inswapper_128's 128 px — 2x resolution, better fine detail. Three ONNX variants: 1a (fast), 1b (balanced), 1c (quality). Models available NOW. Blocker: ComfyUI-ReActor issue #143 unmerged. Manual ONNX loader is interim path. ~6-10 GB VRAM."
+  },
+  {
+    "method": "build_faceswap_model",
+    "category": "checkpoint",
+    "name": "HyperSwap 256 (facefusion/models-3.3.0)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facefusion/models-3.3.0",
+    "risk": "medium",
+    "confidence": 0.90,
+    "notes": "Jul 5. See build_faceswap HyperSwap entry for details."
+  },
+  {
+    "method": "build_faceswap_mtb",
+    "category": "checkpoint",
+    "name": "HyperSwap 256 (facefusion/models-3.3.0)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facefusion/models-3.3.0",
+    "risk": "medium",
+    "confidence": 0.90,
+    "notes": "Jul 5. See build_faceswap HyperSwap entry for details. MTB uses same InsightFace detection stack."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "node_pack",
+    "name": "ComfyUI-Forbidden-Vision (luxdelux7/ComfyUI-Forbidden-Vision)",
+    "source": "github",
+    "url": "https://github.com/luxdelux7/ComfyUI-Forbidden-Vision",
+    "risk": "low",
+    "confidence": 0.72,
+    "notes": "Jul 19 (maintenance commit). Established since Dec 2025. YOLO11 custom heads (realistic/anime/NSFW) + Neural Corrector for exposure/color correction. Better than CodeFormer's detection on side-profiles and occlusion. Apache 2.0. Models auto-download from HF. ~10 GB est. VRAM."
+  },
+  {
+    "method": "build_photo_restore",
+    "category": "node_pack",
+    "name": "ComfyUI-Forbidden-Vision Neural Corrector",
+    "source": "github",
+    "url": "https://github.com/luxdelux7/ComfyUI-Forbidden-Vision",
+    "risk": "low",
+    "confidence": 0.72,
+    "notes": "Jul 19. Neural Corrector node addresses color bleeding that CodeFormer introduces. See build_face_restore entry for details."
+  },
+  {
+    "method": "build_sam3_segment",
+    "category": "checkpoint",
+    "name": "SAM 3.1 (facebook/sam3.1)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facebook/sam3.1",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Mar 27, 2026. ~7x faster multi-instance inference, global temporal reasoning. Drop-in checkpoint replacement. Gated (Meta Research License, same terms as SAM3). Must accept license on HF. Verify SAM3 node pack is not pinned to original SAM3 checkpoint. 8-10 GB VRAM."
+  },
+  {
+    "method": "build_sam3_mask",
+    "category": "checkpoint",
+    "name": "SAM 3.1 (facebook/sam3.1)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facebook/sam3.1",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Mar 27, 2026. See build_sam3_segment entry for details."
+  },
+  {
+    "method": "build_sam3_extract",
+    "category": "checkpoint",
+    "name": "SAM 3.1 (facebook/sam3.1)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facebook/sam3.1",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Mar 27, 2026. See build_sam3_segment entry for details."
+  },
+  {
+    "method": "build_wan_animate_video",
+    "category": "checkpoint",
+    "name": "Wan-Dancer-14B INT4 ConvRot (Wan-AI/Wan-Dancer-14B + Winnougan INT4 quant)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Wan-AI/Wan-Dancer-14B",
+    "risk": "medium",
+    "confidence": 0.72,
+    "notes": "Jul 13-17 (adjacent). 14B I2V model for music-conditioned rhythmic dance animation, 720p/30fps. Apache 2.0. INT4 ConvRot quant (Winnougan/Wan-Dancer-14B-INT8-INT4-Convrot) targets ~14-16 GB with CPU T5 offload. Blocker: ComfyUI-WanVideoWrapper support unconfirmed as of Jul 17. Dance/rhythm use case only — not general I2V."
+  },
+  {
+    "method": "build_video_upscale",
+    "category": "node_pack",
+    "name": "SparkVSR (JiongzeYu/SparkVSR + smthemex/ComfyUI_SparkVSR_SM)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/JiongzeYu/SparkVSR",
+    "risk": "medium",
+    "confidence": 0.68,
+    "notes": "May-Jun 2026. Keyframe-guided VSR via CogVideoX1.5-5B-I2V backbone. Propagates SR improvements from sparse keyframes to full video — better for long clips than SeedVR2's one-shot approach. ECCV 2026. ComfyUI node: github.com/smthemex/ComfyUI_SparkVSR_SM. 10-14 GB VRAM."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "node_pack",
+    "name": "LTX-2.3 Video LoRA training support",
+    "source": "github",
+    "url": "https://ltx.io/blog-category/product-updates",
+    "risk": "low",
+    "confidence": 0.62,
+    "notes": "Jul 8 (adjacent). Lightricks shipped native video LoRA + IC-LoRA + full fine-tune training for LTX-2.3. Opens community LTX LoRA ecosystem. Additive infrastructure improvement — verify if build_ltx_video already has inject_lora_chain path."
+  },
+  {
+    "method": "build_inpaint",
+    "category": "checkpoint",
+    "name": "Krea 2 Turbo FP8 (AlperKTS/Krea2_FP8)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/AlperKTS/Krea2_FP8",
+    "risk": "medium",
+    "confidence": 0.65,
+    "notes": "Jul 19 (workflow docs; model Jun 22). 12.9B MMDiT + Qwen3-VL. FP8 ~12 GB — fits if no headroom issues. Full BF16 ~28 GB (skip). Needs comfyui-krea2-controlnet node. License unclear for Turbo variant. Monitor for VRAM stability reports."
+  },
+  {
+    "method": "build_outpaint",
+    "category": "checkpoint",
+    "name": "Krea 2 Turbo FP8 (AlperKTS/Krea2_FP8)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/AlperKTS/Krea2_FP8",
+    "risk": "medium",
+    "confidence": 0.65,
+    "notes": "Jul 19 (workflow docs; model Jun 22). See build_inpaint Krea 2 entry for details."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "checkpoint",
+    "name": "IConFace (cosmicrealm/IConFace — Klein-4B backbone + AdaFace identity)",
+    "source": "github",
+    "url": "https://github.com/cosmicrealm/IConFace",
+    "risk": "high",
+    "confidence": 0.70,
+    "notes": "May 2026 (paper arxiv:2605.02814). Reference-aware face restoration using Flux.2-Klein-4B backbone + AdaFace identity embedding. Significantly better identity fidelity than CodeFormer on degraded inputs. No ComfyUI node yet. ~12 GB VRAM. Track for Q3 2026 community wrapper."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "checkpoint",
+    "name": "Pixal3D (TencentARC/Pixal3D)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/TencentARC/Pixal3D",
+    "risk": "medium",
+    "confidence": 0.72,
+    "notes": "May 2026 (SIGGRAPH 2026, arxiv:2605.10922). Pixel-aligned I2→3D with PBR textures (albedo+metallic+roughness). Trellis.2 backbone. MIT license. 302 likes. Alternative (not direct replacement) to Hunyuan3D 2.1 — better pixel correspondence. No ComfyUI node pack yet. ~12-16 GB. Watch TencentARC/Pixal3D GitHub."
+  },
+  {
+    "method": "build_hunyuan_3d_textured",
+    "category": "checkpoint",
+    "name": "Pixal3D (TencentARC/Pixal3D)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/TencentARC/Pixal3D",
+    "risk": "medium",
+    "confidence": 0.72,
+    "notes": "May 2026. See build_hunyuan_3d_mesh Pixal3D entry for details."
+  },
+  {
+    "method": "build_video_upscale",
+    "category": "node_pack",
+    "name": "FlashVSR v1.1 (naxci1/ComfyUI-FlashVSR_Stable)",
+    "source": "github",
+    "url": "https://github.com/naxci1/ComfyUI-FlashVSR_Stable",
+    "risk": "medium",
+    "confidence": 0.65,
+    "notes": "Nov 2025 (CVPR 2026 best-paper track). One-step streaming VSR, ~17 FPS at 768x1408 on A100. Fits 12-16 GB at lower resolution. Three competing ComfyUI implementations (1038lab, smthemex, naxci1) — use naxci1 stable fork. Streaming interface may conflict with batch approach used by build_video_upscale."
+  },
+  {
+    "method": "build_klein_headswap",
+    "category": "checkpoint",
+    "name": "Krea 2 Identity Edit LoRA v1.2 (lbouaraba/comfyui-krea2edit)",
+    "source": "github",
+    "url": "https://github.com/lbouaraba/comfyui-krea2edit",
+    "risk": "medium",
+    "confidence": 0.78,
+    "notes": "Jul 17. Instruction-based identity-preserving editor on Krea 2. LoRA enables face/head swap, eye replacement, try-on. ref_boost dial for fidelity vs editability. v1.2 fixed blurry results from v1.1 via FIT reference geometry. Krea 2 base model ~14-18 GB — likely exceeds 16 GB budget. Hold until INT8 quant confirmed."
+  },
+  {
+    "method": "build_klein_face_detail",
+    "category": "checkpoint",
+    "name": "Krea 2 Identity Edit LoRA v1.2 (lbouaraba/comfyui-krea2edit)",
+    "source": "github",
+    "url": "https://github.com/lbouaraba/comfyui-krea2edit",
+    "risk": "medium",
+    "confidence": 0.78,
+    "notes": "Jul 17. See build_klein_headswap Krea 2 entry for details."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Ideogram 4.0 nf4 (ideogram-ai/ideogram-4-nf4)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/ideogram-ai/ideogram-4-nf4",
+    "risk": "medium",
+    "confidence": 0.70,
+    "notes": "Jun 3. 9.3B DiT, 2K native resolution, native text rendering in multiple languages. nf4 ~8 GB VRAM. Gated (must accept Ideogram 4 Non-Commercial License). Non-standard JSON structured prompting. Strong for typography/text-heavy generation. Internal/non-commercial use only."
+  },
+  {
+    "method": "build_style_transfer",
+    "category": "lora",
+    "name": "AnyStyle (arxiv 2607.04677) — single LoRA style transfer on Flux",
+    "source": "github",
+    "url": "https://arxiv.org/abs/2607.04677",
+    "risk": "medium",
+    "confidence": 0.55,
+    "notes": "Jul 6 (paper only). Replaces dual-LoRA (style+content) with single adapter. Training-free structural guidance from content image internal attention. Flux backbone. No code released yet. ~4-8 week ETA for code drop based on typical pattern."
+  },
+  {
+    "method": "build_depth_map_v3",
+    "category": "checkpoint",
+    "name": "GenCeption (arxiv 2607.09024) — video DiT unified perception",
+    "source": "github",
+    "url": "https://arxiv.org/abs/2607.09024",
+    "risk": "high",
+    "confidence": 0.30,
+    "notes": "Jul 10 (paper only, near-window). Unified perception from video diffusion transformer: depth, normals, segmentation, pose in one model. No weights released. Likely >16 GB (video DiT backbone). Monitor for weights + quantization."
+  },
+  {
+    "method": "build_normal_map",
+    "category": "checkpoint",
+    "name": "GenCeption (arxiv 2607.09024) — video DiT unified perception",
+    "source": "github",
+    "url": "https://arxiv.org/abs/2607.09024",
+    "risk": "high",
+    "confidence": 0.30,
+    "notes": "Jul 10 (paper only). See build_depth_map_v3 GenCeption entry for details."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "checkpoint",
+    "name": "PixWorld (arxiv 2607.05373) — scene-level 3D Gaussians",
+    "source": "github",
+    "url": "https://arxiv.org/abs/2607.05373",
+    "risk": "high",
+    "confidence": 0.35,
+    "notes": "Jul 6 (paper only). Scene-level (not object-level like Hunyuan3D). 4-step distilled, ~0.6s generation. No weights. Would be a new builder, not a replacement for Hunyuan3D mesh."
+  },
+  {
+    "method": "build_normal_map",
+    "category": "checkpoint",
+    "name": "SurGe (arxiv 2605.31577) — surface geometry post-processor",
+    "source": "github",
+    "url": "https://arxiv.org/abs/2605.31577",
+    "risk": "high",
+    "confidence": 0.40,
+    "notes": "May 2026 (paper only). Post-processor over existing depth models (e.g. DA3) adding point gradient matching for sharper normals. Best rank across 8 zero-shot benchmarks. No weights. ~2-4 GB overhead if released."
+  },
+  {
+    "method": "build_photobooth",
+    "category": "checkpoint",
+    "name": "Vera (arxiv 2607.20247) — identity-focal video generation",
+    "source": "github",
+    "url": "https://arxiv.org/abs/2607.20247",
+    "risk": "high",
+    "confidence": 0.65,
+    "notes": "Jul 22 (IN WINDOW, paper only). Identity drift prevention for multi-person video generation. IFMS + RALA attention mechanisms. Research-stage; no weights/code. Video diffusion backbone likely >16 GB inference. Watch for Kuaishou release."
+  },
+  {
+    "method": "build_qwen_edit",
+    "category": "checkpoint",
+    "name": "Qwen-Image-3.0 (API-only announcement)",
+    "source": "github",
+    "url": "https://qwenimages.com/blog/qwen-image-3-release",
+    "risk": "high",
+    "confidence": 0.0,
+    "notes": "Jul 21 (IN WINDOW, API only). 4500-token prompts, 12-language text rendering, structured layouts. No open weights as of Jul 26. Monitor Qwen/Qwen-Image HF page."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "FLUX 3 Dev (Black Forest Labs — announced Jul 23, no weights)",
+    "source": "github",
+    "url": "https://venturebeat.com/technology/black-forest-labs-launches-flux-3-capable-of-generating-images-and-20-second-video-with-audio-but-in-limited-release-to-start/",
+    "risk": "high",
+    "confidence": 0.0,
+    "notes": "Jul 23 (IN WINDOW, API only). Multimodal image+video+audio from single backbone. FLUX 3 Dev open weights planned H2 2026 — no date. When Dev drops, will require broad builder updates across all image/video/Klein builders. Watch black-forest-labs HF org."
+  },
+  {
+    "method": "build_video_upscale",
+    "category": "checkpoint",
+    "name": "AVSR-Diff (arxiv 2607.00987) — scale-agnostic diffusion VSR",
+    "source": "github",
+    "url": "https://arxiv.org/abs/2607.00987",
+    "risk": "high",
+    "confidence": 0.30,
+    "notes": "Jul 1 (paper only). Arbitrary-scale VSR with temporal consistency via diffusion priors. No weights or code repository found. Low priority."
+  }
+]
