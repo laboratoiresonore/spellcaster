@@ -747,7 +747,7 @@ def test_full_inline_workflow_shape():
     builds with the expected class_types and node count."""
     nf = node_factory.NodeFactory()
     img_id = nf.etn_load_image_base64("aGVsbG8=")
-    save_id = nf.save_image_websocket([img_id, 0])
+    save_id = nf.save_image_websocket([img_id, 0], disk_backup=False)
     wf = nf.build()
     assert len(wf) == 2
     classes = sorted(node["class_type"] for node in wf.values())

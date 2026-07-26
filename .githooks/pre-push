@@ -19,7 +19,86 @@ set -eu
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 HEAD_AUTHOR="$(git log -1 --format='%an <%ae>')"
 
-# Only enforce on hermes/* branches
+# ---------------------------------------------------------------------------
+# Rule 0: PUBLIC-REPO LEAK GATE (added 2026-07-18).
+#
+# `spellcaster` is a PUBLIC repository. A push here is irreversible publication:
+# deleting a commit later does not un-publish it (forks, caches, and the GitHub
+# events API keep it). This gate runs on EVERY branch -- not just hermes/* --
+# because the branch name is not what makes a leak dangerous.
+#
+# It scans the commits actually being pushed (not the whole tree) for
+# credentials and personal identifiers. It is deliberately noisy: a false
+# positive costs one `--no-verify` decision by a human; a false negative costs
+# a permanent public leak.
+# ---------------------------------------------------------------------------
+_leak_scan() {
+  local range="$1"
+  local added
+  added="$(git diff --unified=0 "$range" 2>/dev/null | grep '^+' | grep -v '^+++' || true)"
+  [ -z "$added" ] && return 0
+
+  local pat_secret='ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|hf_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}'
+  local pat_cred='(?i)(password|passwd|secret|api_key|apikey|token)[[:space:]]*[:=][[:space:]]*["'"'"'][^"'"'"'{$<]{8,}["'"'"']'
+  local pat_pii='leguillaume|lmlgg|@gmail\.com|192\.168\.86\.(31|23|77|219)'
+
+  local hits=""
+  hits="$(printf '%s
+' "$added" | grep -nEi "$pat_secret" || true)"
+  local hits2 hits3
+  hits2="$(printf '%s
+' "$added" | grep -nEi "$pat_cred" || true)"
+  hits3="$(printf '%s
+' "$added" | grep -nE  "$pat_pii" || true)"
+
+  if [ -n "$hits$hits2$hits3" ]; then
+    echo "=================================================================" >&2
+    echo "  pre-push BLOCKED: possible secret / personal data in a PUBLIC repo" >&2
+    echo "=================================================================" >&2
+    [ -n "$hits"  ] && { echo "  [credential pattern]" >&2; printf '%s
+' "$hits"  | head -5 | cut -c1-160 >&2; }
+    [ -n "$hits2" ] && { echo "  [hardcoded cred]"     >&2; printf '%s
+' "$hits2" | head -5 | cut -c1-160 >&2; }
+    [ -n "$hits3" ] && { echo "  [personal identifier]" >&2; printf '%s
+' "$hits3" | head -5 | cut -c1-160 >&2; }
+    echo "" >&2
+    echo "  spellcaster is PUBLIC. Publication is NOT reversible by deleting" >&2
+    echo "  the commit later. Sanitize, or override deliberately with:" >&2
+    echo "    SKIP_PUBLIC_LEAK_GATE=1 git push ..." >&2
+    echo "  If a real credential already left this machine, ROTATE IT FIRST." >&2
+    echo "=================================================================" >&2
+    return 1
+  fi
+  return 0
+}
+
+if [ "${SKIP_PUBLIC_LEAK_GATE:-0}" != "1" ]; then
+  _ZERO=0000000000000000000000000000000000000000
+  while read -r _lref _lsha _rref _rsha; do
+    [ -z "${_lsha:-}" ] && continue
+    # Local all-zeros = branch DELETION -> nothing being published, skip.
+    [ "$_lsha" = "$_ZERO" ] && continue
+
+    if [ "${_rsha:-$_ZERO}" != "$_ZERO" ] && git cat-file -e "$_rsha" 2>/dev/null; then
+      # Updating an existing remote branch: scan only the new commits.
+      _range="${_rsha}..${_lsha}"
+    else
+      # NEW remote branch (remote sha is all zeros). This is the HIGHEST-risk
+      # case, not a skip -- the original logic inverted this and let a planted
+      # ghp_ token through on a fresh branch. Scan everything this branch adds
+      # that is not already on the default branch.
+      _base="$(git merge-base "$_lsha" origin/main 2>/dev/null                || git merge-base "$_lsha" main 2>/dev/null || true)"
+      if [ -n "$_base" ]; then
+        _range="${_base}..${_lsha}"
+      else
+        _range="$_lsha"
+      fi
+    fi
+    _leak_scan "$_range" || exit 1
+  done
+fi
+
+# Only enforce the HERMES-EDITS-CODE stages on hermes/* branches
 case "$BRANCH" in
   hermes/*) ;;
   *) exit 0 ;;
