@@ -1,0 +1,142 @@
+[
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Krea 2 Turbo (krea/Krea-2-Turbo, FP8)",
+    "source": "huggingface",
+    "url": "https://hf.co/krea/Krea-2-Turbo",
+    "risk": "medium",
+    "confidence": 0.90,
+    "notes": "New architecture (not SD/Flux). 12B diffusion model; FP8 community quant = 12.01 GiB, fits 16 GB via sequential text-encoder unloading. Qwen3-VL 4B as CLIP backbone. Native ComfyUI >= v0.26.0 (CLIPLoader type=krea2). Open-weight since Jun 23 2026; Krea-2-Turbo HF repo updated Jul 24 (in window). Community LoRAs shipping in-window (Jul 22, Jul 29). Additive new builder: build_krea2_txt2img. Tier 2."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Boogu-Image-0.1-Base (10.3B S3-DiT, Apache 2.0)",
+    "source": "huggingface",
+    "url": "https://hf.co/Boogu/Boogu-Image-0.1-Base",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "New 10.3B text-to-image backbone. S3-DiT architecture, bilingual EN/ZH. Apache 2.0. Updated Jul 24 (in window). arxiv:2607.13125. Turbo variant (4-step) FP8 fits 16 GB. Native ComfyUI support (PR #14523 merged). Comfy-Org/Boogu-Image model pack at hf.co/Comfy-Org/Boogu-Image. Additive new builder: build_boogu_txt2img. Tier 2."
+  },
+  {
+    "method": "build_qwen_edit",
+    "category": "checkpoint",
+    "name": "Boogu-Image-0.1-Edit (10.3B instruction editing, Apache 2.0)",
+    "source": "huggingface",
+    "url": "https://hf.co/Boogu/Boogu-Image-0.1-Edit",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "Instruction-following image editing model. 10.3B params, image-to-image task, diffusers:BooguImagePipeline. Apache 2.0. Updated Jul 24 (in window). FP8 variant ~10 GB fits 16 GB comfortably. Same arxiv paper 2607.13125 as Base model. Sequential text-encoder unloading keeps peak within 16 GB. Natural successor/complement to build_qwen_edit; new builder build_boogu_edit needed. Tier 2."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Chroma1-Radiance v0.4 update (pixel-space Flux, Apache 2.0)",
+    "source": "huggingface",
+    "url": "https://hf.co/lodestones/Chroma1-Radiance",
+    "risk": "low",
+    "confidence": 0.75,
+    "notes": "Pixel-space image generation (no VAE). Flux.1-based, Apache 2.0. HF repo updated Jul 27 (in window). ComfyUI native support since v0.3.60 / Sep 2025 (blog.comfy.org/p/humo-and-chroma1-radiance-support). Weight update may improve quality; exact changelog not publicly documented. Already wirable as optional preset in build_txt2img. Tier 3."
+  },
+  {
+    "method": "build_upscale",
+    "category": "checkpoint",
+    "name": "NVIDIA PiD / PixelDiT v1.5 (latent-conditioned pixel diffusion upscaler)",
+    "source": "huggingface",
+    "url": "https://hf.co/Comfy-Org/PixelDiT",
+    "risk": "medium",
+    "confidence": 0.82,
+    "notes": "Latent-conditioned pixel diffusion decoder/upscaler. 2x/4x/6x/8x output. Peak ~13-16 GB on 16 GB VRAM (bf16 recommended; fp8 only for Flux1/2 2k paths). ComfyUI node: github.com/Merserk/ComfyUI-PiD (requires ComfyUI >= 0.28.0, released Jul 15). HF repo updated Jul 17 (5 days outside window). 198K HF downloads. NVIDIA NSCLv1 license. Tier 2 (additive build_upscale option). Source fp8 Civitai: civitai.com/models/2674831."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "LTX-Video 2.3 (22B open-weight audio+video, Lightricks, Mar 2026)",
+    "source": "github",
+    "url": "https://docs.comfy.org/tutorials/video/ltx/ltx-2-3",
+    "risk": "medium",
+    "confidence": 0.80,
+    "notes": "22B parameter model. Audio+video generation in a single pass. Significant quality jump over earlier LTX. FP8 community quants fit 16 GB. Native ComfyUI support. Released Mar 2026 (well outside window) but critical if build_ltx_video uses < 2.3. IC-LoRA camera control also available (mid-Jul 2026). Tier 2 (model version bump for build_ltx_video)."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "lora",
+    "name": "LTX 2.3 IC-LoRA (camera control / motion transfer)",
+    "source": "github",
+    "url": "https://www.runcomfy.com/comfyui-workflows/ltx-2-3-ic-lora-camera-control-in-comfyui-camera-motion-transfer",
+    "risk": "low",
+    "confidence": 0.65,
+    "notes": "In-Context LoRA for LTX-Video 2.3. Transfers camera trajectory (pan/tilt/dolly/zoom) from reference video to new generation. Mid-Jul 2026 community release. Additive: does not replace build_ltx_video, adds camera-control input. Exact weight file location not confirmed via HF MCP. Tier 3."
+  },
+  {
+    "method": "build_video_upscale",
+    "category": "node_pack",
+    "name": "comfyui-deno-custom-nodes (RTX Video Super Resolution + LTX 2.3 loaders)",
+    "source": "github",
+    "url": "https://github.com/Deno2026/comfyui-deno-custom-nodes",
+    "risk": "low",
+    "confidence": 0.70,
+    "notes": "ComfyUI node pack updated Jul 25 (in window). Adds NVIDIA VFX/nvvfx RTX Video Super Resolution nodes, LTX 2.3 loader/sequencer, Wan2.2 reference-video edit, Bernini prompt guide, video compare and preview nodes. RTX VFX leverages RTX 5060 Ti tensor cores for hardware-accelerated upscaling. Additive; no new VRAM baseline beyond existing workload. Tier 2."
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "node_pack",
+    "name": "ComfyUI-RMBG Lucida BiRefNet finetune",
+    "source": "github",
+    "url": "https://github.com/1038lab/ComfyUI-RMBG",
+    "risk": "low",
+    "confidence": 0.60,
+    "notes": "BiRefNet finetune specialized for transparent objects (glass, smoke), camouflage, text/logos, glow/VFX effects, and illustrations. Added as 'Lucida model' to BiRefNet node in ComfyUI-RMBG (mentioned in context of v3.1.0 update, Jul 2026). Exact release date within window not independently confirmed. Node: StarLucidaRMBG also available. Additive — does not replace RMBG-2.0. Tier 3."
+  },
+  {
+    "method": "build_sam3_segment",
+    "category": "checkpoint",
+    "name": "SAM 3.1 (object multiplexing, Meta, Mar 2026)",
+    "source": "github",
+    "url": "https://ai.meta.com/blog/segment-anything-model-3/",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Drop-in replacement for SAM 3. Adds object multiplexing: processes up to 16 tracked objects in a single forward pass (vs 1), doubles throughput (16→32 FPS on H100). No accuracy regression. Released Mar 27 2026 (outside window). Directly relevant to build_sam3_segment, build_sam3_mask, build_sam3_extract, build_klein_sam3_inpaint. HF model: facebook/sam3 (same repo, updated checkpoint). Low risk: drop-in. Tier 3 (confirm ComfyUI SAM3 nodes pick up the new checkpoint)."
+  },
+  {
+    "method": "build_hunyuan_3d_textured",
+    "category": "checkpoint",
+    "name": "Hunyuan3D-2.1 (PBR textures, Tencent, Jun 2025)",
+    "source": "github",
+    "url": "https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Adds Physically Based Rendering (PBR) texture synthesis: albedo + metallic + roughness maps. Fully open-source including training code. HF space: tencent/Hunyuan3D-2.1. ComfyUI wrappers: github.com/visualbruno/ComfyUI-Hunyuan3d-2-1 and github.com/Yuan-ManX/ComfyUI-Hunyuan3D-2.1. Released Jun 2025 (well outside window). Directly relevant if build_hunyuan_3d_textured uses Hunyuan3D-2.0's texturing. Tier 3."
+  },
+  {
+    "method": "build_pulid_flux",
+    "category": "node_pack",
+    "name": "ComfyUI-PuLID-Flux-Chroma (extends PuLID to Chroma models)",
+    "source": "github",
+    "url": "https://github.com/PaoloC68/ComfyUI-PuLID-Flux-Chroma",
+    "risk": "low",
+    "confidence": 0.55,
+    "notes": "Extends existing PuLID face-identity preservation to Chroma model family (Apache 2.0 Flux-based model). No new PuLID model weights — node logic only. Additive; relevant if users want Chroma for character generation with consistent faces. Tier 3. Exact release date in window not confirmed."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "lora",
+    "name": "Ominous Hourglass Krea 2 Turbo LoRA (AIxFuneStudio)",
+    "source": "huggingface",
+    "url": "https://hf.co/AIxFuneStudio/Ominous_Hourglass_Krea_2_Turbo",
+    "risk": "low",
+    "confidence": 0.65,
+    "notes": "Community LoRA for Krea 2 Turbo. Created Jul 29, 2026 (in window). 0 downloads, 0 likes — very new. Requires Krea 2 support first (Tier 2 dependency). Style unknown. Tier 3."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "lora",
+    "name": "Krea-2-Turbo-LoRAs collection (matheus58457)",
+    "source": "huggingface",
+    "url": "https://hf.co/matheus58457/Krea-2-Turbo-LoRAs",
+    "risk": "low",
+    "confidence": 0.60,
+    "notes": "Community LoRA collection for Krea 2 Turbo. Created Jul 22, last modified Jul 28 (in window). 0 downloads, 0 likes — very new. Requires Krea 2 support first (Tier 2 dependency). Tier 3."
+  }
+]
