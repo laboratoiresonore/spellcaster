@@ -1,0 +1,342 @@
+[
+  {
+    "method": "build_faceswap",
+    "category": "checkpoint",
+    "name": "HyperSwap 1b_256.onnx",
+    "source": "github",
+    "url": "https://github.com/Gourieff/ComfyUI-ReActor/releases",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Drop-in ONNX replacement for inswapper_128.onnx. 256 px native vs 128 px. ComfyUI-ReActor v0.6.2 (Apr 25 2026). Keep inswapper as fallback. Applies equally to build_faceswap_model and build_faceswap_mtb."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "HiDream-O1-Image-Dev (FP8)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/HiDream-ai/HiDream-O1-Image-Dev",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "8B pixel-native architecture (no VAE), MIT. FP8 fits ~10 GB VRAM. Beats FLUX.2 Dev (32B) on 5 Arena benchmarks. Single checkpoint covers txt2img + instruction edit + subject personalization. ComfyUI node: Saganaki22/HiDream_O1-ComfyUI. FP8 quant: drbaph/HiDream-O1-Image-Dev-FP8. Needs new build_hidream_txt2img / build_hidream_edit builders + hidream arch registration. Released May 2026."
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "checkpoint",
+    "name": "Lucida v1.3",
+    "source": "huggingface",
+    "url": "https://huggingface.co/egeorcun/lucida",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "BiRefNet fine-tune (MIT) for glass/transparency/camouflage/VFX/logos/line art. Released Jul 23 2026 (IN WINDOW). Already packaged in ComfyUI-RMBG v3.1.0 (Jul 21). Add as optional model choice alongside BiRefNet-general. GitHub: https://github.com/egeorcun/lucida"
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "checkpoint",
+    "name": "FeyNoBg (Feyn Labs)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/feyninc/FeyNobg",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "263M BiRefNet-architecture, MIT. S-measure 0.981 vs BiRefNet 0.957 on UHRSD-TE. Released ~Jul 27 2026 (IN WINDOW). No confirmed ComfyUI node yet. Monitor feyninc/nobg for node release. GitHub: https://github.com/feyninc/nobg"
+  },
+  {
+    "method": "build_seedvr2_video_upscale",
+    "category": "checkpoint",
+    "name": "SeedVR2-1.4B distilled",
+    "source": "huggingface",
+    "url": "https://huggingface.co/lvladikov/SeedVR2-1.4B",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "One-step distilled 1.4B from SeedVR2-7B. ~4-6 GB VRAM vs 3B's ~8 GB. Released Jul 29 2026 (IN WINDOW). int4 ComfyUI bundle also available: dummy9996/seedvr2_1.4B_3b_7b_comfyUI_int4_convrot (Jul 30). Update build_seedvr2_video_upscale default dit_model."
+  },
+  {
+    "method": "build_klein_face_detail",
+    "category": "lora",
+    "name": "Portrait Engine FLUX / KLEIN V4 LoRA",
+    "source": "civitai",
+    "url": "https://civitai.com/models/2067704/portrait-engine-flux-flux-2-klein-z-image-detailed-skin-lora",
+    "risk": "low",
+    "confidence": 0.82,
+    "notes": "158 MB safetensors LoRA for Klein 9B. Jun 2026. 174 Very Positive reviews. Drop-in for skin pores, hair strands, natural lighting. No VRAM overhead. Add to curated LoRA catalogue."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "checkpoint",
+    "name": "InterLCM (ICLR 2025 / NTIRE 2026 winner)",
+    "source": "github",
+    "url": "https://github.com/sen-mao/InterLCM",
+    "risk": "medium",
+    "confidence": 0.78,
+    "notes": "4-step LCM blind face restoration. Beats CodeFormer on synthetic + real-world benchmarks (NTIRE 2026 Real-World Face Restoration Challenge, CVPR 2026). Research code only; no ComfyUI node. arXiv: 2502.02215. Watch for community ComfyUI wrapper. Applies also to build_photo_restore."
+  },
+  {
+    "method": "build_klein_headswap",
+    "category": "lora",
+    "name": "BFS Head V1 LoRA (Klein 9B FP8)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/mr2along/BFS",
+    "risk": "medium",
+    "confidence": 0.72,
+    "notes": "Diffusion-native head/face swap LoRA for Klein 9B, MIT. 1.7K downloads. No ONNX dependency. Excels at expressive/angled faces per community reports. Integrates into existing Klein pipeline. Prompt engineering required. Validate on held-out test set first. Also available: BFS V5 for Qwen-Image-Edit-2511 (~18-20 GB, tight on 16 GB)."
+  },
+  {
+    "method": "build_style_transfer",
+    "category": "checkpoint",
+    "name": "Krea 2 Turbo (12.9B DiT)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/krea/Krea-2-Turbo",
+    "risk": "low",
+    "confidence": 0.75,
+    "notes": "12.9B DiT, community commercial license. May 2026. 8-step turbo, 2K output, aesthetic/moodboard-first generation. FP8 ~10-12 GB; BF16 ~16 GB (borderline). Needs dedicated loader. Complement to FLUX photorealism track, not a replacement."
+  },
+  {
+    "method": "build_qwen_edit",
+    "category": "checkpoint",
+    "name": "Boogu-Image-0.1-Edit-Turbo (FP8)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Boogu/Boogu-Image-0.1-Edit-Turbo",
+    "risk": "low",
+    "confidence": 0.78,
+    "notes": "10B unified model, Apache 2.0. 4-step instruction editing + 1 reference image. FP8 ~10-12 GB. Jul 16 2026 (adjacent to window). vLLM-Omni + NPU support Jul 22-23. arXiv: 2607.13125. FP8 quant: Boogu/Boogu-Image-0.1-Turbo-fp8. License upgrade over Kontext (non-commercial). Needs ComfyUI community wrapper."
+  },
+  {
+    "method": "build_hunyuan_video",
+    "category": "checkpoint",
+    "name": "HunyuanVideo 1.5 (8.3B active)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/tencent/HunyuanVideo-1.5",
+    "risk": "medium",
+    "confidence": 0.80,
+    "notes": "Dec 2025 release. 805K downloads, 1024 likes. 8.3B active params (smaller/faster than original 13B). 14 GB VRAM tight on 16 GB — needs offload flag. 8- or 12-step distilled. T2V + I2V. GGUF: Bn53/HunyuanVideo-1.5_I2V_720p-GGUF (Jul 24 2026). Verify if local model files need refresh or separate checkpoint."
+  },
+  {
+    "method": "build_inpaint",
+    "category": "checkpoint",
+    "name": "Qwen-Image ControlNet Inpainting",
+    "source": "huggingface",
+    "url": "https://huggingface.co/InstantX/Qwen-Image-ControlNet-Inpainting",
+    "risk": "medium",
+    "confidence": 0.70,
+    "notes": "Sep 2025. 2.2K downloads, 116 likes. Apache 2.0. ControlNet-based inpainting conditioned on Qwen-Image-Edit. Extends build_qwen_edit with spatial-mask guidance. Needs diffusers QwenImageControlNetInpaintPipeline adapter."
+  },
+  {
+    "method": "build_klein_img2img",
+    "category": "lora",
+    "name": "Klein 4B SDR-to-HDR LoRA",
+    "source": "huggingface",
+    "url": "https://huggingface.co/LAXMAYDAY/flux2-klein4b-sdr2hdr-logc4-lora",
+    "risk": "medium",
+    "confidence": 0.60,
+    "notes": "Klein 4B LoRA for SDR→HDR (Log C4) conversion. Tagged comfyui. Released Jul 30 2026 (IN WINDOW). GATED — requires license approval. If accessible, could enable new build_klein_sdr2hdr pipeline."
+  },
+  {
+    "method": "build_controlnet_gen",
+    "category": "controlnet",
+    "name": "ControlNet for ZIT",
+    "source": "huggingface",
+    "url": "https://huggingface.co/anghellia/controlnet-zit",
+    "risk": "medium",
+    "confidence": 0.50,
+    "notes": "ControlNet for Z-Image-Turbo (ZIT) architecture. Released Jul 30 2026 (IN WINDOW). 0 downloads — no community validation yet. ZIT is registered in ARCHITECTURES. Could extend build_controlnet_gen to ZIT arch. Experimental."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "LTX 2.3 (already in stack)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Lightricks/LTX-Video",
+    "risk": "low",
+    "confidence": 1.0,
+    "notes": "ALREADY IN SPELLCASTER. Confirmed from workflows.py comment: '# CANONICAL LTX 2.3 BUILDER'. No action needed. Audio generation capability (added in LTX-2.3) not yet wired into spellcaster builders — potential Tier-2 addition. 9.8M downloads, 1721 likes."
+  },
+  {
+    "method": "build_seedvr2_video_upscale",
+    "category": "checkpoint",
+    "name": "SeedVR2 3B FP8 (already in stack)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Comfy-Org/SeedVR2",
+    "risk": "low",
+    "confidence": 1.0,
+    "notes": "ALREADY IN SPELLCASTER. Confirmed from build_seedvr2_video_upscale default dit_model: seedvr2_ema_3b_fp8_e4m3fn.safetensors. No action needed. The 1.4B distilled is the upgrade path (see separate entry). Note: ComfyUI v0.28.0 (Jul 15) adds native SeedVR2 node — update ComfyUI to get it."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "checkpoint",
+    "name": "Hunyuan3D 2.1 (already in stack)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/tencent/Hunyuan3D-2.1",
+    "risk": "low",
+    "confidence": 1.0,
+    "notes": "ALREADY IN SPELLCASTER. Confirmed from architectures.py: 'Hunyuan3D 2.1 — image-to-3D mesh, 2025/2026 (Tencent)'. PBR texture synthesis (21 GB) exceeds 16 GB budget — mesh-only path is the right choice for this hardware."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "FLUX 3 (announced, no weights)",
+    "source": "github",
+    "url": "https://www.marktechpost.com/2026/07/26/black-forest-labs-releases-flux-3-a-multimodal-flow-model-for-image-video-audio-and-robot-action-prediction/",
+    "risk": "high",
+    "confidence": 0.55,
+    "notes": "WATCH ONLY. Announced Jul 23 2026 (IN WINDOW). Black Forest Labs multimodal: image + video (20 s + audio) + audio + robot actions. API-only; open weights (FLUX 3 Dev) targeted Q4 2026+. No param count or VRAM figure disclosed. Monitor BFL announcements."
+  },
+  {
+    "method": "build_wan_animate_video",
+    "category": "checkpoint",
+    "name": "Bernini-R 1.3B (Wan2.1 fine-tune, ByteDance)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/ByteDance/Bernini-R",
+    "risk": "high",
+    "confidence": 0.60,
+    "notes": "WATCH ONLY. Jun 2 2026. 14B DiT main model (too large for 16 GB raw). 1.3B Wan2.1-based fine-tune may fit 16 GB — needs VRAM benchmarking. Apache 2.0. Video editing + identity transfer. ComfyUI node early-stage."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "checkpoint",
+    "name": "BFS-Best-Face-Swap-Video V3 (IC-LoRA, LTX-2.3)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/chfm/BFS-Best-Face-Swap-Video",
+    "risk": "high",
+    "confidence": 0.55,
+    "notes": "WATCH ONLY. Video identity transfer via IC-LoRA for LTX-2.3 / Bernini-R. Persistent template workflow. Multiple HF forks Jul 9-19 2026. VRAM for 768 px video inference likely >16 GB. ComfyUI-BFSNodes: https://github.com/alisson-anjos/ComfyUI-BFSNodes — early stage."
+  },
+  {
+    "method": "build_supir",
+    "category": "checkpoint",
+    "name": "LucidFlux (FLUX.1-dev-based restoration)",
+    "source": "github",
+    "url": "https://github.com/W2GenAI-Lab/LucidFlux",
+    "risk": "high",
+    "confidence": 0.65,
+    "notes": "WATCH ONLY. ICLR 2026. Outperforms SUPIR on all tested restoration benchmarks. FLUX.1-dev backbone, caption-free. Full model ~28 GB VRAM. Community wrapper claims 8-12 GB with offloading — unconfirmed on 16 GB hardware. arXiv: 2509.22414."
+  },
+  {
+    "method": "build_sam3_segment",
+    "category": "checkpoint",
+    "name": "SAM 3.1 (Object Multiplex)",
+    "source": "github",
+    "url": "https://github.com/facebookresearch/sam3",
+    "risk": "medium",
+    "confidence": 0.70,
+    "notes": "MONITOR. Mar 27 2026. Adds Object Multiplex (multi-object joint tracking, faster, no accuracy loss). Gated HF access required. Verify which SAM3 checkpoint is currently pinned in spellcaster — original vs 3.1. If original, a weight swap is a low-effort upgrade once access granted."
+  },
+  {
+    "method": "build_normal_map",
+    "category": "checkpoint",
+    "name": "Marigold-Normals LCM",
+    "source": "huggingface",
+    "url": "https://huggingface.co/prs-eth/marigold-normals-lcm-v0-1",
+    "risk": "low",
+    "confidence": 0.68,
+    "notes": "Pre-existing opportunity (not new this week). Competitive with GeoWizard (17.400 vs 17.673 mean error) at 8x lower latency (260 ms vs 2100 ms). If current normal map estimator is GeoWizard, evaluate swapping."
+  },
+  {
+    "method": "build_colorize",
+    "category": "checkpoint",
+    "name": "ColorFLUX (CVPR 2026)",
+    "source": "arxiv",
+    "url": "https://arxiv.org/abs/2603.28162",
+    "risk": "high",
+    "confidence": 0.60,
+    "notes": "WATCH ONLY. FLUX-based colorization, structure-color decoupling + Progressive DPO. CVPR 2026 publication. No public checkpoint yet — await post-proceedings release. Would supersede DDColor if weights drop."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "FLUX.2-small-decoder (62.4M, Apache 2.0)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/SwinliQ-AIs/FLUX.2-small-decoder",
+    "risk": "low",
+    "confidence": 0.55,
+    "notes": "IN WINDOW (Jul 30 2026). 62.4M params fast decoder for FLUX.2 pipeline. Apache 2.0. Experimental — no community validation yet. Potential decode speed improvement for Klein/Flux2 pipelines. Needs quality comparison vs standard VAE."
+  },
+  {
+    "method": "build_wan22_t2v",
+    "category": "checkpoint",
+    "name": "WAN 2.7 (Alibaba, ModelScope)",
+    "source": "web",
+    "url": "https://blog.comfy.org/p/wan27-is-now-available-in-comfyui",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "Apr 2026. Multimodal upgrade over WAN 2.2: audio I/O, vocal timbre reference, up to 5 reference-person images, 3x3 grid image gen, improved motion dynamics. Official weights on ModelScope (Chinese CDN); community GGUF Q4/Q5 on HuggingFace (~12-14 GB, similar to WAN 2.2 14B). ComfyUI via Partner Nodes. WARNING: WAN 3.0 'Apache 2.0' claims on SEO sites are fabricated — no open weights exist. Applies equally to build_wan_t2v."
+  },
+  {
+    "method": "build_wan_dancer",
+    "category": "checkpoint",
+    "name": "Wan-Dancer-14B",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Wan-AI/Wan-Dancer-14B",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Apache 2.0, Jul 13 2026 (adjacent to window). Music + reference image → 720p/30fps dance video up to ~60 s. Genres: Chinese Classical, K-Pop, Street, Tap, Latin. INT4 quantized (Winnougan/Wan-Dancer-14B-INT8-INT4-Convrot) fits well within 16 GB. Official ComfyUI tutorial: docs.comfy.org/tutorials/video/wan/wan-dancer. New build_wan_dancer builder needed. New capability class not currently in stack."
+  },
+  {
+    "method": "build_longcat_avatar",
+    "category": "checkpoint",
+    "name": "LongCat Video Avatar 1.5 (Meituan)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/meituan-longcat/LongCat-Video-Avatar-1.5",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Meituan, May 2026. 13.6B DiT, AT2V + ATI2V + continuation in one model. Whisper-Large v1.5 audio encoder. FP8 runs on 12 GB (comfortable on 16 GB). 8-step distilled. 5+ min videos with consistent lip-sync and identity. Runs via Kijai WanVideoWrapper in ComfyUI. GGUF: vantagewithai/LongCat-Video-Avatar-1.5-GGUF-ComfyUI. New build_longcat_avatar builder needed. New capability class (audio-driven talking-head avatar + long video)."
+  },
+  {
+    "method": "build_seedvr2_video_upscale",
+    "category": "checkpoint",
+    "name": "FlashVSR V1.1 (Alibaba, CVPR 2026)",
+    "source": "web",
+    "url": "https://zhuang2002.github.io/FlashVSR/",
+    "risk": "low",
+    "confidence": 0.82,
+    "notes": "Real-time streaming diffusion video super-resolution, 2x/4x upscale. ~8-16 GB VRAM. ComfyUI: 1038lab/ComfyUI-FlashVSR (Full/Tiny/Tiny-Long tiers). Complementary to SeedVR2 (not a replacement): use FlashVSR for streaming/live preview, SeedVR2 for batch quality finishing. arXiv: 2510.12747. Could also be a separate build_flashvsr_upscale builder."
+  },
+  {
+    "method": "build_video_upscale",
+    "category": "node",
+    "name": "RTX VSR ComfyUI node (Comfy-Org/Nvidia_RTX_Nodes)",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/Nvidia_RTX_Nodes_ComfyUI",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Official Comfy-Org repo wrapping NVIDIA VFX SDK. RTX 5060 Ti explicitly supported. ~30x faster than diffusion upscalers at a fraction of VRAM. 4 modes: VSR (compressed), High Bitrate, Denoise, Deblur. No model file download needed. Windows only. New build_rtx_vsr_upscale builder as hardware-accelerated fast path alongside SeedVR2 and FlashVSR."
+  },
+  {
+    "method": "build_ltx_camera_control",
+    "category": "lora",
+    "name": "LTX-2.3 IC-LoRA Cameraman v1/v2 (Cseti)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Cseti/LTX2.3-22B_IC-LoRA-Cameraman_v1",
+    "risk": "low",
+    "confidence": 0.82,
+    "notes": "In-context LoRA adapter for LTX-2.3 22B (already in stack). Transfers camera motion (pan, tilt, dolly, zoom, orbit) from a reference video clip. Text prompts: 'new camera angle: slightly left, higher.' Released May 2026, updated Jun-Jul 2026. New build_ltx_camera_control builder needed — minimal friction since LTX-2.3 already integrated."
+  },
+  {
+    "method": "build_hunyuanvideo_foley",
+    "category": "checkpoint",
+    "name": "HunyuanVideo-Foley (Tencent)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/tencent/HunyuanVideo-Foley",
+    "risk": "medium",
+    "confidence": 0.72,
+    "notes": "WATCH / TIER 3. Tencent, Aug 2025. Video + text → synchronized Foley audio. XL model: ~16 GB with offload mode (tight on 16 GB). XXL: 20 GB / 8 GB offload. ComfyUI nodes: ComfyUI-HunyuanVideo-Foley, aistudynow/Comfyui-HunyuanFoley (low VRAM variant). New build_hunyuanvideo_foley builder needed. Audio pipeline adds new Whisper/audio dependency chain — complexity warrants Tier 3 until community validates 16 GB path."
+  },
+  {
+    "method": "build_motifvideo",
+    "category": "checkpoint",
+    "name": "Motif-Video 2B (Motif-Technologies)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Motif-Technologies/Motif-Video-2B",
+    "risk": "low",
+    "confidence": 0.70,
+    "notes": "WATCH / TIER 3. Apr 14 2026. 2B params T2V + I2V. GGUF Q4 available (Motif-Technologies/Motif-Video-2B-GGUF). SageAttention 2x speedup. Claims highest open-source VBench Total Score across spatial relationship and semantic metrics. ComfyUI: ComfyUI-MotifVideo2B. New build_motifvideo builder. Useful as ultra-fast draft generation alternative — too small to rival WAN 2.2 5B quality for final output."
+  },
+  {
+    "method": "(none — new capability)",
+    "category": "checkpoint",
+    "name": "AlayaWorld (Shanda AI Research)",
+    "source": "arxiv",
+    "url": "https://arxiv.org/abs/2607.18367",
+    "risk": "high",
+    "confidence": 0.50,
+    "notes": "WATCH ONLY. Jul 10 2026. Long-horizon (>60 s) interactive world-video with real-time camera control. Full pipeline code released mid-July. No ComfyUI node, VRAM requirements unknown (likely >16 GB). Research grade. Monitor for ComfyUI integration and VRAM benchmarks."
+  }
+]
