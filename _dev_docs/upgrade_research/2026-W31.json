@@ -6,8 +6,8 @@
   "hardware_budget": "RTX 5060 Ti, 16 GB VRAM",
   "summary": {
     "tier1_count": 0,
-    "tier2_count": 8,
-    "tier3_count": 17,
+    "tier2_count": 9,
+    "tier3_count": 18,
     "no_find_count": 45
   },
   "findings": [
@@ -163,6 +163,40 @@
       "in_research_window": false,
       "supersedes": null,
       "notes": "7B params, MIT license. Unique 4-reference image style transfer — no other open-weight model has this at comparable quality. FP8 ~16 GB (tight, at VRAM ceiling). FP16 ~30 GB exceeds budget. Evaluate FP8 variant for build_style_transfer as an alternative path when multi-reference style is needed."
+    },
+    {
+      "method": "build_rembg_birefnet",
+      "tier": 2,
+      "category": "checkpoint",
+      "name": "lucida BiRefNet fine-tune",
+      "source": "huggingface",
+      "url": "https://huggingface.co/egeorcun/lucida",
+      "comfyui_node": "https://github.com/1038lab/ComfyUI-RMBG",
+      "risk": "low",
+      "confidence": 0.95,
+      "vram_gb": 3.5,
+      "license": "unknown",
+      "release_date": "2026-07-24",
+      "in_research_window": true,
+      "supersedes": null,
+      "notes": "BiRefNet fine-tuned on 52,882 image/alpha pairs across 9 hard-case categories: transparent/glass, camouflage, text/logos, glow/VFX, hair, illustrations, thin structures, complex, general. Uploaded July 24, 2026. lucida.safetensors added to Comfy-Org/BiRefNet distribution (drop-in, no custom node required). Also selectable in ComfyUI-RMBG v3.1.0. Current stable: v7 weights. v13 was published and reverted (regression on layered illustrations). Hold on v14 for transparency improvements. Same 220.7M-param footprint as BiRefNet-HR."
+    },
+    {
+      "method": "build_depth_map_v3",
+      "tier": 3,
+      "category": "checkpoint",
+      "name": "ZipDepth",
+      "source": "arxiv",
+      "url": "https://arxiv.org/abs/2607.08771",
+      "comfyui_node": null,
+      "risk": "medium",
+      "confidence": 0.75,
+      "vram_gb": 0.0,
+      "license": "unknown",
+      "release_date": "2026-07-09",
+      "in_research_window": false,
+      "supersedes": null,
+      "notes": "6.1M-param CNN distilled from Depth Anything V2 Large. Real-time on CPU (<1 GB VRAM). Paper submitted Jul 9, ECCV 2026 accepted. Community HF mirrors appeared Jul 10-12 (pre-window). No official HF repo from authors yet. Not a quality replacement for DA3 but strong candidate for a fast-preview depth node. Hold for official fabiotosi92 HF release."
     },
     {
       "method": "build_txt2img",
