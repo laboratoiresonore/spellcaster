@@ -1,0 +1,222 @@
+[
+  {
+    "method": "build_txt2img",
+    "category": "model",
+    "name": "Mage-Flow 4B (microsoft / Comfy-Org/Mage-Flow)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Comfy-Org/Mage-Flow",
+    "risk": "high",
+    "confidence": 0.92,
+    "notes": "Microsoft Research 4B NR-MMDiT + Mage-VAE architecture, MIT license. Released July 22 2026; ComfyUI native support in v0.29.0 (July 29 — within 7-day window). Beats FLUX.2 on GenEval (0.90 vs 0.87). INT8-ConvRot variant ~9-12 GB VRAM on RTX 5060 Ti. Entirely new architecture — not drop-in for Klein/FLUX2 node graphs; high integration effort. Paper: arxiv:2607.19064. 82K downloads. Also relevant: build_img2img, build_generate_anything."
+  },
+  {
+    "method": "build_qwen_edit",
+    "category": "model",
+    "name": "Mage-Flow-Edit 4B (microsoft/Mage-Flow-Edit)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/microsoft/Mage-Flow-Edit",
+    "risk": "high",
+    "confidence": 0.90,
+    "notes": "Instruction-guided image editing variant of Mage-Flow (same NR-MMDiT backbone). MIT license. Released July 22, ComfyUI native v0.29.0 (July 29). Turbo 4-step: 1.02 s/edit at 1024px. Accepts up to 3 reference images + text. INT8 ~9-12 GB VRAM. 5× smaller than current Qwen-Image 20B backbone; closest direct alternative. New architecture — needs new pipeline wiring in Spellcaster."
+  },
+  {
+    "method": "new_builder",
+    "category": "model",
+    "name": "MiniMax H3 FL2VA + Ref2VA (Comfy-Org/MiniMax-H3)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Comfy-Org/MiniMax-H3",
+    "risk": "high",
+    "confidence": 0.91,
+    "notes": "Open weights released August 3 2026 (today) under MiniMax H3 Community License. ComfyUI v0.29.2 (API partner node July 31) + v0.30.0 (open-weight native Aug 3). FL2VA: text-to-video + first/last-frame I2V; Ref2VA: reference-based video. Up to 2K, 15s per clip, native stereo audio. VRAM: 12 GB minimum for 480p (RTX 3060); 16 GB handles 720p with layerwise offload and FP8/INT8 convrot; 2K needs 24 GB+. Blackwell NVFP4 quant: lilcheaty/MiniMax-H3-NVFP4. New capability class — no current Spellcaster builder produces video+audio. Two potential new builders: build_minimax_h3_video (T2V) + build_minimax_h3_flf (first/last-frame)."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "controlnet",
+    "name": "Uni3C ControlNet for WAN (ComfyUI v0.29.0 native, July 29)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Kijai/WanVideo_comfy",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "ComfyUI v0.29.0 (July 29, within window) adds native WanUni3CControlnetApply node (PR CORE-365). Checkpoint: Wan21_Uni3C_controlnet_fp16.safetensors (~2 GB) at Kijai/WanVideo_comfy. Enables camera-motion transfer and 3D-referenced video on all WAN variants. Additive overlay on existing WAN pipeline — ~2 GB additional VRAM, fits 16 GB budget. Applies to build_wan_video, build_wan22_t2v, build_wan_flf, build_wan_animate_video, build_wan_video_blockswap."
+  },
+  {
+    "method": "new_builder",
+    "category": "model",
+    "name": "Wan-Dancer-14B (Wan-AI/Wan-Dancer-14B)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Wan-AI/Wan-Dancer-14B",
+    "risk": "medium",
+    "confidence": 0.92,
+    "notes": "Released July 13 2026 (outside 7-day window; not in W22 baseline). Apache 2.0. Music + reference image → 720p/30fps dance video up to 1 minute. Hierarchical audio-driven framework. 4.4K downloads. Comfy-Org FP8 weights: wan2.2_dancer_14b_global_fp8_scaled.safetensors. GGUF Q3_K_M–Q6_K also available. RTX 5060 Ti 16 GB handles 720p with FP8 + T5 CPU offload (24 GB system RAM needed). Official ComfyUI workflow at docs.comfy.org/tutorials/video/wan/wan-dancer. arxiv:2607.09581. New builder: build_wan_dancer_video."
+  },
+  {
+    "method": "new_builder",
+    "category": "model",
+    "name": "ID-V2V: Identity-Preserving Video Restylization (Eyeline-Labs/ID-V2V)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Eyeline-Labs/ID-V2V",
+    "risk": "high",
+    "confidence": 0.90,
+    "notes": "Released July 29 2026 (within window). Apache 2.0. SIGGRAPH Asia 2026 paper (arXiv:2607.22830). Preserves facial identity/expressions/gaze/motion while completely restyling scene/lighting from a style keyframe. Built on Wan2.1-I2V-14B-720P + VACE control. Full weights ~96 GB. Kijai int8-convrot: Kijai/Wan_ID_V2V_comfy (July 29). ComfyUI support requires PR #15139 to merge. VRAM: int8-convrot potentially runnable at 16 GB with CPU offload — not yet benchmarked. New builder class: build_id_v2v."
+  },
+  {
+    "method": "new_builder",
+    "category": "node_pack",
+    "name": "Kijai/Wan_ID_V2V_comfy — int8-convrot weights for ID-V2V",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Kijai/Wan_ID_V2V_comfy",
+    "risk": "high",
+    "confidence": 0.88,
+    "notes": "Published July 29 2026 (within window). ComfyUI-optimized int8-convrot quantized weights for Eyeline-Labs ID-V2V. Companion to Eyeline-Labs/ID-V2V. Requires ComfyUI PR #15139. Paired item — see ID-V2V entry above."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "LTX-2.3 INT8-distilled-convrot (SimpleTuner/ltxvideo-2.3-distilled-convrot-int8)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/SimpleTuner/ltxvideo-2.3-distilled-convrot-int8",
+    "risk": "medium",
+    "confidence": 0.82,
+    "notes": "Released July 29 2026 (within window). Community (not official Lightricks) INT8-convrot distilled version of LTX-2.3 (22B, March 2026 base). 3K downloads. Potentially makes LTX-2.3 runnable at 16 GB VRAM — previously blocked. LTX-2.3 also generates native audio alongside video. Benchmark fidelity vs current 2B LTX-Video baseline before switching. Tags: ltx-2.3, int8, convrot, sdnq, audio-video."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Anima Base/Turbo/Aesthetic v1 (circlestone-labs/Anima)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/circlestone-labs/Anima",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "2B anime/illustration T2I model (Cosmos-Predict2 FT), Qwen-3 0.6B text encoder + Qwen-Image VAE. Aesthetic/Turbo variants July 24; ComfyUI native v0.29.0 July 29 (within window). ~8 GB VRAM. 3.5M downloads, 1997 HF likes. Turbo is 4-step. NICHE: anime/illustration only — not photorealistic. Additive to build_txt2img or build_style_transfer for illustration use cases."
+  },
+  {
+    "method": "build_qwen_edit",
+    "category": "model",
+    "name": "JoyAI-Image-Edit-Plus (jdopensource/JoyAI-Image-Edit-Plus-Diffusers)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/jdopensource/JoyAI-Image-Edit-Plus-Diffusers",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "JD.com 16.3B multi-image instruction-guided editing model. Apache 2.0. Uses Qwen3-VL-8B encoder — same family as current build_qwen_edit backbone. Comfy-Org native support July 20, in ComfyUI v0.29.0. BF16 ~24 GB VRAM; INT8 needed for 16 GB. Evaluate after Mage-Flow-Edit (lighter, MIT). Paper: arxiv:2605.04128."
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "model",
+    "name": "BiRefNet Lucida fine-tune (egeorcun/lucida v1.3)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/egeorcun/lucida",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "BiRefNet_HR fine-tune for transparency/glass, camouflage, text+logos, VFX glow, illustration edges. v1.3 July 23 2026. MIT license. 220.7M params. Now in Comfy-Org/BiRefNet (updated July 14) and ComfyUI-RMBG v3.1.0 (July 21) as drop-in 'BiRefNet-Lucida' selector option. Drop-in extra option for build_rembg_birefnet — expose as model parameter alongside existing BiRefNet-general/BiRefNet-portrait variants."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "model",
+    "name": "FLUX 3 (Black Forest Labs — watch item)",
+    "source": "other",
+    "url": "https://bfl.ai/models/flux-3",
+    "risk": "high",
+    "confidence": 0.60,
+    "notes": "BFL announced FLUX 3 on July 23 2026. Unified multimodal architecture (image + video up to 20s + audio). FLUX 3 Image and open-weight FLUX 3 Dev NOT yet released as of Aug 3 2026 — API-gated video only. When FLUX 3 Dev ships, likely successor to Klein backbone for build_txt2img and build_klein_*. Zero confidence for VRAM estimate until weights are public. High-priority watch item."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "node_pack",
+    "name": "FaceFusion 3.8.0 — video pipeline update",
+    "source": "github",
+    "url": "https://github.com/facefusion/facefusion/releases/tag/3.8.0",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Released July 31 2026 (within window). VIDEO PIPELINE changes only: FFmpeg-based video manager, AV1 codec, --workflow-strategy, alpha channel, HDR color fix. NO new face swap models. Face swap models (HyperSwap 1a/1b/1c_256.onnx) unchanged — these are already available in ComfyUI-ReActor. Reference only; no Spellcaster action needed."
+  },
+  {
+    "method": "build_klein_headswap",
+    "category": "lora",
+    "name": "BFS-Best-Face-Swap LoRA series (Alissonerdx, v5 head / v1 face)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap",
+    "risk": "low",
+    "confidence": 0.72,
+    "notes": "July 30 2026 README update (within window) — no new model files; documentation only. The underlying LoRA series (Head V1–V5, Face V1) is the dominant Klein Flux2 9B face/head-swap LoRA (581K downloads). Head V5 (5500+ steps, Qwen-Image 2511 optimized) is most capable. If build_klein_headswap is not yet using BFS, this is a low-risk additive enhancement. LoRA weight: 0.75–0.85 recommended. This week's touch is README-only."
+  },
+  {
+    "method": "build_faceid_img2img",
+    "category": "lora",
+    "name": "krea2-identity-edit v1.2 (conradlocke)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/conradlocke/krea2-identity-edit",
+    "risk": "high",
+    "confidence": 0.82,
+    "notes": "v1.2 released July 29 2026 (within window). 602 HF likes. Identity-preserving instruction-editing LoRA for Krea 2 Raw backbone (NOT Klein Flux2). Re-stages people with face likeness preserved across new poses/angles; two-input edits (scene ref + person ref). Requires Krea 2 Raw checkpoint and ComfyUI-Krea2Edit node pack (github.com/lbouaraba/comfyui-krea2edit). High risk for Spellcaster because it needs a separate backbone; not drop-in for current Klein stack. Monitor if Krea 2 integration is ever planned."
+  },
+  {
+    "method": "build_wan22_t2v",
+    "category": "checkpoint",
+    "name": "Wan 2.7 — NOT open-source",
+    "source": "other",
+    "url": "",
+    "risk": "low",
+    "confidence": 0.98,
+    "notes": "VERIFIED NO-FIND. Wan 2.7 shipped April 22 2026 as API-only. Official Wan-AI org on HuggingFace publishes weights only up to Wan 2.2. Any 'Wan 2.7 Apache 2.0' claims on SEO sites are fabricated. Wan 2.2 remains the most recent open-weight Wan backbone. No action for Spellcaster."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "model",
+    "name": "HyperSwap 1a/1b/1c_256.onnx — already known W22",
+    "source": "github",
+    "url": "https://huggingface.co/facefusion/models-3.3.0",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Already known — W22 (T1-D). Status: unimplemented as of this review. No new developments in 7-day window. ComfyUI-ReActor issues #183/#226 (black artifacts, broken output) remain open. Test hyperswap_1c before switching from inswapper_128 as default."
+  },
+  {
+    "method": "build_klein_headswap",
+    "category": "node_pack",
+    "name": "ComfyUI-PuLID-Flux2 v0.6.2 (iFayens) — already known W22",
+    "source": "github",
+    "url": "https://github.com/iFayens/ComfyUI-PuLID-Flux2",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Already known — W22 (T1-A). Status: unimplemented. sipie800 fork still discontinued. No new v0.6.x release in 7-day window. Migration still required. Also relevant: build_klein_face_detail, build_faceid_img2img, build_pulid_flux."
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "checkpoint",
+    "name": "BiRefNet native ComfyUI (Comfy-Org/BiRefNet) — already known W22",
+    "source": "github",
+    "url": "https://blog.comfy.org/p/new-open-source-models-now-in-comfyui",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Already known — W22 (T1-B). Status: unimplemented. BiRefNet Lucida (row 11 in findings table, new this week) adds additional value on top of this item."
+  },
+  {
+    "method": "build_normal_map",
+    "category": "checkpoint",
+    "name": "MoGe-2 (Ruicheng/moge-2-vitl-normal) — already known W22",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Ruicheng/moge-2-vitl-normal",
+    "risk": "low",
+    "confidence": 0.91,
+    "notes": "Already known — W22 (T1-C). Status: unimplemented. No competing normal-map model released in 7-day window. Still the recommended upgrade for build_normal_map."
+  },
+  {
+    "method": "build_inpaint",
+    "category": "checkpoint",
+    "name": "FLUX.1 Kontext [dev] — already known W22",
+    "source": "huggingface",
+    "url": "https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Already known — W22 (T2-A). Status: unimplemented. No new Kontext release in window. FLUX 3 (Tier 3) may eventually supersede Kontext, but current recommendation stands. Also relevant: build_img2img, build_style_transfer."
+  },
+  {
+    "method": "build_wan_video",
+    "category": "checkpoint",
+    "name": "Kijai/WanVideo_comfy_nvfp4 — already known W22",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Kijai/WanVideo_comfy_nvfp4",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Already known — W22 (T2-C). Status: unimplemented. Verify ComfyUI-WanVideoWrapper GH issue #1888 loader support status before deploying. Blackwell-native NVFP4 format."
+  }
+]
