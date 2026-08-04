@@ -1,0 +1,282 @@
+[
+  {
+    "method": "build_klein_* (all 15)",
+    "category": "node_pack",
+    "name": "one-node-flux-2-klein (ComfyUI native, v0.29.0)",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/ComfyUI/releases/tag/v0.29.0",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "IN WINDOW (Jul 29). Ships with T1-B ComfyUI v0.29.2 upgrade. Collapses multi-node FLUX.2 Klein workflow graphs into a single ComfyUI widget. Zero extra VRAM — workflow simplification only. NEW today (not in 2026-08-03 baseline)."
+  },
+  {
+    "method": "build_txt2img,build_generate_anything",
+    "category": "checkpoint",
+    "name": "Krea2 Turbo FP8 (12.9B, ~12 GB VRAM, reference-image support in v0.29.0)",
+    "source": "other",
+    "url": "https://www.stablediffusiontutorials.com/2026/06/krea2-base-turbo.html",
+    "risk": "low",
+    "confidence": 0.87,
+    "notes": "IN WINDOW (Jul 29 — v0.29.0 adds reference-image support). 8-step 2K inference in ~2 s. New backbone option alongside SDXL/Klein. BF16 ~24 GB — skip; FP8 ~12 GB fits 5060 Ti. NEW today (not in 2026-08-03 baseline)."
+  },
+  {
+    "method": "build_generate_anything,build_txt2img",
+    "category": "node_pack",
+    "name": "ComfyUI-Krea2T-Enhancer custom node",
+    "source": "other",
+    "url": "https://www.localainews.co/news/comfyui/",
+    "risk": "low",
+    "confidence": 0.75,
+    "notes": "IN WINDOW (Jul 28). Improves Krea2 Turbo prompt adherence. No model download — node pack only. Pairs with Krea2 Turbo FP8. NEW today (not in 2026-08-03 baseline)."
+  },
+  {
+    "method": "build_depth_map_v3",
+    "category": "checkpoint",
+    "name": "Depth Anything 3 (DA3, ICLR 2026 Oral, Mar 4 2026)",
+    "source": "other",
+    "url": "https://depth-anything-3.github.io/",
+    "risk": "medium",
+    "confidence": 0.80,
+    "notes": "GAP COVERAGE — not in 2026-08-03 baseline. DINOv2 encoder, +35.7% camera-pose accuracy vs prior DA. ComfyUI node: PozzettiAndrea/ComfyUI-DepthAnythingV3 (last updated Jun 6 2026). Architecture shift: multi-view geometry, not monocular-only — not drop-in, requires integration review. Base ~4 GB / Large ~8 GB VRAM."
+  },
+  {
+    "method": "build_qwen_edit",
+    "category": "checkpoint",
+    "name": "Qwen-Image 2.0 7B (Feb 10 2026, #1 AI Arena T2I + editing)",
+    "source": "github",
+    "url": "https://github.com/QwenLM/Qwen-Image",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "GAP COVERAGE — not in 2026-08-03 baseline. 7B replaces 20B predecessor. 3x VRAM savings: 7B BF16 ~14 GB; FP8 ~7-8 GB. Native 2K, 1000-token prompts, complex text rendering. #1 on AI Arena for both generation and editing. Direct backbone upgrade for build_qwen_edit."
+  },
+  {
+    "method": "build_txt2img,build_img2img",
+    "category": "checkpoint",
+    "name": "HiDream-O1-Image FP8 (8B, ~10 GB VRAM, Apache 2.0, May 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/drbaph/HiDream-O1-Image-FP8",
+    "risk": "medium",
+    "confidence": 0.80,
+    "notes": "GAP COVERAGE — not in 2026-08-03 baseline. Unified T2I+editing+personalization, no external VAE needed. FP8 ~10 GB — comfortable on 5060 Ti. Apache 2.0. BF16 full (20-24 GB) — skip. Evaluate as third backbone option after Krea2/Mage-Flow."
+  },
+  {
+    "method": "build_hunyuan_3d_textured",
+    "category": "node_pack",
+    "name": "Hunyuan3D-2GP fork (deepbeepmeep) — VRAM fix for RTX 5060 Ti",
+    "source": "github",
+    "url": "https://github.com/deepbeepmeep/Hunyuan3D-2GP",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "GAP COVERAGE — not in 2026-08-03 baseline. CRITICAL: standard HunyuanDiT 3D 2.1 texture pipeline requires ~21 GB VRAM — OOM on 5060 Ti. 2GP fork enables shape+texture at ~6-12 GB with sequential offloading. Community fork (not official Tencent). Shape-only: ~6-10 GB; shape+texture: ~6-12 GB. Blocking fix for build_hunyuan_3d_textured on 16 GB hardware."
+  },
+  {
+    "method": "build_sam3_segment,build_sam3_mask,build_sam3_extract,build_magic_eraser",
+    "category": "checkpoint",
+    "name": "SAM 3.1 (Meta, Mar 2026) — object multiplexing 16 objects per pass",
+    "source": "other",
+    "url": "https://ai.meta.com/blog/segment-anything-model-3/",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "GAP COVERAGE — 2026-08-03 baseline noted 'tracking-only; quality unchanged' but multiplexing (16 objects/pass, shared-memory joint tracking) is a meaningful speed-up for multi-object scenes. Native ComfyUI nodes: SAM3_Detect, SAM3_VideoTrack, SAM3_TrackToMask. ~6-8 GB VRAM. Confirm checkpoint version; if SAM 3.0, pull SAM 3.1 weights."
+  },
+  {
+    "method": "build_controlnet_gen",
+    "category": "node_pack",
+    "name": "anima lllite control model (ComfyUI native v0.29.0, Jul 29)",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/ComfyUI/releases/tag/v0.29.0",
+    "risk": "low",
+    "confidence": 0.78,
+    "notes": "IN WINDOW (Jul 29). Lightweight anime/illustration ControlNet variant. <1 GB overhead; total VRAM dominated by backbone. Niche: anime domain only. Ships free with T1-B ComfyUI upgrade."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "node_pack",
+    "name": "Pruna LTX VAE (ComfyUI v0.30.0, Aug 3) — faster decoder for LTX-2.3",
+    "source": "other",
+    "url": "https://docs.comfy.org/changelog",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "IN WINDOW (Aug 3). Drop-in faster decoder for LTX-2.3 pipelines; expected to reduce peak decode VRAM. Zero extra model download — VAE optimization only. Ships with T1-B ComfyUI upgrade. NEW today (not in 2026-08-03 baseline)."
+  },
+  {
+    "method": "build_face_restore,build_photo_restore,build_faceswap",
+    "category": "node_pack",
+    "name": "ComfyUI-ReActor Core (May 2026) + GPEN 2048 post-swap restoration",
+    "source": "github",
+    "url": "https://github.com/Gourieff/ComfyUI-ReActor",
+    "risk": "low",
+    "confidence": 0.65,
+    "notes": "GAP COVERAGE — not in 2026-08-03 baseline. May 2026 update: 'ReActor Core' removes InsightFace/C++ hard dependency; adds GPEN 1024/2048 as post-swap restoration options. Confirm ReActor Core is the active deployment. GPEN 2048 is a meaningful quality upgrade for post-swap restoration."
+  },
+  {
+    "method": "build_face_restore,build_photo_restore",
+    "category": "node_pack",
+    "name": "ComfyUI-facerestore_advanced (flickleafy) — quality-gating CodeFormer wrapper",
+    "source": "github",
+    "url": "https://github.com/flickleafy/facerestore_advanced",
+    "risk": "medium",
+    "confidence": 0.45,
+    "notes": "GAP COVERAGE — not in 2026-08-03 baseline. Auto-fallback (CodeFormer→GFPGAN→GPEN on quality failure); multi-metric scoring (SSIM, artifact, skin texture, landmark). Creation date unconfirmed — verify GitHub commit dates before integrating. Low confidence due to unverified date."
+  },
+  {
+    "method": "build_klein_headswap,build_klein_face_detail",
+    "category": "node_pack",
+    "name": "FLUX2 Klein_9b Pro Workflow V7.0 (Civitai, Jul 27)",
+    "source": "civitai",
+    "url": "https://civitai.com/models/2213699/flux2-klein9b-pro-grade-workflow-high-and-low-vram-w-controlnet-gguf-capable",
+    "risk": "low",
+    "confidence": 0.72,
+    "notes": "BORDERLINE (Jul 27 — 1 day before window). Workflow-graph update only (not model weights). Adds LLM prompt enhancer node, instruct selector, improved detailer chain. Klein 4B FP16 ~13 GB; 9B GGUF Q4 ~12-14 GB borderline. Review detailer chain improvements for build_klein_face_detail."
+  },
+  {
+    "method": "build_txt2img,build_img2img,build_generate_anything",
+    "category": "model",
+    "name": "Mage-Flow 4B (Microsoft, MIT, NR-MMDiT; ComfyUI native v0.29.0, Jul 29)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Comfy-Org/Mage-Flow",
+    "risk": "high",
+    "confidence": 0.92,
+    "notes": "Already known — 2026-08-03. Beats FLUX.2 on GenEval (0.90 vs 0.87). INT8 ~9-12 GB VRAM. Entirely new architecture — high wiring effort. arxiv:2607.19064."
+  },
+  {
+    "method": "build_qwen_edit",
+    "category": "model",
+    "name": "Mage-Flow-Edit 4B (microsoft/Mage-Flow-Edit)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/microsoft/Mage-Flow-Edit",
+    "risk": "high",
+    "confidence": 0.90,
+    "notes": "Already known — 2026-08-03. Instruction-guided editing, same NR-MMDiT backbone. Turbo 4-step: 1.02 s/edit at 1024px. INT8 ~9-12 GB. New architecture wiring required."
+  },
+  {
+    "method": "new_builder",
+    "category": "model",
+    "name": "MiniMax H3 FL2VA + Ref2VA (Comfy-Org/MiniMax-H3)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Comfy-Org/MiniMax-H3",
+    "risk": "medium",
+    "confidence": 0.91,
+    "notes": "Already known — 2026-08-03. Open weights Aug 3. Video+audio up to 2K 15s. INT4/NVFP4 for 16 GB. Two new builders: build_minimax_h3_video + build_minimax_h3_flf. Requires ComfyUI ≥ v0.29.2."
+  },
+  {
+    "method": "build_wan_video,build_wan22_t2v,build_wan_flf,build_wan_animate_video,build_wan_video_blockswap",
+    "category": "controlnet",
+    "name": "Uni3C ControlNet for WAN (ComfyUI v0.29.0 native, Jul 29)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Kijai/WanVideo_comfy",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Already known — 2026-08-03. Camera-motion transfer, 3D-referenced video. WanUni3CControlnetApply node. ~2 GB checkpoint. Fits 16 GB budget."
+  },
+  {
+    "method": "new_builder",
+    "category": "model",
+    "name": "Wan-Dancer-14B (Wan-AI/Wan-Dancer-14B, Jul 13 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Wan-AI/Wan-Dancer-14B",
+    "risk": "medium",
+    "confidence": 0.92,
+    "notes": "Already known — 2026-08-03. Music+reference image → 720p/30fps dance video. Apache 2.0. FP8 + T5 CPU offload. Needs 24 GB system RAM. New builder: build_wan_dancer_video."
+  },
+  {
+    "method": "new_builder",
+    "category": "model",
+    "name": "ID-V2V: Identity-Preserving Video Restylization (Eyeline-Labs/ID-V2V, Jul 29)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Eyeline-Labs/ID-V2V",
+    "risk": "high",
+    "confidence": 0.90,
+    "notes": "Already known — 2026-08-03. Apache 2.0. SIGGRAPH Asia 2026 (arXiv:2607.22830). Full ~96 GB; Kijai int8-convrot: Kijai/Wan_ID_V2V_comfy. Requires ComfyUI PR #15139. VRAM on 16 GB: untested."
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "checkpoint",
+    "name": "BiRefNet Lucida fine-tune (egeorcun/lucida v1.3, Jul 23 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/egeorcun/lucida",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "Already known — 2026-08-03. BiRefNet_HR fine-tune for transparency/glass, camouflage, text+logos. MIT. Drop-in via ComfyUI-RMBG v3.1.0 (Jul 21). Expose as build_rembg_birefnet(model='lucida') option."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "LTX-2.3 INT8-distilled-convrot (SimpleTuner, Jul 29 2026)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/SimpleTuner/ltxvideo-2.3-distilled-convrot-int8",
+    "risk": "medium",
+    "confidence": 0.82,
+    "notes": "Already known — 2026-08-03. Community (not official Lightricks) INT8 distilled of LTX-2.3. 3K downloads. Benchmark fidelity vs current 2B baseline before switching."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "model",
+    "name": "FLUX 3 (Black Forest Labs — watch item, Jul 23 2026)",
+    "source": "other",
+    "url": "https://bfl.ai/models/flux-3",
+    "risk": "high",
+    "confidence": 0.60,
+    "notes": "Already known — 2026-08-03. API-gated, no open weights as of 2026-08-04. ETA 'later 2026'. When FLUX 3 Dev ships, likely Klein backbone successor."
+  },
+  {
+    "method": "build_faceswap,build_faceswap_model,build_faceswap_mtb",
+    "category": "model",
+    "name": "HyperSwap 256 ONNX — already known W22",
+    "source": "github",
+    "url": "https://huggingface.co/facefusion/models-3.3.0",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Already known — W22 + 2026-08-03. Unimplemented. ComfyUI-ReActor issues #183/#226 (black artifacts) remain open. Test hyperswap_1c before switching from inswapper_128."
+  },
+  {
+    "method": "build_inpaint,build_img2img,build_style_transfer",
+    "category": "checkpoint",
+    "name": "FLUX.1 Kontext [dev] — already known W22",
+    "source": "huggingface",
+    "url": "https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Already known — W22 + 2026-08-03. Unimplemented."
+  },
+  {
+    "method": "build_normal_map",
+    "category": "checkpoint",
+    "name": "MoGe-2 (Ruicheng/moge-2-vitl-normal) — already known W22",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Ruicheng/moge-2-vitl-normal",
+    "risk": "low",
+    "confidence": 0.91,
+    "notes": "Already known — W22 + 2026-08-03. Unimplemented. No competing model released."
+  },
+  {
+    "method": "build_wan_video,build_wan_video_blockswap",
+    "category": "checkpoint",
+    "name": "Kijai/WanVideo_comfy_nvfp4 — already known W22",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Kijai/WanVideo_comfy_nvfp4",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Already known — W22 + 2026-08-03. Verify GH issue #1888 before deploying."
+  },
+  {
+    "method": "build_wan22_t2v",
+    "category": "checkpoint",
+    "name": "Wan 3.0 — NOT released as of 2026-08-04",
+    "source": "other",
+    "url": "",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Rumored ~Aug 6 2026. Not on HuggingFace. Wan 2.2 remains current open-weight backbone. Check daily."
+  },
+  {
+    "method": "build_klein_headswap,build_faceid_img2img,build_pulid_flux",
+    "category": "node_pack",
+    "name": "ComfyUI-PuLID-Flux2 v0.6.2 — already known W22",
+    "source": "github",
+    "url": "https://github.com/iFayens/ComfyUI-PuLID-Flux2",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Already known — W22 + 2026-08-03. Native Klein weights in v0.6.2 create cross-builder synergy. Training scripts temporarily removed. Unimplemented."
+  }
+]
