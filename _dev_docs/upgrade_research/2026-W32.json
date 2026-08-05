@@ -1,0 +1,222 @@
+[
+  {
+    "method": "build_hunyuan_video",
+    "category": "checkpoint",
+    "name": "HunyuanVideo-1.5 720p FP8 (unsloth)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/unsloth/HunyuanVideo-1.5-720p-FP8",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "IN-WINDOW 2026-08-04. FP8 of HunyuanVideo-1.5 (8.3B, Nov 2025). Supersedes original 13B; ~9 GB VRAM vs ~17 GB. Native ComfyUI support confirmed. Also available in 480p variant. Tier 1 drop-in."
+  },
+  {
+    "method": "build_hunyuan_video",
+    "category": "checkpoint",
+    "name": "HunyuanVideo-1.5 480p FP8 (unsloth)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/unsloth/HunyuanVideo-1.5-480p-FP8",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "IN-WINDOW 2026-08-04. Companion to 720p FP8 variant; lower resolution, lower VRAM. Tier 1 drop-in."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "checkpoint",
+    "name": "HyperSwap 1c 256-px ONNX (FaceFusion 3.3.0)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/facefusion/models-3.3.0",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "Outside window (Q4 2025). Three-tier: 1a=speed, 1b=balanced, 1c=quality. ~403 MB each. Supported in ComfyUI-ReActor (Issue #143). Better identity fidelity and blending than inswapper_128. ~4 GB VRAM. Tier 1 drop-in; requires local hyperswap model class enabled in ReActor."
+  },
+  {
+    "method": "build_sam3_segment",
+    "category": "checkpoint",
+    "name": "SAM 3.1 (Meta)",
+    "source": "github",
+    "url": "https://ai.meta.com/blog/segment-anything-model-3/",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "Outside window (2026-03-27). ~7x faster inference, half VRAM vs SAM 3.0. Native ComfyUI support merged (Comfy-Org PR #13408, kijai). Applies to build_sam3_segment, build_sam3_mask, build_sam3_extract. ~5 GB VRAM. Tier 1 checkpoint swap."
+  },
+  {
+    "method": "new_builder",
+    "category": "checkpoint",
+    "name": "MiniMax H3",
+    "source": "huggingface",
+    "url": "https://huggingface.co/MiniMaxAI/MiniMax-H3",
+    "risk": "medium",
+    "confidence": 0.95,
+    "notes": "IN-WINDOW 2026-08-03. 33.1B omni-transformer: T2V + I2V + stereo audio, up to 2K. INT4 ~15 GB fits RTX 5060 Ti 16 GB with blockswap. Day-0 ComfyUI v0.30.0 support (Comfy-Org PR #15224). Comfy-Org repack: https://huggingface.co/Comfy-Org/MiniMax-H3. New build_minimax_video needed. Tier 2 new builder."
+  },
+  {
+    "method": "new_builder",
+    "category": "checkpoint",
+    "name": "Krea 2 Base + Turbo",
+    "source": "huggingface",
+    "url": "https://huggingface.co/docs/diffusers/api/pipelines/krea2",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "Outside window (2026-06-22). 12B MMDiT + Qwen3-VL-4B. FP8 ~13 GB; GGUF Q5_K_M ~8.87 GB. ComfyUI native since v0.26.0. Top-10 Artificial Analysis leaderboard. Permissive license. Identity-edit LoRA available. Tier 2 new builder (build_krea2_txt2img); strong SDXL/Flux replacement."
+  },
+  {
+    "method": "new_builder",
+    "category": "checkpoint",
+    "name": "Bernini-R (ByteDance, Wan 2.2 V2V editor)",
+    "source": "github",
+    "url": "https://github.com/bytedance/Bernini",
+    "risk": "medium",
+    "confidence": 0.90,
+    "notes": "Outside window (2026-06-01). V2V editing, relighting, restyling, subject insertion via Wan 2.2 in-context reference. ComfyUI merged Comfy-Org PR #14216 (Jun 9). Weights: https://huggingface.co/ByteDance/Bernini-R. Node pack: https://github.com/AIMixer/ComfyUI-Bernini. 1.3B variant 16 GB viable; 14B needs GGUF. New build_bernini_video. Tier 2."
+  },
+  {
+    "method": "build_faceid_img2img",
+    "category": "node_pack",
+    "name": "ComfyUI-PuLID-Flux2 v0.6.2 (iFayens)",
+    "source": "github",
+    "url": "https://github.com/iFayens/ComfyUI-PuLID-Flux2",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Outside window (2026-03-21). First PuLID for FLUX.2. Models: https://huggingface.co/Fayens/Pulid-Flux2. ~8 GB VRAM. Known gap: male ID fidelity. Moves build_faceid_img2img from SD-era IPAdapter to FLUX.2 native. Tier 2."
+  },
+  {
+    "method": "build_klein_face_detail",
+    "category": "node_pack",
+    "name": "ComfyUI-Flux-FaceIR (cosmicrealm)",
+    "source": "github",
+    "url": "https://github.com/cosmicrealm/ComfyUI-Flux-FaceIR",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Outside window (2026-04-07). FLUX.2-Klein-4B LoRA + ComfyUI nodes for blind face restoration and reference-guided restoration. Companion: https://github.com/cosmicrealm/flux-restoration. ~6 GB VRAM. Adds blind-restoration path CodeFormer lacks. Tier 2."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "node_pack",
+    "name": "ComfyUI-Trellis2 MultiView update (visualbruno)",
+    "source": "github",
+    "url": "https://github.com/visualbruno/ComfyUI-Trellis2",
+    "risk": "medium",
+    "confidence": 0.88,
+    "notes": "ComfyUI wrapper IN-WINDOW updated 2026-07-31 (MultiView support, alpha fixes). TRELLIS.2 model itself: Microsoft, MIT license, 4B O-Voxel, full PBR GLB. ~16 GB VRAM minimum (viable at reduced resolution). Model: https://huggingface.co/microsoft/TRELLIS.2. MIT license advantage over Hunyuan community. New build_trellis2_3d. Tier 2."
+  },
+  {
+    "method": "build_seedv2r",
+    "category": "checkpoint",
+    "name": "FlashVSR (OpenImagingLab, CVPR 2026)",
+    "source": "github",
+    "url": "https://github.com/OpenImagingLab/FlashVSR",
+    "risk": "low",
+    "confidence": 0.87,
+    "notes": "Outside window (2025-11). One-step diffusion streaming VSR; 17 FPS at 768x1408; 12x faster than prior diffusion VSR. ~8 GB VRAM. ComfyUI: https://github.com/1038lab/ComfyUI-FlashVSR. Stable variant: https://github.com/naxci1/ComfyUI-FlashVSR_Stable. Complementary to SeedVR2 (speed vs quality). Tier 2."
+  },
+  {
+    "method": "new_builder",
+    "category": "checkpoint",
+    "name": "Z-Image Turbo (Alibaba Tongyi Lab)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Comfy-Org/z_image_turbo",
+    "risk": "low",
+    "confidence": 0.87,
+    "notes": "Outside window (2025-11). 6B, 8-step distilled; FP8 ~8 GB VRAM. 1024x1024 in ~2.3s on RTX 4090. Comfy-Org packaged. Z-Image-Edit adds instruction-following editing. New build_zimage_txt2img. Tier 2."
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "node_pack",
+    "name": "ComfyUI-RMBG v3.1.0 Lucida BiRefNet fine-tune (1038lab)",
+    "source": "github",
+    "url": "https://github.com/1038lab/ComfyUI-RMBG",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Released 2026-07-21 (8 days before window). Adds Lucida fine-tune for transparent objects, camouflage, text/logos, glow/VFX. Also new SAM2Segment node. ~3 GB VRAM. Drop-in update within 1038lab ecosystem. Tier 2."
+  },
+  {
+    "method": "build_face_restore",
+    "category": "checkpoint",
+    "name": "IConFace (cosmicrealm, FLUX.2-Klein-4B)",
+    "source": "github",
+    "url": "https://github.com/cosmicrealm/IConFace",
+    "risk": "low",
+    "confidence": 0.75,
+    "notes": "Outside window (2026-05). No ComfyUI node yet. Reference-aware face restoration on Klein-4B: dual-route cross-attention, AdaFace identity anchor, blind + reference modes. arXiv:2605.02814. ~8 GB VRAM. Monitor for ComfyUI wrapper from same author (cosmicrealm/ComfyUI-Flux-FaceIR). Tier 3."
+  },
+  {
+    "method": "build_qwen_edit",
+    "category": "checkpoint",
+    "name": "Qwen-Image-2.0-RL (Alibaba Qwen team)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/papers/2606.27608",
+    "risk": "low",
+    "confidence": 0.82,
+    "notes": "Outside window (2026-06-25). 7B RLHF/OPD fine-tune; Elo +78 T2I vs base. GGUF Q4_K_M ~14 GB. Apache 2.0. Checkpoint ID unconfirmed — verify at huggingface.co/Qwen. Tier 3 until weights confirmed."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Ideogram 4 FP8",
+    "source": "huggingface",
+    "url": "https://huggingface.co/ideogram-ai/ideogram-4-fp8",
+    "risk": "medium",
+    "confidence": 0.90,
+    "notes": "Outside window (2026-06-03). 9.3B flow-matching DiT; best-in-class multilingual text rendering. FP8 ~16 GB — tight fit. Gated HF access, non-OSI license. Civitai INT8 repack exists. Tier 3 — license review required."
+  },
+  {
+    "method": "new_builder",
+    "category": "checkpoint",
+    "name": "FLUX 3 (Black Forest Labs)",
+    "source": "bfl.ai",
+    "url": "https://bfl.ai/blog/flux-3",
+    "risk": "high",
+    "confidence": 0.90,
+    "notes": "Announced 2026-07-23/28 (crosses window). Multimodal single backbone (image/video/audio/robot). No open weights as of 2026-08-05. Open-weight Dev expected later in 2026. When weights drop, likely to supersede all Klein/FLUX.2 builders. Monitor. Tier 3."
+  },
+  {
+    "method": "build_hunyuan_3d_mesh",
+    "category": "checkpoint",
+    "name": "Hunyuan3D-Omni (Tencent)",
+    "source": "github",
+    "url": "https://github.com/Tencent-Hunyuan/Hunyuan3D-Omni",
+    "risk": "medium",
+    "confidence": 0.82,
+    "notes": "Outside window (2025-08). Multi-condition 3D control (point cloud, voxel, skeleton, bbox). 3.3B params; ~10 GB VRAM. No standalone ComfyUI nodes found. Tier 3 — monitor for node wrapper."
+  },
+  {
+    "method": "build_faceswap",
+    "category": "software_release",
+    "name": "FaceFusion 3.8.0",
+    "source": "github",
+    "url": "https://github.com/facefusion/facefusion/releases/tag/3.8.0",
+    "risk": "medium",
+    "confidence": 0.95,
+    "notes": "IN-WINDOW 2026-07-31. Infrastructure-only: FFmpeg video manager, AV1 encode/decode, alpha channel, --workflow-strategy flag. No new face-swap model weights. Different toolchain from ReActor. No action needed. Tier 3 / informational."
+  },
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "LTX-2.3 distilled convrot INT8 (SimpleTuner community quant)",
+    "source": "huggingface",
+    "url": "https://huggingface.co/SimpleTuner/ltxvideo-2.3-distilled-convrot-int8",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "IN-WINDOW 2026-07-29. Community INT8 quantization of LTX-2.3. Spellcaster already uses LTX-2.3 backbone — this is packaging only, no new model. Lower peak activation memory. Not a new model. Tier 3 / informational."
+  },
+  {
+    "method": "build_depth_map_v3",
+    "category": "framework",
+    "name": "YOLO26 monocular depth (Ultralytics v8.4.104)",
+    "source": "github",
+    "url": "https://www.ultralytics.com/blog/ultralytics-yolo26-now-supports-monocular-depth-estimation",
+    "risk": "low",
+    "confidence": 0.72,
+    "notes": "IN-WINDOW 2026-07-29. Combined detection+depth pipeline; does not improve pure depth quality vs DA3-large. Relevant only for combined detect+depth use-cases. No action needed. Informational."
+  },
+  {
+    "method": "new_builder",
+    "category": "checkpoint",
+    "name": "Pixal3D (TencentARC, SIGGRAPH 2026)",
+    "source": "github",
+    "url": "https://github.com/TencentARC/Pixal3D",
+    "risk": "medium",
+    "confidence": 0.83,
+    "notes": "Outside window (2026-05). Pixel-aligned image-to-3D using TRELLIS.2 backbone. arXiv 2605.10922. ComfyUI wrappers: Saganaki22/Pixal3D-ComfyUI, dreamrec/ComfyUI-Pixal3D. ~16 GB borderline on RTX 5060 Ti. New build_pixal3d. Tier 3."
+  }
+]
