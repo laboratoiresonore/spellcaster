@@ -1,0 +1,132 @@
+[
+  {
+    "method": "build_ltx_video",
+    "category": "checkpoint",
+    "name": "LTX-2.5",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Lightricks/LTX-2.5",
+    "risk": "medium",
+    "confidence": 0.97,
+    "notes": "Released 2026-08-11 by Lightricks. Open weights. Day-one ComfyUI 0.32.0 native nodes (LTXV Spatio-Temporal Guidance, LTXV Modality Guidance, LTXV Dual CFG Guider, LTXV Duration Predictor). 22B transformer with distilled checkpoint; 16 GB VRAM feasible at reduced resolution with FP8. Adds multi-shot generation, audio-video coupling, diffusion video decoder replacing VAE reconstruction. Direct major version supersession of LTX-Video / LTX-2.3. Tier 1."
+  },
+  {
+    "method": "build_wan_animate_video",
+    "category": "checkpoint",
+    "name": "Wan-Animate-2",
+    "source": "github",
+    "url": "https://github.com/Wan-Video/Wan-Animate-2",
+    "risk": "medium",
+    "confidence": 0.92,
+    "notes": "Released 2026-08-07 by Alibaba Tongyi Lab. Apache 2.0. 14B end-to-end character animation DiT; eliminates intermediate pose extractor. Native ComfyUI nodes: WanAnimate2ToVideo, WanAnimate2Cache. 480p feasible on 16 GB with INT8/FP8 quantization. Matches closed-source commercial SOTA (Dreamina, KLING MotionControl) in blind user studies. Wan-Animate-2-Lite streaming variant for real-time avatar use. Tier 1."
+  },
+  {
+    "method": "build_faceswap|build_faceswap_mtb",
+    "category": "node_pack",
+    "name": "FaceFusion 3.8.2",
+    "source": "github",
+    "url": "https://github.com/facefusion/facefusion/releases/tag/3.8.2",
+    "risk": "low",
+    "confidence": 0.95,
+    "notes": "Released 2026-08-10. Stability/compatibility patch: FFmpeg 9 fix (removed -vsync option), CUDA 12/13 VRAM leak fix, frame enhancer output scale fix. Not a new swap model checkpoint. Framework-level update; no new weights. If spellcaster uses FaceFusion backend, ensure dependency pinned to >=3.8.2 for CUDA 12/13 compat. Tier 3."
+  },
+  {
+    "method": "build_txt2img|build_img2img",
+    "category": "checkpoint",
+    "name": "Ideogram 4.0",
+    "source": "github",
+    "url": "https://blog.comfy.org/p/ideogram-4-day-0-support-in-comfyui",
+    "risk": "low",
+    "confidence": 0.85,
+    "notes": "Released 2026-06-03 (outside 7-day window; first audit surfacing). 9.3B single-stream Diffusion Transformer. Open weights under Ideogram Non-Commercial Model Agreement (not Apache 2.0). Day-0 native ComfyUI support. Best-in-class text rendering and layout control, JSON-first structured prompting. 16 GB tight but feasible with offloading. No existing spellcaster builder. Would need new build_ideogram_txt2img. Tier 2."
+  },
+  {
+    "method": "build_wan_video|build_wan22_t2v|build_wan_flf",
+    "category": "checkpoint",
+    "name": "Wan 3.0",
+    "source": "github",
+    "url": "https://www.orcarouter.ai/blog/wan-3-0-release-date",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Public beta launched 2026-08-06 on Alibaba Cloud Model Studio. Generates 30-second clips with audio in single pass. Omni-reference (documents, slides, video). Apache 2.0 open weights CLAIMED by some sources but NOT confirmed; no weights on Wan-AI HuggingFace or Wan-Video GitHub as of 2026-08-14. API-only. Skip until weights ship. Tier 3."
+  },
+  {
+    "method": "build_txt2img|build_img2img|build_inpaint",
+    "category": "checkpoint",
+    "name": "Flux 3 (BFL)",
+    "source": "github",
+    "url": "https://www.marktechpost.com/2026/07/26/black-forest-labs-releases-flux-3-a-multimodal-flow-model-for-image-video-audio-and-robot-action-prediction/",
+    "risk": "low",
+    "confidence": 0.90,
+    "notes": "Announced 2026-07-26 by Black Forest Labs. Multimodal foundation model (image + video + audio + action prediction). Flux 3 Video available via API from 2026-08-05. Flux 3 Image API access announced. Open-weight Flux 3 Dev planned 'later 2026' — no date, no repo, no ComfyUI node. Monitor black-forest-labs HuggingFace org. Tier 3."
+  },
+  {
+    "method": "build_klein_headswap|build_klein_face_detail",
+    "category": "checkpoint",
+    "name": "Qwen-Image-3.0-Pro",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Qwen/Qwen-Image",
+    "risk": "low",
+    "confidence": 0.70,
+    "notes": "GA 2026-08-05 (model released Jul 21). Better skin/hair/pore rendering, 4.5K-token instruction limit. Already backbone for Qwen Edit headswap workflows in ComfyUI. Natural upgrade for build_klein_headswap and build_qwen_edit if they target Qwen Edit 2509/2511. Confirm current checkpoint version against Qwen-Image-3.0-Pro. 16 GB feasible. Tier 3 (near-window, need to verify version mismatch)."
+  },
+  {
+    "method": "build_sam3_segment|build_sam3_mask|build_sam3_extract|build_klein_sam3_inpaint",
+    "category": "checkpoint",
+    "name": "SAM 3.1 (Meta)",
+    "source": "github",
+    "url": "https://comfyui-wiki.com/en/models/sam/sam3.1",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Released 2026-03 by Meta. Now production-stable and natively supported in ComfyUI (sam3.1_multiplex model, no auth required unlike SAM3). Improved video tracking vs SAM3. Older item now production-stable. Verify build_sam3_* weight paths reference SAM 3.1 not SAM3/SAM2. Tier 3."
+  },
+  {
+    "method": "build_rembg_v3",
+    "category": "node_pack",
+    "name": "BEN2 in ComfyUI-RMBG v3.1.0",
+    "source": "github",
+    "url": "https://github.com/1038lab/ComfyUI-RMBG",
+    "risk": "low",
+    "confidence": 0.75,
+    "notes": "ComfyUI-RMBG updated 2026-07-21 to v3.1.0 with BEN2 support (outside 7-day window). BEN2 offers enhanced batch processing (3 images/batch), better complex-scene accuracy vs BEN1. Could be a routing option in build_rembg_v3 alongside RMBG-2.0. Tier 3."
+  },
+  {
+    "method": "build_wan_video_blockswap|build_wan_animate_video",
+    "category": "controlnet",
+    "name": "Uni3C ControlNet for Wan (native ComfyUI)",
+    "source": "github",
+    "url": "https://github.com/Comfy-Org/ComfyUI/pull/14946",
+    "risk": "low",
+    "confidence": 0.80,
+    "notes": "Merged 2026-07-29 (outside window). Camera-control ControlNet for all Wan variants (2.1/2.2, T2V, I2V, VACE, Animate, etc.). New node: WanUni3CControlnetApply. Weights at Kijai/WanVideo_comfy: Wan21_Uni3C_controlnet_fp16.safetensors. Consider adding use_uni3c_controlnet option to build_wan_video_blockswap. Tier 3."
+  },
+  {
+    "method": "build_video_reactor",
+    "category": "checkpoint",
+    "name": "ID-V2V (Eyeline Labs / Netflix Research)",
+    "source": "github",
+    "url": "https://github.com/Eyeline-Labs/ID-V2V",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "ComfyUI PR merged 2026-07-29 (near-window). Identity-preserving video restylization via VACE + Wan I2V backbone; diffusion-native, no face-detection pipeline. Style from keyframe(s), identity from source video. int8 convrot weights at Kijai/Wan_ID_V2V_comfy. ~16 GB feasible at 480p. Different mechanism to face-swap (no ONNX detector). SIGGRAPH Asia 2026 paper. Tier 2 additive."
+  },
+  {
+    "method": "build_photobooth",
+    "category": "node_pack",
+    "name": "ComfyUI 0.32.0 Seedance 2.5 Virtual Portrait",
+    "source": "github",
+    "url": "https://blog.comfy.org/p/unlock-seedance20-real-human-video-generation",
+    "risk": "low",
+    "confidence": 0.75,
+    "notes": "Available in ComfyUI 0.32.0 (released 2026-08-11). ByteDance Seedance 2.5 virtual portrait node: up to 20 reference images + 6 video clips as identity anchors, lip-sync and expression preservation for video. Cloud API, no local VRAM. Extends photobooth concept into video. Tier 3 (API-only, no local deployment)."
+  },
+  {
+    "method": "build_face_restore|build_photo_restore",
+    "category": "checkpoint",
+    "name": "RefSTAR (AAAI 2026)",
+    "source": "github",
+    "url": "https://github.com/yinzhicun/RefSTAR",
+    "risk": "medium",
+    "confidence": 0.40,
+    "notes": "AAAI 2026 paper; weights on GitHub. Reference-guided blind face restoration (RefSel + Arc2Face + CLIP + InsightFace). Outperforms CodeFormer on identity-preserving blind restoration. No ComfyUI node yet. Track for future packaging. Tier 3 (watch)."
+  }
+]
