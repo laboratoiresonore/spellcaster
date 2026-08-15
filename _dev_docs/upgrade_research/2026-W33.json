@@ -1,0 +1,92 @@
+[
+  {
+    "method": "build_qwen_edit",
+    "category": "checkpoint",
+    "name": "Qwen-Image-Edit-2511",
+    "source": "huggingface",
+    "url": "https://huggingface.co/QwenLM/Qwen-Image-Edit-2511",
+    "risk": "low",
+    "confidence": 0.92,
+    "notes": "Drop-in replacement for Qwen-Image 2509 already wired in build_qwen_edit. Same UNET architecture; 2511 adds multi-angle view generation and better face identity preservation. Released Dec 26 2025, now has native ComfyUI workflow docs (docs.comfy.org). Only checkpoint path needs updating."
+  },
+  {
+    "method": "build_rembg_birefnet",
+    "category": "checkpoint",
+    "name": "BiRefNet-Lucida",
+    "source": "github",
+    "url": "https://github.com/1038lab/ComfyUI-RMBG",
+    "risk": "low",
+    "confidence": 0.88,
+    "notes": "Additive BiRefNet fine-tune specialised for transparent objects, camouflage, text/logos, and glow/VFX. Added in ComfyUI-RMBG v3.1.0 (Jul 21 2026). Same BiRefNetRMBG node class; expose as new model option in the model parameter. Not a replacement for BiRefNet-general on standard shots."
+  },
+  {
+    "method": "build_wan_animate_video",
+    "category": "checkpoint",
+    "name": "Wan2.2-Animate-2-14B",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Wan-AI/Wan2.2-Animate-2-14B",
+    "risk": "medium",
+    "confidence": 0.9,
+    "notes": "End-to-end Diffusion Transformer character animation; eliminates intermediate motion extractors used by current WAN animate stack. Released Aug 6-7 2026 with same-day native ComfyUI support (WanAnimate2ToVideo + WanAnimate2Cache nodes). ~11 GB VRAM at Q4_K_M — feasible on 16 GB with quantisation. Distilled variant (Wan2.2-Animate-2-14B-Distilled) and W4A4 quant (ApacheOne/Wan2.2-Animate-2-14B-OrbitQuant-W4A4, Aug 11) also available. Requires new builder method."
+  },
+  {
+    "method": "build_wan_animate_video",
+    "category": "checkpoint",
+    "name": "Wan2.2-Animate-2-14B-Distilled-Diffusers",
+    "source": "huggingface",
+    "url": "https://huggingface.co/Wan-AI/Wan2.2-Animate-2-14B-Distilled-Diffusers",
+    "risk": "medium",
+    "confidence": 0.9,
+    "notes": "Distilled variant of Wan2.2-Animate-2-14B. Faster inference, real-time streaming targets. See parent record above for full context."
+  },
+  {
+    "method": "build_minimax_h3_video",
+    "category": "checkpoint",
+    "name": "MiniMax-H3",
+    "source": "huggingface",
+    "url": "https://huggingface.co/MiniMaxAI/MiniMax-H3",
+    "risk": "medium",
+    "confidence": 0.85,
+    "notes": "Entirely new builder needed. Open-weights omni-modal model (text/image/video/audio → video + native 32 kHz stereo audio). Up to 2K, 15 seconds per clip. Launched Aug 3 2026 with same-day ComfyUI native support (4 nodes, 6 workflow templates). VRAM ~11.7 GB; on 16 GB card practical output capped around 960x544 with generation times >10 min per clip. Audio output is a new capability not currently in Spellcaster. Needs local node-pack install and model download before wiring."
+  },
+  {
+    "method": "build_video_rembg",
+    "category": "checkpoint",
+    "name": "Bria VRMBG 3.0",
+    "source": "huggingface",
+    "url": "https://huggingface.co/briaai/VRMBG-3.0",
+    "risk": "medium",
+    "confidence": 0.75,
+    "notes": "Video background removal (temporal-aware). Eliminates flickering from frame-by-frame approaches by propagating alpha across frames. Launched Jun 10 2026. 9x faster than competitors in benchmarks. New capability not yet in Spellcaster. ComfyUI node support status unclear — check 1038lab/ComfyUI-RMBG for VRMBG 3.0 integration. If available locally, wire a build_video_rembg method."
+  },
+  {
+    "method": "build_txt2img",
+    "category": "checkpoint",
+    "name": "Ideogram 4.0",
+    "source": "github",
+    "url": "https://blog.comfy.org/p/ideogram-4-day-0-support-in-comfyui",
+    "risk": "high",
+    "confidence": 0.7,
+    "notes": "DEFERRED: 9.3B T2I model with Qwen3-VL-8B-Instruct text encoder, specialised for structured text in images. NF4 checkpoint targets 24 GB GPU; FP8 untested on 16 GB. Released Jun 3 2026 with native ComfyUI day-0 support. Non-commercial license. Re-evaluate when confirmed 16 GB compatible build appears."
+  },
+  {
+    "method": "build_qwen_edit",
+    "category": "checkpoint",
+    "name": "Qwen-Image-Layered",
+    "source": "github",
+    "url": "https://github.com/QwenLM/Qwen-Image",
+    "risk": "high",
+    "confidence": 0.65,
+    "notes": "DEFERRED: Decomposes images into multiple RGBA layers for independent editing. Peak VRAM 45 GB on RTX Pro 6000; even FP8 variant likely exceeds 16 GB budget. Released Dec 19 2025. Re-evaluate when a confirmed 16 GB-compatible quantisation exists."
+  },
+  {
+    "method": "build_wan22_t2v",
+    "category": "checkpoint",
+    "name": "SeeDance 2.5",
+    "source": "huggingface",
+    "url": "https://technode.com/2026/07/31/bytedance-launches-seedance-2-5-video-generation-model/",
+    "risk": "high",
+    "confidence": 0.8,
+    "notes": "SKIPPED: Cloud API only — all inference runs on ByteDance servers. No local weights released. 30-second native video; ComfyUI support added Aug 7 2026 via partner nodes, but generation itself is remote. Not usable on RTX 5060 Ti without internet dependency."
+  }
+]
