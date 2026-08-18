@@ -61,7 +61,7 @@ graph TB
         WF[workflows.py<br/>70+ build_* fns]
         NF[node_factory.py<br/>typed ComfyUI DSL]
         COMP[composites.py<br/>inject_controlnet<br/>load_model_stack<br/>inject_lora_chain]
-        ARCH[architectures.py<br/>22 arch registry<br/>supported_methods]
+        ARCH[architectures.py<br/>27 arch registry<br/>supported_methods]
         DISP[dispatch.py<br/>preflight → optimize → submit]
     end
 

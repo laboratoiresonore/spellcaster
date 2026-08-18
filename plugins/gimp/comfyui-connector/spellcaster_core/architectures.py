@@ -1082,6 +1082,33 @@ _reg("hunyuan_3d",
      registered=True)
 
 
+# ── SUPIR (restoration companion for SDXL) ──────────────────────────
+# SUPIR is a restoration/upscale model that runs on top of an SDXL
+# backbone via `build_supir` (workflows.py:3108). It is NOT a
+# standalone summonable architecture — the checkpoint alone has no
+# CLIP/VAE to sample from. `model_detect.CKPT_ARCH_RULES` still emits
+# the arch key "supir" for filenames containing "supir" so downstream
+# consumers can route them to the SUPIR pipeline instead of trying to
+# load them as an SDXL checkpoint. Registering the key as a stub
+# (registered=False, empty supported_methods) means:
+#   * `get_arch("supir")` returns a real ArchConfig instead of silently
+#     falling back to SDXL — callers can detect the stub via
+#     `.registered` and skip txt2img/etc.
+#   * The autoset_denoise/autoset_cn/autoset_loras entries on the SDXL
+#     registration (keys "supir": ...) remain the source of truth for
+#     the SUPIR *method* running on an SDXL backbone.
+_reg("supir",
+     loader="checkpoint", sampler="ksampler",
+     clip_mode="bundled", vae_mode="bundled",
+     supports_negative=True,
+     default_resolution=(1024, 1024),
+     default_cfg=6.5, default_steps=30, default_denoise=0.30,
+     default_sampler="dpmpp_2m_sde", default_scheduler="karras",
+     supported_methods=(),   # not summonable alone; use build_supir(sdxl_model, supir_model)
+     scene_group="sdxl",
+     registered=False)
+
+
 # Lumina-Image 2.0 — Alpha-VLLM 2024-12 MMDiT (~2.6B, Apache-2). Native
 # ComfyUI support via `CLIPTextEncodeLumina2`. Standard KSampler path
 # with Flux-style flow matching. Recommended: euler + normal, cfg=4.0,
