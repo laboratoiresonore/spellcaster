@@ -158,6 +158,26 @@ local_action_queue:
 None this run — prior digest history is empty (`_dev_docs/` contained
 only the WHIMWEAVER_REPLAY_BRIDGE_PROPOSAL.md before this commit).
 
+## Pre-existing CI drift on `main` (not this PR's, but flagged)
+
+Running `python tests/mirror_drift.py` locally against `main` (before
+adding the SUPIR stub to either mirror) already reports drift on three
+files between the two in-repo surfaces:
+
+- `workflows.py`  (C=89ff6f52  1=32cc3498)
+- `preflight.py`  (C=2e9b4315  1=10c468ff)
+- `asset_gallery.py`  (C=f93e58e5  1=1e13ab48)
+
+Not fixed here — auto-picking a winning direction is risky without
+knowing which surface has the intended-newer content. Filed as a
+Tier 1 candidate for the next run: a small helper that either
+(a) reports which side is newer per-file by git log timestamp and
+proposes a mechanical merge, or (b) documents which surface is
+canonical in `MIRROR_TARGETS.md` so `tests/mirror_drift.py --fix`
+has a defined direction to snap to. If `mirror-drift.yml` fails on
+this PR's CI run, this is the cause — the SUPIR-stub mirror IS
+included in this PR (both surfaces get the same 27-line addition).
+
 ## Delivery status
 
 - Gmail MCP requires re-auth (this session non-interactive → cannot
