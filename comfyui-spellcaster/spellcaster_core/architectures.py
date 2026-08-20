@@ -876,6 +876,30 @@ _reg("playground",
      scene_group="sdxl",
      registered=True)
 
+# SUPIR — SDXL-backboned image-restoration model (Kijai wrapper pack:
+# ComfyUI-SUPIR). Dispatched through dedicated SUPIR_model_loader /
+# SUPIR_first_stage / SUPIR_sample / SUPIR_decode nodes (see
+# node_factory.supir_*), not via the standard SDXL builder. The
+# detector emits "supir" when it sees a SUPIR checkpoint filename;
+# without a real ArchConfig, get_arch("supir") silently falls back to
+# SDXL, and the UI would advertise all SDXL image methods for a
+# checkpoint that only actually dispatches through the specialised
+# restoration path.
+#
+# Stub registration: no standard supported_methods (SUPIR is invoked
+# via the tool-specific restore path). `registered=False` so callers
+# that guard on the flag can flag the specialised path explicitly.
+_reg("supir",
+     loader="custom_wrapper", sampler="custom",  # SUPIR_sample
+     clip_mode="bundled", vae_mode="separate",  # SUPIR_VAE via SUPIR_first_stage / SUPIR_decode
+     supports_negative=True,
+     default_resolution=(1024, 1024),
+     default_cfg=4.0, default_steps=30, default_denoise=0.30,
+     default_sampler="dpmpp_2m", default_scheduler="karras",
+     supported_methods=(),   # restoration dispatched via node_factory.supir_* helpers, not standard methods
+     scene_group="sdxl",
+     registered=False)
+
 # ── DiT-based archs (stubs — no matching builder yet) ────────────────
 # These use diffusion transformers + different text encoders (T5 / Qwen
 # / Gemma). The existing CLIP-based builders WON'T dispatch for them —
