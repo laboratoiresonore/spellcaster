@@ -68,109 +68,188 @@ Model / capability tracking since ~2026-05 (last README status date). Sorted
 most-actionable first. All are optional upgrades — nothing here is a
 regression fix.
 
-| model / capability | released | replaces (in our stack) | vram (est.) | risk | tier | notes |
-|---|---|---|---|---|---|---|
-| **Wan 2.7** (Apache-2.0 open weights) | March 2026 | Wan 2.2 (our current registered video arch) | ~24 GB for full; quantized variants smaller | med | integration | Open-weights successor. Wan 2.5 (Sep 2025) and Wan 2.6 (Reference-to-Video) are API-only closed weights and NOT deployable locally — don't chase those. Wan 2.7 keeps our local-only stance. Would need new `_reg("wan27", ...)` entry + `build_wan27_video` builder + detector rule. Wan 2.2 stays functional; add 2.7 as parallel arch. |
-| **Wan Animate 2** in ComfyUI | 2026 (partner nodes shipped) | our `WanAnimateToVideo` `WAN_EXTRA_METHODS` `video_animate` path | ~ same as Wan 2.2 base | low | integration | Successor to the character-animation path we already advertise. Check whether `ComfyUI-WanVideoWrapper` (already an optional dep) has picked up Animate 2 nodes, or whether it's core-ComfyUI native. |
-| **SAM 3.1 Multiplex** natively in ComfyUI (PR #13408, kijai) | 2025-Q4 / 2026-Q1 | our SAM3 selection path (README brags "type 'hair' → SAM3 mask, 1s") | modest | low | check-only | ComfyUI now ships SAM 3.1 native nodes with joint multi-object tracking. If our GIMP `AI Select` currently invokes a wrapper (`ComfyUI-RMBG` bundles SAM3 too) rather than the native path, migrating is a small workflow-builder change. **First step is verifying which loader we actually use today.** |
-| **ComfyUI-RMBG v3.1.0** (Lucida BiRefNet variant) | 2026-07-21 | our `ComfyUI-RMBG` optional pack (already listed in `DEPENDENCIES.md`) | ~3 GB | low | version-bump | Lucida target: transparent objects, camouflage, text/logos, glow/VFX, illustrations — real edge-case wins for the AI Eraser + Remove Background tools. Just bump the pinned commit in `installer/manifest.json`; no arch or builder change. |
-| **Flux 2 Klein `one-node-flux-2-klein` POSE mode** | 2026-06-26 | our existing Klein optional-quality path via `ComfyUI-Flux2Klein-Enhancer` | 0 additional | low | opportunity | POSE transfer between images without a separate ControlNet setup. If ergonomically better than our current 3-layer ControlNet path for pose, worth a GIMP-tool exposure. |
-| **Depth Anything V3 now native in ComfyUI** | 2025-11 (model); native ComfyUI nodes shipped 2026 | our optional `ComfyUI-DepthAnythingV3` third-party wrapper (`PozzettiAndrea/…`) | modest | low | cleanup | The third-party wrapper we ship as an optional pack may now be redundant. If native path is on par, remove the optional pack from `DEPENDENCIES.md` and the installer manifest. |
-| **Chroma Radiance** (pixel-space Chroma variant) | 2026 | complements current Chroma image arch (registered=True in our registry) | ~ same as base Chroma | med | evaluate | Generates in pixel space, reducing repeated VAE encode/decode. If quality holds, could become the preferred Chroma dispatch path for high-detail work. |
+> **2026-08-20 correction (post-review with operator):** an earlier draft of
+> this table listed a "Wan 2.7 (Apache-2.0 open weights)" swap. **That was
+> wrong** — it came from an SEO blog (`wan27.org`), not a primary source.
+> Verified against the official `Wan-AI` HF org via MCP: **the newest open
+> weights are the Wan 2.2 family; Wan 2.5 / 2.6 / 3.0 are API-only closed
+> models with no downloadable weights.** There is no `Wan-AI/Wan2.7-*` repo.
+> The row is removed. The genuine capability upgrade in that family is **Wan
+> Animate 2** (below), which IS open (Apache-2.0) and IS a real successor to
+> the character-animation path we already ship.
 
-### Integration-note details (for the two most concrete)
+Verified via HF MCP (`hub_repo_search author=Wan-AI` + `hf_fs ls`), sorted
+most-actionable first. **Disk footprints are real, measured from the HF file
+tree — not guesses** — because Spark 1 / Spark 2 are disk-constrained.
 
-**Wan 2.7 addition — sketch**
+| model / capability | released | replaces (in our stack) | disk on host | risk | verdict |
+|---|---|---|---|---|---|
+| **Wan Animate 2** (`Wan-AI/Wan2.2-Animate-2-14B`, Apache-2.0) | model 2026-07-14; Distilled-Diffusers 2026-08-06 | our `video_animate` / `WanAnimateToVideo` path — currently backed by **Animate v1** | see note ↓ | med | **SWAP — but blocked on quant.** Genuine successor. **Caveat: only Diffusers format exists** (~43 GiB repo, ~32 GiB net-new after the shared UMT5 encoder). **No GGUF/fp8 ComfyUI-native build yet** — the QuantStack GGUF is v1 Animate only (Q5_K_M ≈ 12 GiB). On a disk-tight Spark, swapping *today* means trading a 12 GiB GGUF for a 43 GiB Diffusers repo — wrong direction. **Recommendation: hold the swap until a GGUF/fp8 Animate-2 build lands** (Monster tracks; re-check next run), OR accept the heavy download if the operator wants Animate 2 now. |
+| **Wan-Dancer-14B** (`Wan-AI/Wan-Dancer-14B`, Apache-2.0, i2v music-to-dance) | 2026-07-10 | **NEW capability** — nothing in our stack does music-driven dance i2v | 14B i2v (~14–16 GiB quantized when a GGUF appears) | med | **NEW, not a swap.** Only worth deploying if the product wants a dance/motion tool. Not an upgrade to anything existing; defer unless there's product demand. |
+| **SAM 3.1 Multiplex** native in ComfyUI (PR #13408, kijai) | 2025-Q4 / 2026-Q1 | our SAM3 selection path (README: "type 'hair' → SAM3 mask, 1s") | ~0 net if already pulling SAM3 weights | low | **VERIFY-THEN-MIGRATE.** Native nodes now ship with joint multi-object tracking. First step is confirming whether our `AI Select` uses the native loader or a wrapper (`ComfyUI-RMBG` bundles SAM3 too). Small workflow-builder change, no big download. |
+| **ComfyUI-RMBG (Lucida BiRefNet, v3.1.0)** | 2026-07-21 | our `ComfyUI-RMBG` optional pack | +~1 model (auto-download) | low | **ALREADY LIVE.** Our manifest pins `ref: null` → installer follows upstream `main`, so a fresh install already gets v3.1.0. **No manifest change needed.** Only a `DEPENDENCIES.md` note is warranted. Existing installs pick it up on `git pull`. |
+| **Depth Anything V3 native in ComfyUI** | 2025-11 (model); native nodes 2026 | our optional `ComfyUI-DepthAnythingV3` third-party wrapper | frees the wrapper's disk | low | **CLEANUP (frees disk).** If the native path is on par, drop the third-party pack from the manifest + `DEPENDENCIES.md`. Net **negative** disk — good for Spark. Verify parity first. |
+| **Flux 2 Klein `one-node-flux-2-klein` POSE mode** | 2026-06-26 | our Klein optional-quality path (`ComfyUI-Flux2Klein-Enhancer`) | 0 additional | low | **OPPORTUNITY.** POSE transfer without a separate ControlNet setup. Worth a GIMP-tool exposure if better than our 3-layer ControlNet pose path. No weights to add. |
+| **Chroma Radiance** (pixel-space Chroma) | 2026 | complements current Chroma image arch (already `registered=True`) | ~ same as base Chroma | med | **EVALUATE.** Pixel-space gen reduces VAE round-trips. Quality-dependent; not a clear swap yet. |
 
-- `model_detect.UNET_ARCH_RULES`: add `("wan27", "wan27")` above the
-  `("wan22", "wan")` line so the more-specific name wins.
-- `architectures.py`: add `_reg("wan27", …, registered=True, supported_methods=VIDEO_METHODS + WAN_EXTRA_METHODS, scene_group="video")` cloning from the `wan` block.
-- `workflows.py`: `build_wan27_video` — if Wan 2.7 keeps the WanAnimateToVideo shaper interface, it's a param-tweak on `build_wan_video`; if it introduces new nodes, mirror the pattern in `build_wan_video`.
-- Local-fleet action: pull `Wan-AI/Wan2.7-*` weights (verify the exact repo id from the Apache-2.0 announcement) onto whichever Spark hosts the video tail. Filed in Tier 3 below.
+### The only "swap old for new" that's actually disk-safe right now
 
-**ComfyUI-RMBG v3.1.0 bump — sketch**
+Most rows above are either **not a swap** (SAM3, Dancer, Klein POSE), **already
+live** (RMBG), or **disk-negative cleanup** (DepthAnything). The one true
+model-weight swap the operator asked for — **Animate v1 → Animate 2** — is
+**blocked on a quantized build** because Animate 2 is Diffusers-only today and
+would *increase* disk 12 GiB → 43 GiB on a constrained host. So the honest
+disk-aware answer is:
 
-- `installer/manifest.json`: bump the pinned commit for `ComfyUI-RMBG` to a
-  commit ≥ v3.1.0 tag (2026-07-21).
-- Add note in `DEPENDENCIES.md` optional-pack row noting "Lucida added
-  2026-07 — better transparent object masks".
-- No arch or builder change; the extra model auto-downloads first use.
+- **Do now (disk-negative or zero):** DepthAnything wrapper removal (frees
+  space), RMBG note (no download), SAM3 path verification (no download).
+- **Hold (disk-positive, no quant yet):** Animate 2 swap — Monster watches for
+  a GGUF/fp8 build; re-check next run. Don't push a 43 GiB Diffusers repo onto
+  a full Spark for a swap when a 12–16 GiB quant is likely weeks away.
+- **Defer (new capability, no demand signal):** Wan-Dancer.
 
-## Tier 3 — local-action queue (structured — for local Hermes / operator)
+**Model inventory is Monster's job** (per operator). Tier 3 below routes every
+weight action through Monster rather than issuing raw `hf download` commands, so
+the fleet's single source of truth stays consistent.
+
+## Tier 3 — local-action queue (structured — for Monster / operator)
+
+**Policy this queue encodes** (from the operator, 2026-08-20):
+
+1. **Spark 1 and Spark 2 are disk-constrained.** Every add-new must be paired
+   with a matched retire-old on the same host, and net disk delta must be
+   listed and non-positive except when the operator explicitly greenlights it
+   for a capability win.
+2. **Model inventory is Monster's job.** Every weight-touching entry below
+   uses `monster_action` verbs (which Monster resolves against its
+   fleet-inventory ledger); no raw `hf download` on any host.
+3. **Swap old for new whenever possible; deploy when workflows add
+   significant capabilities.** "Newer version, same capability" gets deferred
+   in favor of capability wins.
+
+Entries are grouped: **do-now (disk-negative or zero)**, **hold-for-quant
+(disk-positive today, blocked)**, **verify-then-decide**, and **repo-side**.
 
 ```yaml
 local_action_queue:
-  - action: download_model_update
-    target_repo: Wan-AI/Wan2.7
-    target_host: unknown  # spark hosting the video tail — please slot correctly
-    reason: >-
-      Wan 2.7 is the open-weights (Apache-2.0) successor to Wan 2.2 that we
-      currently register. Wan 2.5 and 2.6 are API-only. Pulling this on the
-      video-tail host lets the next digest run stage a parallel _reg("wan27").
-    command_hint: |
-      # confirm exact repo id from the Wan-AI HF org (e.g. Wan-AI/Wan2.7-T2V-14B)
-      hf download Wan-AI/Wan2.7 --local-dir "D:\LLM\video\wan27"
-    risk: medium
 
-  - action: bump_node_pack_pin
-    target_repo: 1038lab/ComfyUI-RMBG
-    target_host: any-host-with-ComfyUI  # optional pack; installed per-user
-    reason: >-
-      v3.1.0 (2026-07-21) adds the Lucida BiRefNet variant — real quality
-      win for AI Eraser / Remove Background on transparent objects,
-      camouflage, text/logos, illustrations.
-    command_hint: |
-      cd ComfyUI/custom_nodes/ComfyUI-RMBG && git fetch && git checkout v3.1.0
-    risk: low
+  # ────────────────────────────────────────────────────────────────
+  # DO-NOW group — every entry is disk-neutral or disk-negative
+  # ────────────────────────────────────────────────────────────────
 
-  - action: verify_sam3_path
-    target_repo: comfyanonymous/ComfyUI  # PR #13408
+  - action: monster_verify_rmbg_currency
     target_host: any-host-with-ComfyUI
-    reason: >-
-      Native SAM 3.1 Multiplex nodes are now in core ComfyUI. Confirm
-      whether Spellcaster's "AI Select" tool is invoking the native
-      loader or the RMBG-bundled SAM3. If wrapper, migrate the workflow
-      builder to native to drop a dependency edge.
-    command_hint: |
-      cd ComfyUI && git log --oneline --grep="SAM3\|sam3\|SAM 3" | head -5
-      grep -rn "SAM3\|sam3" comfyui-spellcaster/spellcaster_core/workflows.py
+    replaces: ComfyUI-RMBG (older commit)
+    net_disk_delta_gb: 0            # optional pack; already unpinned in our manifest
+    capability_gain: >-
+      v3.1.0 (2026-07-21) adds Lucida BiRefNet — real wins for AI Eraser /
+      Remove Background on transparent objects, camouflage, text/logos,
+      glow/VFX, illustrations. Our installer manifest has ref: null
+      (upstream main), so fresh installs already pick it up.
+    monster_action:
+      verb: verify_pack_head_at_or_above
+      pack: 1038lab/ComfyUI-RMBG
+      minimum_ref: v3.1.0
+      on_stale: pull_latest_main
     risk: low
 
-  - action: probe_wan_animate2_availability
-    target_repo: kijai/ComfyUI-WanVideoWrapper
+  - action: monster_verify_sam3_path
     target_host: any-host-with-ComfyUI
-    reason: >-
-      Wan Animate 2 shipped as ComfyUI partner nodes in 2026. Check
-      whether the kijai wrapper (already an optional dep) has picked
-      up Animate 2, or whether the path is core-ComfyUI native. Result
-      drives whether we edit the wrapper pin or the workflow builder.
-    command_hint: |
-      cd ComfyUI/custom_nodes/ComfyUI-WanVideoWrapper && git log --oneline --grep="animate.*2\|Animate 2" | head -5
+    replaces: >-
+      (unknown loader — need Monster to report whether "AI Select" invokes
+      native SAM 3.1 nodes or the RMBG-bundled SAM3 wrapper)
+    net_disk_delta_gb: 0
+    capability_gain: >-
+      Native SAM 3.1 Multiplex in core ComfyUI (PR #13408) adds joint
+      multi-object tracking. If we're on the wrapper path, migration is
+      workflow-builder-only.
+    monster_action:
+      verb: probe_active_loader
+      probe:
+        - method_key: "ai_select"
+        - target_node_class: "SAM3*, Sam3*, SegmentAnything3*"
+      report:
+        - which_pack_owns_it
+        - whether_native_alternative_exists
     risk: low
 
-  - action: retire_superseded_wan22_weights
-    target_repo: Wan-AI/Wan2.2
-    target_host: unknown  # video-tail host
-    reason: >-
-      Only AFTER Wan 2.7 is verified end-to-end AND a wan27 arch is
-      registered and dispatching. Not a "do now" — the intent is to
-      free VRAM/disk on the fleet once the swap is proven. Filed here
-      so the local operator has a paper trail.
-    command_hint: |
-      # POST-VERIFICATION ONLY: move to cold storage, do not delete
-      mv "D:\LLM\video\wan22" "D:\LLM\_retired\wan22-YYYY-MM-DD"
-    risk: high
+  - action: monster_retire_depthanything_wrapper_if_native_on_par
+    target_host: any-host-with-ComfyUI
+    replaces: PozzettiAndrea/ComfyUI-DepthAnythingV3 (third-party wrapper)
+    net_disk_delta_gb: negative      # frees the wrapper's disk (~small, node code only)
+    capability_gain: >-
+      ComfyUI now ships DepthAnythingV3 natively. Removing the third-party
+      wrapper frees disk and drops a dependency edge. Verify parity first
+      (same output on a 3-image probe set).
+    monster_action:
+      verb: parity_probe_then_retire
+      canonical_path: comfyui_native_depth_anything_v3
+      candidate_retire: custom_nodes/ComfyUI-DepthAnythingV3
+      parity_criterion: mean_depth_delta_lt_0.02
+      on_pass: retire_wrapper
+    risk: low
+
+  # ────────────────────────────────────────────────────────────────
+  # HOLD-FOR-QUANT group — the requested swap, blocked on disk math
+  # ────────────────────────────────────────────────────────────────
+
+  - action: monster_watch_wan_animate2_quant
+    target_host: video-tail spark (Monster picks)
+    replaces: Wan Animate v1 GGUF (~12 GiB Q5_K_M today)
+    net_disk_delta_gb: -12          # AFTER the swap; Animate 2 quant size TBD
+    capability_gain: >-
+      Wan Animate 2 (Wan-AI/Wan2.2-Animate-2-14B, Apache-2.0, 2026-07-14) is
+      the successor to the character-animation path we already advertise.
+      A Distilled-Diffusers variant landed 2026-08-06.
+    blocked_on: >-
+      Only Diffusers format exists today (~43 GiB repo, ~32 GiB net-new after
+      the shared UMT5 encoder). No GGUF/fp8/ComfyUI-native build yet — the
+      QuantStack GGUF is Animate v1 only. On a disk-tight Spark, doing the
+      swap now trades 12 GiB → 43 GiB (wrong direction). Wait for the quant.
+    monster_action:
+      verb: watch_for_quant
+      base_model: Wan-AI/Wan2.2-Animate-2-14B
+      formats:
+        - gguf: [Q5_K_M, Q4_K_M, Q6_K]
+        - safetensors_fp8
+      candidate_publishers: [QuantStack, city96, Kijai]
+      on_appear:
+        - alert_operator
+        - stage_download_plan_with_matched_retire  # 1:1 swap, disk-negative or zero
+    risk: low
+
+  # ────────────────────────────────────────────────────────────────
+  # DEFER group — new capability, no product signal yet
+  # ────────────────────────────────────────────────────────────────
+
+  - action: monster_note_wan_dancer_availability
+    target_host: n/a
+    replaces: nothing (new capability, not a swap)
+    net_disk_delta_gb: 0            # not staging anything
+    capability_gain: >-
+      Wan-Dancer-14B (Apache-2.0, 2026-07-10) is music-to-dance i2v. Not an
+      upgrade to anything we ship; only worth deploying if the product wants
+      a dance/motion tool. Recording so it's not re-discovered every digest.
+    monster_action:
+      verb: annotate_ledger
+      key: wan-dancer-14b
+      note: "available; no product demand; do not stage"
+    risk: low
+
+  # ────────────────────────────────────────────────────────────────
+  # REPO-SIDE group — cleanup local operator does at their workstation
+  # ────────────────────────────────────────────────────────────────
 
   - action: audit_leak_check_hits_on_main
-    target_repo: laboratoiresonore/spellcaster
     target_host: local-workstation
-    reason: >-
-      `leak-check.yml` is red on main for 84 pre-existing pattern hits
-      across _dev_docs/, _inventory/, antenna.RETIRED-*/,
-      installer/remote_services.json, plugins/krita/spellcaster_krita.py,
-      and comments in workflows.py / asset_gallery.py / mirror-drift.yml.
-      Fix strategy is a curation call: widen exclusions, rename codenames,
-      or mask real IPs — not safe as a mechanical PR.
+    replaces: n/a
+    net_disk_delta_gb: 0
+    capability_gain: >-
+      leak-check.yml is red on main for 84 pre-existing pattern hits across
+      _dev_docs/, _inventory/, antenna.RETIRED-*/, installer/remote_services.json,
+      plugins/krita/spellcaster_krita.py, and code comments. Fix strategy is a
+      curation call (widen exclusions vs. rename codenames vs. mask real IPs) —
+      not safe as a mechanical PR from the cloud sandbox.
     command_hint: |
       git grep -nIE 'Voodoomancer|Whimweaver|Laborantin|voodoo-core|Beatweaver|whimspider|\bTheo\b|192\.168\.86|192\.168\.0\.100|lmlgg|leguillaume|@gmail\.com|MASTER_PLAN' -- ':!.github/workflows/leak-check.yml' | wc -l
     risk: medium
@@ -178,12 +257,27 @@ local_action_queue:
 
 ## Operator-memory corrections (deltas vs prior notes)
 
+- **Retracted: "Wan 2.7 open weights".** An earlier draft of this digest
+  named `Wan-AI/Wan2.7` as an Apache-2.0 open-weights swap target. That
+  claim came from an SEO blog (`wan27.org`), not the source. Verified via
+  HF MCP against the `Wan-AI` org: **no `Wan-AI/Wan2.7-*` repo exists.** The
+  newest open-weights release in the Wan family is still the **Wan 2.2**
+  line (T2V-A14B / I2V-A14B / TI2V-5B) plus **Wan 2.2-Animate / Animate-2**
+  and **Wan-Dancer-14B**. Wan 2.5 / 2.6 / 3.0 remain API-only closed models.
 - Wan 2.5 / 2.6 are **not** open weights — closed API models. Any older
-  note that suggested we could self-host them is wrong. **Wan 2.7 is the
-  correct upgrade target** for the local-only stance.
+  note that suggested we could self-host them is wrong.
 - Depth Anything **V4** does not exist as of this run's search. V3 (Nov 2025)
   is the latest; ComfyUI now ships it natively so our third-party wrapper
   is a cleanup candidate, not an upgrade candidate.
+- **Model inventory ownership:** Monster is the source of truth for what
+  weights live on which host. This digest routes every weight action
+  through Monster (`monster_action` verbs) rather than issuing raw
+  `hf download` commands. Future digest runs should keep this discipline —
+  do not maintain a shadow inventory in this repo.
+- **Spark disk pressure:** Spark 1 and Spark 2 are constrained. Every
+  swap entry in Tier 3 lists a `net_disk_delta_gb`; positive-delta swaps
+  are held pending a quantized build unless the operator explicitly
+  greenlights the heavy download for a capability win.
 
 ## Delivery
 
