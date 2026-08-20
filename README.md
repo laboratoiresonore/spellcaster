@@ -43,7 +43,7 @@
 
 <div align="center">
 
-<strong>📣 Status — May 2026</strong>
+<strong>📣 Status — August 2026</strong>
 
 <table>
 <tr><td><strong>🆕 News</strong></td><td>Self-healing installer + honest diagnostic validator landed. Local-LLM (LM Studio) prompt-enhancement promoted to canon, optional bearer-token auth across the HTTP surfaces, automated 6-surface mirror sync. DaVinci Resolve plugin is still in test — bug reports welcome.</td></tr>

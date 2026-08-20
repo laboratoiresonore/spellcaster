@@ -2,8 +2,111 @@
   "schema_version": 3,
   "generator": "spellcaster/tools/build_builders_manifest.py",
   "source": "comfyui-spellcaster/spellcaster_core/workflows.py",
-  "method_count": 73,
+  "method_count": 76,
   "methods": [
+    {
+      "id": "2d_to_sbs",
+      "builder": "build_2d_to_sbs",
+      "label": "Convert a 2D image to side-by-side stereoscopic 3D for XREAL Air,",
+      "kind": "other",
+      "model_family": "generic",
+      "target_class": "Y7_SideBySide",
+      "input_slots": [
+        "image_filename"
+      ],
+      "params": [
+        {
+          "name": "image_filename",
+          "slot": "image",
+          "required": true
+        },
+        {
+          "name": "depth_model",
+          "required": false,
+          "default": "depth_anything_v2_vitl.pth"
+        },
+        {
+          "name": "depth_resolution",
+          "required": false,
+          "default": 512
+        },
+        {
+          "name": "depth_scale",
+          "required": false,
+          "default": 40
+        },
+        {
+          "name": "sbs_mode",
+          "required": false,
+          "default": "parallel"
+        },
+        {
+          "name": "output_type",
+          "required": false,
+          "default": "sbs"
+        },
+        {
+          "name": "method",
+          "required": false,
+          "default": "mesh_warping"
+        },
+        {
+          "name": "depth_blur",
+          "required": false,
+          "default": 15
+        }
+      ],
+      "short_doc": "Convert a 2D image to side-by-side stereoscopic 3D for XREAL Air,"
+    },
+    {
+      "id": "2d_to_sbs_extreme",
+      "builder": "build_2d_to_sbs_extreme",
+      "label": "MAXED 2D -> SBS using ComfyStereo's StereoImageNode",
+      "kind": "other",
+      "model_family": "generic",
+      "target_class": "StereoImageNode",
+      "input_slots": [
+        "image_filename"
+      ],
+      "params": [
+        {
+          "name": "image_filename",
+          "slot": "image",
+          "required": true
+        },
+        {
+          "name": "depth_model",
+          "required": false,
+          "default": "depth_anything_v2_vitl.pth"
+        },
+        {
+          "name": "depth_resolution",
+          "required": false,
+          "default": 1024
+        },
+        {
+          "name": "divergence",
+          "required": false,
+          "default": 12.0
+        },
+        {
+          "name": "separation",
+          "required": false,
+          "default": 0.0
+        },
+        {
+          "name": "fill_technique",
+          "required": false,
+          "default": "GPU Warp (Fast)"
+        },
+        {
+          "name": "sbs_mode",
+          "required": false,
+          "default": "left-right"
+        }
+      ],
+      "short_doc": "MAXED 2D -> SBS using ComfyStereo's StereoImageNode."
+    },
     {
       "id": "cogvideo_video",
       "builder": "build_cogvideo_video",
@@ -1973,7 +2076,7 @@
         {
           "name": "klein_model_key",
           "required": false,
-          "default": "Klein 9B"
+          "default": "Klein 4B"
         },
         {
           "name": "steps",
@@ -2149,7 +2252,7 @@
         {
           "name": "klein_model_key",
           "required": false,
-          "default": "Klein 9B"
+          "default": "Klein 4B"
         },
         {
           "name": "steps",
@@ -2257,7 +2360,7 @@
         {
           "name": "klein_model_key",
           "required": false,
-          "default": "Klein 9B"
+          "default": "Klein 4B"
         },
         {
           "name": "steps",
@@ -2345,7 +2448,7 @@
         {
           "name": "klein_model_key",
           "required": false,
-          "default": "Klein 9B"
+          "default": "Klein 4B"
         },
         {
           "name": "steps",
@@ -2430,7 +2533,7 @@
         {
           "name": "klein_model_key",
           "required": false,
-          "default": "Klein 9B"
+          "default": "Klein 4B"
         },
         {
           "name": "width",
@@ -2862,7 +2965,7 @@
         {
           "name": "klein_model_key",
           "required": false,
-          "default": "Klein 9B"
+          "default": "Klein 4B"
         },
         {
           "name": "steps",
@@ -2976,6 +3079,64 @@
         }
       ],
       "short_doc": "Klein Inpaint: regenerate masked area using FluxGuidance + SetLatentNoiseMask."
+    },
+    {
+      "id": "klein_multi_angle",
+      "builder": "build_klein_multi_angle",
+      "label": "Multi-angle character sheet from a single reference image",
+      "kind": "image",
+      "model_family": "flux2klein",
+      "input_slots": [
+        "image_filename"
+      ],
+      "params": [
+        {
+          "name": "image_filename",
+          "slot": "image",
+          "required": true
+        },
+        {
+          "name": "klein_model_key",
+          "required": false,
+          "default": "Klein 4B"
+        },
+        {
+          "name": "seed",
+          "required": false,
+          "default": 0
+        },
+        {
+          "name": "steps",
+          "required": false,
+          "default": 4
+        },
+        {
+          "name": "guidance",
+          "required": false,
+          "default": 1.0
+        },
+        {
+          "name": "sampler_name",
+          "required": false,
+          "default": "euler"
+        },
+        {
+          "name": "megapixels",
+          "required": false,
+          "default": 1.0
+        },
+        {
+          "name": "angle_prompts",
+          "required": false,
+          "default": null
+        },
+        {
+          "name": "klein_models",
+          "required": false,
+          "default": null
+        }
+      ],
+      "short_doc": "Multi-angle character sheet from a single reference image."
     },
     {
       "id": "klein_refine",
@@ -3174,7 +3335,7 @@
         {
           "name": "klein_model_key",
           "required": false,
-          "default": "Klein 9B"
+          "default": "Klein 4B"
         },
         {
           "name": "steps",
@@ -3256,7 +3417,7 @@
         {
           "name": "klein_model_key",
           "required": false,
-          "default": "Klein 9B"
+          "default": "Klein 4B"
         },
         {
           "name": "steps",
@@ -3338,7 +3499,7 @@
         {
           "name": "klein_model_key",
           "required": false,
-          "default": "Klein 9B"
+          "default": "Klein 4B"
         },
         {
           "name": "steps",
@@ -4186,7 +4347,7 @@
         {
           "name": "klein_model_key",
           "required": false,
-          "default": "Klein 9B"
+          "default": "Klein 4B"
         },
         {
           "name": "steps",
@@ -4732,39 +4893,48 @@
         },
         {
           "name": "prompt_text",
-          "required": true
+          "required": false,
+          "default": ""
         },
         {
           "name": "negative_text",
-          "required": true
+          "required": false,
+          "default": ""
         },
         {
           "name": "seed",
-          "required": true
+          "required": false,
+          "default": 0
         },
         {
           "name": "denoise",
-          "required": true
+          "required": false,
+          "default": 0.4
         },
         {
           "name": "cfg",
-          "required": true
+          "required": false,
+          "default": null
         },
         {
           "name": "steps",
-          "required": true
+          "required": false,
+          "default": null
         },
         {
           "name": "scale_factor",
-          "required": true
+          "required": false,
+          "default": 2.0
         },
         {
           "name": "orig_width",
-          "required": true
+          "required": false,
+          "default": 1024
         },
         {
           "name": "orig_height",
-          "required": true
+          "required": false,
+          "default": 1024
         },
         {
           "name": "controlnet",
