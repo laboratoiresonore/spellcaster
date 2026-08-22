@@ -18,14 +18,35 @@ Before this registry, these properties were scattered across:
 Now, each architecture is ONE ArchConfig entry that centralises all behaviour.
 Adding a new model = adding one registration via _reg().
 
-SUPPORTED ARCHITECTURES (as of April 2026):
+SUPPORTED ARCHITECTURES (as of August 2026):
+
+Image (first-class builders, registered=True):
   - sd15: Stable Diffusion 1.5 (512x512, checkpoint-based)
   - sdxl: Stable Diffusion XL (1024x1024, checkpoint-based)
   - illustrious: SDXL-based anime model (1024x1024, checkpoint-based)
   - zit: Z-Image-Turbo (fast SDXL distill, 4-6 steps, checkpoint-based)
+  - sdxl_turbo / pony / playground: SDXL-family finetunes (distilled /
+    booru-tag / aesthetic-tuned) with their own defaults but the SDXL
+    builder path.
   - flux1dev: Flux Development (1024x1024, separate loaders, dual CLIP)
-  - flux2klein: Flux 2 Klein (distilled, 4 steps, separate loaders, custom sampler)
-  - flux_kontext: Flux with edit instructions (experimental, separate loaders)
+  - flux2klein: Flux 2 Klein (distilled, 4 steps, custom guider)
+  - flux_kontext: Flux with edit instructions (separate loaders)
+  - chroma: Chroma v1/v2 (single CLIPLoader type="chroma")
+  - lumina2: Lumina-Image 2.0 MMDiT (Gemma-2 encoder, txt2img only)
+
+Video (specialised video builders only, registered=True):
+  - wan: WAN 2.2 (+ video_animate via WanAnimateToVideo)
+  - ltx: LTX 2.3
+  - cogvideo / framepack / hunyuan_video / mochi: video builders
+
+Restoration / 3D / stubs (registered=False — detector emits them, but
+  no wizard summon path; dispatched via dedicated build_* functions or
+  explicit-failed at dispatch with a clear message):
+  - supir: SUPIR photo restoration (build_supir(); paired SUPIR + SDXL)
+  - hunyuan_3d: mesh generation (mesh_gen / mesh_textured)
+  - seedvr: upscale-only video restoration
+  - sd3 / sd3_turbo / hunyuan_dit / pixart / auraflow / kolors: DiT
+    archs with no CLIP-compatible builder yet.
 
 TYPICAL USAGE:
     from _architectures import ARCHITECTURES, get_arch
@@ -949,6 +970,28 @@ _reg("kolors",
      default_sampler="dpmpp_2m", default_scheduler="karras",
      supported_methods=(),
      scene_group="kolors",
+     registered=False)
+
+# SUPIR — specialised photo-restoration pipeline (SUPIR model + paired SDXL
+# backbone). NOT a general-purpose generation arch: it's dispatched via
+# workflows.build_supir() as a dedicated 5-stage restore, not through the
+# wizard summon path. The detector emits `supir` from any filename starting
+# with "supir" (see model_detect.CKPT_ARCH_RULES); without this entry,
+# `get_arch("supir")` silently fell back to SDXL, so a wizard summoned on
+# a SUPIR checkpoint would advertise txt2img / img2img / etc — none of
+# which will build (build_supir() needs `supir_model` + `sdxl_model`
+# paired, not a single-checkpoint input). Stubbing with empty
+# supported_methods keeps the UI honest while build_supir() remains the
+# only correct dispatch path.
+_reg("supir",
+     loader="checkpoint", sampler="ksampler",
+     clip_mode="bundled", vae_mode="bundled",
+     supports_negative=True,
+     default_resolution=(1024, 1024),
+     default_cfg=6.0, default_steps=25, default_denoise=0.30,
+     default_sampler="dpmpp_2m", default_scheduler="karras",
+     supported_methods=(),
+     scene_group="restoration",
      registered=False)
 
 # ── Video archs (no image methods; specialised video builders only) ──
