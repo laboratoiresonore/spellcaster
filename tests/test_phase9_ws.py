@@ -744,10 +744,16 @@ def test_save_image_websocket_emits_correct_class():
 
 def test_full_inline_workflow_shape():
     """Sanity: a full input-via-base64 / output-via-ws workflow
-    builds with the expected class_types and node count."""
+    builds with the expected class_types and node count.
+
+    Explicitly disables the SaveImage disk-backup companion so this
+    test still asserts the pure ws-only shape it was written for —
+    the ws+disk resilience pairing is covered separately by
+    test_save_image_websocket_disk_backup_pair.
+    """
     nf = node_factory.NodeFactory()
     img_id = nf.etn_load_image_base64("aGVsbG8=")
-    save_id = nf.save_image_websocket([img_id, 0])
+    save_id = nf.save_image_websocket([img_id, 0], disk_backup=False)
     wf = nf.build()
     assert len(wf) == 2
     classes = sorted(node["class_type"] for node in wf.values())
@@ -757,6 +763,25 @@ def test_full_inline_workflow_shape():
 # ────────────────────────────────────────────────────────────────────
 # Label discriminator (multi-output builders)
 # ────────────────────────────────────────────────────────────────────
+
+
+def test_save_image_websocket_disk_backup_pair():
+    """Default ``disk_backup=True`` adds a parallel SaveImage node so
+    the result also lands on disk — the poll-fallback path reads
+    SaveImage from /history when the ws connection dies. Both nodes
+    share the same source images ref."""
+    nf = node_factory.NodeFactory()
+    img_id = nf.etn_load_image_base64("aGk=")
+    ws_id = nf.save_image_websocket([img_id, 0])  # disk_backup=True default
+    wf = nf.build()
+    classes = sorted(node["class_type"] for node in wf.values())
+    assert classes == ["ETN_LoadImageBase64", "SaveImage", "SaveImageWebsocket"]
+    save_nodes = [n for n in wf.values() if n["class_type"] == "SaveImage"]
+    assert len(save_nodes) == 1
+    assert save_nodes[0]["inputs"]["images"] == [img_id, 0]
+    assert save_nodes[0]["inputs"]["filename_prefix"] == "spellcaster"
+    # SaveImageWebsocket keeps its identity — disk backup is a *pair*, not a replacement.
+    assert wf[ws_id]["class_type"] == "SaveImageWebsocket"
 
 
 def test_save_image_websocket_label_attaches_meta():
@@ -949,6 +974,8 @@ def main() -> int:
         ("save_image_websocket class_type",
             test_save_image_websocket_emits_correct_class),
         ("full inline workflow shape", test_full_inline_workflow_shape),
+        ("save_image_websocket disk_backup pair",
+            test_save_image_websocket_disk_backup_pair),
         ("save_image_websocket label attaches _meta",
             test_save_image_websocket_label_attaches_meta),
         ("save_image_websocket no-label omits _meta",
