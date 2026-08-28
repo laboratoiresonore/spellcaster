@@ -994,6 +994,28 @@ _reg("seedvr",
      scene_group="video",
      registered=True)
 
+# SUPIR — Super Image Restoration (paired with an SDXL backbone). Not a
+# standalone base model: `build_supir` in workflows.py loads a SUPIR
+# checkpoint alongside a user-picked SDXL checkpoint and runs a 5-stage
+# restoration pipeline. The model_detect rule
+# (CKPT_ARCH_RULES: ("supir", "supir")) exists to keep a SUPIR .safetensors
+# from being misclassified as SD1.5 and blowing up the diagnostic. Without
+# a matching _reg() entry get_arch("supir") silently fell back to SDXL,
+# defeating the stub-registration design documented above (lines ~790-807).
+# Registered here as an SDXL-scene-group stub with an empty supported_methods
+# tuple + registered=True so check_arch_supports_method treats it as
+# "known-but-empty" (dispatch is via build_supir, not via method gating).
+_reg("supir",
+     loader="checkpoint", sampler="ksampler",
+     clip_mode="bundled", vae_mode="bundled",
+     supports_negative=True,
+     default_resolution=(1024, 1024),
+     default_cfg=6.5, default_steps=30, default_denoise=0.30,
+     default_sampler="dpmpp_2m", default_scheduler="karras",
+     supported_methods=(),   # dispatch is via build_supir + SDXL host, not method gating
+     scene_group="sdxl",
+     registered=True)
+
 _reg("cogvideo",
      loader="custom_wrapper", sampler="custom",  # CogVideoSampler (Kijai wrapper)
      clip_mode="single", vae_mode="separate",  # T5 single CLIP, CogVideoXVAELoader
