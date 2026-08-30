@@ -743,11 +743,18 @@ def test_save_image_websocket_emits_correct_class():
 
 
 def test_full_inline_workflow_shape():
-    """Sanity: a full input-via-base64 / output-via-ws workflow
-    builds with the expected class_types and node count."""
+    """Sanity: a fully inline ws-only workflow (no disk backup)
+    builds with the expected class_types and node count.
+
+    ``save_image_websocket`` defaults to ``disk_backup=True`` since the
+    2026-05-09 ws-accept-loop resilience fix, which appends a parallel
+    SaveImage node so /history poll fallback can still recover the
+    result if the ws stream dies mid-delivery. That default is exercised
+    elsewhere; here we pin the pure inline shape by opting out.
+    """
     nf = node_factory.NodeFactory()
     img_id = nf.etn_load_image_base64("aGVsbG8=")
-    save_id = nf.save_image_websocket([img_id, 0])
+    save_id = nf.save_image_websocket([img_id, 0], disk_backup=False)
     wf = nf.build()
     assert len(wf) == 2
     classes = sorted(node["class_type"] for node in wf.values())
