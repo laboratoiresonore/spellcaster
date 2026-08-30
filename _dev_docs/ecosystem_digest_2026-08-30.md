@@ -205,6 +205,55 @@ local_action_queue:
 
 ---
 
+## Post-open CI observation — leak-check pre-existing red on `main`
+
+After opening PR #164, the `scan` job (from `.github/workflows/leak-check.yml`)
+failed. Verified by checking out `origin/main` and re-running the same
+`git grep` locally: the hits reproduce identically on the base branch —
+14 hits across pre-existing tracked files (design docs, installer config,
+three `spellcaster_core/` copies, two workflow YAMLs, a Krita plugin,
+tests, tools, and one hit inside the intentionally-preserved
+`antenna.RETIRED-2026-06-20-DO-NOT-TOUCH/` archive).
+
+None of the four files touched by this PR contribute any new hits.
+Stood down per runbook; posted one PR comment naming the failing check
+and why it's not this PR's diff. Cannot re-run the check — this
+session has no `actions:write` — and a re-run would be deterministic
+anyway (`git grep` output is stable).
+
+**Candidates a future digest run should pick up (safe subset first):**
+
+1. **`plugins/krita/spellcaster_krita.py`** hardcodes a LAN IP in five
+   call sites (lines 35, 878, 1479, 2064, 2147). The same file could
+   trivially adopt the `os.environ.get("COMFYUI_HOST", "127.0.0.1")`
+   pattern already used by `tests/night_maintenance.py` and
+   `tools/llm_morning_briefing.py` — that's a real Krita-plugin
+   behavior change and needs a smoke test in Krita, so a future digest
+   should decide whether to lift it inside a mechanical PR or hand it
+   to an operator-supervised pass. Not applied here to keep this PR's
+   scope tight and avoid Krita-plugin regression from a cloud sandbox
+   with no Krita to test against.
+2. **`.github/workflows/nightly.yml:53`** and
+   **`.github/workflows/mirror-drift.yml:46`** — both hits are inside
+   comment blocks referring to an internal hostname. Comment-only edits
+   would silence the scan without touching workflow behavior; a future
+   digest can pull this in as a truly mechanical Tier-1.
+3. **The doc/config hits** (`_dev_docs/WHIMWEAVER_REPLAY_BRIDGE_PROPOSAL.md`,
+   `_inventory/ANTENNA_INVENTORY.md`, `installer/remote_services.json`,
+   the three `spellcaster_core/` copies, `tools/build_builders_manifest.py`,
+   `tools/sync_surfaces.py`, `tests/mirror_drift.py`,
+   `tests/builders_manifest_drift.py`) reference cross-repo integrations
+   and internal service keys by name. `remote_services.json` uses those
+   names as JSON keys the installer actually reads, so renaming them
+   requires a migration. This is operator-supervised territory (same
+   sensitivity zone as `ANTENNA_RETIRED.md`) — flag it, don't touch it.
+4. **The `antenna.RETIRED-*` hit** stays: it is inside an intentionally-
+   preserved archived directory. Scrubbing it would resurface the
+   retirement, which the operator has specifically told Claude not
+   to do.
+
+---
+
 ## Prior-run correction notes
 
 - None: no prior `_dev_docs/ecosystem_digest_*.md` exists in the repo.
