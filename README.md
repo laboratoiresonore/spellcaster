@@ -43,7 +43,7 @@
 
 <div align="center">
 
-<strong>📣 Status — May 2026</strong>
+<strong>📣 Status — September 2026</strong>
 
 <table>
 <tr><td><strong>🆕 News</strong></td><td>Self-healing installer + honest diagnostic validator landed. Local-LLM (LM Studio) prompt-enhancement promoted to canon, optional bearer-token auth across the HTTP surfaces, automated 6-surface mirror sync. DaVinci Resolve plugin is still in test — bug reports welcome.</td></tr>
@@ -470,7 +470,7 @@ Because every tool is a spell, every workflow is an incantation, your GPU is a f
 
 ## Dig deeper
 
-- [**Full technical reference →** `DEEP_DIVE.md`](DEEP_DIVE.md) — every tool enumerated, the 27-architecture registry, scaffold state machines, antenna service-mesh endpoints (optional, for advanced multi-machine setups), cross-interface backbone, prompt enhancement chain, privacy + boot safety details, every subsystem explained.
+- [**Full technical reference →** `DEEP_DIVE.md`](DEEP_DIVE.md) — every tool enumerated, the 26-architecture registry, scaffold state machines, antenna service-mesh endpoints (optional, for advanced multi-machine setups), cross-interface backbone, prompt enhancement chain, privacy + boot safety details, every subsystem explained.
 - [**ComfyUI dependencies** → `DEPENDENCIES.md`](DEPENDENCIES.md) — 24+ custom node packs Spellcaster uses, linked to upstream.
 
 ---
