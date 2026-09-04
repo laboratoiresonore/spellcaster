@@ -43,13 +43,13 @@
 
 <div align="center">
 
-<strong>📣 Status — May 2026</strong>
+<strong>📣 Status — September 2026</strong>
 
 <table>
-<tr><td><strong>🆕 News</strong></td><td>Self-healing installer + honest diagnostic validator landed. Local-LLM (LM Studio) prompt-enhancement promoted to canon, optional bearer-token auth across the HTTP surfaces, automated 6-surface mirror sync. DaVinci Resolve plugin is still in test — bug reports welcome.</td></tr>
-<tr><td><strong>✅ What works</strong></td><td>GIMP plugin is a powerhouse and a far better interface than ComfyUI for anything related to images. Diagnostic validator now distinguishes real failures from false positives (cold-load timeouts, outdated node names, model classifier fall-through).</td></tr>
-<tr><td><strong>🔧 Current focus</strong></td><td>Correctness hardening — installer edge cases, validator accuracy, cross-repo mirror automation. Nightly LLM briefing summarizes what changed overnight.</td></tr>
-<tr><td><strong>⏭ Next</strong></td><td>Signal bridge &nbsp;·&nbsp; Moar plugins / frontends (<a href="https://github.com/laboratoiresonore/spellcaster/issues/new">make a request</a>)</td></tr>
+<tr><td><strong>🆕 News</strong></td><td>2D→SBS stereoscopic 3D pipeline for XREAL Air / Quest / Vision Pro shipped. Klein 4B is now the default everywhere (was 9B — 4B fits the 16 GB VRAM budget with headroom). Native Klein multi-angle builder (CivitAI 2642426 port) landed. Krita added photo-restore, Fooocus-style inpaint, and video-upscale methods. Antenna v2.4 has been retired in-tree and archived under <code>antenna.RETIRED-2026-06-20-DO-NOT-TOUCH/</code>; LM Studio connector + Prometheus fleet-frame heartbeat + auto-update framework were its final release before burial. Nightly CI (<code>nightly.yml</code>) now runs and HERMES-EDITS-CODE audit scaffolding is in.</td></tr>
+<tr><td><strong>✅ What works</strong></td><td>GIMP plugin is a powerhouse and a far better interface than ComfyUI for anything related to images. Diagnostic validator distinguishes real failures from false positives (cold-load timeouts, outdated node names, model classifier fall-through). Preflight auto-substitutes missing ReActor model files and gracefully skips SAM3 when the pack isn't installed. ControlNet preprocessor short-name alias map keeps workflows portable across ComfyUI-Manager churn.</td></tr>
+<tr><td><strong>🔧 Current focus</strong></td><td>Correctness hardening — builders-manifest coverage (currently 62 of 73 <code>build_*</code> methods with <code>target_class</code> backfilled), NSFW source-of-truth annotations, per-character portrait consistency proxies. Nightly LLM briefing summarizes what changed overnight; every-48h cloud ecosystem digest lands a PR per run.</td></tr>
+<tr><td><strong>⏭ Next</strong></td><td>Signal bridge &nbsp;·&nbsp; Klein-native Face Identity (PuLID-Flux2) wiring &nbsp;·&nbsp; Moar plugins / frontends (<a href="https://github.com/laboratoiresonore/spellcaster/issues/new">make a request</a>)</td></tr>
 </table>
 
 </div>
