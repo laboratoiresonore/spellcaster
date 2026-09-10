@@ -1020,6 +1020,17 @@ def build_2d_to_sbs(image_filename,
                     depth_blur=15) -> dict:
     """Convert a 2D image to side-by-side stereoscopic 3D for XREAL Air,
     Quest, Vision Pro, anaglyph glasses, etc.
+
+    Pipeline:
+      1. LoadImage
+      2. DepthAnythingV2Preprocessor -> depth map
+      3. Y7_SideBySide -> SBS stereo image
+      4. SaveImageWebsocket
+
+    Requirements (preflight will catch missing pieces):
+      - comfyui_controlnet_aux (DepthAnythingV2Preprocessor)
+      - ComfyUI-Y7-SBS-2Dto3D (Y7_SideBySide)
+      - depth_anything_v2_*.pth in ComfyUI/models/depthanything/
     """
     nf = NodeFactory()
     img_id = nf.load_image(image_filename, node_id="1")
@@ -1050,8 +1061,15 @@ def build_2d_to_sbs_extreme(image_filename,
                         sbs_mode="left-right") -> dict:
     """MAXED 2D -> SBS using ComfyStereo's StereoImageNode.
 
-    Higher fidelity (vitl depth @ 1024 + GPU warp fill, divergence up to 15)
-    in exchange for VRAM + time.
+    Trades VRAM + time for higher fidelity:
+      - Depth-Anything-V2 LARGE (~1.3 GB) at resolution=1024
+      - ComfyStereo GPU-warping fill for clean disocclusions
+      - divergence up to 15 for strongest stereo effect
+
+    Requirements:
+      - comfyui_controlnet_aux (DepthAnythingV2Preprocessor)
+      - ComfyStereo (StereoImageNode)
+      - depth_anything_v2_vitl.pth in ComfyUI/models/depthanything/
     """
     nf = NodeFactory()
     img_id = nf.load_image(image_filename, node_id="1")
@@ -10260,3 +10278,86 @@ def build_ltx_video(preset, prompt_text, seed,
                           pingpong=pingpong, node_id="50")
 
     return nf.build()
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Klein Multi-Angle Character Sheet (CivitAI 2642426 / nikhilprasanth)
+# ═══════════════════════════════════════════════════════════════════════════
+
+KLEIN_MULTI_ANGLE_PROMPTS = {
+    'front_45': 'Using the input image as the strict visual reference, create a 45-degree front three-quarter view of the same subject.\n\nThe subject may be a person, character, vehicle, prop, object, creature, or architectural element.\n\nPreserve the exact identity, proportions, shape, silhouette, materials, colors, clothing or surface details, markings, texture, wear, accessories, and design language from the input image.\n\nPreserve the same expression, pose, posture, stance, gesture, object position, and overall attitude from the input image. The subject must remain in the same moment, only viewed from a front three-quarter angle.\n\nCamera angle: front three-quarter view, approximately 45 degrees, eye-level.\nLighting: soft diffused lighting, gentle highlights on visible edges.\nBackground: plain neutral background for easy compositing.\nCamera/lens: 50mm lens, natural perspective, realistic depth.\nComposition: full subject visible, centered, with clear readable front and side depth.\n\nPhotorealistic, same subject, same pose, same expression, same design, only the viewing angle changes.',
+    'side': 'Using the input image as the strict visual reference, create a pure side profile view of the same subject.\n\nThe subject may be a person, character, vehicle, prop, object, creature, or architectural element.\n\nPreserve the exact identity, proportions, shape, silhouette, materials, colors, clothing or surface details, markings, texture, wear, accessories, and design language from the input image.\n\nPreserve the same expression, pose, posture, stance, gesture, object position, and overall attitude from the input image. The subject should not be redesigned or repositioned. It should look like the same subject frozen in the same moment, now seen from the side.\n\nCamera angle: direct side profile view, eye-level, clean perspective.\nLighting: soft diffused lighting, mild rim definition along the edges.\nBackground: plain neutral background for easy compositing.\nCamera/lens: 70mm lens, low distortion, compressed realistic perspective.\nComposition: full subject visible, centered, side silhouette clearly readable.\n\nPhotorealistic, accurate side geometry, same subject, same pose, same expression, no redesign.',
+    'rear': 'Using the input image as the strict visual reference, create a rear view of the same subject.\n\nThe subject may be a person, character, vehicle, prop, object, creature, or architectural element.\n\nPreserve the exact identity, proportions, shape, silhouette, materials, colors, clothing or surface details, markings, texture, wear, accessories, and design language from the input image.\n\nPreserve the same pose, posture, stance, gesture, object position, and overall attitude from the input image. Infer the rear logically from the visible design while keeping the subject consistent. The subject should feel like the same person or object frozen in the same moment, now seen from behind.\n\nCamera angle: straight-on rear view, eye-level, centered perspective.\nLighting: soft diffused lighting, clear rear contours and edge definition.\nBackground: plain neutral background for easy compositing.\nCamera/lens: 50mm lens, natural realistic perspective.\nComposition: full subject visible, centered, enough empty space around it.\n\nPhotorealistic, same subject, same pose, same proportions, believable rear details, no redesign.',
+    'rear_45': 'Using the input image as the strict visual reference, create a 45-degree rear three-quarter view of the same subject.\n\nThe subject may be a person, character, vehicle, prop, object, creature, or architectural element.\n\nPreserve the exact identity, proportions, shape, silhouette, materials, colors, clothing or surface details, markings, texture, wear, accessories, and design language from the input image.\n\nPreserve the same pose, posture, stance, gesture, object position, and overall attitude from the input image. Infer hidden rear-side details logically from the visible design, keeping the same subject consistent.\n\nCamera angle: rear three-quarter view, approximately 45 degrees, eye-level.\nLighting: soft diffused lighting, gentle edge highlights.\nBackground: plain neutral background for easy compositing.\nCamera/lens: 50mm to 70mm lens, natural realistic perspective.\nComposition: full subject visible, centered, rear and side forms clearly readable.\n\nPhotorealistic, same subject, same pose, same expression where visible, same design, only the camera angle changes.',
+    'high_angle': 'Using the input image as the strict visual reference, create a high-angle view of the same subject.\n\nThe subject may be a person, character, vehicle, prop, object, creature, or architectural element.\n\nPreserve the exact identity, proportions, shape, silhouette, materials, colors, clothing or surface details, markings, texture, wear, accessories, and design language from the input image.\n\nPreserve the same expression, pose, posture, stance, gesture, object position, and overall attitude from the input image. The subject should remain frozen in the same moment, only viewed from above.\n\nCamera angle: high-angle view from above, approximately 60 to 75 degrees downward.\nLighting: soft diffused overhead lighting, readable top-plane details.\nBackground: plain neutral background for easy compositing.\nCamera/lens: 35mm to 50mm lens, controlled perspective, realistic scale.\nComposition: full subject visible, centered, top surfaces clearly shown.\n\nPhotorealistic, same subject, same pose, same expression, consistent geometry, no redesign.',
+    'low_angle': 'Using the input image as the strict visual reference, create a low-angle view of the same subject.\n\nThe subject may be a person, character, vehicle, prop, object, creature, or architectural element.\n\nPreserve the exact identity, proportions, shape, silhouette, materials, colors, clothing or surface details, markings, texture, wear, accessories, and design language from the input image.\n\nPreserve the same expression, pose, posture, stance, gesture, object position, and overall attitude from the input image. The subject should feel like the same moment captured from a lower camera position.\n\nCamera angle: low-angle view from below eye level, looking slightly upward.\nLighting: soft diffused lighting, consistent with the input image.\nBackground: plain neutral background for easy compositing.\nCamera/lens: 35mm to 50mm lens, controlled perspective, no extreme distortion.\nComposition: full subject visible, centered, strong readable silhouette.\n\nPhotorealistic, same subject, same pose, same expression, same design, only the camera position changes.',
+    'close_up': 'Using the input image as the strict visual reference, create a close-up detail view of the same subject.\n\nThe subject may be a person, character, vehicle, prop, object, creature, or architectural element.\n\nPreserve the exact identity, materials, colors, clothing or surface details, markings, texture, wear, accessories, and design language from the input image.\n\nPreserve the same expression, pose, posture, gesture, object position, and overall attitude from the input image. The close-up should feel like the same moment, with the camera moved closer.\n\nCamera angle: [front close-up / side close-up / three-quarter close-up].\nLighting: soft diffused lighting, consistent with the input image.\nBackground: plain neutral background or softly blurred matching background.\nCamera/lens: 85mm lens, shallow depth of field, realistic perspective.\nComposition: focus on [FACE / HANDS / WHEELS / SURFACE DETAIL / PROP DETAIL / TEXTURE AREA].\n\nPhotorealistic, same subject, same moment, same pose and expression, only closer framing.',
+}
+
+
+def build_klein_multi_angle(image_filename, klein_model_key="Klein 4B",
+                            seed=0, steps=4, guidance=1.0,
+                            sampler_name="euler", megapixels=1.0,
+                            angle_prompts=None,
+                            klein_models=None) -> dict:
+    """Multi-angle character sheet from a single reference image.
+
+    Adapted from nikhilprasanth's "Flux Klein 4B/9B Multiple Angles"
+    (CivitAI 2642426). Generates one image per camera angle (7 by
+    default) using Klein's reference-latent mechanism. Each output
+    preserves the subject's identity / proportions / outfit / pose /
+    expression -- only the camera angle changes.
+
+    Shared model + CLIP + VAE + reference latent computed once; each
+    angle is a separate KSampler chain reusing them. ~65 nodes total.
+    """
+    if klein_models is None:
+        klein_models = KLEIN_MODELS
+    if angle_prompts is None:
+        angle_prompts = KLEIN_MULTI_ANGLE_PROMPTS
+
+    km = klein_models[klein_model_key]
+    nf = NodeFactory()
+
+    unet_id = nf.unet_loader(km["unet"], node_id="1")
+    clip_id = nf.clip_loader(km["clip"], clip_type="flux2",
+                              device="default", node_id="2")
+    vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
+    img_id = nf.load_image(image_filename, node_id="4")
+
+    scaled_id = nf.image_scale_to_total_pixels(
+        [img_id, 0], megapixels=megapixels, node_id="5")
+    size_id = nf.get_image_size([scaled_id, 0], node_id="6")
+    ref_lat_id = nf.vae_encode(
+        [scaled_id, 0], [vae_id, 0], node_id="7")
+
+    empty_id = nf.empty_flux2_latent_image(
+        [size_id, 0], [size_id, 1], batch_size=1, node_id="8")
+    sigmas_id = nf.flux2_scheduler(
+        steps, [size_id, 0], [size_id, 1], node_id="9")
+    sampler_id = nf.ksampler_select(sampler_name, node_id="10")
+
+    base = 100
+    for i, (slug, prompt_text) in enumerate(angle_prompts.items()):
+        bid = base + i * 10
+        cond_id = nf.clip_encode(
+            [clip_id, 0], prompt_text, node_id=str(bid))
+        zero_id = nf.conditioning_zero_out(
+            [cond_id, 0], node_id=str(bid + 1))
+        ref_pos = nf.reference_latent(
+            [cond_id, 0], [ref_lat_id, 0], node_id=str(bid + 2))
+        ref_neg = nf.reference_latent(
+            [zero_id, 0], [ref_lat_id, 0], node_id=str(bid + 3))
+        guider_id = nf.cfg_guider(
+            [unet_id, 0], [ref_pos, 0], [ref_neg, 0],
+            guidance, node_id=str(bid + 4))
+        noise_id = nf.random_noise(seed + i, node_id=str(bid + 5))
+        samp_id = nf.sampler_custom_advanced(
+            [noise_id, 0], [guider_id, 0], [sampler_id, 0],
+            [sigmas_id, 0], [empty_id, 0], node_id=str(bid + 6))
+        dec_id = nf.vae_decode(
+            [samp_id, 0], [vae_id, 0], node_id=str(bid + 7))
+        nf.save_image_websocket(
+            [dec_id, 0], label=slug, node_id=str(bid + 8))
+
+    return nf.build()
+
