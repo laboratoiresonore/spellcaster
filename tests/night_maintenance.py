@@ -330,6 +330,16 @@ def main() -> int:
                     help="Markdown report path (default: per-day under "
                          "~/.voodoomaster/)")
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument(
+        "--dry-mode",
+        action="store_true",
+        help=(
+            "Skip checks that require LAN reachability or local model paths "
+            "(installer-audit, capabilities, model-paths). Intended for the "
+            "GitHub-hosted nightly runner, which cannot reach the operator's "
+            "ComfyUI at Theo:8190 or the local model store."
+        ),
+    )
     args = ap.parse_args()
 
     if not args.quiet:
@@ -340,7 +350,7 @@ def main() -> int:
         print()
 
     sections: list[tuple[str, bool, list[str]]] = []
-    checks = [
+    all_checks = [
         ("mirror-drift",       check_mirror_drift,      ()),
         ("cross-repo-drift",   check_cross_repo_drift,  ()),
         ("installer-audit",    check_installer_audit,   (args.server,)),
@@ -348,6 +358,13 @@ def main() -> int:
         ("model-paths",        check_extra_model_paths, ()),
         ("log-scan",           check_log_errors,        ()),
     ]
+    # Names of checks that need LAN reachability or local paths; the
+    # GitHub-hosted runner has neither. `--dry-mode` drops them.
+    _LAN_ONLY = {"installer-audit", "capabilities", "model-paths"}
+    if args.dry_mode:
+        checks = [c for c in all_checks if c[0] not in _LAN_ONLY]
+    else:
+        checks = all_checks
     for name, fn, fnargs in checks:
         try:
             ok, detail = fn(*fnargs)
