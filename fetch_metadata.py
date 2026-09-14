@@ -8,7 +8,7 @@ import ssl
 import os
 
 # Repository configuration - hard-coded as specified
-# Using a known public repository for testing
+# Target: mikaziebelman/flux2-dev-quantized-rtx-4090 (use golang/go for testing as target repo doesn't exist)
 REPO_OWNER = "golang"
 REPO_NAME = "go"
 GITHUB_API_BASE = "https://api.github.com"
