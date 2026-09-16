@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Type "hair" in GIMP. It selects the hair. Perfectly. In one second.</strong><br/>
-  <em>69 AI tools, one menu. GIMP · DaVinci Resolve · Darktable · chat UI · 100% local · zero config.</em>
+  <em>75 AI tools, one menu. GIMP · DaVinci Resolve · Darktable · chat UI · 100% local · zero config.</em>
 </p>
 
 <p align="center">
@@ -73,7 +73,7 @@
 <table width="100%">
 <tr>
 <td width="52%" align="center" valign="top">
-  <a href="DEEP_DIVE.md#all-69-tools"><img src="assets/sam3demo.png" alt="AI Select with SAM3 — earring mask" width="100%"/></a>
+  <a href="DEEP_DIVE.md#all-75-tools"><img src="assets/sam3demo.png" alt="AI Select with SAM3 — earring mask" width="100%"/></a>
 </td>
 <td width="48%" valign="top">
   <h3>⚡ Let it make the picks</h3>
@@ -96,7 +96,7 @@
   <p><sub>🖌️ <strong>GIMP</strong> · restore, erase, add, re-light &nbsp;·&nbsp; 📷 <strong>Darktable</strong> · batch across a whole shoot</sub></p>
 </td>
 <td width="52%" align="center" valign="top">
-  <a href="DEEP_DIVE.md#all-69-tools"><img src="assets/showcase_supir.png" alt="SUPIR Restoration — before / after" width="100%"/></a>
+  <a href="DEEP_DIVE.md#all-75-tools"><img src="assets/showcase_supir.png" alt="SUPIR Restoration — before / after" width="100%"/></a>
 </td>
 </tr>
 </table>
@@ -107,7 +107,7 @@
 <table width="100%">
 <tr>
 <td width="52%" align="center" valign="top">
-  <a href="DEEP_DIVE.md#all-69-tools"><img src="assets/showcase_wan_breathing.gif" alt="Wan 2.2 Image-to-Video — breathing portrait" width="100%"/></a>
+  <a href="DEEP_DIVE.md#all-75-tools"><img src="assets/showcase_wan_breathing.gif" alt="Wan 2.2 Image-to-Video — breathing portrait" width="100%"/></a>
 </td>
 <td width="48%" valign="top">
   <h3>🎬 Animate a still — and drop it on the timeline</h3>
@@ -128,7 +128,7 @@
      into a clean grid instead of the 8+3 orphan-wrap they
      used to make.
      ───────────────────────────────────────────────────────── -->
-<p align="center"><sub><strong>POWERED BY</strong> — <a href="DEEP_DIVE.md#all-69-tools">full matrix →</a></sub></p>
+<p align="center"><sub><strong>POWERED BY</strong> — <a href="DEEP_DIVE.md#all-75-tools">full matrix →</a></sub></p>
 
 <p align="center"><sub>
   <strong>🎨 Image</strong> &nbsp;<code>Flux 2 Klein</code> · <code>Flux 1 Dev</code> · <code>Flux Kontext</code> · <code>Chroma</code> · <code>SDXL</code> · <code>Illustrious</code> · <code>Pony</code> · <code>Playground</code> · <code>SD 1.5</code> · <code>SDXL Turbo</code> · <code>Z-Image Turbo</code><br/>
@@ -136,7 +136,7 @@
   <strong>🧠 Helpers</strong> &nbsp;<code>SAM 3</code> · <code>NormalCrafter</code> · <code>IC-Light</code> · <code>ReActor</code> · <code>Ollama</code>
 </sub></p>
 
-<p align="center"><sub><a href="DEEP_DIVE.md#all-69-tools"><strong>→ 69 tools across 19 models.</strong> See the full matrix in DEEP_DIVE.md</a></sub></p>
+<p align="center"><sub><a href="DEEP_DIVE.md#all-75-tools"><strong>→ 75 tools across 19 models.</strong> See the full matrix in DEEP_DIVE.md</a></sub></p>
 
 ---
 
@@ -209,7 +209,7 @@ Pick the thing you want. One tool per row. The **Best in** column tells you the 
 
 <sub><strong>Icon key</strong> · 🖌️ GIMP plugin · 📷 Darktable plugin · 🧙 Wizard Guild chat · 🎬 DaVinci Resolve plugin · 🎭 SillyTavern extension — all four talk to the same ComfyUI backend and share a gallery, so any result shows up everywhere.</sub>
 
-**Too many to list here.** [All 69 tools →](DEEP_DIVE.md#all-69-tools)
+**Too many to list here.** [All 75 tools →](DEEP_DIVE.md#all-75-tools)
 
 ---
 
@@ -327,7 +327,7 @@ You don't need to re-run the installer. **Open GIMP** → **Filters → Spellcas
   <img src="assets/demo_step4_inpaint.png" alt="GIMP plugin — result on a new layer" width="100%"/>
   <br/><br/>
   <strong>🖌️ GIMP plugin</strong><br/>
-  <sub>The menu. 69 tools across <code>Filters > Spellcaster</code>. Select layers, paint masks, click a tool. Keyboard shortcuts (<code>Ctrl+Alt+E/U/F/B/X</code>) for the quick ones. Every output lands as a new layer. Non-destructive, reversible, composable.</sub>
+  <sub>The menu. 75 tools across <code>Filters > Spellcaster</code>. Select layers, paint masks, click a tool. Keyboard shortcuts (<code>Ctrl+Alt+E/U/F/B/X</code>) for the quick ones. Every output lands as a new layer. Non-destructive, reversible, composable.</sub>
 </td>
 <td width="33%" align="center" valign="top">
   <img src="assets/wizardguild.png" alt="Wizard Guild — chat UI" width="100%"/>
