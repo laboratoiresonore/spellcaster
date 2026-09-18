@@ -2,13 +2,22 @@
 
 _Every-48h cloud routine. Sandbox: Anthropic cloud (no LAN, no local FS beyond this checkout, no private repos). Repo scope: `laboratoiresonore/spellcaster`._
 
+> **Host-name convention in this digest:** the LAN target hosts (video-generation
+> box, small-model boxes) are referred to by generic role labels
+> (`primary-video-host`, `spark1`, `spark2`) rather than their real hostnames.
+> This is deliberate — the repo's `.github/workflows/leak-check.yml` scan bans
+> specific internal hostname tokens in tracked files, and this digest is
+> tracked. A local operator or Hermes runner is expected to map the role
+> labels below onto real hosts from its own local config, not from this file.
+
 ## Run summary
 
 - **Tier 1 (fixes applied in this PR):** 2 items
 - **Tier 2 (integration candidates, human decision needed):** 3 items
-- **Tier 3 (needs LAN / Spark / Theo, queued for local operator):** 4 items
+- **Tier 3 (needs LAN / Spark / video-host, queued for local operator):** 4 items
 - `tools/upgrade_research.py`: **present + runnable** (dry-run reported 4 proposals from 5 backends). No self-drafted rewrite needed this cycle.
 - Test suite (`pytest tests/`): **39 passed** locally after Tier-1 fixes (was 38 passed / 1 failed on `main`).
+- CI leak-check on this PR is red **for pre-existing reasons unrelated to this diff** — see the note in the PR comment: the same "scan" job has been failing on `main` for at least the last 5 pushes (July 2026 onward) because tracked files across the repo trip the same banned-token list. Filed as an open Tier-1 for a future run to scrub.
 
 ---
 
@@ -57,7 +66,7 @@ Ranked by likely impact on spellcaster's existing arch registry. Each row is a h
 | Model | Date | Replaces / augments | VRAM (fp8/fp16) | Risk | Tier | Effort | Rationale |
 |---|---|---|---|---|---|---|---|
 | **Lightricks/LTX-2.5** | 2026-09-01 | `_reg("ltx", ...)` build_ltx_* — currently on ltx-video/ltxv 2.1-class | ~14 GB fp8 / ~24 GB fp16 (i2v) | medium | T2 | ~3-5h | Trending #8 on HF this week, 4,299 likes, 2.2M downloads, gated=auto (public docs, licence acceptance to download weights). Adds audio-to-video, longer clips, wider language coverage. Would slot into the existing `ltx` arch as a new default checkpoint choice; existing pipeline shape (image-to-video) still holds. Blocked on: acceptance of Lightricks community licence terms; verifying ComfyUI-LTXVideo node pack advertises 2.5 support. |
-| **Comfy-Org/HunyuanVideo_1.5_repackaged** | 2026-08-17 | `_reg("hunyuan_video", ...)` — currently references generic HunyuanVideo repackaged (2024 base) | ~20 GB fp8 / ~48 GB fp16 | medium | T2 | ~2-3h | 582K downloads on the 1.5 repackage; the older repackage (367K downloads) is still the one wired in via `ComfyUI-HunyuanVideoWrapper` (Kijai). This is a checkpoint swap, not an arch change — sampler pipeline stays put. Test on Theo before promoting the default. |
+| **Comfy-Org/HunyuanVideo_1.5_repackaged** | 2026-08-17 | `_reg("hunyuan_video", ...)` — currently references generic HunyuanVideo repackaged (2024 base) | ~20 GB fp8 / ~48 GB fp16 | medium | T2 | ~2-3h | 582K downloads on the 1.5 repackage; the older repackage (367K downloads) is still the one wired in via `ComfyUI-HunyuanVideoWrapper` (Kijai). This is a checkpoint swap, not an arch change — sampler pipeline stays put. Test on the primary video-generation host before promoting the default. |
 | **alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union-2.1** | 2026-02-26 | Would _add_ ControlNet capability to the existing `zit` arch (`_reg("zit", ..., lora_prefixes=["Z-Image-Turbo\\"])`) | ~4 GB (loads next to Z-Image-Turbo base) | low | T2 | ~4h | Turbo Union ControlNet — pose/depth/canny/etc. in one pack, 94K downloads. Z-Image-Turbo currently lacks a ControlNet story in spellcaster; this would let `zit` participate in the "Select ControlNets" wizard family (Klein-style guidance). Cheap-ish (~4 GB extra). |
 
 **Not surfaced (rejected during triage this pass):**
@@ -67,34 +76,34 @@ Ranked by likely impact on spellcaster's existing arch registry. Each row is a h
 
 ---
 
-## Tier 3 — local action queue (needs LAN / Spark / Theo)
+## Tier 3 — local action queue (needs LAN / Spark / video-host)
 
-The cloud sandbox can't reach the local fleet (192.168.*, LM Studio peers, Prometheus, Theo model store `D:\LLM`), so these items are emitted as a structured queue for a local operator or a future local Hermes process to consume mechanically. Do not translate these into ad-hoc paragraphs — feed the block to whatever local runner has fleet write access.
+The cloud sandbox can't reach the local fleet (LM Studio peers, Prometheus, the video-generation host's model store `D:\LLM`), so these items are emitted as a structured queue for a local operator or a future local Hermes process to consume mechanically. Do not translate these into ad-hoc paragraphs — feed the block to whatever local runner has fleet write access. `target_host` values are role labels; map them to real hostnames in local config (see the host-name convention note at the top of this file).
 
 ```yaml
 local_action_queue:
   - action: download_model_update
     target_repo: Lightricks/LTX-2.5
-    target_host: theo
+    target_host: primary-video-host
     reason: >
       LTX-2.5 (2026-09-01) is a checkpoint-level bump on the ltx arch.
       Requires accepting the Lightricks community licence on the HF page
       before the download URL resolves. Once local, wire into build_ltx_*
       via the existing arch config.
     command_hint: |
-      # from Theo:
       huggingface-cli download Lightricks/LTX-2.5 \
         --local-dir "D:\LLM\ltx\LTX-2.5" \
         --include "*.safetensors" "*.json" "config*"
     risk: medium
   - action: download_model_update
     target_repo: Comfy-Org/HunyuanVideo_1.5_repackaged
-    target_host: theo
+    target_host: primary-video-host
     reason: >
       HunyuanVideo 1.5 repackage is the current maintained ComfyUI-ready
       pack; the older HunyuanVideo_repackaged still wired via
       ComfyUI-HunyuanVideoWrapper (Kijai) is a 2024/early-2025 build.
-      Coexist rather than replace until quality bar confirmed on Theo.
+      Coexist rather than replace until quality bar confirmed on the
+      primary video-generation host.
     command_hint: |
       huggingface-cli download Comfy-Org/HunyuanVideo_1.5_repackaged \
         --local-dir "D:\LLM\hunyuan\HunyuanVideo_1.5"
@@ -112,7 +121,7 @@ local_action_queue:
     risk: low
   - action: retire_superseded_checkpoint
     target_repo: Comfy-Org/HunyuanVideo_repackaged
-    target_host: theo
+    target_host: primary-video-host
     reason: >
       Only retire AFTER HunyuanVideo_1.5_repackaged is validated on the
       Kijai wrapper and downstream `_reg("hunyuan_video", ...)` config is
@@ -130,12 +139,13 @@ local_action_queue:
 
 - The **`supir` arch _reg() stub gap** flagged by earlier ecosystem passes is closed (commit `90d2432` "restore canonical surface C + register supir arch"). `architectures.py:1109` now has a real `_reg("supir", ...)` with `supported_methods=("upscale",)`. Prior digests can stop listing this as an open Tier-1 candidate.
 - The **`tools/upgrade_research.py` missing-tool** finding from prior runs is closed — the tool is present (1,001 LOC, 5 backends), and `python tools/upgrade_research.py --dry-run` succeeds without network. Prior digests can stop flagging it.
+- **New open Tier-1 for a future run: leak-check is pre-existing red on `main`.** The "scan" job in `.github/workflows/leak-check.yml` has been failing on every push to `main` since at least early July 2026 (5+ consecutive `conclusion: failure` runs verified via GitHub Actions API on 2026-09-18). Tracked files across the repo trip the banned-token list: `installer/remote_services.json`, `plugins/krita/spellcaster_krita.py`, `tools/upgrade_research.py`, `_dev_docs/WHIMWEAVER_REPLAY_BRIDGE_PROPOSAL.md`, `_inventory/ANTENNA_INVENTORY.md`, `tools/build_builders_manifest.py`, and others. Scrubbing all of this is a multi-file, cross-surface change out of scope for a docs-only pass — filed here so a future run picks it up as a real Tier-1 project.
 
 ---
 
 ## Delivery
 
 - Digest committed to `_dev_docs/ecosystem_digest_2026-09-18.md`.
-- Tier-1 fixes committed alongside on branch `claude/adoring-allen-py3ho5`, pushed for a PR against `main`.
+- Tier-1 fixes committed alongside on branch `claude/adoring-allen-py3ho5`, pushed for PR #172 against `main`.
 - Gmail / Google-Drive MCP notification: attempted in-session. If auth is expired at delivery time, the PR link on `laboratoiresonore/spellcaster` is the fallback channel of record.
-- No CI leak-check state comment needed unless the PR's own leak-check job goes red — verify against base first per routine.
+- CI leak-check ("scan"): red on this PR **but pre-existing red on `main`** — a status comment saying so is posted on the PR itself; not treated as this run's failure per the routine spec, filed as Tier-1 for a future scrub.
