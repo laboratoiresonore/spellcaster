@@ -14,7 +14,7 @@ Everything the [README](README.md) intentionally left out. Architecture, subsyst
 - [Dispatch Pipeline](#dispatch-pipeline) 🆕
 - [ControlNet Resolution — 3-Layer System](#controlnet-resolution--3-layer-system) 🆕
 - [Cross-Repo Sync Topology](#cross-repo-sync-topology) 🆕
-- [All 69 Tools](#all-69-tools)
+- [All 75 Tools](#all-75-tools)
 - [Under the Hood](#under-the-hood)
 - [Calibration Wizard](#calibration-wizard)
 - [The Wizard Guild (chat interface)](#the-wizard-guild-chat-interface)
@@ -49,7 +49,7 @@ Spellcaster is **middleware** — it doesn't generate images itself. Every surfa
 ```mermaid
 graph TB
     subgraph Apps["User-Facing Apps"]
-        GIMP[🖌 GIMP 3<br/>69 tools<br/>~34K Python lines]
+        GIMP[🖌 GIMP 3<br/>75 tools<br/>~34K Python lines]
         DT[📸 Darktable<br/>Lua plugin]
         GUILD[🏰 Wizard Guild<br/>Chat UI + API]
         ST[💬 SillyTavern<br/>Extension]
@@ -61,7 +61,7 @@ graph TB
         WF[workflows.py<br/>70+ build_* fns]
         NF[node_factory.py<br/>typed ComfyUI DSL]
         COMP[composites.py<br/>inject_controlnet<br/>load_model_stack<br/>inject_lora_chain]
-        ARCH[architectures.py<br/>22 arch registry<br/>supported_methods]
+        ARCH[architectures.py<br/>27 arch registry<br/>supported_methods]
         DISP[dispatch.py<br/>preflight → optimize → submit]
     end
 
@@ -297,7 +297,7 @@ python nsfw/build_nsfw.py --patch-only --push
 
 ---
 
-## All 69 Tools
+## All 75 Tools
 
 Yes, we counted. Yes, we noticed. No, we will not be adding a 70th (officially).
 
