@@ -20,47 +20,89 @@ BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 HEAD_AUTHOR="$(git log -1 --format='%an <%ae>')"
 
 # ---------------------------------------------------------------------------
-# Rule 0: PUBLIC-REPO LEAK GATE (added 2026-07-18).
+# Rule 0: PUBLIC-REPO LEAK GATE (added 2026-07-18, unified 2026-09-24 for #12).
 #
 # `spellcaster` is a PUBLIC repository. A push here is irreversible publication:
 # deleting a commit later does not un-publish it (forks, caches, and the GitHub
 # events API keep it). This gate runs on EVERY branch -- not just hermes/* --
 # because the branch name is not what makes a leak dangerous.
 #
-# It scans the commits actually being pushed (not the whole tree) for
-# credentials and personal identifiers. It is deliberately noisy: a false
-# positive costs one `--no-verify` decision by a human; a false negative costs
-# a permanent public leak.
+# The pattern list lives in `.githooks/leak-patterns`; the same file is read by
+# `.githooks/pre-commit` and `.github/workflows/leak-check.yml`, so edits stay
+# in sync across all three scanners. If the file is missing (shallow checkout
+# / corrupt tree / user removed it), a hard-coded fallback is used and a
+# warning is emitted -- the hook is defensive, never silent.
 # ---------------------------------------------------------------------------
+_LEAK_PATTERN_FILE=".githooks/leak-patterns"
+
+# Fallback patterns -- an inline duplicate of leak-patterns for the case where
+# the file is absent. Keep this in sync with `.githooks/leak-patterns` on any
+# edit; the file is the source of truth, this fallback is a safety net.
+_FALLBACK_SECRET='ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|ghs_[A-Za-z0-9]{20,}|ghu_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{40,}|hf_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}'
+# NOTE: `-i` is passed at the call site; do not use `(?i)` (invalid ERE).
+_FALLBACK_CRED='(password|passwd|secret|api_key|apikey|token)[[:space:]]*[:=][[:space:]]*["'"'"'][^"'"'"'{$<]{8,}["'"'"']'
+_FALLBACK_PII='leguillaume|lmlgg|@gmail\.com|MASTER_PLAN|192\.168\.86\.(31|23|77|219)|192\.168\.0\.100'
+
+# _section_regex FILE SECTION -- emit the `|`-joined regex for one section of
+# the pattern file. SECTION is one of: credentials, PII, internal identifiers.
+_section_regex() {
+  local file="$1"
+  local want="$2"
+  awk -v want="$want" '
+    /^#/ {
+      line = $0
+      sub(/^#[ \t]+/, "", line)
+      sub(/[ \t]+$/, "", line)
+      if (line == "credentials" || line == "PII" || line == "internal identifiers") {
+        in_section = (line == want)
+      }
+      next
+    }
+    /^[[:space:]]*$/ { next }
+    in_section { print }
+  ' "$file" | tr '\n' '|' | sed 's/|$//'
+}
+
+_load_leak_patterns() {
+  if [ -r "$_LEAK_PATTERN_FILE" ]; then
+    pat_credentials="$(_section_regex "$_LEAK_PATTERN_FILE" 'credentials')"
+    pat_pii="$(_section_regex "$_LEAK_PATTERN_FILE" 'PII')"
+    pat_internal="$(_section_regex "$_LEAK_PATTERN_FILE" 'internal identifiers')"
+    if [ -n "$pat_credentials" ] && [ -n "$pat_pii" ] && [ -n "$pat_internal" ]; then
+      return 0
+    fi
+    echo "[pre-push] warning: $_LEAK_PATTERN_FILE parsed empty for one or more sections; using built-in fallback" >&2
+  else
+    echo "[pre-push] warning: $_LEAK_PATTERN_FILE missing; using built-in fallback (patterns may drift)" >&2
+  fi
+  # Fallback: the credential idiom joins pat_secret's tokens because the
+  # unified file combines them under `# credentials`; do the same here.
+  pat_credentials="$_FALLBACK_SECRET|$_FALLBACK_CRED"
+  pat_pii="leguillaume|lmlgg|@gmail\\.com"
+  pat_internal='MASTER_PLAN|192\.168\.86\.(31|23|77|219)|192\.168\.0\.100'
+}
+
 _leak_scan() {
   local range="$1"
   local added
   added="$(git diff --unified=0 "$range" 2>/dev/null | grep '^+' | grep -v '^+++' || true)"
   [ -z "$added" ] && return 0
 
-  local pat_secret='ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|hf_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}'
-  local pat_cred='(?i)(password|passwd|secret|api_key|apikey|token)[[:space:]]*[:=][[:space:]]*["'"'"'][^"'"'"'{$<]{8,}["'"'"']'
-  local pat_pii='leguillaume|lmlgg|@gmail\.com|192\.168\.86\.(31|23|77|219)'
+  local pat_credentials pat_pii pat_internal
+  _load_leak_patterns
 
-  local hits=""
-  hits="$(printf '%s
-' "$added" | grep -nEi "$pat_secret" || true)"
-  local hits2 hits3
-  hits2="$(printf '%s
-' "$added" | grep -nEi "$pat_cred" || true)"
-  hits3="$(printf '%s
-' "$added" | grep -nE  "$pat_pii" || true)"
+  local hits hits2 hits3
+  hits="$(printf  '%s\n' "$added" | grep -nEi "$pat_credentials" || true)"
+  hits2="$(printf '%s\n' "$added" | grep -nEi "$pat_pii"         || true)"
+  hits3="$(printf '%s\n' "$added" | grep -nE  "$pat_internal"    || true)"
 
   if [ -n "$hits$hits2$hits3" ]; then
     echo "=================================================================" >&2
     echo "  pre-push BLOCKED: possible secret / personal data in a PUBLIC repo" >&2
     echo "=================================================================" >&2
-    [ -n "$hits"  ] && { echo "  [credential pattern]" >&2; printf '%s
-' "$hits"  | head -5 | cut -c1-160 >&2; }
-    [ -n "$hits2" ] && { echo "  [hardcoded cred]"     >&2; printf '%s
-' "$hits2" | head -5 | cut -c1-160 >&2; }
-    [ -n "$hits3" ] && { echo "  [personal identifier]" >&2; printf '%s
-' "$hits3" | head -5 | cut -c1-160 >&2; }
+    [ -n "$hits"  ] && { echo "  [credentials]"          >&2; printf '%s\n' "$hits"  | head -5 | cut -c1-160 >&2; }
+    [ -n "$hits2" ] && { echo "  [PII]"                  >&2; printf '%s\n' "$hits2" | head -5 | cut -c1-160 >&2; }
+    [ -n "$hits3" ] && { echo "  [internal identifiers]" >&2; printf '%s\n' "$hits3" | head -5 | cut -c1-160 >&2; }
     echo "" >&2
     echo "  spellcaster is PUBLIC. Publication is NOT reversible by deleting" >&2
     echo "  the commit later. Sanitize, or override deliberately with:" >&2

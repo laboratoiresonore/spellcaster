@@ -1,6 +1,13 @@
 # Greps tracked files for internal project names, PII, and token prefixes.
-# Fails the build on any hit. Self-excludes this file (its own pattern list
-# would otherwise always match).
+# Fails the build on any hit.
+#
+# The pattern list is sourced from .githooks/leak-patterns -- the SAME file
+# used by .githooks/pre-commit and .githooks/pre-push. Editing that one file
+# updates the local hooks AND this workflow together (Issue #12).
+#
+# Self-excludes the three files that carry the patterns (the workflow itself,
+# the pre-push hook's fallback, and the pattern list) so they don't trip the
+# scan they define.
 name: Leak check
 
 on:
@@ -24,8 +31,22 @@ jobs:
           # ``tok.startswith("ghp_")``) doesn't trip the scan. Real
           # GitHub PATs are 40+ chars after the prefix; we floor at 20
           # to keep the pattern strict but tolerant of future variants.
-          patterns='192\.168\.86|192\.168\.0\.100|lmlgg|leguillaume|@gmail\.com|MASTER_PLAN|ghp_[A-Za-z0-9]{20,}|ghs_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|ghu_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{40,}'
-          if git grep -nIE "$patterns" -- ':!.github/workflows/leak-check.yml' ':!.githooks/pre-push'; then
+          if [ ! -r .githooks/leak-patterns ]; then
+            echo "::error::.githooks/leak-patterns is missing -- cannot run leak scan"
+            exit 1
+          fi
+          patterns="$(grep -vE '^\s*(#|$)' .githooks/leak-patterns | tr '\n' '|' | sed 's/|$//')"
+          if [ -z "$patterns" ]; then
+            echo "::error::.githooks/leak-patterns parsed empty -- cannot run leak scan"
+            exit 1
+          fi
+          # -i: the hardcoded-credential idiom matches "Password", "PASSWORD",
+          # etc. -- the pattern list is written lower-case and relies on -i
+          # (see the NOTE in .githooks/leak-patterns).
+          if git grep -nIEi "$patterns" -- \
+              ':!.github/workflows/leak-check.yml' \
+              ':!.githooks/pre-push' \
+              ':!.githooks/leak-patterns'; then
             echo "::error::Forbidden pattern detected in tracked files (see hits above)"
             exit 1
           fi
