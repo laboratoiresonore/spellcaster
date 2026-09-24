@@ -1,61 +1,117 @@
 #!/bin/bash
-# .githooks/pre-commit — credential-leak guard
+# .githooks/pre-commit -- credential-leak guard (staged-diff scan).
 #
-# Blocks commits whose staged diff matches a leak-pattern regex (internal IPs,
-# identity strings, auth tokens). The pattern lives OUTSIDE this repo so the
-# public source contains no embedded PII.
+# Blocks a commit whose staged content matches a leak-pattern regex (internal
+# IPs, identity strings, auth tokens). Shares its pattern list with the
+# pre-push hook and the leak-check CI workflow -- see .githooks/leak-patterns.
 #
-# Pattern source (first match wins):
-#   1. $SPELLCASTER_LEAK_PATTERN — literal regex string in env
-#   2. $SPELLCASTER_LEAK_PATTERN_FILE — path to a file containing the regex
-#   3. $HOME/.config/spellcaster/leak-pattern — default file location
+# Pattern sources (UNION, not first-match):
+#   1. `.githooks/leak-patterns`   -- the canonical shared list
+#   2. `$SPELLCASTER_LEAK_PATTERN`             -- literal regex string in env
+#      OR `$SPELLCASTER_LEAK_PATTERN_FILE`     -- path to a file with a regex
+#      OR `$HOME/.config/spellcaster/leak-pattern` -- default file location
 #
-# If no pattern is configured the hook is a silent no-op: it is a defensive aid
-# for the maintainer, not a hard gate for arbitrary clones.
+# Sources are ADDED together (`|`-joined), so a user with a local override
+# still gets the canonical patterns as a floor. If NO source resolves to
+# anything the hook is a silent no-op -- defensive aid, not a hard gate.
 #
 # Override (use sparingly; audit afterwards):
 #   SKIP_LEAK_CHECK=1 git commit ...
 #
 # Exit codes: 0 ok, 1 blocked.
 
-set -e
+set -eu
 
-# Resolve pattern.
-PATTERN=""
-if [ -n "${SPELLCASTER_LEAK_PATTERN:-}" ]; then
-  PATTERN="$SPELLCASTER_LEAK_PATTERN"
-elif [ -n "${SPELLCASTER_LEAK_PATTERN_FILE:-}" ] && [ -r "${SPELLCASTER_LEAK_PATTERN_FILE}" ]; then
-  PATTERN=$(cat "${SPELLCASTER_LEAK_PATTERN_FILE}")
-elif [ -r "${HOME}/.config/spellcaster/leak-pattern" ]; then
-  PATTERN=$(cat "${HOME}/.config/spellcaster/leak-pattern")
+_LEAK_PATTERN_FILE=".githooks/leak-patterns"
+
+# Collect patterns into $PATTERNS (`|`-joined ERE alternation).
+PATTERNS=""
+
+_add_patterns() {
+  local more="$1"
+  # Strip trailing CR/LF, ignore comment / blank lines defensively.
+  more=$(printf '%s\n' "$more" | grep -vE '^\s*(#|$)' | tr -d '\r' | tr '\n' '|' | sed 's/|$//')
+  [ -z "$more" ] && return 0
+  if [ -z "$PATTERNS" ]; then
+    PATTERNS="$more"
+  else
+    PATTERNS="$PATTERNS|$more"
+  fi
+}
+
+# Source 1: canonical shared file.
+if [ -r "$_LEAK_PATTERN_FILE" ]; then
+  _add_patterns "$(cat "$_LEAK_PATTERN_FILE")"
 fi
 
-# Strip trailing newline / whitespace; bail if empty.
-PATTERN=$(printf '%s' "$PATTERN" | tr -d '\r\n')
-[ -z "$PATTERN" ] && exit 0
+# Source 2: env-var overrides -- ADDITIVE, not replacement.
+if [ -n "${SPELLCASTER_LEAK_PATTERN:-}" ]; then
+  _add_patterns "$SPELLCASTER_LEAK_PATTERN"
+fi
+if [ -n "${SPELLCASTER_LEAK_PATTERN_FILE:-}" ] && [ -r "${SPELLCASTER_LEAK_PATTERN_FILE}" ]; then
+  _add_patterns "$(cat "${SPELLCASTER_LEAK_PATTERN_FILE}")"
+fi
+if [ -r "${HOME}/.config/spellcaster/leak-pattern" ]; then
+  _add_patterns "$(cat "${HOME}/.config/spellcaster/leak-pattern")"
+fi
 
-files=$(git diff --cached --diff-filter=ACMR --name-only 2>/dev/null)
+# Nothing to scan against -> defensive no-op.
+[ -z "$PATTERNS" ] && exit 0
+
+files=$(git diff --cached --diff-filter=ACMR --name-only 2>/dev/null || true)
 [ -z "$files" ] && exit 0
 
-# grep only existing regular files; skip symlinks / submodules; skip the
-# hook itself + its README (in case the configured regex matches them).
-hits=$(printf '%s\n' "$files" | while IFS= read -r f; do
-  [ -f "$f" ] || continue
+# Scan the STAGED content of each added/copied/modified/renamed file
+# (`git show :$f` reads from the index, not the working tree, so this
+# catches leaks that only exist in the staged version). Skip:
+#   - non-regular files (submodules, symlinks pointing off-tree)
+#   - the scanner files themselves (pre-commit / pre-push / leak-patterns)
+#     and the CI workflow -- they carry the patterns and would always match
+#   - the hooks README (documents the patterns)
+hits=""
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
   case "$f" in
-    .githooks/pre-commit|.githooks/README.md) continue ;;
+    .githooks/pre-commit|.githooks/pre-push|.githooks/leak-patterns|.githooks/README.md|.github/workflows/leak-check.yml)
+      continue
+      ;;
   esac
-  grep -lInE "$PATTERN" -- "$f" 2>/dev/null || true
-done)
+  # `git ls-files --stage` mode 120000 = symlink, 160000 = gitlink/submodule.
+  mode=$(git ls-files --stage -- "$f" 2>/dev/null | awk '{print $1}')
+  case "$mode" in
+    120000|160000|"") continue ;;
+  esac
+
+  # -I: skip binary; -n: line numbers; -E: extended regex; -i: case-insensitive
+  # (the credentials-idiom pattern uses (?i) but we set -i globally so all
+  # sub-patterns are case-insensitive -- a leak is a leak regardless of case).
+  file_hits=$(git show ":$f" 2>/dev/null | grep -nIE -i "$PATTERNS" 2>/dev/null || true)
+  if [ -n "$file_hits" ]; then
+    # Format each hit as "  <path>:<line>: <content>"
+    while IFS= read -r hit; do
+      [ -z "$hit" ] && continue
+      hits="${hits}  ${f}:${hit}
+"
+    done <<EOF
+$file_hits
+EOF
+  fi
+done <<EOF
+$files
+EOF
 
 if [ -n "$hits" ]; then
   echo >&2 ""
   echo >&2 "================================================================"
-  echo >&2 "  pre-commit BLOCKED: leak pattern matched in staged files"
+  echo >&2 "  pre-commit BLOCKED: leak pattern matched in staged content"
   echo >&2 "================================================================"
-  echo >&2 "$hits" | sed 's/^/  /' >&2
+  # Truncate each line so a long secret doesn't blow past the terminal.
+  printf '%s' "$hits" | cut -c1-200 >&2
   echo >&2 ""
-  echo >&2 "  Sanitize before committing. To override (audit later):"
+  echo >&2 "  Sanitize the staged content, or override deliberately with:"
   echo >&2 "    SKIP_LEAK_CHECK=1 git commit ..."
+  echo >&2 "  (Note: pre-push runs the same scan against the pushed range;"
+  echo >&2 "  \`--no-verify\` here still gets caught at push time.)"
   echo >&2 "================================================================"
   if [ "${SKIP_LEAK_CHECK:-0}" != "1" ]; then
     exit 1

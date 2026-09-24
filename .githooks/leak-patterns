@@ -1,0 +1,57 @@
+# .githooks/leak-patterns -- canonical regex list for the leak-scan trio
+#
+# Consumed by:
+#   - .githooks/pre-commit         (staged-diff scan, local)
+#   - .githooks/pre-push           (pushed-range scan, local)
+#   - .github/workflows/leak-check.yml (tracked-tree scan, CI)
+#
+# One extended-regex token per line. `#` comments and blank lines are ignored
+# by the readers (`grep -v '^\s*\(#\|$\)'`). The tokens are OR-joined into a
+# single alternation before being handed to `grep -E`.
+#
+# Editing this file changes ALL THREE scanners at once -- that is the whole
+# point (drift between them was Issue #12). Keep tokens strict enough not to
+# false-positive on legitimate prefix-validation code (`tok.startswith("ghp_")`
+# etc.), which is why token bodies require >=20 chars.
+
+# ---------------------------------------------------------------------------
+# credentials
+# ---------------------------------------------------------------------------
+
+# GitHub tokens (personal, OAuth, server, user, fine-grained)
+ghp_[A-Za-z0-9]{20,}
+gho_[A-Za-z0-9]{20,}
+ghs_[A-Za-z0-9]{20,}
+ghu_[A-Za-z0-9]{20,}
+github_pat_[A-Za-z0-9_]{40,}
+
+# Third-party API tokens
+hf_[A-Za-z0-9]{20,}
+sk-[A-Za-z0-9]{20,}
+AKIA[0-9A-Z]{16}
+
+# Structured secrets
+-----BEGIN [A-Z ]*PRIVATE KEY-----
+eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}
+
+# Hardcoded-credential idiom (password = "literal", etc.).
+# NOTE: no `(?i)` inline flag -- git grep -E is POSIX ERE and rejects it.
+# All three scanners run this list with `-i` (case-insensitive) at the call
+# site, so alphabetic tokens here should be written lower-case.
+(password|passwd|secret|api_key|apikey|token)[[:space:]]*[:=][[:space:]]*["'][^"'{$<]{8,}["']
+
+# ---------------------------------------------------------------------------
+# PII
+# ---------------------------------------------------------------------------
+
+leguillaume
+lmlgg
+@gmail\.com
+
+# ---------------------------------------------------------------------------
+# internal identifiers
+# ---------------------------------------------------------------------------
+
+MASTER_PLAN
+192\.168\.86\.(31|23|77|219)
+192\.168\.0\.100
