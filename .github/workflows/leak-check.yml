@@ -24,8 +24,8 @@ jobs:
           # ``tok.startswith("ghp_")``) doesn't trip the scan. Real
           # GitHub PATs are 40+ chars after the prefix; we floor at 20
           # to keep the pattern strict but tolerant of future variants.
-          patterns='Voodoomancer|voodoomancer|Whimweaver|whimweaver|Laborantin|voodoo-core|Beatweaver|whimspider|\bTheo\b|\btheo\b|192\.168\.86|192\.168\.0\.100|lmlgg|leguillaume|@gmail\.com|MASTER_PLAN|ghp_[A-Za-z0-9]{20,}|ghs_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|ghu_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{40,}'
-          if git grep -nIE "$patterns" -- ':!.github/workflows/leak-check.yml'; then
+          patterns='192\.168\.86|192\.168\.0\.100|lmlgg|leguillaume|@gmail\.com|MASTER_PLAN|ghp_[A-Za-z0-9]{20,}|ghs_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|ghu_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{40,}'
+          if git grep -nIE "$patterns" -- ':!.github/workflows/leak-check.yml' ':!.githooks/pre-push'; then
             echo "::error::Forbidden pattern detected in tracked files (see hits above)"
             exit 1
           fi

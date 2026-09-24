@@ -122,21 +122,6 @@ class SpellcasterPlugin:
         self._guild_url = (guild_url or "").rstrip("/") or None
         self._origin = origin or ""
         self._heartbeat_started = False
-        # Optional global disable for SAM3 region-scoping. When True,
-        # any SAM3Segment nodes in submitted workflows are stripped via
-        # preflight's _fallback_sam3_optional, regardless of whether
-        # the server has the SAM3 pack installed. Users without the pack
-        # should set this to True for clear behavior. UIs may surface a
-        # checkbox that toggles this attribute. Default False = trust
-        # preflight to detect + skip when the pack isn't on the server.
-        self.skip_sam3 = False
-        # Sub-set: which DIRECT sam3 methods (sam3_segment, sam3_extract,
-        # klein_sam3_inpaint) can never be salvaged when SAM3 is missing,
-        # since they have no graceful fallback. These check this list at
-        # entry and refuse with a clear error.
-        self._sam3_direct_methods = (
-            "sam3_segment", "sam3_extract", "klein_sam3_inpaint"
-        )
         self._inbox_poll_started = False
         if self._guild_url and self._origin:
             self._start_heartbeat_loop()
@@ -949,32 +934,6 @@ class SpellcasterPlugin:
         err_str = ""
         arch = self._guess_workflow_arch(workflow)
         try:
-            # Force-strip SAM3 chains if user opted out, BEFORE preflight.
-            # This guarantees no SAM3 node ever reaches the server even if
-            # the pack IS installed.
-            if self.skip_sam3:
-                workflow = self._strip_sam3_chain(workflow)
-
-            # DIRECT-SAM3 methods (sam3_segment / sam3_extract /
-            # klein_sam3_inpaint) have no graceful fallback -- the workflow
-            # IS the SAM3 segmentation. If we're running one of those AND
-            # SAM3 isn't available, refuse early with a clear message.
-            if label in self._sam3_direct_methods:
-                # The preflight call below will detect SAM3 absence, but
-                # for direct methods we want a more user-friendly error.
-                try:
-                    from .preflight import get_available_nodes
-                    if "SAM3Segment" not in (get_available_nodes(self.server) or set()):
-                        err_str = (
-                            f"{label} requires SAM3 (not installed on this "
-                            "ComfyUI server). Install ComfyUI-Segment-Anything-2 "
-                            "and restart ComfyUI, or use a workflow that "
-                            "doesn't depend on SAM3.")
-                        self.show_error(err_str)
-                        return None
-                except Exception:
-                    pass
-
             # Preflight
             self.show_progress(f"Checking nodes...")
             try:
@@ -988,18 +947,6 @@ class SpellcasterPlugin:
                         f"Missing nodes: {', '.join(report['missing'])}")
                     self.show_error(err_str)
                     return None
-            except Exception:
-                pass
-
-            # File-level fallback: when a node references a model file that
-            # isn't on this server (hyperswap_1c_256 / reswapper_256 /
-            # GPEN-BFR-2048 / etc.) auto-swap to the available alternative.
-            try:
-                from .preflight import substitute_missing_files
-                workflow, file_subs = substitute_missing_files(
-                    workflow, self.server)
-                for nid, inp, old, new in file_subs:
-                    self.show_progress(f"File fallback: {old} -> {new}")
             except Exception:
                 pass
 
@@ -1027,17 +974,8 @@ class SpellcasterPlugin:
                     err = json.loads(e.read().decode())
                 except Exception:
                     pass
-                # Show the most informative field available. Some rejections
-                # come back without `node_errors` (e.g. prompt-level errors,
-                # invalid workflow shape) -- those used to render as the
-                # unhelpful "Rejected: {}".
-                node_errs = err.get("node_errors", {})
-                if node_errs:
-                    err_str = f"Rejected: {json.dumps(node_errs)[:400]}"
-                elif err:
-                    err_str = f"Rejected: {json.dumps(err)[:400]}"
-                else:
-                    err_str = "Rejected (no detail returned by ComfyUI)"
+                err_str = (
+                    f"Rejected: {json.dumps(err.get('node_errors', {}))[:200]}")
                 self.show_error(err_str)
                 return None
 
@@ -1046,45 +984,16 @@ class SpellcasterPlugin:
                 self.show_error(err_str)
                 return None
 
-            # Poll with no-progress watchdog (replaces the old 5-min hard
-            # timeout that killed legitimate long generations like SUPIR
-            # upscales, klein_detail multi-pass, Wan video). The new rule:
-            # we keep waiting indefinitely AS LONG AS ComfyUI is still
-            # advancing the work -- judged by /queue presence (still in
-            # queue_running/pending) OR /history message count growing
-            # (each node-completion adds a message). We only give up if
-            # NO advance for NO_PROGRESS_TIMEOUT seconds, or we hit the
-            # absolute HARD_CEILING safety net.
-            NO_PROGRESS_TIMEOUT = 180   # 3 min stuck = bail
-            HARD_CEILING = 3600         # 1 hour absolute max
-            tpoll = time.time()
-            last_advance = tpoll
-            last_msg_count = 0
-            last_node = None
-            node_step = 0
+            # Poll
             self.show_progress(f"Generating ({label})...")
-            while time.time() - tpoll < HARD_CEILING:
-                advanced = False
+            tpoll = time.time()
+            while time.time() - tpoll < 300:
                 try:
                     r = urllib.request.urlopen(
                         f"{self.server}/history/{pid}", timeout=5)
                     d = json.loads(r.read())
                     if pid in d:
                         st = d[pid].get("status", {})
-                        msgs = st.get("messages") or []
-                        if len(msgs) > last_msg_count:
-                            last_msg_count = len(msgs)
-                            advanced = True
-                            # Surface current node for "still working" UI
-                            for m in reversed(msgs):
-                                if (isinstance(m, (list, tuple))
-                                        and len(m) >= 2
-                                        and m[0] == "executing"):
-                                    n = m[1].get("node") if isinstance(m[1], dict) else None
-                                    if n and n != last_node:
-                                        last_node = n
-                                        node_step += 1
-                                    break
                         if st.get("completed"):
                             outputs = d[pid].get("outputs", {})
                             outcome = "ok"
@@ -1116,45 +1025,11 @@ class SpellcasterPlugin:
                             return None
                 except Exception:
                     pass
-
-                # Fallback "still alive" check: prompt may not be in history
-                # yet but should be in the queue while running.
-                if not advanced:
-                    try:
-                        q = urllib.request.urlopen(
-                            f"{self.server}/queue", timeout=5)
-                        qd = json.loads(q.read())
-                        in_q = any(
-                            isinstance(item, (list, tuple)) and len(item) > 1
-                            and item[1] == pid
-                            for item in (qd.get("queue_running", [])
-                                         + qd.get("queue_pending", []))
-                        )
-                        if in_q:
-                            advanced = True
-                    except Exception:
-                        pass
-
-                if advanced:
-                    last_advance = time.time()
-
-                stuck = int(time.time() - last_advance)
-                if stuck > NO_PROGRESS_TIMEOUT:
-                    err_str = (f"No progress in {NO_PROGRESS_TIMEOUT}s "
-                               f"(last node: {last_node or '?'})")
-                    self.show_error(err_str)
-                    return None
-
                 time.sleep(2)
                 elapsed = int(time.time() - tpoll)
-                # Block-bar based on node-execution count (capped at 20 blocks).
-                bar_full = min(node_step, 20)
-                bar = "█" * bar_full + "░" * (20 - bar_full)
-                node_hint = f"node {last_node}" if last_node else "queued"
-                self.show_progress(
-                    f"Generating ({label}) [{bar}] {elapsed}s -- {node_hint}")
+                self.show_progress(f"Generating ({label})... {elapsed}s")
 
-            err_str = f"Hit hard ceiling ({HARD_CEILING}s)"
+            err_str = "Timeout"
             self.show_error(err_str)
             return None
         except Exception as _exc:
@@ -1172,28 +1047,6 @@ class SpellcasterPlugin:
                 )
             except Exception:
                 pass
-
-    def _strip_sam3_chain(self, workflow):
-        """Pre-preflight scrub of SAM3 nodes. Use when user opted out of
-        SAM3 via self.skip_sam3 = True so we never even ask the server.
-        Reuses preflight's _fallback_sam3_optional for the actual rewiring.
-        """
-        try:
-            from .preflight import _fallback_sam3_optional
-        except Exception:
-            return workflow
-        patched = dict(workflow)
-        sam3_ids = [nid for nid, n in patched.items()
-                    if isinstance(n, dict)
-                    and n.get("class_type") == "SAM3Segment"]
-        for sid in sam3_ids:
-            node = patched.get(sid)
-            if node is None:
-                continue
-            res = _fallback_sam3_optional(sid, node, patched)
-            if res is not None:
-                patched = res
-        return patched
 
     def _guess_workflow_arch(self, workflow) -> str:
         """Best-effort arch classification from loader nodes.
@@ -1265,91 +1118,48 @@ class SpellcasterPlugin:
             pass
 
     def _download_and_insert(self, outputs, label):
-        """Download EVERY output image and insert each as a separate layer.
-
-        Previously this early-returned after the first image, which
-        silently dropped 6/7 of multi-angle outputs and 3/4 of
-        batch-variation outputs. Now iterates the full outputs dict,
-        accumulating each image as its own layer with a stable name.
-
-        Layer naming follows Acly ai_diffusion's pattern:
-          "<op> #N"               -- single-image ops (face_swap, pulid, ...)
-          "<op> - <sub_label>"    -- when the SaveImage node carries a
-                                     meaningful title/label (multi_angle's
-                                     angle slug, klein_batch's variation #)
-        """
-        _MAX = 500 * 1024 * 1024
-        inserted = []
-        counter = 0
-        first_data = None
+        """Download output images and insert as layers."""
         for nid, out in outputs.items():
-            # Pull a sub-label from the node title if the workflow attached
-            # one (multi_angle uses 'front_45' etc.; klein_batch variants
-            # leave it blank).
-            sub_label = ""
-            try:
-                # outputs dict keys are node IDs (strings); look up the
-                # node's title in the local workflow snapshot if we
-                # stashed it. Not always available; treat as optional.
-                meta = (out.get("_meta") or {}) if isinstance(out, dict) else {}
-                sub_label = (meta.get("title") or "").strip()
-            except Exception:
-                sub_label = ""
             for key in ("images", "gifs", "videos"):
-                items = out.get(key, []) if isinstance(out, dict) else []
-                for j, item in enumerate(items):
-                    fn = item.get("filename", "?")
+                for item in out.get(key, []):
+                    fn = item["filename"]
                     sf = item.get("subfolder", "")
                     ft = item.get("type", "output")
-                    url = (f"{self.server}/view?filename={fn}"
-                           f"&subfolder={sf}&type={ft}")
+                    url = f"{self.server}/view?filename={fn}&subfolder={sf}&type={ft}"
                     try:
-                        data = urllib.request.urlopen(
-                            url, timeout=120).read(_MAX + 1)
+                        # 500 MB cap — same as cli.download_output. Beyond
+                        # this the server is streaming garbage and we'd
+                        # rather surface an error than hang the editor.
+                        _MAX = 500 * 1024 * 1024
+                        data = urllib.request.urlopen(url, timeout=120).read(_MAX + 1)
                         if len(data) > _MAX:
                             raise IOError(f"/view exceeded {_MAX} bytes")
-                        if len(data) <= 100:
-                            continue
-                        counter += 1
-                        if first_data is None:
-                            first_data = data
-                            # Re-upload the FIRST image for chaining; the
-                            # caller treats `_last_upload` as the canvas
-                            # after this method returns.
+                        if len(data) > 100:
                             self._last_upload = None
+                            # Re-upload for chaining
+                            chain_name = f"spellcaster_{uuid.uuid4().hex[:8]}.png"
                             if fn.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-                                chain_name = f"spellcaster_{uuid.uuid4().hex[:8]}.png"
-                                try:
-                                    self._upload_raw(chain_name, data)
-                                    self._last_upload = chain_name
-                                except Exception:
-                                    pass
-                        # Build a layer name -- prefer sub_label when set,
-                        # otherwise number them.
-                        if sub_label:
-                            layer_name = f"{label} - {sub_label}"
-                        elif len(items) > 1:
-                            layer_name = f"{label} #{counter}.{j+1}"
-                        else:
-                            layer_name = f"{label} #{counter}"
-                        self.insert_layer(data, layer_name)
-                        # Cross-interface stash -- guild-aware; no-op
-                        # without a guild_url.
-                        try:
+                                self._upload_raw(chain_name, data)
+                                self._last_upload = chain_name
+                            self.insert_layer(data, f"{label}: {fn}")
+                            # Cross-interface stash (§15). No-ops when
+                            # the plugin wasn't constructed with a
+                            # guild_url; otherwise pushes the bytes
+                            # into AssetGallery so every other plugin
+                            # sees the generation via
+                            # ``<origin>.asset.created``.
                             gallery_url = self._stash_in_gallery(
                                 data, kind=label, title=fn)
+                            # Record the canonical URL on the plugin
+                            # so callers that want it can
+                            # ``plugin._last_gallery_url`` without
+                            # re-reading the bytes. Falls back to the
+                            # raw ComfyUI /view URL only when the
+                            # gallery stash didn't happen (no guild
+                            # configured or upload failed).
                             self._last_gallery_url = gallery_url or url
-                        except Exception:
-                            pass
-                        inserted.append(layer_name)
+                            self.show_progress(f"Done! ({len(data)//1024} KB)")
+                            return data
                     except Exception as e:
-                        self.show_error(f"Download failed for {fn}: {e}")
-
-        if inserted:
-            if len(inserted) == 1:
-                self.show_progress(f"Done! Inserted {inserted[0]}")
-            else:
-                self.show_progress(
-                    f"Done! Inserted {len(inserted)} layers "
-                    f"({', '.join(inserted[:3])}{'...' if len(inserted) > 3 else ''})")
-        return first_data
+                        self.show_error(f"Download failed: {e}")
+        return None

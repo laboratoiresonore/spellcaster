@@ -28,7 +28,7 @@ jobs:
     name: Pre-flight (night_maintenance smoke)
     runs-on: ubuntu-latest
     outputs:
-      proceed: ${{ steps.gate.outputs.proceed }}
+      proceed: ${{ steps.decide.outputs.proceed }}
       tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
@@ -55,14 +55,14 @@ jobs:
           # --dry-mode which skips network probes but still exercises
           # mirror-drift + installer audit + log scan. If the local
           # runner ever runs this (self-hosted), the full smoke fires.
-          python tests/night_maintenance.py --dry-mode || echo "smoke-failed=1" >> "$GITHUB_ENV"
-      - name: Decide proceed
-        id: decide
+          python tests/night_maintenance.py --dry-mode
+      - id: decide
+        name: Decide proceed
         run: |
-          if [ "${smoke-failed:-0}" = "1" ]; then
-            echo "proceed=false" >> "$GITHUB_OUTPUT"
-          else
+          if [ "${{ steps.gate.outcome }}" = "success" ]; then
             echo "proceed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
           fi
 
   build:

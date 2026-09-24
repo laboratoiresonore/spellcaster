@@ -1,0 +1,10 @@
+{
+  "model_type": "LoRA",
+  "source_identifier": "AICU/SDXL-LoRA",
+  "license": {
+    "license_name": "mixed-see-readme",
+    "license_link": "https://huggingface.co/AICU/SDXL-LoRA#license",
+    "details": "FAIPL-1.0-SD (Free AI Public License) and CC BY-NC 4.0 for the 25 illustrations. See the README for full licensing terms."
+  },
+  "last_modified": "2026-08-29T10:05:11.000Z"
+}

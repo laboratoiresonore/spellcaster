@@ -18,7 +18,7 @@ Before this registry, these properties were scattered across:
 Now, each architecture is ONE ArchConfig entry that centralises all behaviour.
 Adding a new model = adding one registration via _reg().
 
-SUPPORTED ARCHITECTURES (as of April 2026):
+SUPPORTED ARCHITECTURES (as of September 2026):
   - sd15: Stable Diffusion 1.5 (512x512, checkpoint-based)
   - sdxl: Stable Diffusion XL (1024x1024, checkpoint-based)
   - illustrious: SDXL-based anime model (1024x1024, checkpoint-based)
@@ -1096,6 +1096,25 @@ _reg("lumina2",
      # Builder: workflows.build_lumina2_txt2img.
      supported_methods=("txt2img",),
      scene_group="lumina",
+     registered=True)
+
+# SUPIR -- super-resolution / photo restoration model. The ckpt detector
+# emits `supir` (model_detect.CKPT_ARCH_RULES) as a classification guard so
+# a SUPIR checkpoint is never misread as SD-1.5 (it lacks the standard SD
+# CLIP). It is NOT summoned as a general image wizard -- restoration runs
+# through the explicit `build_supir` 5-stage pipeline (workflows.py) which
+# pairs the SUPIR model with an SDXL base. Registered upscale-only so
+# get_arch("supir") returns a real config instead of silently falling back
+# to SDXL, and a wizard on it advertises only the method its builder serves.
+_reg("supir",
+     loader="checkpoint", sampler="ksampler",
+     clip_mode="bundled", vae_mode="bundled",
+     supports_negative=True,
+     default_resolution=(1024, 1024),
+     default_cfg=4.0, default_steps=45, default_denoise=0.30,
+     default_sampler="dpmpp_2m", default_scheduler="karras",
+     supported_methods=("upscale",),   # SUPIR is restoration/upscale-only
+     scene_group="supir",
      registered=True)
 
 
