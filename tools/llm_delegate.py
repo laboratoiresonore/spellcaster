@@ -63,6 +63,17 @@ if _CORE_PARENT.is_dir() and str(_CORE_PARENT) not in sys.path:
     sys.path.insert(0, str(_CORE_PARENT))
 from spellcaster_core.safe_fetch import safe_post, SafeFetchError  # noqa: E402
 
+# Preflight the loaded model's context window before firing any prompt
+# — see issue #181 (qwen3-8b loaded at 4K for a job that needed 64K).
+# ``tools/`` is already on sys.path when this file runs as a script;
+# add it explicitly for the import-as-module case.
+_TOOLS_DIR = Path(__file__).resolve().parent
+if str(_TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(_TOOLS_DIR))
+from llm_preflight import (  # noqa: E402
+    assert_context, InsufficientContextError,
+)
+
 # Force UTF-8 on Windows
 if sys.platform == "win32":
     try:
@@ -82,11 +93,52 @@ LARGE_MODEL   = "qwen3-30b-a3b"                # use for nuanced summarization
 MAX_FILE_BYTES = 200_000
 
 
+def _endpoint_to_host(endpoint: str) -> str:
+    """Strip ``/v1/chat/completions`` (or any path) from an endpoint
+    URL so the preflight helper can hit ``/v1/models`` on the same
+    host. Falls back to the endpoint verbatim on parse failure — the
+    preflight will then treat it as unreachable and fall back to the
+    manifest, which is the safe direction to fail."""
+    from urllib.parse import urlsplit, urlunsplit
+    try:
+        parts = urlsplit(endpoint)
+        return urlunsplit((parts.scheme, parts.netloc, "", "", ""))
+    except (ValueError, AttributeError):
+        return endpoint
+
+
+def _required_ctx_for_mode(mode: str, input_len: int = 0) -> int:
+    """Per-mode minimum context length the caller needs.
+
+    Filesize-dependent modes scale with the input; casual modes use a
+    small fixed floor. These are floors, not ceilings — a bigger model
+    is always fine.
+    """
+    if mode == "polish-docs":
+        # Diff + source both need to fit — 2x the input plus headroom.
+        return max(8000, input_len * 2 + 4000)
+    if mode == "summarize-log":
+        # We only send the tail (max MAX_FILE_BYTES); reserve for the
+        # summary output.
+        return min(32000, max(8000, input_len + 8000))
+    # ``ask`` and unknown modes: casual, small prompts.
+    return 4000
+
+
 def _post_chat(endpoint: str, model: str,
                system: str, user: str,
                max_tokens: int = 4096,
-               temperature: float = 0.2) -> str:
-    """POST to /v1/chat/completions and return the assistant text."""
+               temperature: float = 0.2,
+               required_ctx: int = 4000) -> str:
+    """POST to /v1/chat/completions and return the assistant text.
+
+    Preflights the loaded model's context against ``required_ctx``
+    before firing — see issue #181. Raises
+    :class:`llm_preflight.InsufficientContextError` on refusal; the
+    caller decides whether to swap models or bubble the error up.
+    """
+    assert_context(model, required_ctx=required_ctx,
+                    host=_endpoint_to_host(endpoint))
     body = json.dumps({
         "model": model,
         "messages": [
@@ -141,7 +193,9 @@ def mode_polish_docs(args) -> int:
         "- Add docstrings only where they explain WHY (intent), not WHAT.\n"
     )
     out = _post_chat(args.endpoint, args.model, system, user,
-                     max_tokens=8192)
+                     max_tokens=8192,
+                     required_ctx=_required_ctx_for_mode(
+                         "polish-docs", len(src)))
     print(out)
     return 0
 
@@ -165,7 +219,9 @@ def mode_summarize_log(args) -> int:
     )
     user = f"File: {p.name}\n\n```\n{tail}\n```"
     out = _post_chat(args.endpoint, args.model, system, user,
-                     max_tokens=2048)
+                     max_tokens=2048,
+                     required_ctx=_required_ctx_for_mode(
+                         "summarize-log", len(tail)))
     print(out)
     return 0
 
@@ -182,7 +238,9 @@ def mode_ask(args) -> int:
     )
     out = _post_chat(args.endpoint, args.model, system, args.prompt,
                      max_tokens=args.max_tokens or 2048,
-                     temperature=args.temperature or 0.3)
+                     temperature=args.temperature or 0.3,
+                     required_ctx=_required_ctx_for_mode(
+                         "ask", len(args.prompt)))
     print(out)
     return 0
 
@@ -219,6 +277,13 @@ def main() -> int:
     args = ap.parse_args()
     try:
         return args.func(args)
+    except InsufficientContextError as e:
+        # Bubble up to the shell — the caller (or the LAN-side
+        # monster) is the layer that decides whether to swap models.
+        # See issue #181 for why this is a hard refusal, not a retry.
+        print(f"preflight refused ({args.model} on {args.endpoint}): "
+              f"{e}", file=sys.stderr)
+        return 3
     except SafeFetchError as e:
         print(f"LLM endpoint refused by safe_fetch allowlist: "
               f"{args.endpoint} — {e}", file=sys.stderr)

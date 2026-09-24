@@ -108,6 +108,7 @@ tests/*
 !tests/test_auto_updater.py
 !tests/test_phase9_ws.py
 !tests/test_safe_fetch.py
+!tests/test_llm_preflight.py
 !tests/gimp_batch.py
 audit_*.py
 

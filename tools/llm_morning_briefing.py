@@ -70,6 +70,24 @@ if _CORE_PARENT.is_dir() and str(_CORE_PARENT) not in sys.path:
 from spellcaster_core.safe_fetch import (  # noqa: E402
     safe_get, safe_post, SafeFetchError,
 )
+
+# Preflight the loaded model's context before firing the briefing
+# prompt (issue #181). ``tools/`` is the same directory this file
+# sits in — add it to sys.path so the import works when the module
+# is invoked via ``python tools/llm_morning_briefing.py``.
+_TOOLS_DIR = Path(__file__).resolve().parent
+if str(_TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(_TOOLS_DIR))
+from llm_preflight import (  # noqa: E402
+    assert_context, InsufficientContextError,
+)
+
+# Minimum context length the morning briefing needs. The prompt +
+# accumulated facts routinely run past 16K tokens; 32K gives headroom
+# for a Voodoomaster night report + open-PR list + 500-line log tails
+# without truncating.
+MORNING_BRIEFING_REQUIRED_CTX = 32000
+
 DEFAULT_OUTPUT = REPO / "_dev_docs" / "morning_briefing.md"
 # Defaults pulled from environment to avoid baking a LAN IP into
 # tracked code (H2 hygiene). Override with --llm-endpoint / --caps.
@@ -318,6 +336,18 @@ def llm_summarize(facts_md: str, endpoint: str, model: str) -> str:
         "they're actually referenced elsewhere in the briefing."
     )
     user = f"FACT DUMP\n\n{facts_md}"
+    # Preflight before firing — a 4K-loaded qwen3-8b would silently
+    # truncate the fact dump and produce a briefing that read as
+    # confident but was actually blind to overnight commits (issue
+    # #181). Better to refuse and let the operator swap.
+    from urllib.parse import urlsplit, urlunsplit
+    try:
+        parts = urlsplit(endpoint)
+        host_url = urlunsplit((parts.scheme, parts.netloc, "", "", ""))
+    except (ValueError, AttributeError):
+        host_url = endpoint
+    assert_context(model, required_ctx=MORNING_BRIEFING_REQUIRED_CTX,
+                    host=host_url)
     body = json.dumps({
         "model": model,
         "messages": [
@@ -373,6 +403,18 @@ def main() -> int:
     print(f"Sending {len(facts_md)} chars to LLM at {args.llm_endpoint} ({args.model})…")
     try:
         summary = llm_summarize(facts_md, args.llm_endpoint, args.model)
+    except InsufficientContextError as e:
+        # Preflight refused — the loaded model can't hold the briefing.
+        # Fall back to raw facts so Claude still gets SOMETHING in the
+        # morning, and shout on stderr so the operator swaps the model
+        # (see issue #181).
+        print(f"LLM preflight refused ({type(e).__name__}: {e}); "
+              f"writing raw facts. Fix: load a model with at least "
+              f"{MORNING_BRIEFING_REQUIRED_CTX} tokens of context, or "
+              f"raise the ceiling in installer/model_capabilities.json.",
+              file=sys.stderr)
+        out.write_text(facts_md, encoding="utf-8")
+        return 1
     except (urllib.error.URLError, OSError, KeyError) as e:
         print(f"LLM call failed ({type(e).__name__}: {e}); writing raw facts.",
               file=sys.stderr)
