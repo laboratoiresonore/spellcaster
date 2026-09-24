@@ -19,13 +19,40 @@ Now, each architecture is ONE ArchConfig entry that centralises all behaviour.
 Adding a new model = adding one registration via _reg().
 
 SUPPORTED ARCHITECTURES (as of September 2026):
+
+Image (checkpoint / unet+clip+vae):
   - sd15: Stable Diffusion 1.5 (512x512, checkpoint-based)
   - sdxl: Stable Diffusion XL (1024x1024, checkpoint-based)
+  - sdxl_turbo: SDXL distill (1024x1024, 1-4 steps, checkpoint-based)
   - illustrious: SDXL-based anime model (1024x1024, checkpoint-based)
+  - pony: SDXL-derived model tuned for stylised subjects
+  - playground: Playground v2.5 SDXL-family
   - zit: Z-Image-Turbo (fast SDXL distill, 4-6 steps, checkpoint-based)
+  - chroma: Chroma (Flux-derived, 1024x1024)
   - flux1dev: Flux Development (1024x1024, separate loaders, dual CLIP)
   - flux2klein: Flux 2 Klein (distilled, 4 steps, separate loaders, custom sampler)
   - flux_kontext: Flux with edit instructions (experimental, separate loaders)
+  - lumina2: Lumina Image 2.0 (separate loaders)
+
+Video:
+  - wan: Wan 2.2 (I2V / T2V / animate; supports video_animate)
+  - ltx: LTX-Video (fast video generation, separate loaders)
+  - hunyuan_video: HunyuanVideo (T2V, separate loaders)
+  - mochi: Genmo Mochi (T2V)
+  - cogvideo: CogVideoX (T2V, separate loaders)
+  - framepack: FramePack (progressive video generation)
+
+3D / restoration:
+  - hunyuan_3d: Hunyuan3D (image-to-3D mesh + texture)
+  - supir: SUPIR upscaler / photorealistic restoration
+  - seedvr: SEEDVR video restoration
+
+Stubs (pending full ArchConfig — schema entry only, builder gated off):
+  - auraflow, hunyuan_dit, kolors, pixart, sd3, sd3_turbo
+
+The `ARCHITECTURES` dict is the runtime source of truth (built from
+`_reg(...)` calls further down); this list is the human-readable index
+and is regenerated when new archs land.
 
 TYPICAL USAGE:
     from _architectures import ARCHITECTURES, get_arch
