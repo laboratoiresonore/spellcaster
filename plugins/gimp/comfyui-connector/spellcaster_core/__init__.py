@@ -25,6 +25,14 @@ USAGE:
 from .architectures import ARCHITECTURES, ArchConfig, get_arch
 from .model_detect import classify_unet_model, classify_ckpt_model
 from .node_factory import NodeFactory
+from .safe_fetch import (
+    ALLOWED_HOSTS,
+    MAX_BYTES,
+    SafeFetchError,
+    safe_get,
+    safe_post,
+    safe_urlopen,
+)
 
 # Load custom architectures from archs/ directory at import time
 try:
@@ -40,4 +48,11 @@ __all__ = [
     "classify_unet_model",
     "classify_ckpt_model",
     "NodeFactory",
+    # safe_fetch — allowlist + audit + size-cap wrapper (Issue #14).
+    "ALLOWED_HOSTS",
+    "MAX_BYTES",
+    "SafeFetchError",
+    "safe_get",
+    "safe_post",
+    "safe_urlopen",
 ]

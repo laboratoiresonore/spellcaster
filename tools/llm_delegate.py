@@ -54,6 +54,15 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+# spellcaster_core lives under plugins/gimp/comfyui-connector/ — hook
+# it onto sys.path so this tool can call the safe_fetch wrapper
+# (allowlist + audit + size cap; Issue #14).
+_REPO = Path(__file__).resolve().parent.parent
+_CORE_PARENT = _REPO / "plugins" / "gimp" / "comfyui-connector"
+if _CORE_PARENT.is_dir() and str(_CORE_PARENT) not in sys.path:
+    sys.path.insert(0, str(_CORE_PARENT))
+from spellcaster_core.safe_fetch import safe_post, SafeFetchError  # noqa: E402
+
 # Force UTF-8 on Windows
 if sys.platform == "win32":
     try:
@@ -88,16 +97,15 @@ def _post_chat(endpoint: str, model: str,
         "temperature": temperature,
         "stream": False,
     }).encode("utf-8")
-    req = urllib.request.Request(
+    resp_bytes = safe_post(
         endpoint,
-        data=body,
+        body,
+        timeout=600,
         headers={"Content-Type": "application/json",
                  "User-Agent": "spellcaster-llm-delegate",
                  "Connection": "close"},
-        method="POST",
     )
-    with urllib.request.urlopen(req, timeout=600) as r:
-        payload = json.loads(r.read().decode("utf-8"))
+    payload = json.loads(resp_bytes.decode("utf-8"))
     choices = payload.get("choices") or []
     if not choices:
         raise RuntimeError(f"LLM returned no choices: {payload}")
@@ -211,6 +219,10 @@ def main() -> int:
     args = ap.parse_args()
     try:
         return args.func(args)
+    except SafeFetchError as e:
+        print(f"LLM endpoint refused by safe_fetch allowlist: "
+              f"{args.endpoint} — {e}", file=sys.stderr)
+        return 2
     except urllib.error.URLError as e:
         print(f"LLM endpoint unreachable: {args.endpoint} — {e}",
               file=sys.stderr)

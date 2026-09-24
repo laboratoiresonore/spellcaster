@@ -40,6 +40,11 @@ from typing import Any, Callable, Iterable, Optional
 import urllib.error
 import urllib.request
 
+# Allowlist + audit + size-cap wrapper. All outbound fetches in this
+# module now go through safe_urlopen (streaming reads with per-call
+# max_bytes caps and a JSONL audit trail; Issue #14).
+from .safe_fetch import safe_urlopen, SafeFetchError
+
 # Text file extensions that get null-byte scrubbing (guards against
 # Windows NTFS corruption where nulls can appear mid-file).
 _TEXT_EXTS = (".py", ".js", ".jsx", ".css", ".json", ".md", ".txt", ".html")
@@ -168,7 +173,7 @@ def fetch_latest_sha(commits_url: str, headers: dict[str, str],
                      timeout: float = 15) -> str:
     """GET <commits_url> → latest commit's SHA. Raises on HTTP error."""
     req = urllib.request.Request(commits_url, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with safe_urlopen(req, timeout=timeout) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     if not data:
         raise ValueError("empty /commits response")
@@ -198,7 +203,7 @@ def fetch_tree(tree_url: str, headers: dict[str, str],
     `remote_filenames`.
     """
     req = urllib.request.Request(tree_url, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with safe_urlopen(req, timeout=timeout) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     if data.get("truncated"):
         raise TruncatedTreeError(
@@ -288,10 +293,24 @@ def download_blob(url: str, expected_size: int, headers: dict[str, str],
     Raises IOError on size mismatch, oversize, or SHA mismatch.
     """
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        # Bounded read — read() without arg is unbounded; we want a
-        # hard ceiling in case the server streams forever.
-        blob = resp.read(max_size + 1)
+    # safe_urlopen enforces the allowlist and refuses a Content-Length
+    # over the cap; the _AuditedResponse it returns also enforces the
+    # cap on the streaming read side. We keep the explicit
+    # ``len(blob) > max_size`` check below so the existing IOError
+    # semantics ("blob exceeds max_size N bytes") stay unchanged for
+    # callers that catch IOError specifically.
+    try:
+        with safe_urlopen(req, timeout=timeout,
+                          max_bytes=max_size + 1) as resp:
+            # Bounded read — read() without arg is unbounded; we want a
+            # hard ceiling in case the server streams forever.
+            blob = resp.read(max_size + 1)
+    except SafeFetchError as exc:
+        # Translate policy refusal into the IOError contract callers
+        # (and the retry wrapper) already understand — "exceeds"
+        # matches the substring test in download_blob_with_retry, so
+        # size-cap refusals are treated as deterministic, non-retryable.
+        raise IOError(f"blob exceeds max_size {max_size} bytes: {exc}")
     if len(blob) > max_size:
         raise IOError(f"blob exceeds max_size {max_size} bytes")
     if expected_size > 0 and len(blob) != expected_size:

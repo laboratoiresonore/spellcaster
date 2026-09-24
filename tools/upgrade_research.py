@@ -80,14 +80,25 @@ import json
 import os
 import sys
 import urllib.error
-import urllib.request
-from contextlib import closing
+import urllib.request  # kept for urllib.request.quote (URL-encoding helper)
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
 _REPO = Path(__file__).resolve().parent.parent
+
+# spellcaster_core lives under plugins/gimp/comfyui-connector/ — make it
+# importable so this stand-alone tool can call the safe_fetch wrapper
+# (allowlist + audit + size cap; Issue #14).
+_CORE_PARENT = _REPO / "plugins" / "gimp" / "comfyui-connector"
+if _CORE_PARENT.is_dir() and str(_CORE_PARENT) not in sys.path:
+    sys.path.insert(0, str(_CORE_PARENT))
+from spellcaster_core.safe_fetch import (  # noqa: E402
+    safe_get,
+    safe_post,
+    SafeFetchError,
+)
 _DEFAULT_OUT_DIR = _REPO / "_dev_docs" / "upgrade_research"
 
 # Categories the research tool knows how to look up.
@@ -367,13 +378,14 @@ def backend_huggingface(methods: list[str], dry_run: bool = False) -> BackendRes
         primary_term = terms[0] if terms else arch_id
         url = f"{_HF_API}?search={primary_term}&sort=downloads&direction=-1&limit=5"
         try:
-            req = urllib.request.Request(
-                url, headers={"User-Agent": "spellcaster-upgrade-research"})
-            with closing(urllib.request.urlopen(req, timeout=10.0)) as resp:
-                body = resp.read()
-                models = json.loads(body.decode("utf-8"))
-        except (urllib.error.URLError, urllib.error.HTTPError,
-                json.JSONDecodeError, OSError, TimeoutError) as exc:
+            body = safe_get(
+                url, timeout=10,
+                headers={"User-Agent": "spellcaster-upgrade-research"},
+            )
+            models = json.loads(body.decode("utf-8"))
+        except (SafeFetchError, urllib.error.URLError,
+                urllib.error.HTTPError, json.JSONDecodeError,
+                OSError, TimeoutError) as exc:
             errors.append(f"{arch_id}: {type(exc).__name__}: {exc}")
             continue
 
@@ -502,13 +514,14 @@ def backend_civitai(methods: list[str], dry_run: bool = False,
             )
             url = f"{_CIVITAI_API}?{params}"
             try:
-                req = urllib.request.Request(
-                    url, headers={"User-Agent": "spellcaster-upgrade-research"})
-                with closing(urllib.request.urlopen(req, timeout=10.0)) as resp:
-                    body = resp.read()
-                    payload = json.loads(body.decode("utf-8"))
-            except (urllib.error.URLError, urllib.error.HTTPError,
-                    json.JSONDecodeError, OSError, TimeoutError) as exc:
+                body = safe_get(
+                    url, timeout=10,
+                    headers={"User-Agent": "spellcaster-upgrade-research"},
+                )
+                payload = json.loads(body.decode("utf-8"))
+            except (SafeFetchError, urllib.error.URLError,
+                    urllib.error.HTTPError, json.JSONDecodeError,
+                    OSError, TimeoutError) as exc:
                 errors.append(f"{arch_id}/{type_}: {type(exc).__name__}: {exc}")
                 continue
 
@@ -592,32 +605,32 @@ def backend_comfy_manager(methods: list[str], comfy_url: str,
     # installed we get a 404; that's fine, surface it.
     url = comfy_url.rstrip("/") + "/customnode/getlist"
     try:
-        req = urllib.request.Request(url)
-        with closing(urllib.request.urlopen(req, timeout=30)) as resp:
-            if resp.status != 200:
-                br.error = f"GET {url} -> HTTP {resp.status}"
-                br.ok = False
-            else:
-                # Real impl would diff this against installed nodes
-                # (D:/AI/ComfyUI/ComfyUI/custom_nodes/*) and propose
-                # pack updates. For the scaffold, just count availability.
-                body = resp.read().decode("utf-8", errors="ignore")
-                try:
-                    data = json.loads(body)
-                    n = len(data.get("custom_nodes", []))
-                    br.candidates.append(Candidate(
-                        method="*",
-                        category="node_pack",
-                        name=f"ComfyUI Manager: {n} packs available",
-                        source="comfy_manager",
-                        rationale="manager reachable; full diff pending impl",
-                        risk="low",
-                        confidence=0.4,
-                    ))
-                except json.JSONDecodeError:
-                    br.error = "manager returned non-JSON"
-                    br.ok = False
-    except urllib.error.URLError as exc:
+        body_bytes = safe_get(url, timeout=30)
+        body = body_bytes.decode("utf-8", errors="ignore")
+        # Real impl would diff this against installed nodes
+        # (D:/AI/ComfyUI/ComfyUI/custom_nodes/*) and propose pack
+        # updates. For the scaffold, just count availability.
+        try:
+            data = json.loads(body)
+            n = len(data.get("custom_nodes", []))
+            br.candidates.append(Candidate(
+                method="*",
+                category="node_pack",
+                name=f"ComfyUI Manager: {n} packs available",
+                source="comfy_manager",
+                rationale="manager reachable; full diff pending impl",
+                risk="low",
+                confidence=0.4,
+            ))
+        except json.JSONDecodeError:
+            br.error = "manager returned non-JSON"
+            br.ok = False
+    except urllib.error.HTTPError as exc:
+        # 404 (Manager not installed) or 5xx — surface as manager unreachable.
+        br.error = f"GET {url} -> HTTP {exc.code}"
+        br.ok = False
+    except (SafeFetchError, urllib.error.URLError, OSError,
+            TimeoutError) as exc:
         br.error = f"manager unreachable: {exc}"
         br.ok = False
     br.ended_at = datetime.now(timezone.utc).isoformat()
@@ -686,15 +699,22 @@ def _local_llm_score(method: str, candidate: Candidate, endpoint: str,
       - score out of valid range
     Caller treats None as "skip — keep candidate's prior confidence".
     """
+    # Attacker-controlled fields (candidate.name / .source / .category
+    # come from the HF or Civitai API, and could contain quote / brace
+    # injection sequences aimed at making the LLM emit a canned
+    # ``{"score": 1.0}`` reply). json.dumps embeds each as a proper
+    # JSON string literal — with escaped quotes and outer quotes of
+    # its own — so no attacker string can break out of its slot in
+    # the prompt. See Issue #14.
     prompt = (
         "You evaluate AI-model upgrade candidates for a Stable Diffusion + "
         "ComfyUI workflow pipeline. Output ONE compact JSON object only, "
         "no prose, no markdown.\n\n"
         f"Spellcaster method: {method}\n"
-        f"Candidate model: {candidate.name}\n"
-        f"Source: {candidate.source}\n"
+        f"Candidate model: {json.dumps(candidate.name)}\n"
+        f"Source: {json.dumps(candidate.source)}\n"
         f"30-day downloads: {candidate.downloads_30d}\n"
-        f"Category: {candidate.category}\n\n"
+        f"Category: {json.dumps(candidate.category)}\n\n"
         "Score 0-1 for likelihood this candidate is a meaningful upgrade "
         "for the method (0 = irrelevant/worse; 1 = clear strict upgrade). "
         "Output exactly:\n"
@@ -706,19 +726,18 @@ def _local_llm_score(method: str, candidate: Candidate, endpoint: str,
         "temperature": 0.2,
         "max_tokens": 200,
     }
-    req = urllib.request.Request(
-        endpoint.rstrip("/") + "/v1/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
-        method="POST",
-        headers={"Content-Type": "application/json"},
-    )
     try:
-        with closing(urllib.request.urlopen(req, timeout=timeout_s)) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
+        body_bytes = safe_post(
+            endpoint.rstrip("/") + "/v1/chat/completions",
+            payload,
+            timeout=timeout_s,
+            headers={"Content-Type": "application/json"},
+        )
+        body = json.loads(body_bytes.decode("utf-8"))
         content = body["choices"][0]["message"]["content"]
-    except (urllib.error.URLError, urllib.error.HTTPError, OSError,
-            TimeoutError, KeyError, IndexError,
-            json.JSONDecodeError) as _:
+    except (SafeFetchError, urllib.error.URLError,
+            urllib.error.HTTPError, OSError, TimeoutError,
+            KeyError, IndexError, json.JSONDecodeError):
         return None
 
     # The LLM may wrap JSON in code fences or surround with prose.
