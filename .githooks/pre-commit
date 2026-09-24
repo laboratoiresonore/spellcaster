@@ -119,4 +119,97 @@ if [ -n "$hits" ]; then
   echo >&2 "  SKIP_LEAK_CHECK=1 set; permitting commit anyway."
 fi
 
+# ----------------------------------------------------------------------
+# Drift gates -- run AFTER leak-scan (leak gets first crack).
+#
+# Both gates are path-gated: they only fire when files they care about
+# are staged. Rationale: keep the common commit fast; the checks that
+# shell out to Python only pay their cost when relevant.
+#
+# `python` on PATH is assumed (already needed by the repo's tests + by
+# builders_manifest_drift.py itself). If it's missing the shell will
+# print its own "not found" line; the drift check is defensive, not
+# a hard-required build gate here.
+# ----------------------------------------------------------------------
+
+# Refresh the staged file list once for the drift checks. We already
+# had one above but scoped to filter-mode; re-collect it plainly so both
+# checks can pattern-match against it without re-shelling.
+staged=$(git diff --cached --name-only 2>/dev/null || true)
+
+# Check A: mirror-drift between surface C (comfyui-spellcaster) and
+# surface 1 (plugins/gimp/comfyui-connector). Fires when a file that
+# lives under either mirrored spellcaster_core/ tree is staged --
+# .py plus the tracked JSON (`builders_manifest.json`,
+# `lora_calibrations_sfw.json`) which are also in MIRROR_FILES.
+mirror_touched=0
+if [ -n "$staged" ]; then
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    case "$f" in
+      plugins/gimp/comfyui-connector/spellcaster_core/*.py|\
+plugins/gimp/comfyui-connector/spellcaster_core/*.json|\
+comfyui-spellcaster/spellcaster_core/*.py|\
+comfyui-spellcaster/spellcaster_core/*.json)
+        mirror_touched=1
+        break
+        ;;
+    esac
+  done <<EOF
+$staged
+EOF
+fi
+
+if [ "$mirror_touched" = "1" ]; then
+  if ! python tests/mirror_drift.py --quiet; then
+    echo >&2 ""
+    echo >&2 "================================================================"
+    echo >&2 "  pre-commit BLOCKED: mirror-drift"
+    echo >&2 "================================================================"
+    echo >&2 "  Mirror-drift detected between"
+    echo >&2 "    plugins/gimp/comfyui-connector/spellcaster_core/"
+    echo >&2 "  and"
+    echo >&2 "    comfyui-spellcaster/spellcaster_core/"
+    echo >&2 "  -- see the diff-in-common report above. Fix and re-stage."
+    echo >&2 "================================================================"
+    exit 1
+  fi
+fi
+
+# Check B: builders_manifest.json freshness. Fires when workflows.py
+# (canonical or GIMP mirror) or the manifest itself (canonical or
+# GIMP mirror) is staged. The check itself regenerates from the
+# canonical workflows.py and byte-compares against the canonical
+# manifest -- so mirror-only edits alone won't trip it (the mirror
+# gate catches those instead).
+manifest_touched=0
+if [ -n "$staged" ]; then
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    case "$f" in
+      plugins/gimp/comfyui-connector/spellcaster_core/workflows.py|\
+comfyui-spellcaster/spellcaster_core/workflows.py|\
+plugins/gimp/comfyui-connector/spellcaster_core/builders_manifest.json|\
+comfyui-spellcaster/spellcaster_core/builders_manifest.json)
+        manifest_touched=1
+        break
+        ;;
+    esac
+  done <<EOF
+$staged
+EOF
+fi
+
+if [ "$manifest_touched" = "1" ]; then
+  if ! python tests/builders_manifest_drift.py; then
+    echo >&2 ""
+    echo >&2 "================================================================"
+    echo >&2 "  pre-commit BLOCKED: builders_manifest.json is stale"
+    echo >&2 "================================================================"
+    echo >&2 "  Run  python tools/build_builders_manifest.py  and re-stage."
+    echo >&2 "================================================================"
+    exit 1
+  fi
+fi
+
 exit 0

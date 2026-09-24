@@ -503,6 +503,10 @@ Every dev edit starts there. Tests run there. CI gates fire there. Once green, t
 
 **Daily auto-research:** a scheduled cloud agent reviews recent SOTA developments (new model releases, custom_node updates, acceleration LoRAs, attention kernels, emerging architectures) every morning and produces a markdown report. Findings get triaged into the upgrade plan.
 
+### Contributor setup — enable the git hooks
+
+Contributors should wire up `.githooks/` so the credential-leak scan and mirror-drift gates run on every commit. Run once per clone: `bash scripts/setup_dev.sh` (or `scripts\setup_dev.bat` on Windows), or by hand with `git config --local core.hookspath .githooks`. Two hooks are wired: **pre-commit** blocks staged content that matches a credential-leak regex (internal IPs, identity strings, tokens) and, when relevant paths are staged, runs the 6-surface mirror-drift + `builders_manifest.json` freshness checks; **pre-push** re-runs the leak scan over the pushed commit range so a `--no-verify` locally still gets caught at push time.
+
 ---
 
 ## Love it? Share it.
