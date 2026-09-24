@@ -32,7 +32,7 @@ except Exception as _e:
 class KritaSpellcaster(SpellcasterPlugin):
     """Krita-specific implementation of the Spellcaster plugin."""
 
-    def __init__(self, server_url="http://192.168.86.28:8190",
+    def __init__(self, server_url="http://127.0.0.1:8190",
                  guild_url=None, origin="krita"):
         # Read user's SAM3-skip preference from Krita settings BEFORE super()
         # so the base class's __init__ doesn't get to set the default.
@@ -875,7 +875,7 @@ class SpellcasterExtension(Extension):
         if not self._plugin:
             # Read server URL from config
             server = Application.readSetting("spellcaster", "server_url",
-                                             "http://192.168.86.28:8190")
+                                             "http://127.0.0.1:8190")
             # Optional Wizard Guild URL (blank = stand-alone mode).
             # Krita settings don't surface blank-by-default strings the
             # way Blender AddonPreferences do, so default to localhost
@@ -1476,7 +1476,7 @@ class SpellcasterExtension(Extension):
         # Server URL
         layout.addWidget(QLabel("ComfyUI Server URL:"))
         url_in = QLineEdit(Application.readSetting(
-            "spellcaster", "server_url", "http://192.168.86.28:8190"))
+            "spellcaster", "server_url", "http://127.0.0.1:8190"))
         layout.addWidget(url_in)
 
         # Skip SAM3 toggle
@@ -2061,7 +2061,7 @@ class SpellcasterDocker(DockWidget):
     def _get_plugin(self):
         if not self._plugin:
             server = Application.readSetting("spellcaster", "server_url",
-                                              "http://192.168.86.28:8190")
+                                              "http://127.0.0.1:8190")
             guild = Application.readSetting("spellcaster", "guild_url",
                                              "http://127.0.0.1:7777")
             self._plugin = KritaSpellcaster(server, guild_url=guild,
@@ -2144,7 +2144,7 @@ class SpellcasterDocker(DockWidget):
     def _on_settings(self):
         from PyQt5.QtWidgets import QInputDialog
         current = Application.readSetting("spellcaster", "server_url",
-                                           "http://192.168.86.28:8190")
+                                           "http://127.0.0.1:8190")
         url, ok = QInputDialog.getText(None, "Spellcaster Settings",
                                         "ComfyUI / Voodoomaster URL:",
                                         text=current)

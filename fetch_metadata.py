@@ -16,9 +16,7 @@ GITHUB_API_BASE = "https://api.github.com"
 def fetch_json(url):
     """Fetch JSON from GitHub API with error handling."""
     ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    
+
     try:
         req = urllib.request.Request(
             url,

@@ -18,7 +18,7 @@ Before this registry, these properties were scattered across:
 Now, each architecture is ONE ArchConfig entry that centralises all behaviour.
 Adding a new model = adding one registration via _reg().
 
-SUPPORTED ARCHITECTURES (as of April 2026):
+SUPPORTED ARCHITECTURES (as of September 2026):
   - sd15: Stable Diffusion 1.5 (512x512, checkpoint-based)
   - sdxl: Stable Diffusion XL (1024x1024, checkpoint-based)
   - illustrious: SDXL-based anime model (1024x1024, checkpoint-based)

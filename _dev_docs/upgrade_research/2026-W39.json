@@ -1,0 +1,171 @@
+{
+  "generated_at": "2026-09-22T16:07:24.627484+00:00",
+  "iso_week": "2026-W39",
+  "methods_in_scope": [
+    "build_img2img",
+    "build_txt2img",
+    "build_generate_anything",
+    "build_rembg",
+    "build_rembg_birefnet",
+    "build_rembg_v3",
+    "build_ddcolor",
+    "build_upscale",
+    "build_2d_to_sbs",
+    "build_2d_to_sbs_extreme",
+    "build_wavespeed_upscale",
+    "build_normal_map",
+    "build_depth_map_v3",
+    "build_lama_remove",
+    "build_lut",
+    "build_color_match",
+    "build_klein_img2img",
+    "build_faceswap",
+    "build_faceswap_model",
+    "build_save_face_model",
+    "build_faceswap_mtb",
+    "build_face_restore",
+    "build_photo_restore",
+    "build_detail_hallucinate",
+    "build_colorize",
+    "build_controlnet_gen",
+    "build_iclight",
+    "build_supir",
+    "build_inpaint",
+    "build_inpaint_fooocus",
+    "build_outpaint",
+    "build_faceid_img2img",
+    "build_pulid_flux",
+    "build_klein_img2img_ref",
+    "build_klein_headswap",
+    "build_video_upscale",
+    "build_video_reactor",
+    "build_wan_video",
+    "build_wan_flf",
+    "build_wan22_t2v",
+    "build_framepack_video",
+    "build_seedvr2_video_upscale",
+    "build_style_transfer",
+    "build_seedv2r",
+    "build_photobooth",
+    "build_klein_repose",
+    "build_klein_blend",
+    "build_klein_batch_variations",
+    "build_klein_inpaint",
+    "build_klein_virtual_tryon",
+    "build_klein_scene_img2img",
+    "build_klein_refine",
+    "build_klein_auto_inpaint",
+    "build_klein_color_match",
+    "build_sam3_segment",
+    "build_sam3_extract",
+    "build_magic_eraser",
+    "build_klein_sam3_inpaint",
+    "build_klein_face_detail",
+    "build_klein_generate_object",
+    "build_klein_detail",
+    "build_layer_blend",
+    "build_upscale_blend",
+    "build_frame_assembly",
+    "build_wan_video_blockswap",
+    "build_hunyuan_video",
+    "build_cogvideo_video",
+    "build_mochi_video",
+    "build_hunyuan_3d_mesh",
+    "build_hunyuan_3d_textured",
+    "build_lumina2_txt2img",
+    "build_wan_animate_video",
+    "build_wan_video_blockswap_t2v",
+    "build_qwen_edit",
+    "build_ltx_video"
+  ],
+  "backend_results": [
+    {
+      "backend": "local_index",
+      "started_at": "2026-09-22T16:07:24.627562+00:00",
+      "ended_at": "2026-09-22T16:07:24.627742+00:00",
+      "ok": true,
+      "error": "",
+      "candidates": []
+    },
+    {
+      "backend": "huggingface",
+      "started_at": "2026-09-22T16:07:24.627749+00:00",
+      "ended_at": "2026-09-22T16:07:24.627758+00:00",
+      "ok": true,
+      "error": "",
+      "candidates": [
+        {
+          "method": "build_klein_repose",
+          "category": "checkpoint",
+          "name": "black-forest-labs/FLUX.1-Klein-2.1",
+          "source": "huggingface",
+          "url": "https://huggingface.co/black-forest-labs/FLUX.1-Klein-2.1",
+          "downloads_30d": 42000,
+          "rationale": "DRY-RUN demo candidate (no network query made) | DRY-RUN: LLM bumped confidence +0.2",
+          "risk": "medium",
+          "confidence": 0.8
+        }
+      ]
+    },
+    {
+      "backend": "civitai",
+      "started_at": "2026-09-22T16:07:24.627761+00:00",
+      "ended_at": "2026-09-22T16:07:24.627766+00:00",
+      "ok": true,
+      "error": "",
+      "candidates": [
+        {
+          "method": "build_illustrious_txt2img",
+          "category": "checkpoint",
+          "name": "WAI-ILLUSTRIOUS-SDXL v1.6.0",
+          "source": "civitai",
+          "url": "https://civitai.com/models/420166",
+          "downloads_30d": 180000,
+          "rationale": "DRY-RUN demo: newer illustrious checkpoint, improved hand anatomy per release notes",
+          "risk": "medium",
+          "confidence": 0.7
+        }
+      ]
+    },
+    {
+      "backend": "comfy_manager",
+      "started_at": "2026-09-22T16:07:24.627769+00:00",
+      "ended_at": "2026-09-22T16:07:24.627772+00:00",
+      "ok": true,
+      "error": "",
+      "candidates": [
+        {
+          "method": "*",
+          "category": "node_pack",
+          "name": "ComfyUI-Spellcaster v2.0 (hypothetical)",
+          "source": "comfy_manager",
+          "url": "https://github.com/laboratoiresonore/ComfyUI-Spellcaster",
+          "downloads_30d": 0,
+          "rationale": "DRY-RUN demo: would query /customnodes/getmappings",
+          "risk": "low",
+          "confidence": 0.9
+        }
+      ]
+    },
+    {
+      "backend": "local_llm",
+      "started_at": "2026-09-22T16:07:24.627778+00:00",
+      "ended_at": "2026-09-22T16:07:24.627784+00:00",
+      "ok": true,
+      "error": "",
+      "candidates": [
+        {
+          "method": "build_klein_repose",
+          "category": "checkpoint",
+          "name": "black-forest-labs/FLUX.1-Klein-2.1",
+          "source": "huggingface",
+          "url": "https://huggingface.co/black-forest-labs/FLUX.1-Klein-2.1",
+          "downloads_30d": 42000,
+          "rationale": "DRY-RUN demo candidate (no network query made) | DRY-RUN: LLM bumped confidence +0.2",
+          "risk": "medium",
+          "confidence": 0.8
+        }
+      ]
+    }
+  ]
+}
