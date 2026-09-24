@@ -86,6 +86,20 @@ MIRROR_FILES = [
     # from so every consumer (GIMP plug-in, Krita picker, Voodoomancer
     # native C-side, NSFW pack) sees the same method catalogue.
     "builders_manifest.json",
+    # safe_fetch — the Issue #14 allowlist/audit/size-cap wrapper.
+    # Every outbound HTTP in the ecosystem funnels through it, so the
+    # policy MUST be byte-identical across all mirrored surfaces:
+    # a drifted allowlist is a security gap.
+    "safe_fetch.py",
+    # __init__.py re-exports safe_fetch's public API alongside the
+    # architecture / node-factory exports; a drifted __init__ would
+    # mean a mirror silently omits (or renames) the wrapper.
+    "__init__.py",
+    # auto_updater — pulled through safe_fetch by Issue #14. The
+    # GIMP-side and Wizard-Guild-side self-update paths both live in
+    # this module; a drifted copy would mean one path enforces the
+    # allowlist and the other doesn't.
+    "auto_updater.py",
 ]
 
 

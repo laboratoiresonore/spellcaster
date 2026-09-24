@@ -61,6 +61,15 @@ if sys.platform == "win32":
         pass
 
 REPO = Path(__file__).resolve().parent.parent
+
+# Hook spellcaster_core onto sys.path so this stand-alone tool can call
+# the safe_fetch wrapper (allowlist + audit + size cap; Issue #14).
+_CORE_PARENT = REPO / "plugins" / "gimp" / "comfyui-connector"
+if _CORE_PARENT.is_dir() and str(_CORE_PARENT) not in sys.path:
+    sys.path.insert(0, str(_CORE_PARENT))
+from spellcaster_core.safe_fetch import (  # noqa: E402
+    safe_get, safe_post, SafeFetchError,
+)
 DEFAULT_OUTPUT = REPO / "_dev_docs" / "morning_briefing.md"
 # Defaults pulled from environment to avoid baking a LAN IP into
 # tracked code (H2 hygiene). Override with --llm-endpoint / --caps.
@@ -165,21 +174,23 @@ def collect_open_prs() -> str:
 
 def collect_capabilities(caps_url: str) -> str:
     try:
-        req = urllib.request.Request(
+        healthz_bytes = safe_get(
             f"{caps_url}/healthz",
+            timeout=5,
             headers={"Connection": "close",
-                     "User-Agent": "spellcaster-morning-briefing"})
-        with urllib.request.urlopen(req, timeout=5) as r:
-            healthz = json.loads(r.read().decode("utf-8"))
-    except (urllib.error.URLError, OSError, ValueError):
+                     "User-Agent": "spellcaster-morning-briefing"},
+        )
+        healthz = json.loads(healthz_bytes.decode("utf-8"))
+    except (SafeFetchError, urllib.error.URLError, OSError, ValueError):
         return f"_(caps server at {caps_url} unreachable)_"
     try:
-        req = urllib.request.Request(
+        caps_bytes = safe_get(
             f"{caps_url}/v1/capabilities",
+            timeout=30,
             headers={"Connection": "close",
-                     "User-Agent": "spellcaster-morning-briefing"})
-        with urllib.request.urlopen(req, timeout=30) as r:
-            caps = json.loads(r.read().decode("utf-8"))
+                     "User-Agent": "spellcaster-morning-briefing"},
+        )
+        caps = json.loads(caps_bytes.decode("utf-8"))
     except Exception:
         return f"_(caps payload fetch failed)_"
     server = caps.get("server", {})
@@ -317,15 +328,13 @@ def llm_summarize(facts_md: str, endpoint: str, model: str) -> str:
         "temperature": 0.2,
         "stream": False,
     }).encode("utf-8")
-    req = urllib.request.Request(
-        endpoint, data=body,
+    resp_bytes = safe_post(
+        endpoint, body, timeout=300,
         headers={"Content-Type": "application/json",
                  "User-Agent": "spellcaster-morning-briefing",
                  "Connection": "close"},
-        method="POST",
     )
-    with urllib.request.urlopen(req, timeout=300) as r:
-        payload = json.loads(r.read().decode("utf-8"))
+    payload = json.loads(resp_bytes.decode("utf-8"))
     # Defensive: a malformed LLM response (rate-limit, model-unloaded,
     # truncated chunk) can produce an empty 'choices' array. Bubble
     # up a clean error rather than an opaque IndexError.
