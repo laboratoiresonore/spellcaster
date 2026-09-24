@@ -1,6 +1,6 @@
 # Nightly scheduling for `llm_morning_briefing.py` + `night_maintenance.py`
 
-Run this once on the the dev host host (or any machine that should host the
+Run this once on the dev host (or any machine that should host the
 nightly cycle). Both scripts are best-effort — failures degrade
 gracefully — so a missed run is recoverable.
 
