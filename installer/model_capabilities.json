@@ -1,0 +1,25 @@
+{
+  "_schema": {
+    "version": 1,
+    "purpose": "Ground-truth model capabilities. Consumed by tools/llm_preflight.py AND by the LAN-side monster orchestrator. Override the server-reported context_length at load time using the values here.",
+    "editing": "Every new local model added to spark1/spark2/LM Studio should get an entry here. Values from the model's HuggingFace config.json (max_position_embeddings) — not the server's advertised value. If the model documents an extended context via RoPE / YaRN scaling, record the scaled value here and note it in `notes` — this is the authoritative override the loader must honor.",
+    "consumers": [
+      "tools/llm_preflight.py::load_manifest / get_declared_context / assert_context",
+      "LAN-side monster orchestrator (reads at model-load time; see issue #181)"
+    ]
+  },
+  "models": {
+    "qwen3-8b": {
+      "context_length": 131072,
+      "notes": "Qwen3-8B; HF config.json max_position_embeddings=40960 native, YaRN scaling to 131072. Monster must load with --context-length 131072 (YaRN) to satisfy Hermes Agent's 64K minimum. LM Studio's default advertise may be as small as 4096."
+    },
+    "qwen3-30b-a3b": {
+      "context_length": 131072,
+      "notes": "Qwen3-30B-A3B MoE. HF config.json max_position_embeddings=40960 native, YaRN scaling to 131072. Same context ceiling as base Qwen3 family."
+    },
+    "qwen2.5-coder-7b-instruct": {
+      "context_length": 32768,
+      "notes": "Qwen2.5 Coder; HF config.json max_position_embeddings=32768. No YaRN scaling; 32K is the hard ceiling."
+    }
+  }
+}

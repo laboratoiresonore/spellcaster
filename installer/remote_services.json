@@ -1,6 +1,15 @@
 {
   "$schema_version": 1,
   "$description": "Dynamic registry of Spellcaster-compatible services. Fetched at runtime from https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main/installer/remote_services.json by both the installer and the antenna. Adding a new service requires no rebuild — edit this file + push.",
+  "context_manifest_path": "installer/model_capabilities.json",
+  "min_ctx_per_job_class": {
+    "_notes": "Consumed by the LAN-side monster orchestrator. Any job dispatched at a job class must have its target model's manifest.context_length >= this value; otherwise monster must swap models or refuse the job. Wizard chat's 4K floor is intentional (casual chat clients). See issue #181 for the incident that motivated this.",
+    "hermes_agent": 64000,
+    "polish_docs": 32000,
+    "summarize_log": 32000,
+    "wizard_chat": 4000,
+    "morning_briefing": 32000
+  },
   "services": [
     {
       "key": "comfyui",
