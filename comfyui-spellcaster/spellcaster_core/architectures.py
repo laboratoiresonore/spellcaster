@@ -18,14 +18,41 @@ Before this registry, these properties were scattered across:
 Now, each architecture is ONE ArchConfig entry that centralises all behaviour.
 Adding a new model = adding one registration via _reg().
 
-SUPPORTED ARCHITECTURES (as of September 2026):
-  - sd15: Stable Diffusion 1.5 (512x512, checkpoint-based)
-  - sdxl: Stable Diffusion XL (1024x1024, checkpoint-based)
-  - illustrious: SDXL-based anime model (1024x1024, checkpoint-based)
-  - zit: Z-Image-Turbo (fast SDXL distill, 4-6 steps, checkpoint-based)
-  - flux1dev: Flux Development (1024x1024, separate loaders, dual CLIP)
-  - flux2klein: Flux 2 Klein (distilled, 4 steps, separate loaders, custom sampler)
-  - flux_kontext: Flux with edit instructions (experimental, separate loaders)
+SUPPORTED ARCHITECTURES (as of September 2026 — 21 registered + 6 stubs = 27 total):
+
+  Image (fully wired, checkpoint- or unet/clip/vae-based):
+    - sd15: Stable Diffusion 1.5 (512x512, checkpoint-based)
+    - sdxl: Stable Diffusion XL (1024x1024, checkpoint-based)
+    - illustrious: SDXL-based anime model (1024x1024, checkpoint-based)
+    - zit: Z-Image-Turbo (fast SDXL distill, 4-6 steps, checkpoint-based)
+    - flux1dev: Flux Development (1024x1024, separate loaders, dual CLIP)
+    - chroma: Chroma (Flux-family fine-tune)
+    - flux2klein: Flux 2 Klein (distilled, 4 steps, separate loaders, custom sampler)
+    - flux_kontext: Flux with edit instructions (separate loaders)
+    - sdxl_turbo: SDXL Turbo distill
+    - pony: Pony Diffusion (SDXL-based)
+    - playground: Playground v2 / v2.5
+    - lumina2: Lumina Next / Lumina 2
+
+  Video (fully wired):
+    - wan: Wan 2.x (video + I2V + animate)
+    - ltx: Lightricks LTX-Video
+    - cogvideo: CogVideoX
+    - framepack: FramePack (long-form)
+    - hunyuan_video: Hunyuan Video
+    - mochi: Mochi 1
+
+  3D and restore (fully wired):
+    - hunyuan_3d: Hunyuan3D 2.x (image-to-3d mesh + texture)
+    - supir: SUPIR photoreal upscaler / restorer
+    - seedvr: SeedVR video restoration
+
+  Stubs (declared with registered=False; loaders not yet wired):
+    - sd3, sd3_turbo, hunyuan_dit, pixart, auraflow, kolors
+
+  NOTE: this enumeration is manually curated; regenerate from the actual
+  ARCHITECTURES dict (or a `python tools/build_builders_manifest.py`
+  pass) when adding or removing an entry.
 
 TYPICAL USAGE:
     from _architectures import ARCHITECTURES, get_arch
