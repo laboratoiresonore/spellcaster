@@ -1,0 +1,28 @@
+{
+  "_id": "6ab7b5eb380cbd8c038c302e",
+  "id": "haqaeb/amira-lora-sdxl",
+  "private": false,
+  "tags": [
+    "region:us"
+  ],
+  "downloads": 0,
+  "likes": 0,
+  "modelId": "haqaeb/amira-lora-sdxl",
+  "author": "haqaeb",
+  "sha": "2b53df32b86b35da0a13ac69782ccedc8d416499",
+  "lastModified": "2026-09-26T17:15:17.000Z",
+  "gated": false,
+  "disabled": false,
+  "config": {},
+  "siblings": [
+    {
+      "rfilename": ".gitattributes"
+    },
+    {
+      "rfilename": "pytorch_lora_weights.safetensors"
+    }
+  ],
+  "spaces": [],
+  "createdAt": "2026-09-26T12:09:15.000Z",
+  "usedStorage": 23390424
+}
