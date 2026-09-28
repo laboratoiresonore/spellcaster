@@ -10312,3 +10312,140 @@ def build_ltx_video(preset, prompt_text, seed,
                           pingpong=pingpong, node_id="50")
 
     return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  HiDream-O1-Image — high-fidelity pixel-native image generation (SOL) via ComfyUI
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_hidream_o1(prompt, seed, *, width=1024, height=1024, steps=25, cfg=5.0,
+                     denoise=1.0, saganaki22_nodes=None, vae_name=None,
+                     loras=None, lora_name=None, lora_strength=1.0,
+                     filename_prefix="hidream-o1/spellcaster") -> dict:
+    """HiDream-O1-Image builder — generate high-fidelity pixel-native images
+    using the HiDream-O1-Transformer (8B, FP8 ~10GB, MIT license) via ComfyUI.
+
+    HiDream-O1 is a pixel-native diffusion model integrated into ComfyUI core.
+    It uses QuadrupleCLIPLoader with clip-l, clip-g, t5xxl, and llama_8b_3.1_instruct
+    text encoders. The builder leverages the Saganaki22 custom nodes for advanced
+    reference image handling and seam smoothing.
+
+    ARCHITECTURE:
+      1. Load HiDreamO1 model via ComfyUI core's hidream_o1 loader
+      2. Load QuadrupleCLIP text encoder (clip-l, clip-g, t5xxl, llama_8b)
+      3. Load VAE (default: hifidelity_vae.safetensors)
+      4. Create empty latent via EmptyHiDreamO1LatentImage
+      5. Apply reference images via HiDreamO1ReferenceImages (if saganaki22_nodes provided)
+      6. Sample via KSampler with custom scheduler
+      7. Decode via VAE
+      8. Apply HiDreamO1PatchSeamSmoothing (optional, for enhanced seam handling)
+
+    Args:
+        prompt: Generation prompt text
+        seed: Random seed for reproducibility
+        width: Output image width (default 1024)
+        height: Output image height (default 1024)
+        steps: Number of sampling steps (default 25)
+        cfg: Classifier-free guidance scale (default 5.0)
+        denoise: Denoise strength (default 1.0)
+        saganaki22_nodes: Dict of Saganaki22 node paths for reference/patch nodes.
+                         If None, uses standard ComfyUI core nodes.
+        vae_name: Custom VAE filename (default: hifidelity_vae.safetensors)
+        loras, lora_name, lora_strength: Optional LoRA chain parameters
+        filename_prefix: Output filename prefix (default "hidream-o1/spellcaster")
+
+    Returns:
+        dict: ComfyUI workflow JSON-serializable dict
+
+    Requires: ComfyUI core with hidream_o1 model loader and QuadrupleCLIPLoader
+              (in recent ComfyUI builds), plus optional Saganaki22 custom nodes
+              for reference image handling and seam smoothing.
+    """
+    nf = NodeFactory()
+
+    # ── Model loading ─────────────────────────────────────────────
+    # HiDreamO1Transformer via ComfyUI core's hidream_o1 loader
+    model_id = nf._add("LoadHiDreamO1Model", {
+        "model_name": "hidream_o1_fp8.safetensors",
+    }, node_id="1")
+
+    # QuadrupleCLIP text encoder (clip-l, clip-g, t5xxl, llama_8b_3.1_instruct)
+    clip_id = nf._add("QuadrupleCLIPLoader", {
+        "clip_name1": "clip_l.safetensors",
+        "clip_name2": "clip_g.safetensors",
+        "clip_name3": "t5xxl_fp16.safetensors",
+        "clip_name4": "llama_8b_3.1_instruct.safetensors",
+    }, node_id="2")
+
+    # VAE loader
+    vae_id = nf.vae_loader(vae_name or "hifidelity_vae.safetensors", node_id="3")
+
+    # ── LoRA chain (optional) ─────────────────────────────────────
+    model_ref = [model_id, 0]
+    if lora_name and not loras:
+        loras = [{"name": lora_name, "strength": lora_strength}]
+
+    if loras:
+        clip_ref = [clip_id, 0]
+        for i, lora in enumerate(loras):
+            lora_id = nf.lora_loader_model_only(model_ref, lora["name"],
+                                                lora.get("strength", 1.0),
+                                                node_id=f"100_{i}")
+            model_ref = [lora_id, 0]
+
+    # ── Text encoding (QuadrupleCLIP → positive/negative) ─────────
+    pos_id = nf.clip_encode([clip_id, 0], prompt, node_id="4")
+    neg_id = nf.clip_encode([clip_id, 0], "", node_id="5")  # Empty negative
+
+    # ── Latent creation (EmptyHiDreamO1LatentImage) ───────────────
+    latent_id = nf._add("EmptyHiDreamO1LatentImage", {
+        "width": width,
+        "height": height,
+        "batch_size": 1,
+    }, node_id="10")
+
+    # ── Reference image handling (Saganaki22 optional) ────────────
+    # If saganaki22_nodes provided, use HiDreamO1ReferenceImages for conditioning
+    if saganaki22_nodes and saganaki22_nodes.get("reference_image"):
+        ref_img_id = nf.load_image(saganaki22_nodes["reference_image"], node_id="11")
+        ref_id = nf._add("HiDreamO1ReferenceImages", {
+            "model": model_ref,
+            "images": [ref_img_id, 0],
+            "strength": saganaki22_nodes.get("reference_strength", 1.0),
+        }, node_id="12")
+        model_ref = [ref_id, 0]  # Update model with reference conditioning
+
+    # ── Sampling (KSampler with custom scheduler) ─────────────────
+    scheduler = "simple"  # Standard scheduler for HiDream-O1
+    sampler = "euler"     # Euler is the canonical sampler for HiDream-O1
+
+    guider_id = nf.cfg_guider(model_ref, [pos_id, 0], [neg_id, 0],
+                               cfg, node_id="20")
+    sampler_id = nf.ksampler_select(sampler, node_id="21")
+    sched_id = nf.basic_scheduler(model_ref, steps, denoise,
+                                   scheduler=scheduler, node_id="22")
+    noise_id = nf.random_noise(seed, node_id="23")
+
+    sample_id = nf.ksampler(
+        [noise_id, 0], [guider_id, 0], [sampler_id, 0],
+        [sched_id, 0], [latent_id, 0], node_id="30",
+    )
+
+    # ── VAE decode ────────────────────────────────────────────────
+    dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="40")
+
+    # ── Optional seam smoothing (Saganaki22) ──────────────────────
+    # Apply HiDreamO1PatchSeamSmoothing if requested
+    if saganaki22_nodes and saganaki22_nodes.get("seam_smoothing"):
+        seam_id = nf._add("HiDreamO1PatchSeamSmoothing", {
+            "image": [dec_id, 0],
+            "strength": saganaki22_nodes.get("seam_strength", 0.5),
+        }, node_id="45")
+        out_ref = [seam_id, 0]
+    else:
+        out_ref = [dec_id, 0]
+
+    # ── Output ────────────────────────────────────────────────────
+    nf.save_image_websocket(out_ref, node_id="50")
+
+    return nf.build()
