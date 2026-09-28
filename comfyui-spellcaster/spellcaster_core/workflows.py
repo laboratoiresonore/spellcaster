@@ -2059,18 +2059,32 @@ def _faceswap_guard(feature: str) -> None:
     guard_faceswap(feature)
 
 
+# HyperSwap 256 model variants - 2× resolution over InSwapper 128
+# 1a/1b/1c refer to different training variants with same resolution
+HYPERSWAP_256_MODELS = (
+    "hyperswap_1a_256.onnx",
+    "hyperswap_1b_256.onnx",
+    "hyperswap_1c_256.onnx",
+)
+
+
 def build_faceswap(target_filename, source_filename, swap_model="inswapper_128.onnx",
                    face_restore_model="codeformer-v0.1.0.pth",
                    face_restore_vis=1.0, codeformer_weight=0.7,
                    detect_gender_input="no", detect_gender_source="no",
                    input_face_idx="0", source_face_idx="0",
-                   quality_preset=None, quality_presets=None) -> dict:
+                   quality_preset=None, quality_presets=None,
+                   use_restore_advanced=False, restore_advanced_vis=0.8) -> dict:
     _faceswap_guard("faceswap")
     """Face swap using ReActor with optional quality presets and restoration.
 
     Swaps faces from source image into target image using ReActor (a face-swap
     node based on ONNX models). Includes optional CodeFormer post-processing
     to restore swapped face quality, with two-pass capability for high quality.
+
+    HyperSwap 256 is available as an opt-in alternative to InSwapper 128,
+    providing 2× internal swap resolution (256 vs 128) with three training
+    variants (1a/1b/1c).
 
     Pipeline:
       1. Load target and source images
@@ -2084,7 +2098,9 @@ def build_faceswap(target_filename, source_filename, swap_model="inswapper_128.o
         target_filename (str): Image to receive the new face
         source_filename (str): Image with face to swap in
         swap_model (str): ONNX swap model file, e.g. "inswapper_128.onnx",
-                         "inswapper_128_fp16.onnx" (default "inswapper_128.onnx")
+                         "inswapper_128_fp16.onnx", "reswapper_256.onnx",
+                         "hyperswap_1a_256.onnx", "hyperswap_1b_256.onnx",
+                         "hyperswap_1c_256.onnx" (default "inswapper_128.onnx")
         face_restore_model (str): CodeFormer or GFPGan model for post-processing
                                 (default "codeformer-v0.1.0.pth")
         face_restore_vis (float): CodeFormer restoration blend, 0.0-1.0
@@ -2099,6 +2115,11 @@ def build_faceswap(target_filename, source_filename, swap_model="inswapper_128.o
                             Overrides swap_model and restore_model if provided
         quality_presets (dict, optional): Maps preset names to
             {"pass1_model": "...", "pass1_restore": "...", "pass1_vis": ..., "pass1_cf": ...}
+        use_restore_advanced (bool): Use ReActorRestoreFace (Advanced) node instead of
+                                   CodeFormer in post-pass for HyperSwap quality pipeline
+                                   (default False - uses CodeFormer)
+        restore_advanced_vis (float): RestoreFace visibility when use_restore_advanced=True
+                                    (0.0-1.0, default 0.8)
 
     Returns:
         dict: ComfyUI workflow with face swap and optional restoration.
@@ -2129,7 +2150,8 @@ def build_faceswap(target_filename, source_filename, swap_model="inswapper_128.o
       - Gender mismatch can cause detection to fail; set to "no" if having issues
       - CodeFormer restoration adds time but significantly improves quality
       - codeformer_weight 0.5-0.7 recommended (too high = over-processing)
-      - Models must be ONNX format (inswapper_*.onnx), not PyTorch
+      - Models must be ONNX format (inswapper_*.onnx, hyperswap_*.onnx), not PyTorch
+      - ReActorRestoreFace ("Restore Face Advanced") requires ReActor ≥ May 12 2026
     """
     if quality_presets and quality_preset and quality_preset in quality_presets:
         qp = quality_presets[quality_preset]
@@ -2166,6 +2188,18 @@ def build_faceswap(target_filename, source_filename, swap_model="inswapper_128.o
     )
 
     result_ref = [swap_id, 0]
+
+    # Restore Face Advanced (ReActorRestoreFace) support for HyperSwap quality pipeline
+    if use_restore_advanced:
+        restore_advanced_id = nf.reactor_restore_face(
+            result_ref,
+            facedetection="retinaface_resnet50",
+            model=face_restore_model,
+            visibility=restore_advanced_vis,
+            codeformer_weight=codeformer_weight,
+            node_id="7",
+        )
+        result_ref = [restore_advanced_id, 0]
 
     # Double-pass: run a second swap with a different model for refinement
     if quality_presets and quality_preset and quality_preset in quality_presets:
@@ -2205,8 +2239,14 @@ def build_faceswap_model(target_filename, face_model_name,
                           face_restore_vis=1.0, codeformer_weight=0.5,
                           detect_gender_input="no", detect_gender_source="no",
                           input_face_idx="0", source_face_idx="0",
-                          quality_preset=None, quality_presets=None) -> dict:
-    """ReActor face swap using a saved face model. Drop-in for _build_faceswap_model()."""
+                          quality_preset=None, quality_presets=None,
+                          use_restore_advanced=False, restore_advanced_vis=0.8) -> dict:
+    """ReActor face swap using a saved face model. Drop-in for _build_faceswap_model().
+
+    HyperSwap 256 is available as an opt-in alternative to InSwapper 128,
+    providing 2× internal swap resolution (256 vs 128) with three training
+    variants (1a/1b/1c).
+    """
     _faceswap_guard("faceswap_model")
     if quality_presets and quality_preset and quality_preset in quality_presets:
         qp = quality_presets[quality_preset]
@@ -2244,6 +2284,18 @@ def build_faceswap_model(target_filename, face_model_name,
     )
 
     result_ref = [swap_id, 0]
+
+    # Restore Face Advanced (ReActorRestoreFace) support for HyperSwap quality pipeline
+    if use_restore_advanced:
+        restore_advanced_id = nf.reactor_restore_face(
+            result_ref,
+            facedetection="retinaface_resnet50",
+            model=face_restore_model,
+            visibility=restore_advanced_vis,
+            codeformer_weight=codeformer_weight,
+            node_id="7",
+        )
+        result_ref = [restore_advanced_id, 0]
 
     # Double-pass
     if quality_presets and quality_preset and quality_preset in quality_presets:

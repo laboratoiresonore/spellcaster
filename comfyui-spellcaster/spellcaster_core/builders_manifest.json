@@ -872,9 +872,19 @@
           "name": "quality_presets",
           "required": false,
           "default": null
+        },
+        {
+          "name": "use_restore_advanced",
+          "required": false,
+          "default": false
+        },
+        {
+          "name": "restore_advanced_vis",
+          "required": false,
+          "default": 0.8
         }
       ],
-      "short_doc": ""
+      "short_doc": "Face swap using ReActor with optional HyperSwap 256 and Restore Face Advanced. Default swap_model is 'inswapper_128.onnx'; use 'hyperswap_1a_256.onnx', 'hyperswap_1b_256.onnx', or 'hyperswap_1c_256.onnx' for 2x resolution."
     },
     {
       "id": "faceswap_model",
@@ -946,6 +956,16 @@
           "name": "quality_presets",
           "required": false,
           "default": null
+        },
+        {
+          "name": "use_restore_advanced",
+          "required": false,
+          "default": false
+        },
+        {
+          "name": "restore_advanced_vis",
+          "required": false,
+          "default": 0.8
         }
       ],
       "short_doc": "ReActor face swap using a saved face model. Drop-in for _build_faceswap_model()."
