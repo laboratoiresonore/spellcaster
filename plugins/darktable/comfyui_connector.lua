@@ -3370,7 +3370,7 @@ function build_pulid_flux_json(image_filename, face_filename, prompt, seed,
   return string.format([[
 {"prompt":{
   "1":{"class_type":"UNETLoader","inputs":{"unet_name":"A-Flux\\Flux2\\flux-2-klein-9b.safetensors","weight_dtype":"default"}},
-  "2":{"class_type":"PuLIDModelLoader","inputs":{"pulid_file":"pulid_flux_v0.9.1.safetensors"}},
+  "2":{"class_type":"PuLIDModelLoader","inputs":{"pulid_file":"pulid_flux2_klein_v2.safetensors"}},
   "3":{"class_type":"PuLIDEVACLIPLoader","inputs":{}},
   "4":{"class_type":"PuLIDInsightFaceLoader","inputs":{"provider":"CUDA"}},
   "5":{"class_type":"CLIPLoader","inputs":{"clip_name":"qwen_3_8b_fp8mixed.safetensors","type":"flux2","device":"default"}},

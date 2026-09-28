@@ -8244,7 +8244,7 @@ def _fetch_pulid_models(server):
         info = _api_get(server, "/object_info/PulidFluxModelLoader")
         return info["PulidFluxModelLoader"]["input"]["required"]["pulid_file"][0]
     except Exception:
-        return ["pulid_flux_v0.9.1.safetensors"]
+        return ["pulid_flux2_klein_v2.safetensors"]
 
 # ── Known ComfyUI error patterns for user-friendly messages ──────────
 _KNOWN_ERRORS = {
@@ -9603,7 +9603,7 @@ def _is_flux2_model(model_name):
 def _build_pulid_flux(target_filename, face_ref_filename,
                       prompt_text, negative_text, seed,
                       flux_model="Flux\\FLUX1 Dev fp8.safetensors",
-                      pulid_model="pulid_flux_v0.9.1.safetensors",
+                      pulid_model="pulid_flux2_klein_v2.safetensors",
                       strength=0.9, steps=20, guidance=3.5,
                       denoise=0.65, width=1024, height=1024,
                       turbo_loras=None, turbo=False):

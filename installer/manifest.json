@@ -902,7 +902,7 @@
         ],
         "pulid": [
           {
-            "path": "pulid/pulid_flux_v0.9.1.safetensors",
+            "path": "pulid/pulid_flux2_klein_v2.safetensors",
             "url": null,
             "page_url": "https://huggingface.co/guozinan/PuLID",
             "note": "PuLID Flux model v0.9.1",

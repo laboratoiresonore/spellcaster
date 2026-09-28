@@ -4390,7 +4390,7 @@
         {
           "name": "pulid_model",
           "required": false,
-          "default": "pulid_flux_v0.9.1.safetensors"
+          "default": "pulid_flux2_klein_v2.safetensors"
         },
         {
           "name": "strength",

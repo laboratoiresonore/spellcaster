@@ -3904,7 +3904,7 @@ def build_faceid_img2img(target_filename, face_ref_filename, preset,
 def build_pulid_flux(target_filename, face_ref_filename,
                       prompt_text, negative_text, seed,
                       flux_model="Flux\\FLUX1 Dev fp8.safetensors",
-                      pulid_model="pulid_flux_v0.9.1.safetensors",
+                      pulid_model="pulid_flux2_klein_v2.safetensors",
                       strength=0.9, steps=20, guidance=3.5,
                       denoise=0.65, width=1024, height=1024,
                       loras=None, enhance=True) -> dict:

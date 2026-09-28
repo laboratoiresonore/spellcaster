@@ -1986,7 +1986,7 @@ class NodeFactory:
             "embeds_scaling": embeds_scaling,
         }, node_id)
 
-    def pulid_flux_model_loader(self, pulid_file="pulid_flux_v0.9.1.safetensors",
+    def pulid_flux_model_loader(self, pulid_file="pulid_flux2_klein_v2.safetensors",
                                  node_id=None):
         """PulidFluxModelLoader — for Flux1 PuLID."""
         return self._add("PulidFluxModelLoader", {
