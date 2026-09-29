@@ -261,6 +261,10 @@ NSFW_METHODS: frozenset[str] = frozenset({
     "build_klein_batch_variations",
     "build_klein_auto_inpaint",
     "build_klein_sam3_inpaint",
+    # ── HiDream-O1 (pixel-native photoreal identity-preserving) ────────
+    # HiDream-O1 is a photoreal identity-preserving model, equivalent to
+    # Klein in terms of license requirements.
+    "build_hidream_o1",
     # ── Face / head identity manipulation ───────────────────────────────
     # ReActor-family face swap + MTB faceswap. Any builder whose canonical
     # job is replacing a face/head in a target image is NSFW-licensed.
