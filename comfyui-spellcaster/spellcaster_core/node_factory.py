@@ -446,6 +446,76 @@ class NodeFactory:
             "use_xformers": "auto",
         }, node_id)
 
+    # ── ComfyUI-core native MoGe v1 (v0.22.0+) ──────────────────────────────
+    def load_moge_model(self, model_name="moge.pt", node_id=None):
+        """LoadMoGeModel — load the MoGe (Monocular Geprior) model.
+        
+        The MoGe model provides depth estimation and surface normal generation
+        using a single-image monocular geometric prior.
+        
+        Args:
+            model_name: Model filename (default: "moge.pt")
+            node_id: Optional fixed node ID
+            
+        Outputs: [0]=MOGE_MODEL
+        """
+        return self._add("LoadMoGeModel", {
+            "model_name": model_name,
+        }, node_id)
+
+    def mo_ge_inference(self, model_ref, image_ref, node_id=None):
+        """MoGeInference — run depth estimation and surface normal generation.
+        
+        Args:
+            model_ref: [model_id, 0] from LoadMoGeModel
+            image_ref: [image_id, 0] from load_image
+            node_id: Optional fixed node ID
+            
+        Outputs: [0]=IMAGE (depth), [1]=IMAGE (normals)
+        """
+        return self._add("MoGeInference", {
+            "model": model_ref,
+            "image": image_ref,
+        }, node_id)
+
+    def mo_ge_render(self, depth_ref, normals_ref, output_type="depth+normals",
+                     node_id=None):
+        """MoGeRender — render final output from depth and normal maps.
+        
+        Args:
+            depth_ref: [depth_id, 0] from MoGeInference [0]
+            normals_ref: [normals_id, 0] from MoGeInference [1]
+            output_type: "depth", "normals", or "depth+normals"
+            node_id: Optional fixed node ID
+            
+        Outputs: [0]=IMAGE (final output)
+        """
+        return self._add("MoGeRender", {
+            "depth": depth_ref,
+            "normals": normals_ref,
+            "output_type": output_type,
+        }, node_id)
+
+    def mo_ge_point_map_to_mesh(self, depth_ref, normals_ref, 
+                                  color_ref=None, node_id=None):
+        """MoGePointMapToMesh — generate GLB mesh from depth+normals.
+        
+        Args:
+            depth_ref: [depth_id, 0] from MoGeInference [0]
+            normals_ref: [normals_id, 0] from MoGeInference [1]
+            color_ref: Optional [image_id, 0] for texture color
+            node_id: Optional fixed node ID
+            
+        Outputs: [0]=MESH, [1]=FILE (GLB path)
+        """
+        inputs = {
+            "depth": depth_ref,
+            "normals": normals_ref,
+        }
+        if color_ref:
+            inputs["color"] = color_ref
+        return self._add("MoGePointMapToMesh", inputs, node_id)
+
     # ── Acly inpaint-nodes (LaMa pre-fill + Fooocus head) ──
     def inpaint_load_model(self, model_name="Places_512_FullData_G.pth",
                             node_id=None):

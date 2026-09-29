@@ -261,9 +261,8 @@ NSFW_METHODS: frozenset[str] = frozenset({
     "build_klein_batch_variations",
     "build_klein_auto_inpaint",
     "build_klein_sam3_inpaint",
-    # ── HiDream-O1 (pixel-native photoreal identity-preserving) ────────
-    # HiDream-O1 is a photoreal identity-preserving model, equivalent to
-    # Klein in terms of license requirements.
+    # ── HiDream family (photoreal identity-preserving) ───────────────────
+    # HiDream-O1 can be used for identity manipulation, similar to Klein.
     "build_hidream_o1",
     # ── Face / head identity manipulation ───────────────────────────────
     # ReActor-family face swap + MTB faceswap. Any builder whose canonical
@@ -1101,20 +1100,39 @@ def build_wavespeed_upscale(image_filename, model="SeedVR2", target="2K") -> dic
 
 def build_normal_map(image_filename, seed=42, max_res=1024,
                       sam3_prompt=None, sam3_invert=False, sam3_confidence=0.6,
-                      sam3_expand=4, sam3_blur=4) -> dict:
-    """Generate 3D surface normal map using NormalCrafter.
+                      sam3_expand=4, sam3_blur=4, use_moge=True) -> dict:
+    """Generate 3D surface normal map using ComfyUI-core MoGe v1 (default)
+    or NormalCrafter (fallback).
 
     Produces a normal map image useful for relighting, 3D reconstruction,
     and ControlNet normal guidance.
 
     When sam3_prompt is set, the transform is composited back onto the original
     using a SAM3 mask so only the described region changes.
+
+    Args:
+        use_moge: If True (default), use native ComfyUI MoGe v1 nodes;
+                  if False, fall back to NormalCrafter
     """
     nf = NodeFactory()
     img_id = nf.load_image(image_filename, node_id="1")
     img_ref = [img_id, 0]
-    normal_id = nf.normal_crafter(img_ref, seed=seed,
-                                   max_res=max_res, node_id="2")
+
+    if use_moge:
+        # Use ComfyUI-core native MoGe v1 pipeline
+        # Load MoGe model → Inference → Render depth+normals
+        moge_model_id = nf.load_moge_model(node_id="2")
+        moge_output_id = nf.mo_ge_inference([moge_model_id, 0], img_ref, node_id="3")
+        # MoGeInference outputs: [0]=depth, [1]=normals
+        depth_ref = [moge_output_id, 0]
+        normals_ref = [moge_output_id, 1]
+        normal_id = nf.mo_ge_render(depth_ref, normals_ref, 
+                                     output_type="normals", node_id="4")
+    else:
+        # Fallback to NormalCrafter
+        normal_id = nf.normal_crafter(img_ref, seed=seed,
+                                       max_res=max_res, node_id="2")
+
     # NormalCrafter may rescale to max_res; resize the original to match the
     # output so ImageCompositeMasked accepts them. We use GetImageSize on the
     # normal output and ImageScale the original to match.
