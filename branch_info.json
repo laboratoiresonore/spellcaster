@@ -1,0 +1,30 @@
+{
+  "default_branch": "main",
+  "other_branches": [
+    "backup-pre-scrub",
+    "chore/claude-md-audit-2026-05-06",
+    "docs/dev-hygiene-mirror-targets-2026-05-13",
+    "feat/antenna-interface-2026-06-13",
+    "feat/builders-manifest",
+    "feat/comfyui-upgrades-2026-05-08",
+    "feat/manifest-target-class-backfill",
+    "feat/manifest-target-class-ssot",
+    "feat/nsfw-source-annotations-2026-05-15",
+    "feat/patch-0009-remove-21-converted-procedures",
+    "feat/patch-0009-remove-converted-procedures",
+    "feat/patch-0009-test-harness-extension",
+    "feat/replay-bridge-surface-2026-05-15",
+    "fix/gimp_batch-3.0.4-pdb-signature",
+    "fix/inpaint-keyerror-malformed-lora-2026-05-09",
+    "fix/klein-pulid-arch-key-alignment",
+    "fix/lama-classname-phantom-cleanup",
+    "hermes/spellcaster/20260718-dedupe-core",
+    "hermes/spellcaster/20260718-wip-consolidation",
+    "hermes/spellcaster/20260907-restore-canonical-core",
+    "merge-t_a5f2b2fb",
+    "spellcaster/t_63fcf6a3-l5-smoke-land-marker-for-spellcaster",
+    "sync/spellcaster-core-mirror-2026-05-08",
+    "t_a5f2b2fb-hidream-o1-builder",
+    "wt/t_6bf4c43d"
+  ]
+}
