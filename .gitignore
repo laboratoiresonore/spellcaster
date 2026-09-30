@@ -109,6 +109,7 @@ tests/*
 !tests/test_phase9_ws.py
 !tests/test_safe_fetch.py
 !tests/test_llm_preflight.py
+!tests/test_fetch_metadata.py
 !tests/gimp_batch.py
 audit_*.py
 
@@ -147,6 +148,8 @@ _embedded_token.py
 /*.png
 /*.gif
 /_*.json
+# fetch_metadata.py test artifact -- script writes this to workspace root.
+/metadata.json
 /_*.bin
 /_*.txt
 /oi.json
