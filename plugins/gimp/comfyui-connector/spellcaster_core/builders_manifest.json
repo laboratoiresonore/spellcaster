@@ -2,7 +2,7 @@
   "schema_version": 3,
   "generator": "spellcaster/tools/build_builders_manifest.py",
   "source": "comfyui-spellcaster/spellcaster_core/workflows.py",
-  "method_count": 75,
+  "method_count": 76,
   "methods": [
     {
       "id": "2d_to_sbs",
@@ -872,6 +872,16 @@
           "name": "quality_presets",
           "required": false,
           "default": null
+        },
+        {
+          "name": "use_restore_advanced",
+          "required": false,
+          "default": false
+        },
+        {
+          "name": "restore_advanced_vis",
+          "required": false,
+          "default": 0.8
         }
       ],
       "short_doc": ""
@@ -946,6 +956,16 @@
           "name": "quality_presets",
           "required": false,
           "default": null
+        },
+        {
+          "name": "use_restore_advanced",
+          "required": false,
+          "default": false
+        },
+        {
+          "name": "restore_advanced_vis",
+          "required": false,
+          "default": 0.8
         }
       ],
       "short_doc": "ReActor face swap using a saved face model. Drop-in for _build_faceswap_model()."
@@ -1235,6 +1255,82 @@
         }
       ],
       "short_doc": "Generate any object/person as a transparent layer using ANY model."
+    },
+    {
+      "id": "hidream_o1",
+      "builder": "build_hidream_o1",
+      "label": "HiDream-O1-Image builder — generate high-fidelity pixel-native images",
+      "kind": "other",
+      "model_family": "generic",
+      "target_class": "HiDreamO1PatchSeamSmoothing",
+      "nsfw": true,
+      "input_slots": [],
+      "params": [
+        {
+          "name": "prompt",
+          "required": true
+        },
+        {
+          "name": "seed",
+          "required": true
+        },
+        {
+          "name": "width",
+          "required": false,
+          "default": 1024
+        },
+        {
+          "name": "height",
+          "required": false,
+          "default": 1024
+        },
+        {
+          "name": "steps",
+          "required": false,
+          "default": 25
+        },
+        {
+          "name": "cfg",
+          "required": false,
+          "default": 5.0
+        },
+        {
+          "name": "denoise",
+          "required": false,
+          "default": 1.0
+        },
+        {
+          "name": "saganaki22_nodes",
+          "required": false,
+          "default": null
+        },
+        {
+          "name": "vae_name",
+          "required": false,
+          "default": null
+        },
+        {
+          "name": "loras",
+          "required": false,
+          "default": null
+        },
+        {
+          "name": "lora_name",
+          "required": false,
+          "default": null
+        },
+        {
+          "name": "lora_strength",
+          "required": false,
+          "default": 1.0
+        },
+        {
+          "name": "filename_prefix",
+          "required": false,
+          "default": "hidream-o1/spellcaster"
+        }
+      ],
+      "short_doc": "HiDream-O1-Image builder — generate high-fidelity pixel-native images"
     },
     {
       "id": "hunyuan_3d_mesh",
@@ -4080,10 +4176,10 @@
     {
       "id": "normal_map",
       "builder": "build_normal_map",
-      "label": "Generate 3D surface normal map using NormalCrafter",
+      "label": "Generate a 3D surface normal map using ComfyUI-core native MoGe",
       "kind": "image",
       "model_family": "detect",
-      "target_class": "NormalCrafterNode",
+      "target_class": "LoadMoGeModel",
       "input_slots": [
         "image_filename"
       ],
@@ -4127,9 +4223,39 @@
           "name": "sam3_blur",
           "required": false,
           "default": 4
+        },
+        {
+          "name": "use_moge",
+          "required": false,
+          "default": true
+        },
+        {
+          "name": "moge_model_name",
+          "required": false,
+          "default": "moge_2_vitl_normal_fp16.safetensors"
+        },
+        {
+          "name": "moge_normal_space",
+          "required": false,
+          "default": "normal_opengl"
+        },
+        {
+          "name": "moge_resolution_level",
+          "required": false,
+          "default": 9
+        },
+        {
+          "name": "include_depth",
+          "required": false,
+          "default": false
+        },
+        {
+          "name": "include_glb",
+          "required": false,
+          "default": false
         }
       ],
-      "short_doc": "Generate 3D surface normal map using NormalCrafter."
+      "short_doc": "Generate a 3D surface normal map using ComfyUI-core native MoGe"
     },
     {
       "id": "outpaint",

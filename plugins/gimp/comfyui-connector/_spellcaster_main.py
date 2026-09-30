@@ -3311,9 +3311,10 @@ def _add_normal_map_selector(dialog, box, image):
     dialog._normal_auto_gen.set_active(True)
     dialog._normal_auto_gen.set_tooltip_text(
         "When you click OK, if no normal-map layer is selected, one will\n"
-        "be generated automatically via NormalCrafter before the main\n"
-        "workflow runs. Adds ~10-30 s to the first run; subsequent runs\n"
-        "in the same session reuse the layer. Turn this off if you\n"
+        "be generated automatically (native MoGe, or NormalCrafter as a\n"
+        "fallback) before the main workflow runs. Adds ~10-30 s to the\n"
+        "first run; subsequent runs in the same session reuse the layer.\n"
+        "Turn this off if you\n"
         "explicitly don't want 3D guidance (rare — the map improves\n"
         "almost every result).")
     fbox.pack_start(dialog._normal_auto_gen, False, False, 0)
@@ -3350,10 +3351,17 @@ def _add_normal_map_selector(dialog, box, image):
             srv = (_load_config().get("server_url")
                    or COMFYUI_DEFAULT_URL)
             nodes = _probe_comfyui_nodes(srv)
-            if nodes and "NormalCrafterNode" not in nodes:
+            # build_normal_map's default path (use_moge=True, since the
+            # 2026-09-29 MoGe-2 migration) only needs ComfyUI-core's
+            # native LoadMoGeModel -- NOT the NormalCrafterNode custom
+            # pack. Gate on either being present so this doesn't
+            # falsely block installs that have native MoGe but never
+            # added the NormalCrafter pack (the now-common case).
+            if nodes and not ({"LoadMoGeModel", "NormalCrafterNode"} & nodes):
                 gen_status.set_markup(
-                    '<span color="#c06040">⚠ Install NormalCrafter '
-                    'node on ComfyUI first.</span>')
+                    '<span color="#c06040">Install the MoGe geometry '
+                    'model (ComfyUI v0.22.0+, ships in core) or the '
+                    'NormalCrafter node on ComfyUI first.</span>')
                 return
             gen_btn.set_sensitive(False)
             gen_status.set_text("Exporting canvas…")
@@ -3751,17 +3759,25 @@ def _collect_normal_map_from_dialog(dlg, image, server_url,
 
     # Path 2: auto-generate when nothing is picked + auto-gen is ON.
     if (not idx_id or idx_id == "none") and auto_cb is not None and auto_cb.get_active():
-        # Preflight NormalCrafter before spending time on export/upload.
+        # Preflight before spending time on export/upload. build_normal_map's
+        # default path (use_moge=True, since the 2026-09-29 MoGe-2
+        # migration) only needs ComfyUI-core's native LoadMoGeModel --
+        # NOT the NormalCrafterNode custom pack. Gate on either being
+        # present so installs with only native MoGe (the now-common
+        # case) aren't falsely blocked.
         try:
             nodes = _probe_comfyui_nodes(server_url)
-            if nodes and "NormalCrafterNode" not in nodes:
+            if nodes and not ({"LoadMoGeModel", "NormalCrafterNode"} & nodes):
                 try:
                     Gimp.message(
-                        "3D Normal Map auto-generation needs the "
-                        "NormalCrafter node on your ComfyUI server.\n\n"
-                        "Either install it (ComfyUI Manager → search "
-                        "'NormalCrafter') or untick 'Auto-generate if "
-                        "missing' to skip 3D guidance for this run.")
+                        "3D Normal Map auto-generation needs either the "
+                        "MoGe geometry model (ComfyUI v0.22.0+, ships in "
+                        "core -- just download a geometry_estimation "
+                        "checkpoint) or the NormalCrafter node on your "
+                        "ComfyUI server.\n\n"
+                        "Either install one of them or untick "
+                        "'Auto-generate if missing' to skip 3D guidance "
+                        "for this run.")
                 except Exception:
                     pass
                 return None

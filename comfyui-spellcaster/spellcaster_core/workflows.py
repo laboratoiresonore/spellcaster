@@ -1100,34 +1100,70 @@ def build_wavespeed_upscale(image_filename, model="SeedVR2", target="2K") -> dic
 
 def build_normal_map(image_filename, seed=42, max_res=1024,
                       sam3_prompt=None, sam3_invert=False, sam3_confidence=0.6,
-                      sam3_expand=4, sam3_blur=4, use_moge=True) -> dict:
-    """Generate 3D surface normal map using ComfyUI-core MoGe v1 (default)
-    or NormalCrafter (fallback).
+                      sam3_expand=4, sam3_blur=4, use_moge=True,
+                      moge_model_name="moge_2_vitl_normal_fp16.safetensors",
+                      moge_normal_space="normal_opengl",
+                      moge_resolution_level=9,
+                      include_depth=False, include_glb=False) -> dict:
+    """Generate a 3D surface normal map using ComfyUI-core native MoGe
+    (default) or NormalCrafter (fallback).
+
+    MoGe-1 / MoGe-2 / MoGe-3 are NOT separate node classes in ComfyUI core
+    -- they're the same LoadMoGeModel -> MoGeInference -> MoGeRender /
+    MoGePointMapToMesh node family (comfy_extras/nodes_moge.py, added
+    v0.22.0 PR #13878). The generation is selected purely by which
+    checkpoint `moge_model_name` points at; the default here
+    ("moge_2_vitl_normal_fp16.safetensors", ~660MB FP16 ViT-L) is MoGe-2,
+    from the Comfy-Org/MoGe HF repo (folder "geometry_estimation").
 
     Produces a normal map image useful for relighting, 3D reconstruction,
-    and ControlNet normal guidance.
+    and ControlNet normal guidance -- this is always the primary/first
+    websocket image result, exactly like the old NormalCrafter-only
+    version, so existing callers that take ``results[0]`` as "the normal
+    map" (GIMP plugin_base.py normal_map(), _spellcaster_main.py's
+    normal-map-gen dialog and auto-normal-map path) are unaffected.
 
     When sam3_prompt is set, the transform is composited back onto the original
-    using a SAM3 mask so only the described region changes.
+    using a SAM3 mask so only the described region changes. NOTE: SAM3
+    compositing only applies to the primary normal-map image, not to the
+    optional depth/GLB outputs below.
 
     Args:
-        use_moge: If True (default), use native ComfyUI MoGe v1 nodes;
+        use_moge: If True (default), use native ComfyUI MoGe nodes;
                   if False, fall back to NormalCrafter
+        moge_model_name: geometry_estimation checkpoint filename (MoGe
+                  generation is picked by which file this names)
+        moge_normal_space: "normal_opengl" (default; +Y up -- Blender,
+                  Substance, Unity, glTF/GLB) or "normal_directx"
+                  (-Y down -- Unreal). Ignored when use_moge=False.
+        moge_resolution_level: 0 (fastest) .. 9 (most detail, default).
+                  Ignored when use_moge=False.
+        include_depth: If True, ALSO emit the MoGe depth map as a second,
+                  separately-labeled ("depth") websocket image after the
+                  primary normal map. Ignored (and unavailable) when
+                  use_moge=False -- NormalCrafter has no depth output.
+        include_glb: If True, ALSO mesh the MoGe geometry
+                  (MoGePointMapToMesh) and write it to a .glb via SaveGLB.
+                  Terminal/disk-only -- does not appear in the returned
+                  image list. Ignored when use_moge=False.
     """
     nf = NodeFactory()
     img_id = nf.load_image(image_filename, node_id="1")
     img_ref = [img_id, 0]
 
+    moge_geometry_ref = None
     if use_moge:
-        # Use ComfyUI-core native MoGe v1 pipeline
-        # Load MoGe model → Inference → Render depth+normals
-        moge_model_id = nf.load_moge_model(node_id="2")
-        moge_output_id = nf.mo_ge_inference([moge_model_id, 0], img_ref, node_id="3")
-        # MoGeInference outputs: [0]=depth, [1]=normals
-        depth_ref = [moge_output_id, 0]
-        normals_ref = [moge_output_id, 1]
-        normal_id = nf.mo_ge_render(depth_ref, normals_ref, 
-                                     output_type="normals", node_id="4")
+        # Native ComfyUI MoGe pipeline: LoadMoGeModel -> MoGeInference ->
+        # MoGeRender. MoGeInference returns ONE opaque MOGE_GEOMETRY handle
+        # (not separate depth/normal tensors) -- MoGeRender is called once
+        # per desired view.
+        moge_model_id = nf.load_moge_model(moge_model_name, node_id="2")
+        geometry_id = nf.mo_ge_inference([moge_model_id, 0], img_ref,
+                                          resolution_level=moge_resolution_level,
+                                          node_id="3")
+        moge_geometry_ref = [geometry_id, 0]
+        normal_id = nf.mo_ge_render(moge_geometry_ref,
+                                     output=moge_normal_space, node_id="4")
     else:
         # Fallback to NormalCrafter
         normal_id = nf.normal_crafter(img_ref, seed=seed,
@@ -1150,7 +1186,25 @@ def build_normal_map(image_filename, seed=42, max_res=1024,
             upscale_method="lanczos", crop="disabled", node_id="911",
         )
         final_ref = apply_sam3_scope(nf, final_ref, [orig_resized_id, 0], _mask)
-    nf.save_image_websocket(final_ref, node_id="3")
+    # Primary output -- always emitted first, preserving the historical
+    # "results[0] is the normal map" contract for existing callers.
+    # node_id left auto-assigned from here on: save_image_websocket's
+    # disk_backup=True path always auto-allocates its SaveImage sibling
+    # (node_factory.py::save_image_websocket), so hand-pinning IDs for
+    # the nodes that follow risks silently clobbering it (NodeFactory._add
+    # has no collision guard -- confirmed the hard way while wiring this).
+    nf.save_image_websocket(final_ref, label="normal")
+
+    if use_moge and include_depth:
+        depth_id = nf.mo_ge_render(moge_geometry_ref, output="depth")
+        nf.save_image_websocket([depth_id, 0], label="depth",
+                                 disk_backup=True)
+
+    if use_moge and include_glb:
+        mesh_id = nf.mo_ge_point_map_to_mesh(moge_geometry_ref)
+        nf.save_glb([mesh_id, 0],
+                    filename_prefix="3D/spellcaster_normal_map")
+
     return nf.build()
 
 

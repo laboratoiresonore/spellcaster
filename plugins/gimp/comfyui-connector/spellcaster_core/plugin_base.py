@@ -425,8 +425,9 @@ class SpellcasterPlugin:
     def normal_map(self, max_res=1024):
         """Generate a 3D surface-normal map of the active canvas.
 
-        Runs NormalCrafter on the server and inserts the resulting
-        RGB normal-map as a new layer. The layer is named
+        Runs ComfyUI-core native MoGe on the server (NormalCrafter as a
+        fallback -- see build_normal_map) and inserts the resulting RGB
+        normal-map as a new layer. The layer is named
         ``"Normal Map (auto)"`` so subsequent IC-Light / inpaint /
         img2img calls can pick it up via
         :meth:`get_normal_map_png`-aware downstream logic.

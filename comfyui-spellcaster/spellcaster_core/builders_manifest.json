@@ -1260,9 +1260,10 @@
       "id": "hidream_o1",
       "builder": "build_hidream_o1",
       "label": "HiDream-O1-Image builder — generate high-fidelity pixel-native images",
-      "kind": "nsfw",
-      "model_family": "hidream_o1",
+      "kind": "other",
+      "model_family": "generic",
       "target_class": "HiDreamO1PatchSeamSmoothing",
+      "nsfw": true,
       "input_slots": [],
       "params": [
         {
@@ -4175,10 +4176,10 @@
     {
       "id": "normal_map",
       "builder": "build_normal_map",
-      "label": "Generate 3D surface normal map using NormalCrafter",
+      "label": "Generate a 3D surface normal map using ComfyUI-core native MoGe",
       "kind": "image",
       "model_family": "detect",
-      "target_class": "NormalCrafterNode",
+      "target_class": "LoadMoGeModel",
       "input_slots": [
         "image_filename"
       ],
@@ -4222,9 +4223,39 @@
           "name": "sam3_blur",
           "required": false,
           "default": 4
+        },
+        {
+          "name": "use_moge",
+          "required": false,
+          "default": true
+        },
+        {
+          "name": "moge_model_name",
+          "required": false,
+          "default": "moge_2_vitl_normal_fp16.safetensors"
+        },
+        {
+          "name": "moge_normal_space",
+          "required": false,
+          "default": "normal_opengl"
+        },
+        {
+          "name": "moge_resolution_level",
+          "required": false,
+          "default": 9
+        },
+        {
+          "name": "include_depth",
+          "required": false,
+          "default": false
+        },
+        {
+          "name": "include_glb",
+          "required": false,
+          "default": false
         }
       ],
-      "short_doc": "Generate 3D surface normal map using NormalCrafter."
+      "short_doc": "Generate a 3D surface normal map using ComfyUI-core native MoGe"
     },
     {
       "id": "outpaint",

@@ -446,75 +446,136 @@ class NodeFactory:
             "use_xformers": "auto",
         }, node_id)
 
-    # ── ComfyUI-core native MoGe v1 (v0.22.0+) ──────────────────────────────
-    def load_moge_model(self, model_name="moge.pt", node_id=None):
-        """LoadMoGeModel — load the MoGe (Monocular Geprior) model.
-        
-        The MoGe model provides depth estimation and surface normal generation
-        using a single-image monocular geometric prior.
-        
+    # -- ComfyUI-core native MoGe (v0.22.0+, comfy_extras/nodes_moge.py) ----
+    # IMPORTANT: MoGe-1 / MoGe-2 / MoGe-3 are NOT separate node classes.
+    # They are all the same LoadMoGeModel -> MoGeInference -> MoGeRender /
+    # MoGePointMapToMesh node family; the generation is selected purely by
+    # which checkpoint `model_name` points at (e.g.
+    # "moge_2_vitl_normal_fp16.safetensors" = MoGe-2 ViT-L, ~660MB FP16,
+    # from the Comfy-Org/MoGe HF repo, folder "geometry_estimation").
+    # Schema below is ground-truth-verified against a live ComfyUI
+    # /object_info on spark2 (python_module comfy_extras.nodes_moge) on
+    # 2026-09-29 -- the prior version of these methods guessed a
+    # two-output (depth, normals) MoGeInference signature that does not
+    # exist; MoGeInference actually returns a single opaque MOGE_GEOMETRY
+    # handle that MoGeRender / MoGePointMapToMesh each consume.
+    def load_moge_model(self, model_name, node_id=None):
+        """LoadMoGeModel -- load a MoGe geometry-estimation checkpoint.
+
         Args:
-            model_name: Model filename (default: "moge.pt")
+            model_name: filename under ComfyUI's `geometry_estimation`
+                model folder (e.g. "moge_2_vitl_normal_fp16.safetensors").
+                Selects the MoGe generation -- there is no default; pick
+                the enum value for whichever checkpoint is installed.
             node_id: Optional fixed node ID
-            
+
         Outputs: [0]=MOGE_MODEL
         """
         return self._add("LoadMoGeModel", {
             "model_name": model_name,
         }, node_id)
 
-    def mo_ge_inference(self, model_ref, image_ref, node_id=None):
-        """MoGeInference — run depth estimation and surface normal generation.
-        
+    def mo_ge_inference(self, moge_model_ref, image_ref, *,
+                         resolution_level=9, fov_x_degrees=0.0,
+                         batch_size=1, force_projection=True,
+                         apply_mask=True, refine_steps=3, node_id=None):
+        """MoGeInference -- run MoGe on an image to estimate depth/geometry.
+
         Args:
-            model_ref: [model_id, 0] from LoadMoGeModel
+            moge_model_ref: [model_id, 0] from load_moge_model
             image_ref: [image_id, 0] from load_image
+            resolution_level: 0 (fastest) .. 9 (most detail)
+            fov_x_degrees: source camera horizontal FOV in degrees;
+                0 = auto-recover from the predicted points
+            batch_size: images per inference call (lower on OOM)
+            force_projection: see live node tooltip (advanced)
+            apply_mask: set masked-out/invalid pixels to inf so meshing
+                culls them; disable to keep raw predicted geometry
+            refine_steps: MoGe-3-only volumetric refinement passes
+                (0-8); ignored by MoGe-1/MoGe-2
             node_id: Optional fixed node ID
-            
-        Outputs: [0]=IMAGE (depth), [1]=IMAGE (normals)
+
+        Outputs: [0]=MOGE_GEOMETRY (opaque handle; feed to mo_ge_render
+            and/or mo_ge_point_map_to_mesh -- NOT separate depth/normal
+            image tensors)
         """
         return self._add("MoGeInference", {
-            "model": model_ref,
+            "moge_model": moge_model_ref,
             "image": image_ref,
+            "resolution_level": int(resolution_level),
+            "fov_x_degrees": float(fov_x_degrees),
+            "batch_size": int(batch_size),
+            "force_projection": bool(force_projection),
+            "apply_mask": bool(apply_mask),
+            "refine_steps": int(refine_steps),
         }, node_id)
 
-    def mo_ge_render(self, depth_ref, normals_ref, output_type="depth+normals",
-                     node_id=None):
-        """MoGeRender — render final output from depth and normal maps.
-        
+    def mo_ge_render(self, moge_geometry_ref, output="depth", node_id=None):
+        """MoGeRender -- render ONE image view from MOGE_GEOMETRY.
+
+        Call this once per desired output -- it emits a single IMAGE per
+        call, not a depth+normal pair. To get both a depth map and a
+        normal map, call it twice against the same moge_geometry_ref.
+
         Args:
-            depth_ref: [depth_id, 0] from MoGeInference [0]
-            normals_ref: [normals_id, 0] from MoGeInference [1]
-            output_type: "depth", "normals", or "depth+normals"
+            moge_geometry_ref: [geometry_id, 0] from mo_ge_inference
+            output: one of "depth", "depth_colored", "normal_opengl",
+                "normal_directx", "mask". OpenGL = +Y up (Blender,
+                Substance, Unity, glTF); DirectX = -Y down (Unreal).
             node_id: Optional fixed node ID
-            
-        Outputs: [0]=IMAGE (final output)
+
+        Outputs: [0]=IMAGE
         """
         return self._add("MoGeRender", {
-            "depth": depth_ref,
-            "normals": normals_ref,
-            "output_type": output_type,
+            "moge_geometry": moge_geometry_ref,
+            "output": output,
         }, node_id)
 
-    def mo_ge_point_map_to_mesh(self, depth_ref, normals_ref, 
-                                  color_ref=None, node_id=None):
-        """MoGePointMapToMesh — generate GLB mesh from depth+normals.
-        
+    def mo_ge_point_map_to_mesh(self, moge_geometry_ref, *, batch_index=0,
+                                  decimation=1, discontinuity_threshold=0.04,
+                                  texture=True, node_id=None):
+        """MoGePointMapToMesh -- convert MOGE_GEOMETRY into a MESH (with
+        UVs/color/texture baked in from the source image), ready for
+        SaveGLB.
+
         Args:
-            depth_ref: [depth_id, 0] from MoGeInference [0]
-            normals_ref: [normals_id, 0] from MoGeInference [1]
-            color_ref: Optional [image_id, 0] for texture color
+            moge_geometry_ref: [geometry_id, 0] from mo_ge_inference
+            batch_index: which image of a batched geometry to mesh
+                (per-image vertex counts differ; batches can't stack)
+            decimation: vertex stride; 1 = full resolution
+            discontinuity_threshold: drop pixels whose 3x3 depth span
+                exceeds this fraction of scale; 0 = off
+            texture: carry the source image through as baseColor texture
             node_id: Optional fixed node ID
-            
-        Outputs: [0]=MESH, [1]=FILE (GLB path)
+
+        Outputs: [0]=MESH
         """
-        inputs = {
-            "depth": depth_ref,
-            "normals": normals_ref,
-        }
-        if color_ref:
-            inputs["color"] = color_ref
-        return self._add("MoGePointMapToMesh", inputs, node_id)
+        return self._add("MoGePointMapToMesh", {
+            "moge_geometry": moge_geometry_ref,
+            "batch_index": int(batch_index),
+            "decimation": int(decimation),
+            "discontinuity_threshold": float(discontinuity_threshold),
+            "texture": bool(texture),
+        }, node_id)
+
+    def save_glb(self, mesh_ref, filename_prefix="3D/spellcaster_mesh",
+                 node_id=None):
+        """SaveGLB -- write a MESH (or FILE_3D_*) to a .glb file on disk
+        (ComfyUI core class, comfy_extras/nodes_save_3d.py).
+
+        Args:
+            mesh_ref: [mesh_id, 0] from mo_ge_point_map_to_mesh (or any
+                other MESH-producing node)
+            filename_prefix: output prefix under ComfyUI's output/ dir;
+                supports subdirs (e.g. "3D/...")
+            node_id: Optional fixed node ID
+
+        Terminal node -- no outputs (output_node=True).
+        """
+        return self._add("SaveGLB", {
+            "mesh": mesh_ref,
+            "filename_prefix": filename_prefix,
+        }, node_id)
 
     # ── Acly inpaint-nodes (LaMa pre-fill + Fooocus head) ──
     def inpaint_load_model(self, model_name="Places_512_FullData_G.pth",
