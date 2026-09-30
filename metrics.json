@@ -1,0 +1,14 @@
+{
+  "downloads": 158,
+  "likes": 0,
+  "stars": null,
+  "forks": null,
+  "open_issues": null,
+  "last_commit_date": "2026-09-30T05:58:33.000Z",
+  "last_issue_comment_date": null,
+  "notes": {
+    "stars_forks_open_issues": "Not available via HuggingFace API - HuggingFace does not track stars, forks, or open issues for models. These metrics are GitHub-specific and only apply to repositories, not model cards.",
+    "last_commit_date": "Source: HuggingFace API lastModified field for the model",
+    "source": "carpedm20/flux2dev-fp8-transformer-rtx5090-sm120 on HuggingFace"
+  }
+}
