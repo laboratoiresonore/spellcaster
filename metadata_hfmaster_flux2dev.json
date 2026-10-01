@@ -1,0 +1,30 @@
+{
+  "repo_id": "hfmaster/flux2dev",
+  "description": "Flux2 model repository by hfmaster",
+  "topics": [
+    "image-generation",
+    "flux",
+    "diffusion"
+  ],
+  "star_count": 0,
+  "fork_count": 0,
+  "open_issues_count": 0,
+  "latest_commit_date": "2026-09-30 21:31:06+00:00",
+  "default_branch": "main",
+  "primary_language": null,
+  "readme": null,
+  "cicd_badges": [],
+  "author": "hfmaster",
+  "created_at": "2026-09-30 20:32:08+00:00",
+  "last_modified": "2026-09-30 21:31:06+00:00",
+  "sha": "37c68d056853e46abe476e1646074f08ffb1eb7d",
+  "files": [
+    ".gitattributes",
+    "Artius-Flux2-Dev-v1.tsmodel",
+    "mistral_3_small_flux2_int8_convrot.safetensors"
+  ],
+  "branches": [
+    "main"
+  ],
+  "tags": []
+}
