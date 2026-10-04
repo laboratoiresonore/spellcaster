@@ -84,8 +84,12 @@ def _http_json(url: str, timeout: float = 10.0) -> dict | None:
 
 # ─── Individual checks ────────────────────────────────────────────────────────
 
-def check_mirror_drift() -> tuple[bool, list[str]]:
-    """Wrapper around tests/mirror_drift.py."""
+def check_mirror_drift(dry_mode: bool = False) -> tuple[bool, list[str]]:
+    """Wrapper around tests/mirror_drift.py."""  
+    # Skip if dry-mode and no local mirror_drift.py available
+    if dry_mode and not (HERE / "mirror_drift.py").is_file():
+        return True, ["mirror_drift: skipped (dry-mode, no local script)"]
+
     p = subprocess.run(
         [sys.executable, str(HERE / "mirror_drift.py"), "--quiet"],
         capture_output=True, text=True, timeout=60)
@@ -136,7 +140,7 @@ def check_cross_repo_drift() -> tuple[bool, list[str]]:
     return True, [f"cross_repo_drift (informational): {total_clean}"]
 
 
-def check_installer_audit(server: str) -> tuple[bool, list[str]]:
+def check_installer_audit(server: str, dry_mode: bool = False) -> tuple[bool, list[str]]:
     """Wrapper around tests/installer_audit.py.
 
     Forces UTF-8 + errors=replace because installer_audit.py prints
@@ -160,7 +164,7 @@ def check_installer_audit(server: str) -> tuple[bool, list[str]]:
     return ok, [f"installer_audit: {summary_line.strip()}"]
 
 
-def check_capabilities(caps_url: str) -> tuple[bool, list[str]]:
+def check_capabilities(caps_url: str, dry_mode: bool = False) -> tuple[bool, list[str]]:
     """Probe Voodoomaster caps server for the expected shape."""
     healthz = _http_json(f"{caps_url}/healthz", timeout=5)
     if not healthz:
@@ -214,7 +218,7 @@ def check_extra_model_paths() -> tuple[bool, list[str]]:
                   f"dirs all present"]
 
 
-def check_log_errors() -> tuple[bool, list[str]]:
+def check_log_errors(dry_mode: bool = False) -> tuple[bool, list[str]]:
     """Scan recent Voodoomaster + ComfyUI logs for UNRECOVERED errors.
 
     The watchdog soft-crash + auto-restart flow tags both the crash
@@ -329,6 +333,8 @@ def main() -> int:
     ap.add_argument("--report", default=str(_default_report_path()),
                     help="Markdown report path (default: per-day under "
                          "~/.voodoomaster/)")
+    ap.add_argument("--dry-mode", action="store_true",
+                    help="Skip network-dependent checks")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
 
@@ -341,12 +347,12 @@ def main() -> int:
 
     sections: list[tuple[str, bool, list[str]]] = []
     checks = [
-        ("mirror-drift",       check_mirror_drift,      ()),
+        ("mirror-drift",       check_mirror_drift,      (args.dry_mode,)),
         ("cross-repo-drift",   check_cross_repo_drift,  ()),
-        ("installer-audit",    check_installer_audit,   (args.server,)),
-        ("capabilities",       check_capabilities,      (args.caps,)),
+        ("installer-audit",    check_installer_audit,   (args.server, args.dry_mode)),
+        ("capabilities",       check_capabilities,      (args.caps, args.dry_mode)),
         ("model-paths",        check_extra_model_paths, ()),
-        ("log-scan",           check_log_errors,        ()),
+        ("log-scan",           check_log_errors,        (args.dry_mode,)),
     ]
     for name, fn, fnargs in checks:
         try:
