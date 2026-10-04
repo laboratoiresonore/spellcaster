@@ -43,7 +43,7 @@
 
 <div align="center">
 
-<strong>📣 Status — September 2026</strong>
+<strong>📣 Status — October 2026</strong>
 
 <table>
 <tr><td><strong>🆕 News</strong></td><td>Self-healing installer + honest diagnostic validator landed. Local-LLM (LM Studio) prompt-enhancement promoted to canon, optional bearer-token auth across the HTTP surfaces, automated 6-surface mirror sync. DaVinci Resolve plugin is still in test — bug reports welcome.</td></tr>
@@ -197,7 +197,7 @@ Pick the thing you want. One tool per row. The **Best in** column tells you the 
 </tr>
 <tr>
 <td width="16%" align="center"><img src="assets/showcase_spellcaster_cat.gif" alt="Spellcaster — the mascot cat wizard" width="100%"/></td>
-<td><strong>Have fun and generate whatever the hell I want</strong><br/><sub>Text to Image across 9 model families. Type "a cat wizard reading a spellbook." Get a cat wizard reading a spellbook. 25 scene presets.</sub></td>
+<td><strong>Have fun and generate whatever the hell I want</strong><br/><sub>Text to Image across 10 model families. Type "a cat wizard reading a spellbook." Get a cat wizard reading a spellbook. 25 scene presets.</sub></td>
 <td width="18%"><sub>🧙 <strong>Wizard Guild</strong> — just type it, the wizards route it ·<br/>🖌️ <strong>GIMP</strong> — Text to Image dialog</sub></td>
 </tr>
 <tr>
