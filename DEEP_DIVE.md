@@ -1,6 +1,6 @@
 # Spellcaster — Deep Dive
 
-Everything the [README](README.md) intentionally left out. Architecture, subsystems, every tool enumerated, cross-app flows, all 9 model families, the scaffold state machines, the antenna, the prompt enhancement chain. If you read ingredient lists on cereal boxes, this is for you.
+Everything the [README](README.md) intentionally left out. Architecture, subsystems, every tool enumerated, cross-app flows, all 10 model families, the scaffold state machines, the antenna, the prompt enhancement chain. If you read ingredient lists on cereal boxes, this is for you.
 
 > ### 🤖 Working on this codebase with an LLM?
 >
@@ -646,7 +646,7 @@ All of this travels through **one** canonical URL shape: `/api/assets/<hash>`. P
 
 Every "Enhance prompt" click (automatic on most tools, manual on others) routes through a three-layer LLM rewrite so the raw prompt the user typed becomes the exact flavour the target model was trained on.
 
-- **Per-architecture profile** (`_ARCH_ENHANCE_PROFILES` in [prompt_enhance.py](comfyui-spellcaster/spellcaster_core/prompt_enhance.py)) — 9 architectures each with their own `max_tokens`, target `length`, `style`, and guidance notes. SDXL gets booru-style comma-separated tags (≤256 tokens). Flux 1 Dev and LTX Video get verbose natural-language paragraphs (512–768 tokens). Klein gets concise bullet-style descriptions with subject preservation. Illustrious gets a "SUBJECT PRESERVATION" block that stops it from inventing extra characters when the user asks for a single subject.
+- **Per-architecture profile** (`_ARCH_ENHANCE_PROFILES` in [prompt_enhance.py](comfyui-spellcaster/spellcaster_core/prompt_enhance.py)) — 11 architectures each with their own `max_tokens`, target `length`, `style`, and guidance notes. SDXL gets booru-style comma-separated tags (≤256 tokens). Flux 1 Dev and LTX Video get verbose natural-language paragraphs (512–768 tokens). Klein gets concise bullet-style descriptions with subject preservation. Illustrious gets a "SUBJECT PRESERVATION" block that stops it from inventing extra characters when the user asks for a single subject.
 - **Per-method profile** (`_METHOD_PROFILES`) — 41+ method-level overrides. `refine`, `detailed_visual`, `colorize`, `iclight`, `face_detail`, etc. Each method extends the arch baseline with `extra_notes`, `length_override`, or `max_tokens`. A `skip` flag suppresses enhancement for methods where the raw prompt is already optimal (edit-by-instruction, ZIT). Methods inherit from parents up to 5 levels deep so groups stay DRY.
 - **Per-family VRAM management** (`_PER_FAMILY_LLM_CONFIG` in [comfyui_llm.py](comfyui-spellcaster/spellcaster_core/comfyui_llm.py)) — `keep_model_loaded`, `keep_last_prompt`, `max_quant_bits`, `max_model_size_b`, `poll_timeout_s` all tuned per diffusion family. SD 1.5 runs with `keep_last_prompt=False` after the cross-prompt cache-bleed incident (iclight was returning colorize output); Flux 2 Klein keeps the LLM loaded between calls because its sampler is slow enough to mask the reload cost.
 - **Per-model overrides** — `~/.spellcaster/llm_prompt_settings.json` stores optimal settings per checkpoint as the user fine-tunes them. Atomic writes via `tempfile + os.replace` so a crash mid-save can't corrupt the file.
@@ -919,7 +919,7 @@ The actual Resolve automation runs in a Python script in Resolve's scripting eng
 
 ## 🖼️ Everything else worth mentioning
 
-- **9-architecture `ArchConfig` registry** ([architectures.py](comfyui-spellcaster/spellcaster_core/architectures.py)) — every arch declares its loader (checkpoint / unet_clip_vae / etc.), sampler, CFG, denoise, resolution, supports-negative flag, prompt style, LoRA prefixes, ControlNet model, turbo config, CLIP+VAE filenames, quality positive/negative tails, autoset LoRA lists per method. One object drives every builder.
+- **21-architecture `ArchConfig` registry** (27 `_reg(...)` entries, 21 fully active and 6 marked `registered=False` as stubs) ([architectures.py](comfyui-spellcaster/spellcaster_core/architectures.py)) — every arch declares its loader (checkpoint / unet_clip_vae / etc.), sampler, CFG, denoise, resolution, supports-negative flag, prompt style, LoRA prefixes, ControlNet model, turbo config, CLIP+VAE filenames, quality positive/negative tails, autoset LoRA lists per method. One object drives every builder.
 - **`NodeFactory` DSL** ([node_factory.py](comfyui-spellcaster/spellcaster_core/node_factory.py)) — every ComfyUI node type is a typed Python method call. Zero raw dicts. Refactors ripple through every workflow without string-editing JSON.
 - **Composites** ([composites.py](comfyui-spellcaster/spellcaster_core/composites.py)) — multi-node helpers that compose into a canonical shape: `load_model_stack`, `inject_lora_chain`, `encode_prompts`, `build_klein_enhancer_chain`, etc. Every builder that wants these behaviours gets them by calling the composite; there is no parallel implementation anywhere.
 - **Model detect** ([model_detect.py](comfyui-spellcaster/spellcaster_core/model_detect.py)) — maps filename → architecture + family. Handles SD1.5 vs SDXL vs Illustrious vs Pony vs Flux Dev vs Klein vs Kontext vs Chroma vs LTX vs Wan. Extensive test matrix for adversarial filenames (`wan_mixl` shouldn't match "xl" before "wan").
@@ -931,9 +931,9 @@ The actual Resolve automation runs in a Python script in Resolve's scripting eng
 
 ## For developers
 
-If you're reading this section voluntarily, you're either evaluating this for a pull request or you're the kind of person who reads disassembly for fun. Either way: welcome. You will find no clean abstractions here. Only 22,000 lines of Python that somehow work, a node factory that generates ComfyUI workflows like a possessed printer, and a boot shim so paranoid it has three backup plans for its backup plan. Godspeed.
+If you're reading this section voluntarily, you're either evaluating this for a pull request or you're the kind of person who reads disassembly for fun. Either way: welcome. You will find no clean abstractions here. Only ~35,700 lines of Python that somehow work, a node factory that generates ComfyUI workflows like a possessed printer, and a boot shim so paranoid it has three backup plans for its backup plan. Godspeed.
 
-- **9 model architectures**: SD 1.5, SDXL, Illustrious/Pony, ZIT, Flux Dev, Flux 2 Klein (4B/9B), Flux Kontext, Chroma, LTX, Wan — each with full `ArchConfig` (loader, sampler, CFG, denoise, resolution, prompt style, LoRA prefixes, ControlNet support, turbo config)
+- **10 model architectures**: SD 1.5, SDXL, Illustrious/Pony, ZIT, Flux Dev, Flux 2 Klein (4B/9B), Flux Kontext, Chroma, LTX, Wan — each with full `ArchConfig` (loader, sampler, CFG, denoise, resolution, prompt style, LoRA prefixes, ControlNet support, turbo config)
 - **NodeFactory DSL** — every ComfyUI node type is a typed method call. No raw dicts.
 - **Crash-safe boot shim** — 228-line immutable loader + 3-tier recovery (backup → GitHub → visible error). GIMP never bricks.
 - **Scaffold system** — LLM state machines (`scaffold/`) that guide users conversationally. Meta Wizard → sub-wizards → build functions. Designed for 7B models.
