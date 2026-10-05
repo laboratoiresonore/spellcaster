@@ -336,6 +336,12 @@ def main() -> int:
     ap.add_argument("--dry-mode", action="store_true",
                     help="Skip network-dependent checks")
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--dry-mode", action="store_true",
+                    help="Skip checks that require LAN/local paths "
+                         "(installer-audit, capabilities, model-paths); "
+                         "keep mirror-drift, cross-repo-drift, log-scan. "
+                         "Used by the nightly GitHub Actions preflight, "
+                         "which cannot reach the dev host.")
     args = ap.parse_args()
 
     if not args.quiet:
@@ -354,6 +360,9 @@ def main() -> int:
         ("model-paths",        check_extra_model_paths, ()),
         ("log-scan",           check_log_errors,        (args.dry_mode,)),
     ]
+    if args.dry_mode:
+        _DRY_SKIP = {"installer-audit", "capabilities", "model-paths"}
+        checks = [c for c in checks if c[0] not in _DRY_SKIP]
     for name, fn, fnargs in checks:
         try:
             ok, detail = fn(*fnargs)

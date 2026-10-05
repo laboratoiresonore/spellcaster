@@ -350,3 +350,318 @@ def _guess_ext(data: bytes, default: str = "bin") -> str:
     if stripped in (b"{", b"["):
         return "json"
     return default
+
+
+# ────────────────────────────────────────────────────────────────────────
+# Whimweaver replay-value bridge surface (proxy helpers)
+# ────────────────────────────────────────────────────────────────────────
+#
+# These three helpers expose just enough of spellcaster's identity-
+# preserving pipeline for whimweaver's "infinite memory + HIGH replay
+# value" character system. Whimweaver owns the on-disk reservoir layout
+# (one JSONL per character at `<reservoir_root>/<character_id>/
+# portraits.jsonl`); these helpers only read/write that file.
+#
+# The functions are deliberately I/O-cheap and import-cheap — no ComfyUI
+# submission happens here. They return a builder-name + builder-kwargs
+# dict that whimweaver passes to its existing spellcaster_proxy +
+# ComfyUI submitter.
+#
+# See `_dev_docs/WHIMWEAVER_REPLAY_BRIDGE_PROPOSAL.md` for full schema +
+# integration notes.
+
+
+_PORTRAITS_FILENAME = "portraits.jsonl"
+
+
+# Builder routing order — best identity preservation first. We prefer
+# PuLID-Flux for face-locked generation, then Klein img2img_ref with
+# identity_lock=True, then Klein headswap, then plain Klein img2img,
+# then SDXL img2img as a last resort.
+_BUILDER_PREFERENCE: tuple[str, ...] = (
+    "build_pulid_flux",
+    "build_klein_img2img_ref",
+    "build_klein_headswap",
+    "build_klein_img2img",
+    "build_sdxl_img2img",
+)
+
+
+def _portraits_path(reservoir_root, character_id: str) -> str:
+    """Resolve the JSONL path for a character. `reservoir_root` may be a
+    Path or a str — we accept either to keep the proxy boundary thin."""
+    root = os.fspath(reservoir_root)
+    return os.path.join(root, character_id, _PORTRAITS_FILENAME)
+
+
+def _read_portrait_records(portraits_path: str) -> list[dict]:
+    """Load every JSON line. Skips blank/corrupt lines silently — the
+    whimweaver writer is append-only and a half-written tail line is
+    expected on crash."""
+    if not os.path.isfile(portraits_path):
+        return []
+    records: list[dict] = []
+    try:
+        with open(portraits_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    records.append(json.loads(line))
+                except (json.JSONDecodeError, ValueError):
+                    # Tolerate one bad tail line (crash mid-write).
+                    continue
+    except OSError:
+        return []
+    return records
+
+
+def _write_portrait_records_atomic(portraits_path: str,
+                                   records: list[dict]) -> bool:
+    """Rewrite the JSONL atomically via tempfile + os.replace."""
+    parent = os.path.dirname(portraits_path)
+    try:
+        os.makedirs(parent, exist_ok=True)
+    except OSError:
+        return False
+    fd, tmp = tempfile.mkstemp(prefix=".tmp_portraits_", dir=parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            for r in records:
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+        os.replace(tmp, portraits_path)
+        return True
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        return False
+
+
+def get_character_portrait_history(
+    character_id: str,
+    *,
+    reservoir_root,
+    limit: int = 20,
+) -> list[dict]:
+    """Return portrait records for a character, newest first.
+
+    Each record carries:
+      - portrait_id          (str, unique within the character)
+      - image_path           (str, abs path or gallery-hash:// URI)
+      - builder              (str, one of the build_* names)
+      - model_family         (str, e.g. "flux2_klein", "flux1_dev", "sdxl")
+      - prompt_seed          (int)
+      - parent_portrait_id   (str | None, points to the reference portrait
+                              this one was conditioned on)
+      - generated_at         (float, unix ts)
+      - canonical            (bool, the seed portrait for the consistency
+                              loop — there should be at most one True)
+
+    Returns [] when the reservoir file is missing or empty.
+    """
+    if not character_id:
+        return []
+    portraits_path = _portraits_path(reservoir_root, character_id)
+    records = _read_portrait_records(portraits_path)
+    records.sort(key=lambda r: r.get("generated_at", 0.0), reverse=True)
+    if limit > 0:
+        records = records[:limit]
+    return records
+
+
+def _pick_reference_portrait(records: list[dict]) -> dict | None:
+    """Return the portrait whimweaver should condition on:
+      1. The first record marked canonical=True (newest if multiple).
+      2. Otherwise the newest record overall.
+      3. None if records is empty."""
+    if not records:
+        return None
+    canonical = [r for r in records if r.get("canonical")]
+    if canonical:
+        canonical.sort(key=lambda r: r.get("generated_at", 0.0), reverse=True)
+        return canonical[0]
+    return records[0]  # newest by virtue of caller sorting
+
+
+def _builder_supported(builder: str, feature_caps: dict | None) -> bool:
+    """Cheap capability check. The /v1/capabilities payload exposes a
+    `builders` map (builder_name → {available: bool, ...}) per the
+    spellcaster manifest. We default to True when caps are absent so
+    proxy callers without /v1/capabilities still get a usable result."""
+    if not feature_caps:
+        return True
+    builders = feature_caps.get("builders") or {}
+    if not isinstance(builders, dict):
+        return True
+    entry = builders.get(builder)
+    if entry is None:
+        # Not listed = assume unavailable (caps was provided, builder
+        # missing means the host doesn't ship it).
+        return False
+    if isinstance(entry, dict):
+        return bool(entry.get("available", True))
+    return bool(entry)
+
+
+def build_consistent_portrait_for_character(
+    character_id: str,
+    prompt: str,
+    *,
+    reservoir_root,
+    builder_hint: str | None = None,
+    feature_caps: dict | None = None,
+) -> dict:
+    """Pick the best identity-preserving builder for this character and
+    return a submission packet for whimweaver to dispatch.
+
+    Returns a dict shaped like:
+        {
+          "builder":              "build_pulid_flux" | "build_klein_*" | ...,
+          "builder_args":         {kwargs ready to pass through proxy},
+          "reference_portrait_id": str | None,
+          "reference_image_path": str | None,
+          "fallback_chain":       [str, ...],   # builders considered, in order
+        }
+
+    `builder_hint` (optional) lets the caller force-prefer a specific
+    builder name — it is honored when feature_caps allow it, otherwise
+    we fall through the default preference order.
+
+    This function does NOT submit anything to ComfyUI. The caller is
+    expected to import `spellcaster_proxy.<builder>` and submit the
+    resulting workflow themselves.
+    """
+    if not character_id:
+        raise ValueError("character_id is required")
+    if not prompt:
+        raise ValueError("prompt is required")
+
+    history = get_character_portrait_history(
+        character_id, reservoir_root=reservoir_root, limit=20
+    )
+    ref = _pick_reference_portrait(history)
+    ref_id = ref.get("portrait_id") if ref else None
+    ref_path = ref.get("image_path") if ref else None
+
+    # Build the preference order. Honor builder_hint when supported.
+    pref: list[str] = list(_BUILDER_PREFERENCE)
+    if builder_hint and builder_hint in pref:
+        pref.remove(builder_hint)
+        pref.insert(0, builder_hint)
+
+    # If no reference image is on file, the identity-preserving builders
+    # have nothing to lock onto — fall back to plain image-to-image or
+    # text-to-image. We expose this via the chain anyway so the caller
+    # can decide.
+    if ref_path is None:
+        pref = [b for b in pref if b not in (
+            "build_pulid_flux",
+            "build_klein_img2img_ref",
+            "build_klein_headswap",
+        )]
+        if not pref:
+            pref = ["build_klein_img2img"]
+
+    # Pick the first builder the caps allow.
+    chosen: str | None = None
+    for b in pref:
+        if _builder_supported(b, feature_caps):
+            chosen = b
+            break
+    if chosen is None:
+        # Caps blocked everything in our preference order. Fall back to
+        # the most permissive option so callers can at least try.
+        chosen = pref[0]
+
+    builder_args = _builder_args_for(
+        chosen, prompt=prompt, ref_path=ref_path, ref=ref,
+    )
+
+    return {
+        "builder": chosen,
+        "builder_args": builder_args,
+        "reference_portrait_id": ref_id,
+        "reference_image_path": ref_path,
+        "fallback_chain": pref,
+    }
+
+
+def _builder_args_for(builder: str, *, prompt: str,
+                      ref_path: str | None, ref: dict | None) -> dict:
+    """Translate the chosen builder into a kwargs dict whimweaver can
+    splat onto the proxy call. We pass only minimal fields here — the
+    caller layers their own seed, model, lora, and dimension policy on
+    top. The seed (when ref exists) defaults to the reference portrait's
+    seed so re-rolls tend to converge."""
+    seed = (ref or {}).get("prompt_seed") if ref else None
+
+    if builder == "build_pulid_flux":
+        return {
+            "face_ref_filename": ref_path,
+            "prompt_text": prompt,
+            "negative_text": "",
+            "seed": seed,
+        }
+    if builder == "build_klein_img2img_ref":
+        return {
+            "ref_filename": ref_path,
+            "image_filename": ref_path,  # caller may override with a base
+            "prompt_text": prompt,
+            "seed": seed,
+            "identity_lock": True,
+        }
+    if builder == "build_klein_headswap":
+        return {
+            "target_filename": ref_path,  # caller usually overrides w/ new body
+            "source_filename": ref_path,
+            "prompt": prompt,
+            "seed": seed,
+            "use_identity_lock": True,
+        }
+    if builder == "build_klein_img2img":
+        return {
+            "image_filename": ref_path,
+            "prompt_text": prompt,
+            "seed": seed,
+        }
+    # SDXL fallback — caller wires the actual SDXL builder name in their
+    # workflows module if they want it; we expose a generic shape.
+    return {
+        "image_filename": ref_path,
+        "prompt_text": prompt,
+        "seed": seed,
+    }
+
+
+def mark_canonical_portrait(
+    character_id: str,
+    portrait_id: str,
+    *,
+    reservoir_root,
+) -> bool:
+    """Set canonical=True on the named portrait and canonical=False on
+    every other portrait for the same character.
+
+    Returns True when the target portrait_id was found and the file was
+    rewritten successfully; False otherwise (missing file, missing id,
+    or write failure)."""
+    if not character_id or not portrait_id:
+        return False
+    portraits_path = _portraits_path(reservoir_root, character_id)
+    records = _read_portrait_records(portraits_path)
+    if not records:
+        return False
+    found = False
+    for r in records:
+        if r.get("portrait_id") == portrait_id:
+            r["canonical"] = True
+            found = True
+        else:
+            if r.get("canonical"):
+                r["canonical"] = False
+    if not found:
+        return False
+    return _write_portrait_records_atomic(portraits_path, records)

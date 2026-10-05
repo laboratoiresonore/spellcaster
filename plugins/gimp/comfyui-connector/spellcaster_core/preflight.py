@@ -158,6 +158,73 @@ def _fallback_skip(nid, node, workflow):
     return None  # Can't skip safely
 
 
+def _fallback_sam3_optional(nid, node, workflow):
+    """Skip SAM3Segment + its downstream mask-composite chain so the
+    workflow runs without SAM3 region scoping (full-canvas transform).
+
+    SAM3 is used by Spellcaster in two patterns:
+      a) DIRECT (sam3_segment / sam3_extract / klein_sam3_inpaint) -- the
+         whole workflow exists to USE SAM3; can't salvage; this fallback
+         returns None to signal "no graceful skip".
+      b) OPTIONAL (build_sam3_mask inside img2img/iclight/refine/etc) --
+         used to composite the transform output onto the original via a
+         SAM3-masked region. Removing SAM3 + GrowMaskWithBlur +
+         ImageCompositeMasked, then rewiring consumers to use the
+         transformed "source" image directly, degrades gracefully to
+         "transform the whole canvas, no region scoping".
+
+    We detect pattern (b) by looking for an ImageCompositeMasked whose
+    `mask` input traces back to this SAM3Segment.
+    """
+    # Find any ImageCompositeMasked whose mask comes (directly or via
+    # GrowMaskWithBlur) from this SAM3 node.
+    sam3_id_str = str(nid)
+    composites_to_strip = []
+    grow_to_strip = []
+    for cid, cnode in workflow.items():
+        if not isinstance(cnode, dict):
+            continue
+        if cnode.get("class_type") != "ImageCompositeMasked":
+            continue
+        mask_ref = cnode.get("inputs", {}).get("mask")
+        if not (isinstance(mask_ref, list) and len(mask_ref) == 2):
+            continue
+        mask_src = str(mask_ref[0])
+        # Direct: composite.mask <- SAM3
+        if mask_src == sam3_id_str:
+            composites_to_strip.append(cid)
+            continue
+        # Indirect: composite.mask <- GrowMaskWithBlur <- SAM3
+        grow_node = workflow.get(mask_src) or workflow.get(int(mask_src) if mask_src.isdigit() else None)
+        if isinstance(grow_node, dict) and grow_node.get("class_type") == "GrowMaskWithBlur":
+            inner = grow_node.get("inputs", {}).get("mask")
+            if isinstance(inner, list) and len(inner) == 2 and str(inner[0]) == sam3_id_str:
+                composites_to_strip.append(cid)
+                grow_to_strip.append(mask_src)
+
+    if not composites_to_strip:
+        # No composite uses our mask -- this is the DIRECT pattern.
+        # Can't salvage; the workflow is entirely SAM3-based.
+        return None
+
+    # OPTIONAL pattern: rewire each composite's consumers to use the
+    # composite's `source` input (the transformed image) directly, then
+    # delete the composite + grow + sam3 nodes.
+    to_delete = set([sam3_id_str] + [str(g) for g in grow_to_strip])
+    for cid in composites_to_strip:
+        cnode = workflow[cid]
+        source_ref = cnode.get("inputs", {}).get("source")
+        if not (isinstance(source_ref, list) and len(source_ref) == 2):
+            # Can't determine the source; bail with an error
+            return None
+        _rewire_refs(workflow, cid, 0, source_ref[0], source_ref[1])
+        to_delete.add(str(cid))
+
+    # Build the patched dict: drop the stripped nodes
+    patched = {k: v for k, v in workflow.items() if str(k) not in to_delete}
+    return patched
+
+
 # The registry: class_type → (fallback_fn, description, install_hint)
 FALLBACK_REGISTRY = {
     "RIFE_VFI": (
@@ -174,6 +241,11 @@ FALLBACK_REGISTRY = {
         None,
         "LaMa object removal node",
         "Install: comfyui-lama (required for object removal)",
+    ),
+    "SAM3Segment": (
+        _fallback_sam3_optional,
+        "SAM3 region scoping -> skipped (transform applies to full canvas)",
+        "Install: ComfyUI-Segment-Anything-2 for region-scoped edits",
     ),
 }
 
@@ -302,6 +374,207 @@ def check_workflow(workflow, comfy_url):
             if ct and ct not in available and ct not in missing:
                 missing.append(ct)
     return missing
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Model-file substitution (file-level fallback)
+# ═══════════════════════════════════════════════════════════════════════
+#
+#  preflight_workflow() handles MISSING NODE TYPES. This complementary
+#  pass handles MISSING MODEL FILES referenced by nodes that ARE present.
+#  When a workflow names e.g. swap_model="hyperswap_1c_256.onnx" but the
+#  ComfyUI server only has inswapper_128.onnx, validation fails with
+#  "Value not in list" -- accurate but unactionable. This map provides
+#  graceful fallback to the closest available alternative.
+#
+#  Per node-type + input-name, list (missing -> fallback) substitutions.
+#  Substitution only fires when the missing value is referenced AND the
+#  fallback IS in the live picker list.
+_FILE_FALLBACKS = {
+    # ReActor swap-models (only inswapper_128 ships standard)
+    ("ReActorFaceSwapOpt", "swap_model"): {
+        "hyperswap_1c_256.onnx": "inswapper_128.onnx",
+        "reswapper_256.onnx":    "inswapper_128.onnx",
+        "simswap_256.onnx":      "inswapper_128.onnx",
+    },
+    ("ReActorFaceSwap", "swap_model"): {
+        "hyperswap_1c_256.onnx": "inswapper_128.onnx",
+        "reswapper_256.onnx":    "inswapper_128.onnx",
+    },
+    ("ReActorFaceSwapOpt", "face_restore_model"): {
+        "GPEN-BFR-2048.onnx": "GPEN-BFR-512.onnx",
+        "GPEN-BFR-1024.onnx": "GPEN-BFR-512.onnx",
+    },
+    ("ReActorFaceSwap", "face_restore_model"): {
+        "GPEN-BFR-2048.onnx": "GPEN-BFR-512.onnx",
+        "GPEN-BFR-1024.onnx": "GPEN-BFR-512.onnx",
+    },
+    ("ReActorFaceBoost", "boost_model"): {
+        "GPEN-BFR-2048.onnx": "GPEN-BFR-512.onnx",
+        "GPEN-BFR-1024.onnx": "GPEN-BFR-512.onnx",
+    },
+}
+
+
+# Generic picker inputs that should accept ANY-IN-LIST substitution
+# (basename-match -> first available file with matching basename). When the
+# exact filename isn't on disk but a close cousin is, swap to that. This
+# is the same shape as the static _FILE_FALLBACKS but DYNAMIC -- we resolve
+# at preflight time by looking at the live picker list.
+_PICKER_INPUTS_AUTOSUB = {
+    ("CheckpointLoaderSimple", "ckpt_name"),
+    ("CheckpointLoader",       "ckpt_name"),
+    ("UNETLoader",             "unet_name"),
+    ("UnetLoaderGGUF",         "unet_name"),
+    ("VAELoader",              "vae_name"),
+    ("CLIPLoader",             "clip_name"),
+    ("CLIPLoaderGGUF",         "clip_name"),
+    ("DualCLIPLoader",         "clip_name1"),
+    ("DualCLIPLoader",         "clip_name2"),
+    ("ControlNetLoader",       "control_net_name"),
+    ("UpscaleModelLoader",     "model_name"),
+}
+
+
+def _fallback_lora_skip(nid, node, workflow):
+    """Remove a LoraLoader (LoraLoader / LoraLoaderModelOnly) and rewire
+    downstream model+clip references to bypass it. LoRAs are refinement
+    layers -- workflows produce usable output without them, just with
+    slightly different style.
+
+    LoraLoader is `(model, clip, lora_name, strength_model, strength_clip)
+    -> (MODEL, CLIP)`. We rewire [nid, 0] -> inputs.model and [nid, 1] ->
+    inputs.clip on all downstream nodes, then delete the loader.
+    """
+    inputs = node.get("inputs", {})
+    model_ref = inputs.get("model")
+    clip_ref = inputs.get("clip")
+    if not (isinstance(model_ref, list) and len(model_ref) == 2):
+        return None
+    # Rewire model output (slot 0)
+    _rewire_refs(workflow, nid, 0, model_ref[0], model_ref[1])
+    # Rewire clip output (slot 1) if the LoRA has a clip input
+    if isinstance(clip_ref, list) and len(clip_ref) == 2:
+        _rewire_refs(workflow, nid, 1, clip_ref[0], clip_ref[1])
+    return {}  # empty dict = remove this node
+
+
+def substitute_missing_files(workflow, comfy_url):
+    """Swap referenced model filenames for available alternatives.
+
+    Two strategies:
+      1) STATIC: _FILE_FALLBACKS has explicit (missing -> available)
+         entries for known-equivalent pairs (e.g. hyperswap_1c_256 ->
+         inswapper_128). Substitute when the original is missing AND
+         the fallback IS in the live picker list.
+      2) DYNAMIC: For loader nodes in _PICKER_INPUTS_AUTOSUB, when the
+         current value isn't in the picker list, try to find a close
+         basename match in the available list (case-insensitive,
+         extension-aware). When no match, leave alone so the user gets
+         a clear "Value not in list" error.
+      3) LORA-SKIP: If a LoraLoader's lora_name isn't available, REMOVE
+         the loader (rewire model+clip past it). LoRAs are refinement;
+         workflows still produce usable output without them.
+
+    Returns (patched_workflow, substitutions) where substitutions is a
+    list of (node_id, input_name, old_value, new_value | None) tuples.
+    None means the node was removed.
+    """
+    substitutions = []
+    patched = dict(workflow)
+
+    # Pass A: static + dynamic file substitution
+    for nid, node in list(patched.items()):
+        if not isinstance(node, dict):
+            continue
+        ct = node.get("class_type", "")
+        inputs = node.get("inputs", {}) or {}
+        for input_name, value in list(inputs.items()):
+            if not isinstance(value, str):
+                continue
+
+            # Static substitutions first
+            sub_map = _FILE_FALLBACKS.get((ct, input_name))
+            if sub_map and value in sub_map:
+                fallback = sub_map[value]
+                picker = _get_picker_values(comfy_url, ct, input_name)
+                if not picker or fallback in picker:
+                    new_node = dict(node); new_inputs = dict(inputs)
+                    new_inputs[input_name] = fallback
+                    new_node["inputs"] = new_inputs
+                    patched[nid] = new_node
+                    substitutions.append((nid, input_name, value, fallback))
+                    print(f"[Preflight] file-sub {ct}.{input_name}: "
+                           f"{value} -> {fallback}")
+                    continue
+
+            # Dynamic basename-match for picker inputs
+            if (ct, input_name) in _PICKER_INPUTS_AUTOSUB:
+                picker = _get_picker_values(comfy_url, ct, input_name)
+                if picker and value not in picker:
+                    fallback = _closest_filename_match(value, picker)
+                    if fallback and fallback != value:
+                        new_node = dict(node); new_inputs = dict(inputs)
+                        new_inputs[input_name] = fallback
+                        new_node["inputs"] = new_inputs
+                        patched[nid] = new_node
+                        substitutions.append((nid, input_name, value, fallback))
+                        print(f"[Preflight] auto-sub {ct}.{input_name}: "
+                               f"{value} -> {fallback}")
+
+    # Pass B: LoRA-skip
+    for nid in list(patched.keys()):
+        node = patched.get(nid)
+        if not isinstance(node, dict):
+            continue
+        ct = node.get("class_type", "")
+        if ct not in ("LoraLoader", "LoraLoaderModelOnly"):
+            continue
+        lora_name = (node.get("inputs", {}) or {}).get("lora_name", "")
+        if not isinstance(lora_name, str) or not lora_name:
+            continue
+        picker = _get_picker_values(comfy_url, ct, "lora_name")
+        if picker and lora_name not in picker:
+            # LoRA file missing -- remove the loader and rewire past it.
+            res = _fallback_lora_skip(nid, node, patched)
+            if res is not None:
+                del patched[nid]
+                substitutions.append((nid, "lora_name", lora_name, None))
+                print(f"[Preflight] lora-skip {ct}: dropped missing "
+                       f"LoRA '{lora_name}'")
+
+    return patched, substitutions
+
+
+def _closest_filename_match(target, picker):
+    """Find the best match for `target` in `picker` list. Strategy:
+       1) Exact match (case-insensitive).
+       2) Same basename, any subfolder.
+       3) Substring match (largest common substring).
+       4) None.
+    """
+    if not picker:
+        return None
+    target_lower = target.lower()
+    target_base = target_lower.replace("\\", "/").rsplit("/", 1)[-1]
+
+    # Exact case-insensitive
+    for p in picker:
+        if p.lower() == target_lower:
+            return p
+    # Same basename
+    for p in picker:
+        p_base = p.lower().replace("\\", "/").rsplit("/", 1)[-1]
+        if p_base == target_base:
+            return p
+    # Strip extension and retry basename match
+    target_stem = target_base.rsplit(".", 1)[0]
+    for p in picker:
+        p_base = p.lower().replace("\\", "/").rsplit("/", 1)[-1]
+        p_stem = p_base.rsplit(".", 1)[0]
+        if p_stem == target_stem:
+            return p
+    return None
 
 
 # ═══════════════════════════════════════════════════════════════════════

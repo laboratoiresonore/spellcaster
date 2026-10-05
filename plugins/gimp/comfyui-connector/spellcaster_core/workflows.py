@@ -261,9 +261,6 @@ NSFW_METHODS: frozenset[str] = frozenset({
     "build_klein_batch_variations",
     "build_klein_auto_inpaint",
     "build_klein_sam3_inpaint",
-    # ── HiDream family (photoreal identity-preserving) ───────────────────
-    # HiDream-O1 can be used for identity manipulation, similar to Klein.
-    "build_hidream_o1",
     # ── Face / head identity manipulation ───────────────────────────────
     # ReActor-family face swap + MTB faceswap. Any builder whose canonical
     # job is replacing a face/head in a target image is NSFW-licensed.
@@ -1023,6 +1020,17 @@ def build_2d_to_sbs(image_filename,
                     depth_blur=15) -> dict:
     """Convert a 2D image to side-by-side stereoscopic 3D for XREAL Air,
     Quest, Vision Pro, anaglyph glasses, etc.
+
+    Pipeline:
+      1. LoadImage
+      2. DepthAnythingV2Preprocessor -> depth map
+      3. Y7_SideBySide -> SBS stereo image
+      4. SaveImageWebsocket
+
+    Requirements (preflight will catch missing pieces):
+      - comfyui_controlnet_aux (DepthAnythingV2Preprocessor)
+      - ComfyUI-Y7-SBS-2Dto3D (Y7_SideBySide)
+      - depth_anything_v2_*.pth in ComfyUI/models/depthanything/
     """
     nf = NodeFactory()
     img_id = nf.load_image(image_filename, node_id="1")
@@ -1053,8 +1061,15 @@ def build_2d_to_sbs_extreme(image_filename,
                         sbs_mode="left-right") -> dict:
     """MAXED 2D -> SBS using ComfyStereo's StereoImageNode.
 
-    Higher fidelity (vitl depth @ 1024 + GPU warp fill, divergence up to 15)
-    in exchange for VRAM + time.
+    Trades VRAM + time for higher fidelity:
+      - Depth-Anything-V2 LARGE (~1.3 GB) at resolution=1024
+      - ComfyStereo GPU-warping fill for clean disocclusions
+      - divergence up to 15 for strongest stereo effect
+
+    Requirements:
+      - comfyui_controlnet_aux (DepthAnythingV2Preprocessor)
+      - ComfyStereo (StereoImageNode)
+      - depth_anything_v2_vitl.pth in ComfyUI/models/depthanything/
     """
     nf = NodeFactory()
     img_id = nf.load_image(image_filename, node_id="1")
@@ -1100,75 +1115,20 @@ def build_wavespeed_upscale(image_filename, model="SeedVR2", target="2K") -> dic
 
 def build_normal_map(image_filename, seed=42, max_res=1024,
                       sam3_prompt=None, sam3_invert=False, sam3_confidence=0.6,
-                      sam3_expand=4, sam3_blur=4, use_moge=True,
-                      moge_model_name="moge_2_vitl_normal_fp16.safetensors",
-                      moge_normal_space="normal_opengl",
-                      moge_resolution_level=9,
-                      include_depth=False, include_glb=False) -> dict:
-    """Generate a 3D surface normal map using ComfyUI-core native MoGe
-    (default) or NormalCrafter (fallback).
-
-    MoGe-1 / MoGe-2 / MoGe-3 are NOT separate node classes in ComfyUI core
-    -- they're the same LoadMoGeModel -> MoGeInference -> MoGeRender /
-    MoGePointMapToMesh node family (comfy_extras/nodes_moge.py, added
-    v0.22.0 PR #13878). The generation is selected purely by which
-    checkpoint `moge_model_name` points at; the default here
-    ("moge_2_vitl_normal_fp16.safetensors", ~660MB FP16 ViT-L) is MoGe-2,
-    from the Comfy-Org/MoGe HF repo (folder "geometry_estimation").
+                      sam3_expand=4, sam3_blur=4) -> dict:
+    """Generate 3D surface normal map using NormalCrafter.
 
     Produces a normal map image useful for relighting, 3D reconstruction,
-    and ControlNet normal guidance -- this is always the primary/first
-    websocket image result, exactly like the old NormalCrafter-only
-    version, so existing callers that take ``results[0]`` as "the normal
-    map" (GIMP plugin_base.py normal_map(), _spellcaster_main.py's
-    normal-map-gen dialog and auto-normal-map path) are unaffected.
+    and ControlNet normal guidance.
 
     When sam3_prompt is set, the transform is composited back onto the original
-    using a SAM3 mask so only the described region changes. NOTE: SAM3
-    compositing only applies to the primary normal-map image, not to the
-    optional depth/GLB outputs below.
-
-    Args:
-        use_moge: If True (default), use native ComfyUI MoGe nodes;
-                  if False, fall back to NormalCrafter
-        moge_model_name: geometry_estimation checkpoint filename (MoGe
-                  generation is picked by which file this names)
-        moge_normal_space: "normal_opengl" (default; +Y up -- Blender,
-                  Substance, Unity, glTF/GLB) or "normal_directx"
-                  (-Y down -- Unreal). Ignored when use_moge=False.
-        moge_resolution_level: 0 (fastest) .. 9 (most detail, default).
-                  Ignored when use_moge=False.
-        include_depth: If True, ALSO emit the MoGe depth map as a second,
-                  separately-labeled ("depth") websocket image after the
-                  primary normal map. Ignored (and unavailable) when
-                  use_moge=False -- NormalCrafter has no depth output.
-        include_glb: If True, ALSO mesh the MoGe geometry
-                  (MoGePointMapToMesh) and write it to a .glb via SaveGLB.
-                  Terminal/disk-only -- does not appear in the returned
-                  image list. Ignored when use_moge=False.
+    using a SAM3 mask so only the described region changes.
     """
     nf = NodeFactory()
     img_id = nf.load_image(image_filename, node_id="1")
     img_ref = [img_id, 0]
-
-    moge_geometry_ref = None
-    if use_moge:
-        # Native ComfyUI MoGe pipeline: LoadMoGeModel -> MoGeInference ->
-        # MoGeRender. MoGeInference returns ONE opaque MOGE_GEOMETRY handle
-        # (not separate depth/normal tensors) -- MoGeRender is called once
-        # per desired view.
-        moge_model_id = nf.load_moge_model(moge_model_name, node_id="2")
-        geometry_id = nf.mo_ge_inference([moge_model_id, 0], img_ref,
-                                          resolution_level=moge_resolution_level,
-                                          node_id="3")
-        moge_geometry_ref = [geometry_id, 0]
-        normal_id = nf.mo_ge_render(moge_geometry_ref,
-                                     output=moge_normal_space, node_id="4")
-    else:
-        # Fallback to NormalCrafter
-        normal_id = nf.normal_crafter(img_ref, seed=seed,
-                                       max_res=max_res, node_id="2")
-
+    normal_id = nf.normal_crafter(img_ref, seed=seed,
+                                   max_res=max_res, node_id="2")
     # NormalCrafter may rescale to max_res; resize the original to match the
     # output so ImageCompositeMasked accepts them. We use GetImageSize on the
     # normal output and ImageScale the original to match.
@@ -1186,25 +1146,7 @@ def build_normal_map(image_filename, seed=42, max_res=1024,
             upscale_method="lanczos", crop="disabled", node_id="911",
         )
         final_ref = apply_sam3_scope(nf, final_ref, [orig_resized_id, 0], _mask)
-    # Primary output -- always emitted first, preserving the historical
-    # "results[0] is the normal map" contract for existing callers.
-    # node_id left auto-assigned from here on: save_image_websocket's
-    # disk_backup=True path always auto-allocates its SaveImage sibling
-    # (node_factory.py::save_image_websocket), so hand-pinning IDs for
-    # the nodes that follow risks silently clobbering it (NodeFactory._add
-    # has no collision guard -- confirmed the hard way while wiring this).
-    nf.save_image_websocket(final_ref, label="normal")
-
-    if use_moge and include_depth:
-        depth_id = nf.mo_ge_render(moge_geometry_ref, output="depth")
-        nf.save_image_websocket([depth_id, 0], label="depth",
-                                 disk_backup=True)
-
-    if use_moge and include_glb:
-        mesh_id = nf.mo_ge_point_map_to_mesh(moge_geometry_ref)
-        nf.save_glb([mesh_id, 0],
-                    filename_prefix="3D/spellcaster_normal_map")
-
+    nf.save_image_websocket(final_ref, node_id="3")
     return nf.build()
 
 
@@ -2135,32 +2077,18 @@ def _faceswap_guard(feature: str) -> None:
     guard_faceswap(feature)
 
 
-# HyperSwap 256 model variants - 2× resolution over InSwapper 128
-# 1a/1b/1c refer to different training variants with same resolution
-HYPERSWAP_256_MODELS = (
-    "hyperswap_1a_256.onnx",
-    "hyperswap_1b_256.onnx",
-    "hyperswap_1c_256.onnx",
-)
-
-
 def build_faceswap(target_filename, source_filename, swap_model="inswapper_128.onnx",
                    face_restore_model="codeformer-v0.1.0.pth",
                    face_restore_vis=1.0, codeformer_weight=0.7,
                    detect_gender_input="no", detect_gender_source="no",
                    input_face_idx="0", source_face_idx="0",
-                   quality_preset=None, quality_presets=None,
-                   use_restore_advanced=False, restore_advanced_vis=0.8) -> dict:
+                   quality_preset=None, quality_presets=None) -> dict:
     _faceswap_guard("faceswap")
     """Face swap using ReActor with optional quality presets and restoration.
 
     Swaps faces from source image into target image using ReActor (a face-swap
     node based on ONNX models). Includes optional CodeFormer post-processing
     to restore swapped face quality, with two-pass capability for high quality.
-
-    HyperSwap 256 is available as an opt-in alternative to InSwapper 128,
-    providing 2× internal swap resolution (256 vs 128) with three training
-    variants (1a/1b/1c).
 
     Pipeline:
       1. Load target and source images
@@ -2174,9 +2102,7 @@ def build_faceswap(target_filename, source_filename, swap_model="inswapper_128.o
         target_filename (str): Image to receive the new face
         source_filename (str): Image with face to swap in
         swap_model (str): ONNX swap model file, e.g. "inswapper_128.onnx",
-                         "inswapper_128_fp16.onnx", "reswapper_256.onnx",
-                         "hyperswap_1a_256.onnx", "hyperswap_1b_256.onnx",
-                         "hyperswap_1c_256.onnx" (default "inswapper_128.onnx")
+                         "inswapper_128_fp16.onnx" (default "inswapper_128.onnx")
         face_restore_model (str): CodeFormer or GFPGan model for post-processing
                                 (default "codeformer-v0.1.0.pth")
         face_restore_vis (float): CodeFormer restoration blend, 0.0-1.0
@@ -2191,11 +2117,6 @@ def build_faceswap(target_filename, source_filename, swap_model="inswapper_128.o
                             Overrides swap_model and restore_model if provided
         quality_presets (dict, optional): Maps preset names to
             {"pass1_model": "...", "pass1_restore": "...", "pass1_vis": ..., "pass1_cf": ...}
-        use_restore_advanced (bool): Use ReActorRestoreFace (Advanced) node instead of
-                                   CodeFormer in post-pass for HyperSwap quality pipeline
-                                   (default False - uses CodeFormer)
-        restore_advanced_vis (float): RestoreFace visibility when use_restore_advanced=True
-                                    (0.0-1.0, default 0.8)
 
     Returns:
         dict: ComfyUI workflow with face swap and optional restoration.
@@ -2226,8 +2147,7 @@ def build_faceswap(target_filename, source_filename, swap_model="inswapper_128.o
       - Gender mismatch can cause detection to fail; set to "no" if having issues
       - CodeFormer restoration adds time but significantly improves quality
       - codeformer_weight 0.5-0.7 recommended (too high = over-processing)
-      - Models must be ONNX format (inswapper_*.onnx, hyperswap_*.onnx), not PyTorch
-      - ReActorRestoreFace ("Restore Face Advanced") requires ReActor ≥ May 12 2026
+      - Models must be ONNX format (inswapper_*.onnx), not PyTorch
     """
     if quality_presets and quality_preset and quality_preset in quality_presets:
         qp = quality_presets[quality_preset]
@@ -2264,18 +2184,6 @@ def build_faceswap(target_filename, source_filename, swap_model="inswapper_128.o
     )
 
     result_ref = [swap_id, 0]
-
-    # Restore Face Advanced (ReActorRestoreFace) support for HyperSwap quality pipeline
-    if use_restore_advanced:
-        restore_advanced_id = nf.reactor_restore_face(
-            result_ref,
-            facedetection="retinaface_resnet50",
-            model=face_restore_model,
-            visibility=restore_advanced_vis,
-            codeformer_weight=codeformer_weight,
-            node_id="7",
-        )
-        result_ref = [restore_advanced_id, 0]
 
     # Double-pass: run a second swap with a different model for refinement
     if quality_presets and quality_preset and quality_preset in quality_presets:
@@ -2315,14 +2223,8 @@ def build_faceswap_model(target_filename, face_model_name,
                           face_restore_vis=1.0, codeformer_weight=0.5,
                           detect_gender_input="no", detect_gender_source="no",
                           input_face_idx="0", source_face_idx="0",
-                          quality_preset=None, quality_presets=None,
-                          use_restore_advanced=False, restore_advanced_vis=0.8) -> dict:
-    """ReActor face swap using a saved face model. Drop-in for _build_faceswap_model().
-
-    HyperSwap 256 is available as an opt-in alternative to InSwapper 128,
-    providing 2× internal swap resolution (256 vs 128) with three training
-    variants (1a/1b/1c).
-    """
+                          quality_preset=None, quality_presets=None) -> dict:
+    """ReActor face swap using a saved face model. Drop-in for _build_faceswap_model()."""
     _faceswap_guard("faceswap_model")
     if quality_presets and quality_preset and quality_preset in quality_presets:
         qp = quality_presets[quality_preset]
@@ -2360,18 +2262,6 @@ def build_faceswap_model(target_filename, face_model_name,
     )
 
     result_ref = [swap_id, 0]
-
-    # Restore Face Advanced (ReActorRestoreFace) support for HyperSwap quality pipeline
-    if use_restore_advanced:
-        restore_advanced_id = nf.reactor_restore_face(
-            result_ref,
-            facedetection="retinaface_resnet50",
-            model=face_restore_model,
-            visibility=restore_advanced_vis,
-            codeformer_weight=codeformer_weight,
-            node_id="7",
-        )
-        result_ref = [restore_advanced_id, 0]
 
     # Double-pass
     if quality_presets and quality_preset and quality_preset in quality_presets:
@@ -4032,7 +3922,7 @@ def build_faceid_img2img(target_filename, face_ref_filename, preset,
 def build_pulid_flux(target_filename, face_ref_filename,
                       prompt_text, negative_text, seed,
                       flux_model="Flux\\FLUX1 Dev fp8.safetensors",
-                      pulid_model="pulid_flux2_klein_v2.safetensors",
+                      pulid_model="pulid_flux_v0.9.1.safetensors",
                       strength=0.9, steps=20, guidance=3.5,
                       denoise=0.65, width=1024, height=1024,
                       loras=None, enhance=True) -> dict:
@@ -10389,139 +10279,85 @@ def build_ltx_video(preset, prompt_text, seed,
 
     return nf.build()
 
-
 # ═══════════════════════════════════════════════════════════════════════════
-#  HiDream-O1-Image — high-fidelity pixel-native image generation (SOL) via ComfyUI
+#  Klein Multi-Angle Character Sheet (CivitAI 2642426 / nikhilprasanth)
 # ═══════════════════════════════════════════════════════════════════════════
 
-def build_hidream_o1(prompt, seed, *, width=1024, height=1024, steps=25, cfg=5.0,
-                     denoise=1.0, saganaki22_nodes=None, vae_name=None,
-                     loras=None, lora_name=None, lora_strength=1.0,
-                     filename_prefix="hidream-o1/spellcaster") -> dict:
-    """HiDream-O1-Image builder — generate high-fidelity pixel-native images
-    using the HiDream-O1-Transformer (8B, FP8 ~10GB, MIT license) via ComfyUI.
+KLEIN_MULTI_ANGLE_PROMPTS = {
+    'front_45': 'Using the input image as the strict visual reference, create a 45-degree front three-quarter view of the same subject.\n\nThe subject may be a person, character, vehicle, prop, object, creature, or architectural element.\n\nPreserve the exact identity, proportions, shape, silhouette, materials, colors, clothing or surface details, markings, texture, wear, accessories, and design language from the input image.\n\nPreserve the same expression, pose, posture, stance, gesture, object position, and overall attitude from the input image. The subject must remain in the same moment, only viewed from a front three-quarter angle.\n\nCamera angle: front three-quarter view, approximately 45 degrees, eye-level.\nLighting: soft diffused lighting, gentle highlights on visible edges.\nBackground: plain neutral background for easy compositing.\nCamera/lens: 50mm lens, natural perspective, realistic depth.\nComposition: full subject visible, centered, with clear readable front and side depth.\n\nPhotorealistic, same subject, same pose, same expression, same design, only the viewing angle changes.',
+    'side': 'Using the input image as the strict visual reference, create a pure side profile view of the same subject.\n\nThe subject may be a person, character, vehicle, prop, object, creature, or architectural element.\n\nPreserve the exact identity, proportions, shape, silhouette, materials, colors, clothing or surface details, markings, texture, wear, accessories, and design language from the input image.\n\nPreserve the same expression, pose, posture, stance, gesture, object position, and overall attitude from the input image. The subject should not be redesigned or repositioned. It should look like the same subject frozen in the same moment, now seen from the side.\n\nCamera angle: direct side profile view, eye-level, clean perspective.\nLighting: soft diffused lighting, mild rim definition along the edges.\nBackground: plain neutral background for easy compositing.\nCamera/lens: 70mm lens, low distortion, compressed realistic perspective.\nComposition: full subject visible, centered, side silhouette clearly readable.\n\nPhotorealistic, accurate side geometry, same subject, same pose, same expression, no redesign.',
+    'rear': 'Using the input image as the strict visual reference, create a rear view of the same subject.\n\nThe subject may be a person, character, vehicle, prop, object, creature, or architectural element.\n\nPreserve the exact identity, proportions, shape, silhouette, materials, colors, clothing or surface details, markings, texture, wear, accessories, and design language from the input image.\n\nPreserve the same pose, posture, stance, gesture, object position, and overall attitude from the input image. Infer the rear logically from the visible design while keeping the subject consistent. The subject should feel like the same person or object frozen in the same moment, now seen from behind.\n\nCamera angle: straight-on rear view, eye-level, centered perspective.\nLighting: soft diffused lighting, clear rear contours and edge definition.\nBackground: plain neutral background for easy compositing.\nCamera/lens: 50mm lens, natural realistic perspective.\nComposition: full subject visible, centered, enough empty space around it.\n\nPhotorealistic, same subject, same pose, same proportions, believable rear details, no redesign.',
+    'rear_45': 'Using the input image as the strict visual reference, create a 45-degree rear three-quarter view of the same subject.\n\nThe subject may be a person, character, vehicle, prop, object, creature, or architectural element.\n\nPreserve the exact identity, proportions, shape, silhouette, materials, colors, clothing or surface details, markings, texture, wear, accessories, and design language from the input image.\n\nPreserve the same pose, posture, stance, gesture, object position, and overall attitude from the input image. Infer hidden rear-side details logically from the visible design, keeping the same subject consistent.\n\nCamera angle: rear three-quarter view, approximately 45 degrees, eye-level.\nLighting: soft diffused lighting, gentle edge highlights.\nBackground: plain neutral background for easy compositing.\nCamera/lens: 50mm to 70mm lens, natural realistic perspective.\nComposition: full subject visible, centered, rear and side forms clearly readable.\n\nPhotorealistic, same subject, same pose, same expression where visible, same design, only the camera angle changes.',
+    'high_angle': 'Using the input image as the strict visual reference, create a high-angle view of the same subject.\n\nThe subject may be a person, character, vehicle, prop, object, creature, or architectural element.\n\nPreserve the exact identity, proportions, shape, silhouette, materials, colors, clothing or surface details, markings, texture, wear, accessories, and design language from the input image.\n\nPreserve the same expression, pose, posture, stance, gesture, object position, and overall attitude from the input image. The subject should remain frozen in the same moment, only viewed from above.\n\nCamera angle: high-angle view from above, approximately 60 to 75 degrees downward.\nLighting: soft diffused overhead lighting, readable top-plane details.\nBackground: plain neutral background for easy compositing.\nCamera/lens: 35mm to 50mm lens, controlled perspective, realistic scale.\nComposition: full subject visible, centered, top surfaces clearly shown.\n\nPhotorealistic, same subject, same pose, same expression, consistent geometry, no redesign.',
+    'low_angle': 'Using the input image as the strict visual reference, create a low-angle view of the same subject.\n\nThe subject may be a person, character, vehicle, prop, object, creature, or architectural element.\n\nPreserve the exact identity, proportions, shape, silhouette, materials, colors, clothing or surface details, markings, texture, wear, accessories, and design language from the input image.\n\nPreserve the same expression, pose, posture, stance, gesture, object position, and overall attitude from the input image. The subject should feel like the same moment captured from a lower camera position.\n\nCamera angle: low-angle view from below eye level, looking slightly upward.\nLighting: soft diffused lighting, consistent with the input image.\nBackground: plain neutral background for easy compositing.\nCamera/lens: 35mm to 50mm lens, controlled perspective, no extreme distortion.\nComposition: full subject visible, centered, strong readable silhouette.\n\nPhotorealistic, same subject, same pose, same expression, same design, only the camera position changes.',
+    'close_up': 'Using the input image as the strict visual reference, create a close-up detail view of the same subject.\n\nThe subject may be a person, character, vehicle, prop, object, creature, or architectural element.\n\nPreserve the exact identity, materials, colors, clothing or surface details, markings, texture, wear, accessories, and design language from the input image.\n\nPreserve the same expression, pose, posture, gesture, object position, and overall attitude from the input image. The close-up should feel like the same moment, with the camera moved closer.\n\nCamera angle: [front close-up / side close-up / three-quarter close-up].\nLighting: soft diffused lighting, consistent with the input image.\nBackground: plain neutral background or softly blurred matching background.\nCamera/lens: 85mm lens, shallow depth of field, realistic perspective.\nComposition: focus on [FACE / HANDS / WHEELS / SURFACE DETAIL / PROP DETAIL / TEXTURE AREA].\n\nPhotorealistic, same subject, same moment, same pose and expression, only closer framing.',
+}
 
-    HiDream-O1 is a pixel-native diffusion model integrated into ComfyUI core.
-    It uses QuadrupleCLIPLoader with clip-l, clip-g, t5xxl, and llama_8b_3.1_instruct
-    text encoders. The builder leverages the Saganaki22 custom nodes for advanced
-    reference image handling and seam smoothing.
 
-    ARCHITECTURE:
-      1. Load HiDreamO1 model via ComfyUI core's hidream_o1 loader
-      2. Load QuadrupleCLIP text encoder (clip-l, clip-g, t5xxl, llama_8b)
-      3. Load VAE (default: hifidelity_vae.safetensors)
-      4. Create empty latent via EmptyHiDreamO1LatentImage
-      5. Apply reference images via HiDreamO1ReferenceImages (if saganaki22_nodes provided)
-      6. Sample via KSampler with custom scheduler
-      7. Decode via VAE
-      8. Apply HiDreamO1PatchSeamSmoothing (optional, for enhanced seam handling)
+def build_klein_multi_angle(image_filename, klein_model_key="Klein 4B",
+                            seed=0, steps=4, guidance=1.0,
+                            sampler_name="euler", megapixels=1.0,
+                            angle_prompts=None,
+                            klein_models=None) -> dict:
+    """Multi-angle character sheet from a single reference image.
 
-    Args:
-        prompt: Generation prompt text
-        seed: Random seed for reproducibility
-        width: Output image width (default 1024)
-        height: Output image height (default 1024)
-        steps: Number of sampling steps (default 25)
-        cfg: Classifier-free guidance scale (default 5.0)
-        denoise: Denoise strength (default 1.0)
-        saganaki22_nodes: Dict of Saganaki22 node paths for reference/patch nodes.
-                         If None, uses standard ComfyUI core nodes.
-        vae_name: Custom VAE filename (default: hifidelity_vae.safetensors)
-        loras, lora_name, lora_strength: Optional LoRA chain parameters
-        filename_prefix: Output filename prefix (default "hidream-o1/spellcaster")
+    Adapted from nikhilprasanth's "Flux Klein 4B/9B Multiple Angles"
+    (CivitAI 2642426). Generates one image per camera angle (7 by
+    default) using Klein's reference-latent mechanism. Each output
+    preserves the subject's identity / proportions / outfit / pose /
+    expression -- only the camera angle changes.
 
-    Returns:
-        dict: ComfyUI workflow JSON-serializable dict
-
-    Requires: ComfyUI core with hidream_o1 model loader and QuadrupleCLIPLoader
-              (in recent ComfyUI builds), plus optional Saganaki22 custom nodes
-              for reference image handling and seam smoothing.
+    Shared model + CLIP + VAE + reference latent computed once; each
+    angle is a separate KSampler chain reusing them. ~65 nodes total.
     """
+    if klein_models is None:
+        klein_models = KLEIN_MODELS
+    if angle_prompts is None:
+        angle_prompts = KLEIN_MULTI_ANGLE_PROMPTS
+
+    km = klein_models[klein_model_key]
     nf = NodeFactory()
 
-    # ── Model loading ─────────────────────────────────────────────
-    # HiDreamO1Transformer via ComfyUI core's hidream_o1 loader
-    model_id = nf._add("LoadHiDreamO1Model", {
-        "model_name": "hidream_o1_fp8.safetensors",
-    }, node_id="1")
+    unet_id = nf.unet_loader(km["unet"], node_id="1")
+    clip_id = nf.clip_loader(km["clip"], clip_type="flux2",
+                              device="default", node_id="2")
+    vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
+    img_id = nf.load_image(image_filename, node_id="4")
 
-    # QuadrupleCLIP text encoder (clip-l, clip-g, t5xxl, llama_8b_3.1_instruct)
-    clip_id = nf._add("QuadrupleCLIPLoader", {
-        "clip_name1": "clip_l.safetensors",
-        "clip_name2": "clip_g.safetensors",
-        "clip_name3": "t5xxl_fp16.safetensors",
-        "clip_name4": "llama_8b_3.1_instruct.safetensors",
-    }, node_id="2")
+    scaled_id = nf.image_scale_to_total_pixels(
+        [img_id, 0], megapixels=megapixels, node_id="5")
+    size_id = nf.get_image_size([scaled_id, 0], node_id="6")
+    ref_lat_id = nf.vae_encode(
+        [scaled_id, 0], [vae_id, 0], node_id="7")
 
-    # VAE loader
-    vae_id = nf.vae_loader(vae_name or "hifidelity_vae.safetensors", node_id="3")
+    empty_id = nf.empty_flux2_latent_image(
+        [size_id, 0], [size_id, 1], batch_size=1, node_id="8")
+    sigmas_id = nf.flux2_scheduler(
+        steps, [size_id, 0], [size_id, 1], node_id="9")
+    sampler_id = nf.ksampler_select(sampler_name, node_id="10")
 
-    # ── LoRA chain (optional) ─────────────────────────────────────
-    model_ref = [model_id, 0]
-    if lora_name and not loras:
-        loras = [{"name": lora_name, "strength": lora_strength}]
-
-    if loras:
-        clip_ref = [clip_id, 0]
-        for i, lora in enumerate(loras):
-            lora_id = nf.lora_loader_model_only(model_ref, lora["name"],
-                                                lora.get("strength", 1.0),
-                                                node_id=f"100_{i}")
-            model_ref = [lora_id, 0]
-
-    # ── Text encoding (QuadrupleCLIP → positive/negative) ─────────
-    pos_id = nf.clip_encode([clip_id, 0], prompt, node_id="4")
-    neg_id = nf.clip_encode([clip_id, 0], "", node_id="5")  # Empty negative
-
-    # ── Latent creation (EmptyHiDreamO1LatentImage) ───────────────
-    latent_id = nf._add("EmptyHiDreamO1LatentImage", {
-        "width": width,
-        "height": height,
-        "batch_size": 1,
-    }, node_id="10")
-
-    # ── Reference image handling (Saganaki22 optional) ────────────
-    # If saganaki22_nodes provided, use HiDreamO1ReferenceImages for conditioning
-    if saganaki22_nodes and saganaki22_nodes.get("reference_image"):
-        ref_img_id = nf.load_image(saganaki22_nodes["reference_image"], node_id="11")
-        ref_id = nf._add("HiDreamO1ReferenceImages", {
-            "model": model_ref,
-            "images": [ref_img_id, 0],
-            "strength": saganaki22_nodes.get("reference_strength", 1.0),
-        }, node_id="12")
-        model_ref = [ref_id, 0]  # Update model with reference conditioning
-
-    # ── Sampling (KSampler with custom scheduler) ─────────────────
-    scheduler = "simple"  # Standard scheduler for HiDream-O1
-    sampler = "euler"     # Euler is the canonical sampler for HiDream-O1
-
-    guider_id = nf.cfg_guider(model_ref, [pos_id, 0], [neg_id, 0],
-                               cfg, node_id="20")
-    sampler_id = nf.ksampler_select(sampler, node_id="21")
-    sched_id = nf.basic_scheduler(model_ref, steps, denoise,
-                                   scheduler=scheduler, node_id="22")
-    noise_id = nf.random_noise(seed, node_id="23")
-
-    sample_id = nf.ksampler(
-        [noise_id, 0], [guider_id, 0], [sampler_id, 0],
-        [sched_id, 0], [latent_id, 0], node_id="30",
-    )
-
-    # ── VAE decode ────────────────────────────────────────────────
-    dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="40")
-
-    # ── Optional seam smoothing (Saganaki22) ──────────────────────
-    # Apply HiDreamO1PatchSeamSmoothing if requested
-    if saganaki22_nodes and saganaki22_nodes.get("seam_smoothing"):
-        seam_id = nf._add("HiDreamO1PatchSeamSmoothing", {
-            "image": [dec_id, 0],
-            "strength": saganaki22_nodes.get("seam_strength", 0.5),
-        }, node_id="45")
-        out_ref = [seam_id, 0]
-    else:
-        out_ref = [dec_id, 0]
-
-    # ── Output ────────────────────────────────────────────────────
-    nf.save_image_websocket(out_ref, node_id="50")
+    base = 100
+    for i, (slug, prompt_text) in enumerate(angle_prompts.items()):
+        bid = base + i * 10
+        cond_id = nf.clip_encode(
+            [clip_id, 0], prompt_text, node_id=str(bid))
+        zero_id = nf.conditioning_zero_out(
+            [cond_id, 0], node_id=str(bid + 1))
+        ref_pos = nf.reference_latent(
+            [cond_id, 0], [ref_lat_id, 0], node_id=str(bid + 2))
+        ref_neg = nf.reference_latent(
+            [zero_id, 0], [ref_lat_id, 0], node_id=str(bid + 3))
+        guider_id = nf.cfg_guider(
+            [unet_id, 0], [ref_pos, 0], [ref_neg, 0],
+            guidance, node_id=str(bid + 4))
+        noise_id = nf.random_noise(seed + i, node_id=str(bid + 5))
+        samp_id = nf.sampler_custom_advanced(
+            [noise_id, 0], [guider_id, 0], [sampler_id, 0],
+            [sigmas_id, 0], [empty_id, 0], node_id=str(bid + 6))
+        dec_id = nf.vae_decode(
+            [samp_id, 0], [vae_id, 0], node_id=str(bid + 7))
+        nf.save_image_websocket(
+            [dec_id, 0], label=slug, node_id=str(bid + 8))
 
     return nf.build()
+
