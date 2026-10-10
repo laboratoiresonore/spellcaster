@@ -18,14 +18,38 @@ Before this registry, these properties were scattered across:
 Now, each architecture is ONE ArchConfig entry that centralises all behaviour.
 Adding a new model = adding one registration via _reg().
 
-SUPPORTED ARCHITECTURES (as of September 2026):
-  - sd15: Stable Diffusion 1.5 (512x512, checkpoint-based)
-  - sdxl: Stable Diffusion XL (1024x1024, checkpoint-based)
-  - illustrious: SDXL-based anime model (1024x1024, checkpoint-based)
-  - zit: Z-Image-Turbo (fast SDXL distill, 4-6 steps, checkpoint-based)
-  - flux1dev: Flux Development (1024x1024, separate loaders, dual CLIP)
-  - flux2klein: Flux 2 Klein (distilled, 4 steps, separate loaders, custom sampler)
-  - flux_kontext: Flux with edit instructions (experimental, separate loaders)
+SUPPORTED ARCHITECTURES (as of October 2026):
+  Image — SD/SDXL family (checkpoint loader):
+    - sd15: Stable Diffusion 1.5 (512x512)
+    - sdxl: Stable Diffusion XL (1024x1024)
+    - sdxl_turbo: SDXL distill (1024x1024, 1-4 steps)
+    - illustrious: SDXL-based anime model (1024x1024)
+    - pony: SDXL-based Pony Diffusion v6 (1024x1024)
+    - playground: Playground v2.5 (1024x1024)
+    - zit: Z-Image-Turbo (fast SDXL distill, 4-6 steps)
+  Image — Flux / Chroma family (separate unet/clip/vae loaders):
+    - flux1dev: Flux Development (1024x1024, dual CLIP)
+    - chroma: Chroma (Flux-shaped, dual CLIP)
+    - flux2klein: Flux 2 Klein (distilled, 4 steps, custom sampler)
+    - flux_kontext: Flux with edit instructions (separate loaders)
+  Image — Other:
+    - lumina2: Lumina Image 2.0 (checkpoint-based)
+    - supir: SUPIR image-restoration pipeline (checkpoint-based)
+  Video — stock loaders:
+    - wan: Wan2.x T2V / I2V / Animate (unet_clip_vae)
+    - ltx: LTX Video (unet_clip_vae)
+    - seedvr: SeedVR2 video upscale (unet_clip_vae)
+  Video — custom wrappers:
+    - cogvideo: CogVideoX (custom_wrapper)
+    - framepack: FramePack (custom_wrapper)
+    - hunyuan_video: HunyuanVideo (custom_wrapper)
+    - mochi: Mochi (custom_wrapper)
+  3D:
+    - hunyuan_3d: Hunyuan3D 2.x (custom_wrapper, image-to-mesh+texture)
+
+  Stubs (declared with ``registered=False`` — reserved keys that pick
+  up the right default config when wired, no builder exposure yet):
+    sd3, sd3_turbo, hunyuan_dit, pixart, auraflow, kolors
 
 TYPICAL USAGE:
     from _architectures import ARCHITECTURES, get_arch
