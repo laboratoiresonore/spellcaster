@@ -79,7 +79,7 @@ it in the system prompt. Shape:
         {"host": "...", "port": 8188, "reachable": True, "services": ["comfyui"]}
       ],
       "totals":   {"installed_gb": 103.0, "available_gb": 242.8,
-                   "installed_methods": 14, "total_methods": 69}
+                   "installed_methods": 14, "total_methods": 75}
     }
 """
 from __future__ import annotations
@@ -179,7 +179,7 @@ USAGE_BUNDLES: dict[str, list[str]] = {
 
 # ── Plugin descriptions (for system prompt) ──────────────────────────────
 PLUGIN_DESCRIPTIONS: dict[str, str] = {
-    "gimp":        "GIMP 3 — 69 AI tools in Filters > Spellcaster (most mature)",
+    "gimp":        "GIMP 3 — 75 AI tools in Filters > Spellcaster (most mature)",
     "darktable":   "Darktable — color-aware tools in the export module",
     "resolve":     "DaVinci Resolve 18+ — Media Pool Bridge + playhead-generate + gap-fill",
     "sillytavern": "SillyTavern — 13 wizard character cards that illustrate RP scenes",

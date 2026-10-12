@@ -2072,7 +2072,7 @@ def step_detect_llm_server(args, server_url: str = "",
     print(f"       • SDXL  → booru tags: \"1girl, cat ears, detailed, masterpiece...\"")
     print(f"       • Flux  → natural language paragraph with scene details")
     print(f"       • Klein → concise bulleted description")
-    print(f"     Every one of the 69 tools gets better output automatically.\n")
+    print(f"     Every one of the 75 tools gets better output automatically.\n")
     print(f"  {C_GREEN}2. The Wizard Guild stops being a toy.{C_RESET}")
     print(f"     Wizards can only converse, plan, and suggest tools when an LLM is present.")
     print(f"     Without one: static menu. With one: actual AI assistants.\n")
