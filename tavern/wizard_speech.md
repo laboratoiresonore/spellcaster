@@ -215,7 +215,7 @@ a clone-stamp pass on a single eyelash.
 
 That's what **GIMP** is for, and Spellcaster ships a full GIMP plugin
 that mirrors every Guild wizard as a `Filters → Spellcaster …` menu
-entry. You get **49 AI tools right inside GIMP**: text-to-image,
+entry. You get **75 AI tools right inside GIMP**: text-to-image,
 inpaint, face swap (ReActor + IPAdapter + PuLID + Klein), Klein
 img2img, LTX / Wan video, SeedVR2 upscale, ControlNet, IC-Light, LUT
 grading, RemBG, the full Magic Studios actor pipeline, and more.
