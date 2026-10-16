@@ -4,9 +4,10 @@ of all methods in the app ecosystem").
 
 Built to satisfy the 2026-05-13 user directive. Companion to the saved
 memory `project_spellcaster_upgrades_2026-05-08.md` (25 shipped
-upgrades to spellcaster's 70 build_* methods) — that pass was ad-hoc;
-this tool makes the same pass REPEATABLE so it runs monthly without a
-human convening it each time.
+upgrades to spellcaster's `build_*` methods — 70 at the time of that
+pass, 75 as of 2026-10-16) — that pass was ad-hoc; this tool makes the
+same pass REPEATABLE so it runs monthly without a human convening it
+each time.
 
 Architecture
 ------------
@@ -236,20 +237,31 @@ def backend_local_index(methods: list[str], spellcaster_core: Path) -> BackendRe
 # arch arrives; missing entries fall back to the bare arch name.
 _HF_ARCH_QUERIES: dict[str, list[str]] = {
     "sdxl": ["sdxl", "stable-diffusion-xl"],
+    "sdxl_turbo": ["sdxl-turbo", "sd-turbo"],
     "sd15": ["stable-diffusion-v1-5", "sd15"],
     "illustrious": ["illustrious", "noobai"],
     "pony": ["pony-diffusion"],
+    "playground": ["playground-v2.5", "playground-v25"],
     "flux1dev": ["flux.1-dev", "flux-1-dev", "flux"],
     "flux2klein": ["flux.2-klein", "flux2-klein"],
     "flux_kontext": ["flux-kontext", "flux.1-kontext"],
-    "wan": ["wan-2.1", "wan2-i2v"],
-    "ltx": ["ltx-video", "ltxv"],
+    "wan": ["wan-2.1", "wan2-i2v", "wan2.2"],
+    "ltx": ["ltx-video", "ltxv", "ltx-2"],
+    "seedvr": ["seedvr", "seed-vr"],
+    "cogvideo": ["cogvideox", "cogvideo"],
+    "framepack": ["framepack", "frame-pack"],
     "hunyuan_dit": ["hunyuan-dit"],
+    "hunyuan_video": ["hunyuanvideo", "hunyuan-video"],
+    "hunyuan_3d": ["hunyuan3d", "hunyuan-3d"],
+    "mochi": ["mochi-1", "mochi"],
     "auraflow": ["auraflow"],
     "chroma": ["chroma"],
     "kolors": ["kolors"],
-    "lumina": ["lumina"],
+    "lumina2": ["lumina-image-2", "lumina2", "lumina"],
     "sd3": ["stable-diffusion-3"],
+    "sd3_turbo": ["stable-diffusion-3-turbo", "sd3-turbo"],
+    "pixart": ["pixart-sigma", "pixart-alpha", "pixart"],
+    "supir": ["supir", "sup-ir"],
     "zit": ["z-image-turbo", "z-image"],
 }
 

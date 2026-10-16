@@ -18,14 +18,35 @@ Before this registry, these properties were scattered across:
 Now, each architecture is ONE ArchConfig entry that centralises all behaviour.
 Adding a new model = adding one registration via _reg().
 
-SUPPORTED ARCHITECTURES (as of September 2026):
-  - sd15: Stable Diffusion 1.5 (512x512, checkpoint-based)
-  - sdxl: Stable Diffusion XL (1024x1024, checkpoint-based)
-  - illustrious: SDXL-based anime model (1024x1024, checkpoint-based)
-  - zit: Z-Image-Turbo (fast SDXL distill, 4-6 steps, checkpoint-based)
-  - flux1dev: Flux Development (1024x1024, separate loaders, dual CLIP)
-  - flux2klein: Flux 2 Klein (distilled, 4 steps, separate loaders, custom sampler)
-  - flux_kontext: Flux with edit instructions (experimental, separate loaders)
+SUPPORTED ARCHITECTURES (as of October 2026):
+  Image (fully-registered):
+    - sd15: Stable Diffusion 1.5 (512x512, checkpoint-based)
+    - sdxl: Stable Diffusion XL (1024x1024, checkpoint-based)
+    - sdxl_turbo: SDXL-Turbo (1-4 steps, checkpoint-based)
+    - illustrious: SDXL-based anime model (1024x1024, checkpoint-based)
+    - pony: Pony Diffusion XL (SDXL-shape, checkpoint-based)
+    - playground: Playground v2.5 (SDXL-shape, checkpoint-based)
+    - zit: Z-Image-Turbo (fast SDXL distill, 4-6 steps, checkpoint-based)
+    - chroma: Chroma (Flux-shape, separate loaders)
+    - flux1dev: Flux Development (1024x1024, separate loaders, dual CLIP)
+    - flux2klein: Flux 2 Klein (distilled, 4 steps, separate loaders, custom sampler)
+    - flux_kontext: Flux with edit instructions (experimental, separate loaders)
+  Video (fully-registered):
+    - wan: Wan 2.x i2v/t2v/animate (separate loaders)
+    - ltx: Lightricks LTX video (separate loaders)
+    - seedvr: SeedVR video restoration (separate loaders)
+    - cogvideo: CogVideoX (separate loaders)
+    - framepack: FramePack long-video stitching (separate loaders)
+    - hunyuan_video: Tencent HunyuanVideo (separate loaders)
+    - mochi: Mochi 1 (separate loaders)
+  Other (fully-registered):
+    - lumina2: Lumina 2 (separate loaders)
+    - hunyuan_3d: Hunyuan3D image-to-3D (separate loaders)
+    - supir: SUPIR upscaler/restorer (separate loaders)
+
+  Also registered as stubs (``registered=False`` — detected but not yet
+  wired for workflows): ``sd3``, ``sd3_turbo``, ``hunyuan_dit``,
+  ``pixart``, ``auraflow``, ``kolors``.
 
 TYPICAL USAGE:
     from _architectures import ARCHITECTURES, get_arch
