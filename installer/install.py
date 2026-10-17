@@ -3420,6 +3420,12 @@ def _find_darktable_plugin_src() -> Path | None:
         SCRIPT_DIR.parent,
         SCRIPT_DIR.parent / "plugins" / "darktable",
     ]
+    if BUNDLE_DIR != SCRIPT_DIR:
+        search_dirs += [
+            BUNDLE_DIR,
+            BUNDLE_DIR / "plugins",
+            BUNDLE_DIR / "plugins" / "darktable",
+        ]
     for d in search_dirs:
         candidate = d / "comfyui_connector.lua"
         if candidate.exists():
