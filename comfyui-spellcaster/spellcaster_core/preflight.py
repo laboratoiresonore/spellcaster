@@ -381,13 +381,11 @@ _MODEL_ALIAS_CANDIDATES = {
         ]),
         (lambda s: "umt5" in s, [
             "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
-            "nvfp4/umt5_xxl_fp4_mixed.safetensors",
             "umt5_xxl_fp16.safetensors",
         ]),
         (lambda s: "t5xxl" in s, [
             "t5xxl_fp8_e4m3fn.safetensors",
             "t5xxl_fp8_e4m3fn_scaled.safetensors",
-            "nvfp4/t5xxl_fp4_mixed.safetensors",
         ]),
         (lambda s: "gemma_3_12b" in s, [
             "gemma_3_12B_it_fp8_scaled.safetensors",
@@ -398,7 +396,6 @@ _MODEL_ALIAS_CANDIDATES = {
         (lambda s: "t5xxl" in s, [
             "t5xxl_fp8_e4m3fn.safetensors",
             "t5xxl_fp8_e4m3fn_scaled.safetensors",
-            "nvfp4/t5xxl_fp4_mixed.safetensors",
         ]),
     ],
     "vae_name": [

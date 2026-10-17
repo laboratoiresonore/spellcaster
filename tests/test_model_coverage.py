@@ -264,6 +264,64 @@ def case_guard_ignores_missing_inputs():
     _assert_method_for_preset({}, "txt2img")
 
 
+def case_spark2_default_filenames_match_live_snapshot():
+    """Guard against invented or drifted default filenames for Spark2 models
+    in KLEIN_MODELS, ARCHITECTURES, and workflow builders."""
+    import inspect
+    from spellcaster_core.workflows import KLEIN_MODELS, build_krea2_edit, build_skyreels_video
+
+    spark2_unets = {
+        "nvfp4/flux-2-klein-9b-nvfp4.safetensors",
+        "nvfp4/flux-2-klein-4b-nvfp4.safetensors",
+        "nvfp4/flux-2-klein-base-4b-nvfp4.safetensors",
+        "nvfp4/flux2-dev-nvfp4-mixed.safetensors",
+        "nvfp4/flux3_image_klein_sd_nvfp4.safetensors",
+        "nvfp4/flux3_image_klein_base_nvfp4.safetensors",
+        "flux3_image_klein_sd_int8_convrot.safetensors",
+        "flux3_image_klein_base_bf16.safetensors",
+        "nvfp4/krea2_turbo_nvfp4.safetensors",
+        "skyreels-v2-i2v-1.3b-540p/model.safetensors",
+        "skyreels-v2-df-1.3b-540p/model.safetensors",
+    }
+    spark2_clips = {
+        "nvfp4/qwen_3_8b_fp4mixed.safetensors",
+        "nvfp4/qwen_3_4b_fp4_mixed.safetensors",
+        "nvfp4/mistral_3_small_flux2_fp4_mixed.safetensors",
+        "qwen3vl_4b_int8_convrot.safetensors",
+        "qwen3vl_4b_fp8_scaled.safetensors",
+        "qwen3vl_4b_bf16.safetensors",
+        "nvfp4/qwen_2.5_vl_7b_nvfp4.safetensors",
+        "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+        "umt5_xxl_fp16.safetensors",
+        "t5xxl_fp8_e4m3fn.safetensors",
+        "t5xxl_fp8_e4m3fn_scaled.safetensors",
+        "MiniMax-H3/qwen3vl_32b_heretic_minimax_h3_nvfp4.safetensors",
+        "MiniMax-H3/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+    }
+    spark2_loras = {
+        "flux3_klein/photo_aesthetics/flux3_klein_photo_aesthetics_sd_1024.safetensors",
+        "flux3_klein/anything_2_real/flux3_klein_anything_2_real_a2r_sd_v1.safetensors",
+    }
+
+    for label, entry in KLEIN_MODELS.items():
+        if "NVFP4" in label or "Flux 3" in label:
+            assert entry["unet"] in spark2_unets, f"{label}: unet {entry['unet']!r} not in Spark2 snapshot"
+            assert entry["clip"] in spark2_clips, f"{label}: clip {entry['clip']!r} not in Spark2 snapshot"
+
+    f3_loras = ARCHITECTURES["flux3klein"].autoset_loras
+    for method, lora_list in f3_loras.items():
+        for lora_name, _ms, _cs in lora_list:
+            assert lora_name in spark2_loras, f"flux3klein {method}: {lora_name!r} not in Spark2 snapshot"
+
+    krea_sig = inspect.signature(build_krea2_edit)
+    assert krea_sig.parameters["unet_name"].default in spark2_unets
+    assert krea_sig.parameters["clip_name"].default in spark2_clips
+
+    h3_extra = ARCHITECTURES["minimax_h3"].extra
+    assert h3_extra["clip_type"] == "minimax"
+    assert h3_extra["audio_vae_name"] == "MiniMax-H3/minimax_h3_audio_vae_fp32.safetensors"
+
+
 CASES = [
     ("registry: every detected arch is registered",       case_every_detected_arch_is_registered),
     ("registry: every arch has supported_methods tuple",  case_registered_archs_have_supported_methods),
@@ -285,6 +343,7 @@ CASES = [
     ("guard: accepts sdxl on txt2img",                    case_guard_accepts_sdxl_on_txt2img),
     ("guard: unknown arch passes through",                case_guard_passes_unknown_arch_for_backward_compat),
     ("guard: missing inputs silent-pass",                 case_guard_ignores_missing_inputs),
+    ("spark2: default filenames match live snapshot",     case_spark2_default_filenames_match_live_snapshot),
 ]
 
 

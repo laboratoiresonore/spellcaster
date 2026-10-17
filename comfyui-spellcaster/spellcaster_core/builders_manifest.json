@@ -2,7 +2,7 @@
   "schema_version": 3,
   "generator": "spellcaster/tools/build_builders_manifest.py",
   "source": "comfyui-spellcaster/spellcaster_core/workflows.py",
-  "method_count": 80,
+  "method_count": 78,
   "methods": [
     {
       "id": "2d_to_sbs",
@@ -1289,82 +1289,6 @@
         }
       ],
       "short_doc": "Generate any object/person as a transparent layer using ANY model."
-    },
-    {
-      "id": "hidream_o1",
-      "builder": "build_hidream_o1",
-      "label": "HiDream-O1-Image builder — generate high-fidelity pixel-native images",
-      "kind": "other",
-      "model_family": "generic",
-      "target_class": "HiDreamO1PatchSeamSmoothing",
-      "nsfw": true,
-      "input_slots": [],
-      "params": [
-        {
-          "name": "prompt",
-          "required": true
-        },
-        {
-          "name": "seed",
-          "required": true
-        },
-        {
-          "name": "width",
-          "required": false,
-          "default": 1024
-        },
-        {
-          "name": "height",
-          "required": false,
-          "default": 1024
-        },
-        {
-          "name": "steps",
-          "required": false,
-          "default": 25
-        },
-        {
-          "name": "cfg",
-          "required": false,
-          "default": 5.0
-        },
-        {
-          "name": "denoise",
-          "required": false,
-          "default": 1.0
-        },
-        {
-          "name": "saganaki22_nodes",
-          "required": false,
-          "default": null
-        },
-        {
-          "name": "vae_name",
-          "required": false,
-          "default": null
-        },
-        {
-          "name": "loras",
-          "required": false,
-          "default": null
-        },
-        {
-          "name": "lora_name",
-          "required": false,
-          "default": null
-        },
-        {
-          "name": "lora_strength",
-          "required": false,
-          "default": 1.0
-        },
-        {
-          "name": "filename_prefix",
-          "required": false,
-          "default": "hidream-o1/spellcaster"
-        }
-      ],
-      "short_doc": "HiDream-O1-Image builder — generate high-fidelity pixel-native images"
     },
     {
       "id": "hunyuan_3d_mesh",
@@ -3668,12 +3592,12 @@
         {
           "name": "unet_name",
           "required": false,
-          "default": "nvfp4/krea2-turbo-nvfp4.safetensors"
+          "default": "nvfp4/krea2_turbo_nvfp4.safetensors"
         },
         {
           "name": "clip_name",
           "required": false,
-          "default": "nvfp4/qwen_3_4b_fp4_mixed.safetensors"
+          "default": "qwen3vl_4b_fp8_scaled.safetensors"
         },
         {
           "name": "vae_name",
@@ -4157,83 +4081,6 @@
         }
       ],
       "short_doc": "Magic Eraser — SAM3 detect + LaMa inpaint."
-    },
-    {
-      "id": "minimax_h3_video",
-      "builder": "build_minimax_h3_video",
-      "label": "MiniMax Hailuo H3 video generation (I2V or T2V) via MiniMaxH3ImageToVideo",
-      "kind": "video",
-      "model_family": "generic",
-      "target_class": "MiniMaxH3ImageToVideo",
-      "input_slots": [
-        "image_filename"
-      ],
-      "params": [
-        {
-          "name": "preset",
-          "required": true
-        },
-        {
-          "name": "prompt_text",
-          "required": true
-        },
-        {
-          "name": "seed",
-          "required": true
-        },
-        {
-          "name": "image_filename",
-          "slot": "image",
-          "required": false,
-          "default": null
-        },
-        {
-          "name": "negative_text",
-          "required": false,
-          "default": ""
-        },
-        {
-          "name": "width",
-          "required": false,
-          "default": 832
-        },
-        {
-          "name": "height",
-          "required": false,
-          "default": 480
-        },
-        {
-          "name": "length",
-          "required": false,
-          "default": 49
-        },
-        {
-          "name": "steps",
-          "required": false,
-          "default": null
-        },
-        {
-          "name": "cfg",
-          "required": false,
-          "default": null
-        },
-        {
-          "name": "shift",
-          "required": false,
-          "default": null
-        },
-        {
-          "name": "fps",
-          "required": false,
-          "default": 24
-        },
-        {
-          "name": "pingpong",
-          "required": false,
-          "default": false
-        }
-      ],
-      "short_doc": "MiniMax Hailuo H3 video generation (I2V or T2V) via MiniMaxH3ImageToVideo."
     },
     {
       "id": "mochi_video",
@@ -5322,7 +5169,7 @@
     {
       "id": "skyreels_video",
       "builder": "build_skyreels_video",
-      "label": "SkyReels V2 14B 720p I2V / DF video generation on Spark2",
+      "label": "SkyReels V2 1.3B 540p I2V / DF video generation on Spark2",
       "kind": "video",
       "model_family": "generic",
       "target_class": "EmptyHunyuanLatentVideo",
@@ -5394,7 +5241,7 @@
           "default": false
         }
       ],
-      "short_doc": "SkyReels V2 14B 720p I2V / DF video generation on Spark2."
+      "short_doc": "SkyReels V2 1.3B 540p I2V / DF video generation on Spark2."
     },
     {
       "id": "style_transfer",

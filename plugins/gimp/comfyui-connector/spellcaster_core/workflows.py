@@ -261,9 +261,6 @@ NSFW_METHODS: frozenset[str] = frozenset({
     "build_klein_batch_variations",
     "build_klein_auto_inpaint",
     "build_klein_sam3_inpaint",
-    # ── HiDream family (photoreal identity-preserving) ───────────────────
-    # HiDream-O1 can be used for identity manipulation, similar to Klein.
-    "build_hidream_o1",
     # ── Face / head identity manipulation ───────────────────────────────
     # ReActor-family face swap + MTB faceswap. Any builder whose canonical
     # job is replacing a face/head in a target image is NSFW-licensed.
@@ -373,26 +370,20 @@ KLEIN_MODELS = {
         "arch": "flux2dev",
     },
     "Flux 3 Klein SD NVFP4": {
-        "unet": "nvfp4/flux3_klein_sd_fp4_b100k.safetensors",
-        "clip": "nvfp4/qwen_3_4b_fp4_mixed.safetensors",
+        "unet": "nvfp4/flux3_image_klein_sd_nvfp4.safetensors",
+        "clip": "qwen3vl_4b_int8_convrot.safetensors",
         "clip_type": "flux3",
         "arch": "flux3klein",
     },
     "Flux 3 Klein Base NVFP4": {
-        "unet": "nvfp4/flux3_klein_base_fp4_b100k.safetensors",
-        "clip": "nvfp4/qwen_3_4b_fp4_mixed.safetensors",
+        "unet": "nvfp4/flux3_image_klein_base_nvfp4.safetensors",
+        "clip": "qwen3vl_4b_int8_convrot.safetensors",
         "clip_type": "flux3",
         "arch": "flux3klein",
     },
     "Flux 3 Klein SD INT8": {
-        "unet": "nvfp4/flux3_klein_sd_int8_b100k.safetensors",
-        "clip": "nvfp4/qwen_3_4b_fp4_mixed.safetensors",
-        "clip_type": "flux3",
-        "arch": "flux3klein",
-    },
-    "Flux 3 Klein Base INT8": {
-        "unet": "nvfp4/flux3_klein_base_int8_b100k.safetensors",
-        "clip": "nvfp4/qwen_3_4b_fp4_mixed.safetensors",
+        "unet": "flux3_image_klein_sd_int8_convrot.safetensors",
+        "clip": "qwen3vl_4b_int8_convrot.safetensors",
         "clip_type": "flux3",
         "arch": "flux3klein",
     },
@@ -10482,149 +10473,12 @@ def build_ltx_video(preset, prompt_text, seed,
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  HiDream-O1-Image — high-fidelity pixel-native image generation (SOL) via ComfyUI
-# ═══════════════════════════════════════════════════════════════════════════
-
-def build_hidream_o1(prompt, seed, *, width=1024, height=1024, steps=25, cfg=5.0,
-                     denoise=1.0, saganaki22_nodes=None, vae_name=None,
-                     loras=None, lora_name=None, lora_strength=1.0,
-                     filename_prefix="hidream-o1/spellcaster") -> dict:
-    """HiDream-O1-Image builder — generate high-fidelity pixel-native images
-    using the HiDream-O1-Transformer (8B, FP8 ~10GB, MIT license) via ComfyUI.
-
-    HiDream-O1 is a pixel-native diffusion model integrated into ComfyUI core.
-    It uses QuadrupleCLIPLoader with clip-l, clip-g, t5xxl, and llama_8b_3.1_instruct
-    text encoders. The builder leverages the Saganaki22 custom nodes for advanced
-    reference image handling and seam smoothing.
-
-    ARCHITECTURE:
-      1. Load HiDreamO1 model via ComfyUI core's hidream_o1 loader
-      2. Load QuadrupleCLIP text encoder (clip-l, clip-g, t5xxl, llama_8b)
-      3. Load VAE (default: hifidelity_vae.safetensors)
-      4. Create empty latent via EmptyHiDreamO1LatentImage
-      5. Apply reference images via HiDreamO1ReferenceImages (if saganaki22_nodes provided)
-      6. Sample via KSampler with custom scheduler
-      7. Decode via VAE
-      8. Apply HiDreamO1PatchSeamSmoothing (optional, for enhanced seam handling)
-
-    Args:
-        prompt: Generation prompt text
-        seed: Random seed for reproducibility
-        width: Output image width (default 1024)
-        height: Output image height (default 1024)
-        steps: Number of sampling steps (default 25)
-        cfg: Classifier-free guidance scale (default 5.0)
-        denoise: Denoise strength (default 1.0)
-        saganaki22_nodes: Dict of Saganaki22 node paths for reference/patch nodes.
-                         If None, uses standard ComfyUI core nodes.
-        vae_name: Custom VAE filename (default: hifidelity_vae.safetensors)
-        loras, lora_name, lora_strength: Optional LoRA chain parameters
-        filename_prefix: Output filename prefix (default "hidream-o1/spellcaster")
-
-    Returns:
-        dict: ComfyUI workflow JSON-serializable dict
-
-    Requires: ComfyUI core with hidream_o1 model loader and QuadrupleCLIPLoader
-              (in recent ComfyUI builds), plus optional Saganaki22 custom nodes
-              for reference image handling and seam smoothing.
-    """
-    nf = NodeFactory()
-
-    # ── Model loading ─────────────────────────────────────────────
-    # HiDreamO1Transformer via ComfyUI core's hidream_o1 loader
-    model_id = nf._add("LoadHiDreamO1Model", {
-        "model_name": "hidream_o1_fp8.safetensors",
-    }, node_id="1")
-
-    # QuadrupleCLIP text encoder (clip-l, clip-g, t5xxl, llama_8b_3.1_instruct)
-    clip_id = nf._add("QuadrupleCLIPLoader", {
-        "clip_name1": "clip_l.safetensors",
-        "clip_name2": "clip_g.safetensors",
-        "clip_name3": "t5xxl_fp16.safetensors",
-        "clip_name4": "llama_8b_3.1_instruct.safetensors",
-    }, node_id="2")
-
-    # VAE loader
-    vae_id = nf.vae_loader(vae_name or "hifidelity_vae.safetensors", node_id="3")
-
-    # ── LoRA chain (optional) ─────────────────────────────────────
-    model_ref = [model_id, 0]
-    if lora_name and not loras:
-        loras = [{"name": lora_name, "strength": lora_strength}]
-
-    if loras:
-        clip_ref = [clip_id, 0]
-        for i, lora in enumerate(loras):
-            lora_id = nf.lora_loader_model_only(model_ref, lora["name"],
-                                                lora.get("strength", 1.0),
-                                                node_id=f"100_{i}")
-            model_ref = [lora_id, 0]
-
-    # ── Text encoding (QuadrupleCLIP → positive/negative) ─────────
-    pos_id = nf.clip_encode([clip_id, 0], prompt, node_id="4")
-    neg_id = nf.clip_encode([clip_id, 0], "", node_id="5")  # Empty negative
-
-    # ── Latent creation (EmptyHiDreamO1LatentImage) ───────────────
-    latent_id = nf._add("EmptyHiDreamO1LatentImage", {
-        "width": width,
-        "height": height,
-        "batch_size": 1,
-    }, node_id="10")
-
-    # ── Reference image handling (Saganaki22 optional) ────────────
-    # If saganaki22_nodes provided, use HiDreamO1ReferenceImages for conditioning
-    if saganaki22_nodes and saganaki22_nodes.get("reference_image"):
-        ref_img_id = nf.load_image(saganaki22_nodes["reference_image"], node_id="11")
-        ref_id = nf._add("HiDreamO1ReferenceImages", {
-            "model": model_ref,
-            "images": [ref_img_id, 0],
-            "strength": saganaki22_nodes.get("reference_strength", 1.0),
-        }, node_id="12")
-        model_ref = [ref_id, 0]  # Update model with reference conditioning
-
-    # ── Sampling (KSampler with custom scheduler) ─────────────────
-    scheduler = "simple"  # Standard scheduler for HiDream-O1
-    sampler = "euler"     # Euler is the canonical sampler for HiDream-O1
-
-    guider_id = nf.cfg_guider(model_ref, [pos_id, 0], [neg_id, 0],
-                               cfg, node_id="20")
-    sampler_id = nf.ksampler_select(sampler, node_id="21")
-    sched_id = nf.basic_scheduler(model_ref, steps, denoise,
-                                   scheduler=scheduler, node_id="22")
-    noise_id = nf.random_noise(seed, node_id="23")
-
-    sample_id = nf.ksampler(
-        [noise_id, 0], [guider_id, 0], [sampler_id, 0],
-        [sched_id, 0], [latent_id, 0], node_id="30",
-    )
-
-    # ── VAE decode ────────────────────────────────────────────────
-    dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="40")
-
-    # ── Optional seam smoothing (Saganaki22) ──────────────────────
-    # Apply HiDreamO1PatchSeamSmoothing if requested
-    if saganaki22_nodes and saganaki22_nodes.get("seam_smoothing"):
-        seam_id = nf._add("HiDreamO1PatchSeamSmoothing", {
-            "image": [dec_id, 0],
-            "strength": saganaki22_nodes.get("seam_strength", 0.5),
-        }, node_id="45")
-        out_ref = [seam_id, 0]
-    else:
-        out_ref = [dec_id, 0]
-
-    # ── Output ────────────────────────────────────────────────────
-    nf.save_image_websocket(out_ref, node_id="50")
-
-    return nf.build()
-
-
-# ═══════════════════════════════════════════════════════════════════════════
 #  Krea 2 Turbo — instruction-driven image edit & generation (Spark2 NVFP4)
 # ═══════════════════════════════════════════════════════════════════════════
 
 def build_krea2_edit(image_filename, prompt_text, seed, *,
-                     unet_name="nvfp4/krea2-turbo-nvfp4.safetensors",
-                     clip_name="nvfp4/qwen_3_4b_fp4_mixed.safetensors",
+                     unet_name="nvfp4/krea2_turbo_nvfp4.safetensors",
+                     clip_name="qwen3vl_4b_fp8_scaled.safetensors",
                      vae_name="qwen_image_vae.safetensors",
                      negative_text="",
                      steps=8, cfg=1.5,
@@ -10650,16 +10504,6 @@ def build_krea2_edit(image_filename, prompt_text, seed, *,
     unet_id = nf.unet_loader(unet_name, "default", node_id="1")
     model_ref = [unet_id, 0]
 
-    if use_edit_patch:
-        patch_id = nf._add("Krea2EditModelPatch", {"model": model_ref}, node_id="1p")
-        model_ref = [patch_id, 0]
-
-    shift_id = nf._add("ModelSamplingAuraFlow", {
-        "model": model_ref,
-        "shift": float(shift),
-    }, node_id="1s")
-    model_ref = [shift_id, 0]
-
     clip_id = nf.clip_loader(clip_name, clip_type="krea2", device="default", node_id="2")
     vae_id = nf.vae_loader(vae_name, node_id="3")
 
@@ -10669,6 +10513,22 @@ def build_krea2_edit(image_filename, prompt_text, seed, *,
     img_id = nf.load_image(image_filename, node_id="6")
     scaled_id = nf.image_scale_to_total_pixels([img_id, 0], megapixels=1.0, node_id="7")
     enc_id = nf.vae_encode([scaled_id, 0], [vae_id, 0], node_id="8")
+
+    if use_edit_patch:
+        patch_id = nf._add("Krea2EditModelPatch", {
+            "model": model_ref,
+            "source_latent": [enc_id, 0],
+            "vae": [vae_id, 0],
+            "source_image": [scaled_id, 0],
+            "target_latent": [enc_id, 0],
+        }, node_id="1p")
+        model_ref = [patch_id, 0]
+
+    shift_id = nf._add("ModelSamplingAuraFlow", {
+        "model": model_ref,
+        "shift": float(shift),
+    }, node_id="1s")
+    model_ref = [shift_id, 0]
 
     ref_pos_id = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="9")
     ref_neg_id = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="10")
@@ -10683,69 +10543,6 @@ def build_krea2_edit(image_filename, prompt_text, seed, *,
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  MiniMax Hailuo H3 — video generation (I2V / T2V on Spark2)
-# ═══════════════════════════════════════════════════════════════════════════
-
-def build_minimax_h3_video(preset, prompt_text, seed, *,
-                           image_filename=None,
-                           negative_text="",
-                           width=832, height=480, length=49,
-                           steps=None, cfg=None, shift=None,
-                           fps=24, pingpong=False) -> dict:
-    """MiniMax Hailuo H3 video generation (I2V or T2V) via MiniMaxH3ImageToVideo.
-
-    Compatible with `nvfp4/minimax-hailuo-h3-fp4_mixed.safetensors` and
-    `minimax-hailuo-h3_fp8_mixed.safetensors` on Spark2.
-    """
-    _assert_method_for_preset(preset, "video_gen")
-    nf = NodeFactory()
-
-    unet_name = preset.get("unet") or preset.get("ckpt") or "nvfp4/minimax-hailuo-h3-fp4_mixed.safetensors"
-    clip_name = preset.get("clip") or "nvfp4/umt5_xxl_fp4_mixed.safetensors"
-    vae_name = preset.get("vae") or "wan2.2_vae.safetensors"
-    steps = int(steps if steps is not None else preset.get("steps", 20))
-    cfg = float(cfg if cfg is not None else preset.get("cfg", 3.5))
-    shift = float(shift if shift is not None else preset.get("shift", 5.0))
-    fps = int(fps or preset.get("fps", 24))
-
-    unet_id = nf.unet_loader(unet_name, "default", node_id="1")
-    shift_id = nf._add("ModelSamplingSD3", {
-        "model": [unet_id, 0],
-        "shift": shift,
-    }, node_id="1s")
-    clip_id = nf.clip_loader(clip_name, clip_type="wan", device="default", node_id="2")
-    vae_id = nf.vae_loader(vae_name, node_id="3")
-
-    pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="4")
-    neg_id = nf.clip_encode([clip_id, 0], negative_text or "blurry, static, low quality, watermark", node_id="5")
-
-    h3_inputs = {
-        "positive": [pos_id, 0],
-        "negative": [neg_id, 0],
-        "vae": [vae_id, 0],
-        "width": int(width),
-        "height": int(height),
-        "length": int(length),
-        "batch_size": 1,
-    }
-    if image_filename:
-        img_id = nf.load_image(image_filename, node_id="6")
-        h3_inputs["start_image"] = [img_id, 0]
-
-    cond_id = nf._add("MiniMaxH3ImageToVideo", h3_inputs, node_id="7")
-
-    samp_id = nf.ksampler(
-        [shift_id, 0], [cond_id, 0], [cond_id, 1], [cond_id, 2],
-        seed, steps, cfg, "euler", "simple", 1.0, node_id="8",
-    )
-    dec_id = nf.vae_decode([samp_id, 0], [vae_id, 0], node_id="9")
-    nf.vhs_video_combine([dec_id, 0], frame_rate=fps,
-                         filename_prefix="MiniMaxH3", pingpong=pingpong,
-                         node_id="10")
-    return nf.build()
-
-
-# ═══════════════════════════════════════════════════════════════════════════
 #  SkyReels V2 — WAN-based I2V / DF video generation on Spark2
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -10755,12 +10552,12 @@ def build_skyreels_video(preset, prompt_text, seed, *,
                          width=832, height=480, length=49,
                          steps=None, cfg=None, shift=None,
                          fps=24, pingpong=False) -> dict:
-    """SkyReels V2 14B 720p I2V / DF video generation on Spark2."""
+    """SkyReels V2 1.3B 540p I2V / DF video generation on Spark2."""
     _assert_method_for_preset(preset, "video_gen")
     nf = NodeFactory()
 
-    unet_name = preset.get("unet") or preset.get("ckpt") or "skyreels_v2_i2v_14B_720p_fp8_e4m3fn.safetensors"
-    clip_name = preset.get("clip") or "nvfp4/umt5_xxl_fp4_mixed.safetensors"
+    unet_name = preset.get("unet") or preset.get("ckpt") or "skyreels-v2-i2v-1.3b-540p/model.safetensors"
+    clip_name = preset.get("clip") or "umt5_xxl_fp8_e4m3fn_scaled.safetensors"
     vae_name = preset.get("vae") or "wan_2.1_vae.safetensors"
     steps = int(steps if steps is not None else preset.get("steps", 20))
     cfg = float(cfg if cfg is not None else preset.get("cfg", 3.5))

@@ -875,10 +875,10 @@ def detect_mochi_preset(comfy_url: str) -> Optional[dict]:
 # ══════════════════════════════════════════════════════════════════════════
 
 def detect_minimax_h3_preset(comfy_url: str) -> Optional[dict]:
-    """Auto-detect MiniMax Hailuo H3 video models on ComfyUI (Spark2).
+    """Auto-detect MiniMax-H3 video models on ComfyUI (Spark2).
 
-    Returns a dict compatible with `workflows.build_minimax_h3_video(...)`,
-    or None if MiniMax H3 UNET / CLIP / VAE are not installed.
+    Returns a dict with the detected MiniMax-H3 UNET / CLIP / VAE,
+    or None if MiniMax-H3 models are not installed.
     """
     from .model_detect import is_usable_model
     unet_models = [m for m in probe_object_info_choices(comfy_url, "UNETLoader", "unet_name")
@@ -900,12 +900,17 @@ def detect_minimax_h3_preset(comfy_url: str) -> Optional[dict]:
     h3_clip = None
     for c in clip_choices:
         cl = c.lower()
-        if "umt5" in cl:
+        if "minimax" in cl or "qwen3vl_32b" in cl:
             h3_clip = c
             break
 
     vae_choices = probe_object_info_choices(comfy_url, "VAELoader", "vae_name")
-    h3_vae = pick_wan_vae(h3_unet, vae_choices)
+    h3_vae = None
+    for v in vae_choices:
+        vl = v.lower()
+        if "minimax_h3_video_vae" in vl:
+            h3_vae = v
+            break
     if not h3_clip or not h3_vae:
         return None
 
@@ -913,9 +918,10 @@ def detect_minimax_h3_preset(comfy_url: str) -> Optional[dict]:
         "arch": "minimax_h3",
         "unet": h3_unet,
         "clip": h3_clip,
+        "clip_type": "minimax",
         "vae": h3_vae,
-        "steps": 20,
-        "cfg": 3.5,
+        "steps": 8,
+        "cfg": 1.0,
         "shift": 5.0,
         "fps": 24,
     }

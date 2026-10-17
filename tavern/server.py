@@ -8798,7 +8798,6 @@ def _preflight_unet_arch(comfy_url, ckpt, arch, arch_key):
                 if not _has_clip(
                     avail2,
                     clip2,
-                    "nvfp4/t5xxl_fp4_mixed.safetensors",
                     "t5xxl_fp8_e4m3fn.safetensors",
                     "t5xxl_fp8_e4m3fn_scaled.safetensors",
                     "t5xxl_fp16.safetensors",
@@ -8818,7 +8817,12 @@ def _preflight_unet_arch(comfy_url, ckpt, arch, arch_key):
                 avail = clips[0] if clips and isinstance(clips, list) else []
                 if arch.clip_mode == "single_chroma":
                     clip_name = arch.extra.get("clip_name", "t5xxl_fp8_e4m3fn.safetensors")
-                    if not _has_clip(avail, clip_name, "nvfp4/t5xxl_fp4_mixed.safetensors"):
+                    if not _has_clip(
+                        avail,
+                        clip_name,
+                        "t5xxl_fp8_e4m3fn.safetensors",
+                        "t5xxl_fp8_e4m3fn_scaled.safetensors",
+                    ):
                         missing.append(f"CLIP '{clip_name}'")
                 elif arch.clip_mode == "single_flux2":
                     ckpt_lower = ckpt.lower()
@@ -8826,12 +8830,12 @@ def _preflight_unet_arch(comfy_url, ckpt, arch, arch_key):
                         cands = (
                             arch.extra.get("clip_name"),
                             "nvfp4/mistral_3_small_flux2_fp4_mixed.safetensors",
-                            "nvfp4/qwen_3_8b_fp4_mixed.safetensors",
+                            "nvfp4/qwen_3_8b_fp4mixed.safetensors",
                         )
                     elif "9b" in ckpt_lower:
                         cands = (
                             "qwen_3_8b_fp8mixed.safetensors",
-                            "nvfp4/qwen_3_8b_fp4_mixed.safetensors",
+                            "nvfp4/qwen_3_8b_fp4mixed.safetensors",
                         )
                     else:
                         cands = (
@@ -8847,7 +8851,7 @@ def _preflight_unet_arch(comfy_url, ckpt, arch, arch_key):
                         clip_name,
                         "nvfp4/qwen_3_4b_fp4_mixed.safetensors",
                         "qwen_3_4b.safetensors",
-                        "nvfp4/qwen_2.5_vl_7b_fp4_mixed.safetensors",
+                        "nvfp4/qwen_2.5_vl_7b_nvfp4.safetensors",
                     ):
                         missing.append(f"CLIP '{clip_name}'")
     except Exception as e:

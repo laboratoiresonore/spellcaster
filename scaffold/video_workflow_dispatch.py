@@ -408,12 +408,13 @@ def resolve_wan_preset(preset_key: str, models: dict) -> Optional[dict]:
     # legacy "blue-with-text artifacts" note for context; the black
     # frame is the more common failure.
     clip_pool = models.get("clip", []) + models.get("clip_gguf", [])
+    _clip_skip = {"gguf", "nsfw"}
     clip = (_pick(clip_pool, {"umt5"}, {"fp8", "xxl", "scaled", "safetensors"},
-                  {"gguf", "nsfw"})
+                  _clip_skip)
             or _pick(clip_pool, {"umt5"}, {"fp4", "mixed", "xxl", "safetensors"},
-                     {"gguf", "nsfw"})
+                     _clip_skip)
             or _pick(clip_pool, {"umt5"}, {"xxl", "fp16", "safetensors"},
-                     {"gguf", "nsfw"})
+                     _clip_skip)
             or _pick(clip_pool, {"umt5"}, {"q8", "xxl"})
             or _pick(clip_pool, {"umt5"}, {"q6", "xxl"})
             or _pick(clip_pool, {"umt5"}, {"q5", "xxl"}))
@@ -677,8 +678,8 @@ def _build_native_workflow_impl(preset_key: str, *, prompt: str,
             return None, f"build_seedvr2_video_upscale raised: {e}"
         return workflow, None
 
-    # ── HunyuanVideo 1.5 / MiniMax Hailuo H3 / SkyReels V2 ──────────
-    if family in ("hunyuan_video", "minimax_h3", "skyreels"):
+    # ── HunyuanVideo 1.5 / SkyReels V2 ──────────────────────────────
+    if family in ("hunyuan_video", "skyreels"):
         _ensure_spellcaster_core_on_path()
         try:
             from spellcaster_core import workflows as _wf  # type: ignore
@@ -699,18 +700,6 @@ def _build_native_workflow_impl(preset_key: str, *, prompt: str,
                     vae_name=preset_dict["vae_name"],
                     width=width, height=height, num_frames=length, fps=fps,
                     steps=steps or defaults.get("steps", 20),
-                )
-            elif family == "minimax_h3":
-                preset_dict = _vp.detect_minimax_h3_preset(comfyui_base_url)
-                if not preset_dict:
-                    return None, "couldn't locate MiniMax Hailuo H3 models on ComfyUI"
-                workflow = _wf.build_minimax_h3_video(
-                    preset=preset_dict,
-                    prompt_text=prompt, negative_text=negative, seed=seed,
-                    width=width, height=height, length=length, fps=fps,
-                    steps=steps or defaults.get("steps", 20),
-                    cfg=cfg if cfg is not None else defaults.get("guidance", 5.0),
-                    image_filename=image_filename,
                 )
             else:
                 preset_dict = _vp.detect_skyreels_preset(comfyui_base_url)

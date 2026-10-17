@@ -191,11 +191,7 @@ def load_model_stack(nf, preset, node_id="1") -> tuple[list, list, list]:
         elif arch.clip_mode == "dual":
             # Flux Dev / Kontext: DualCLIPLoader
             clip1 = preset.get("clip_name1") or extra.get("clip_name1", "clip_l.safetensors")
-            clip2 = preset.get("clip_name2") or (
-                "nvfp4/t5xxl_fp4_mixed.safetensors"
-                if "nvfp4" in ckpt_lower
-                else extra.get("clip_name2", "t5xxl_fp8_e4m3fn.safetensors")
-            )
+            clip2 = preset.get("clip_name2") or extra.get("clip_name2", "t5xxl_fp8_e4m3fn.safetensors")
             clip_id = nf.dual_clip_loader(
                 clip1,
                 clip2,

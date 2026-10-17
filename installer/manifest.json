@@ -905,8 +905,8 @@
         ],
         "pulid": [
           {
-            "path": "pulid/pulid_flux2_klein_v2.safetensors",
-            "url": null,
+            "path": "pulid/pulid_flux_v0.9.1.safetensors",
+            "url": "https://huggingface.co/guozinan/PuLID/resolve/main/pulid_flux_v0.9.1.safetensors",
             "page_url": "https://huggingface.co/guozinan/PuLID",
             "note": "PuLID Flux model v0.9.1",
             "size_mb": 1078,
@@ -1090,7 +1090,9 @@
       },
       "custom_nodes": [
         "ComfyUI-GGUF",
-        "ComfyUI-VideoHelperSuite"
+        "ComfyUI-VideoHelperSuite",
+        "ComfyUI-RIFE",
+        "ComfyUI-RTX-Remix"
       ]
     },
     "rembg": {

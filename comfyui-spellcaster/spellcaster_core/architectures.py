@@ -845,8 +845,8 @@ _reg("flux3klein",
      },
      autoset_cn={},
      autoset_loras={
-         "img2img": [("Flux3/Max_Detail_2.safetensors", 0.5, 0.5)],
-         "txt2img": [("Flux3/Max_Detail_2.safetensors", 0.5, 0.5)],
+         "img2img": [("flux3_klein/photo_aesthetics/flux3_klein_photo_aesthetics_sd_1024.safetensors", 0.5, 0.5)],
+         "txt2img": [("flux3_klein/photo_aesthetics/flux3_klein_photo_aesthetics_sd_1024.safetensors", 0.5, 0.5)],
      },
      scene_group="flux",
      extra={
@@ -1344,9 +1344,9 @@ _reg("minimax_h3",
      scene_group="video",
      extra={
          "clip_name": "MiniMax-H3/qwen3vl_32b_heretic_minimax_h3_nvfp4.safetensors",
-         "clip_type": "minimax_h3",
+         "clip_type": "minimax",
          "vae_name": "MiniMax-H3/minimax_h3_video_vae_fp16.safetensors",
-         "audio_vae_name": "MiniMax-H3/minimax_h3_audio_vae_fp16.safetensors",
+         "audio_vae_name": "MiniMax-H3/minimax_h3_audio_vae_fp32.safetensors",
      },
      registered=True)
 
