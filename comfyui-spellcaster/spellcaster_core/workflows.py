@@ -261,6 +261,9 @@ NSFW_METHODS: frozenset[str] = frozenset({
     "build_klein_batch_variations",
     "build_klein_auto_inpaint",
     "build_klein_sam3_inpaint",
+    # ── HiDream family (photoreal identity-preserving) ───────────────────
+    # HiDream-O1 can be used for identity manipulation, similar to Klein.
+    "build_hidream_o1",
     # ── Face / head identity manipulation ───────────────────────────────
     # ReActor-family face swap + MTB faceswap. Any builder whose canonical
     # job is replacing a face/head in a target image is NSFW-licensed.
@@ -344,6 +347,54 @@ KLEIN_MODELS = {
     "Klein Base 4B": {
         "unet": "A-Flux\\flux-2-klein-base-4b-fp8.safetensors",
         "clip": "qwen_3_4b.safetensors",
+    },
+    "Klein 9B NVFP4": {
+        "unet": "nvfp4/flux-2-klein-9b-nvfp4.safetensors",
+        "clip": "nvfp4/qwen_3_8b_fp4mixed.safetensors",
+        "clip_type": "flux2",
+        "arch": "flux2klein",
+    },
+    "Klein 4B NVFP4": {
+        "unet": "nvfp4/flux-2-klein-4b-nvfp4.safetensors",
+        "clip": "nvfp4/qwen_3_4b_fp4_mixed.safetensors",
+        "clip_type": "flux2",
+        "arch": "flux2klein",
+    },
+    "Klein Base 4B NVFP4": {
+        "unet": "nvfp4/flux-2-klein-base-4b-nvfp4.safetensors",
+        "clip": "nvfp4/qwen_3_4b_fp4_mixed.safetensors",
+        "clip_type": "flux2",
+        "arch": "flux2klein",
+    },
+    "Flux 2 Dev NVFP4": {
+        "unet": "nvfp4/flux2-dev-nvfp4-mixed.safetensors",
+        "clip": "nvfp4/mistral_3_small_flux2_fp4_mixed.safetensors",
+        "clip_type": "flux2",
+        "arch": "flux2dev",
+    },
+    "Flux 3 Klein SD NVFP4": {
+        "unet": "nvfp4/flux3_klein_sd_fp4_b100k.safetensors",
+        "clip": "nvfp4/qwen_3_4b_fp4_mixed.safetensors",
+        "clip_type": "flux3",
+        "arch": "flux3klein",
+    },
+    "Flux 3 Klein Base NVFP4": {
+        "unet": "nvfp4/flux3_klein_base_fp4_b100k.safetensors",
+        "clip": "nvfp4/qwen_3_4b_fp4_mixed.safetensors",
+        "clip_type": "flux3",
+        "arch": "flux3klein",
+    },
+    "Flux 3 Klein SD INT8": {
+        "unet": "nvfp4/flux3_klein_sd_int8_b100k.safetensors",
+        "clip": "nvfp4/qwen_3_4b_fp4_mixed.safetensors",
+        "clip_type": "flux3",
+        "arch": "flux3klein",
+    },
+    "Flux 3 Klein Base INT8": {
+        "unet": "nvfp4/flux3_klein_base_int8_b100k.safetensors",
+        "clip": "nvfp4/qwen_3_4b_fp4_mixed.safetensors",
+        "clip_type": "flux3",
+        "arch": "flux3klein",
     },
 }
 
@@ -456,7 +507,7 @@ def build_img2img(image_filename, preset, prompt_text, negative_text, seed,
 
     # 6. VAE encode → sample → VAE decode → save
     enc_id = nf.vae_encode(img_ref, vae_ref, node_id="5")
-    is_klein = arch_key == "flux2klein"
+    is_klein = arch_key in ("flux2klein", "flux3klein", "flux2dev")
     if is_klein:
         ref_pos = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="60")
         ref_neg = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="61")
@@ -599,11 +650,18 @@ def build_txt2img(preset, prompt_text, negative_text, seed, loras=None,
                                      prompt_text, negative_text,
                                      pos_id="2", neg_id="3")
 
-    empty_id = nf.empty_latent_image(preset["width"], preset["height"],
-                                      batch_size=1, node_id="4")
-
     arch_key = preset.get("arch", "sdxl")
-    is_klein = arch_key == "flux2klein"
+    is_klein = arch_key in ("flux2klein", "flux3klein", "flux2dev")
+    if is_klein:
+        empty_id = nf.empty_flux2_latent_image(preset["width"], preset["height"],
+                                                batch_size=1, node_id="4")
+    elif arch_key in ("krea2", "qwen_image") or (arch_key == "zit" and nf.has_node("1b")):
+        empty_id = nf.empty_sd3_latent_image(preset["width"], preset["height"],
+                                              batch_size=1, node_id="4")
+    else:
+        empty_id = nf.empty_latent_image(preset["width"], preset["height"],
+                                          batch_size=1, node_id="4")
+
     if is_klein:
         # Optional Flux2Klein-Enhancer chain (same contract as build_img2img).
         guider_model = (_klein_enhance_model(nf, model_ref, [pos_id, 0],
@@ -712,12 +770,13 @@ def build_generate_anything(prompt_text, negative_text, seed, preset,
                                      full_prompt, full_negative,
                                      pos_id="2", neg_id="3")
 
+    is_klein = arch_key in ("flux2klein", "flux3klein", "flux2dev")
     # ── Klein enhancer chain ─────────────────────────────────────────
-    if arch_key == "flux2klein":
+    if is_klein:
         model_ref = _klein_enhance_model(nf, model_ref, [pos_id, 0])
 
     # ── Scene reference (Klein/Flux only) ────────────────────────────
-    if scene_filename and arch_key in ("flux2klein", "flux1dev"):
+    if scene_filename and (is_klein or arch_key == "flux1dev"):
         scene_id = nf.load_image(scene_filename, node_id="80")
         scene_scaled = nf.image_scale_to_total_pixels([scene_id, 0],
                                                         megapixels=1.0,
@@ -733,11 +792,18 @@ def build_generate_anything(prompt_text, negative_text, seed, preset,
         neg_ref = [neg_id, 0]
 
     # ── Empty latent ─────────────────────────────────────────────────
-    empty_id = nf.empty_latent_image(preset["width"], preset["height"],
-                                      batch_size=1, node_id="4")
+    if is_klein:
+        empty_id = nf.empty_flux2_latent_image(preset["width"], preset["height"],
+                                                batch_size=1, node_id="4")
+    elif arch_key in ("krea2", "qwen_image") or (arch_key == "zit" and nf.has_node("1b")):
+        empty_id = nf.empty_sd3_latent_image(preset["width"], preset["height"],
+                                              batch_size=1, node_id="4")
+    else:
+        empty_id = nf.empty_latent_image(preset["width"], preset["height"],
+                                          batch_size=1, node_id="4")
 
     # ── Sample (architecture-aware) ──────────────────────────────────
-    if arch_key == "flux2klein":
+    if is_klein:
         guider_id = nf.cfg_guider(model_ref, pos_ref, neg_ref,
                                   preset.get("cfg", 1.0), node_id="60")
         sampler_sel = nf.ksampler_select("euler", node_id="61")
@@ -1097,20 +1163,75 @@ def build_wavespeed_upscale(image_filename, model="SeedVR2", target="2K") -> dic
 
 def build_normal_map(image_filename, seed=42, max_res=1024,
                       sam3_prompt=None, sam3_invert=False, sam3_confidence=0.6,
-                      sam3_expand=4, sam3_blur=4) -> dict:
-    """Generate 3D surface normal map using NormalCrafter.
+                      sam3_expand=4, sam3_blur=4, use_moge=True,
+                      moge_model_name="moge_2_vitl_normal_fp16.safetensors",
+                      moge_normal_space="normal_opengl",
+                      moge_resolution_level=9,
+                      include_depth=False, include_glb=False) -> dict:
+    """Generate a 3D surface normal map using ComfyUI-core native MoGe
+    (default) or NormalCrafter (fallback).
+
+    MoGe-1 / MoGe-2 / MoGe-3 are NOT separate node classes in ComfyUI core
+    -- they're the same LoadMoGeModel -> MoGeInference -> MoGeRender /
+    MoGePointMapToMesh node family (comfy_extras/nodes_moge.py, added
+    v0.22.0 PR #13878). The generation is selected purely by which
+    checkpoint `moge_model_name` points at; the default here
+    ("moge_2_vitl_normal_fp16.safetensors", ~660MB FP16 ViT-L) is MoGe-2,
+    from the Comfy-Org/MoGe HF repo (folder "geometry_estimation").
 
     Produces a normal map image useful for relighting, 3D reconstruction,
-    and ControlNet normal guidance.
+    and ControlNet normal guidance -- this is always the primary/first
+    websocket image result, exactly like the old NormalCrafter-only
+    version, so existing callers that take ``results[0]`` as "the normal
+    map" (GIMP plugin_base.py normal_map(), _spellcaster_main.py's
+    normal-map-gen dialog and auto-normal-map path) are unaffected.
 
     When sam3_prompt is set, the transform is composited back onto the original
-    using a SAM3 mask so only the described region changes.
+    using a SAM3 mask so only the described region changes. NOTE: SAM3
+    compositing only applies to the primary normal-map image, not to the
+    optional depth/GLB outputs below.
+
+    Args:
+        use_moge: If True (default), use native ComfyUI MoGe nodes;
+                  if False, fall back to NormalCrafter
+        moge_model_name: geometry_estimation checkpoint filename (MoGe
+                  generation is picked by which file this names)
+        moge_normal_space: "normal_opengl" (default; +Y up -- Blender,
+                  Substance, Unity, glTF/GLB) or "normal_directx"
+                  (-Y down -- Unreal). Ignored when use_moge=False.
+        moge_resolution_level: 0 (fastest) .. 9 (most detail, default).
+                  Ignored when use_moge=False.
+        include_depth: If True, ALSO emit the MoGe depth map as a second,
+                  separately-labeled ("depth") websocket image after the
+                  primary normal map. Ignored (and unavailable) when
+                  use_moge=False -- NormalCrafter has no depth output.
+        include_glb: If True, ALSO mesh the MoGe geometry
+                  (MoGePointMapToMesh) and write it to a .glb via SaveGLB.
+                  Terminal/disk-only -- does not appear in the returned
+                  image list. Ignored when use_moge=False.
     """
     nf = NodeFactory()
     img_id = nf.load_image(image_filename, node_id="1")
     img_ref = [img_id, 0]
-    normal_id = nf.normal_crafter(img_ref, seed=seed,
-                                   max_res=max_res, node_id="2")
+
+    moge_geometry_ref = None
+    if use_moge:
+        # Native ComfyUI MoGe pipeline: LoadMoGeModel -> MoGeInference ->
+        # MoGeRender. MoGeInference returns ONE opaque MOGE_GEOMETRY handle
+        # (not separate depth/normal tensors) -- MoGeRender is called once
+        # per desired view.
+        moge_model_id = nf.load_moge_model(moge_model_name, node_id="2")
+        geometry_id = nf.mo_ge_inference([moge_model_id, 0], img_ref,
+                                          resolution_level=moge_resolution_level,
+                                          node_id="3")
+        moge_geometry_ref = [geometry_id, 0]
+        normal_id = nf.mo_ge_render(moge_geometry_ref,
+                                     output=moge_normal_space, node_id="4")
+    else:
+        # Fallback to NormalCrafter
+        normal_id = nf.normal_crafter(img_ref, seed=seed,
+                                       max_res=max_res, node_id="2")
+
     # NormalCrafter may rescale to max_res; resize the original to match the
     # output so ImageCompositeMasked accepts them. We use GetImageSize on the
     # normal output and ImageScale the original to match.
@@ -1128,7 +1249,25 @@ def build_normal_map(image_filename, seed=42, max_res=1024,
             upscale_method="lanczos", crop="disabled", node_id="911",
         )
         final_ref = apply_sam3_scope(nf, final_ref, [orig_resized_id, 0], _mask)
-    nf.save_image_websocket(final_ref, node_id="3")
+    # Primary output -- always emitted first, preserving the historical
+    # "results[0] is the normal map" contract for existing callers.
+    # node_id left auto-assigned from here on: save_image_websocket's
+    # disk_backup=True path always auto-allocates its SaveImage sibling
+    # (node_factory.py::save_image_websocket), so hand-pinning IDs for
+    # the nodes that follow risks silently clobbering it (NodeFactory._add
+    # has no collision guard -- confirmed the hard way while wiring this).
+    nf.save_image_websocket(final_ref, label="normal")
+
+    if use_moge and include_depth:
+        depth_id = nf.mo_ge_render(moge_geometry_ref, output="depth")
+        nf.save_image_websocket([depth_id, 0], label="depth",
+                                 disk_backup=True)
+
+    if use_moge and include_glb:
+        mesh_id = nf.mo_ge_point_map_to_mesh(moge_geometry_ref)
+        nf.save_glb([mesh_id, 0],
+                    filename_prefix="3D/spellcaster_normal_map")
+
     return nf.build()
 
 
@@ -1525,7 +1664,7 @@ _QUALITY_ARCHES_SLG = {"flux1dev", "flux_kontext"}
 # (always distilled). flux1dev / flux_kontext only benefit when the
 # caller's cfg is low; we gate on cfg < 4.5 inside _apply_quality_boost
 # rather than baking the gate into the set.
-_QUALITY_ARCHES_CFG_ZERO_STAR = {"zit", "flux1dev", "flux_kontext"}
+_QUALITY_ARCHES_CFG_ZERO_STAR = {"zit", "krea2", "qwen_image", "flux1dev", "flux_kontext"}
 
 
 def _apply_quality_boost(nf, model_ref, arch_key, *,
@@ -1553,7 +1692,7 @@ def _apply_quality_boost(nf, model_ref, arch_key, *,
       cfg: float guidance value; used to decide whether to wire RescaleCFG.
       node_base_id: starting node id in the 700-739 tranche.
     """
-    if quality == "fast" or arch_key == "flux2klein":
+    if quality == "fast" or arch_key in ("flux2klein", "flux3klein", "flux2dev"):
         return model_ref
     nid = node_base_id
 
@@ -1601,8 +1740,9 @@ def _apply_quality_boost(nf, model_ref, arch_key, *,
 # KJNodes' patch is a global swap — every attention call after the
 # patch uses SageAttention until disabled, which is exactly what we
 # want for a fast-mode workflow.
-_SAGE_ATTENTION_ARCHES = {"flux1dev", "flux_kontext", "flux2klein",
-                           "zit", "wan", "ltx", "chroma"}
+_SAGE_ATTENTION_ARCHES = {"flux1dev", "flux_kontext", "flux2klein", "flux3klein",
+                           "flux2dev", "krea2", "qwen_image", "zit", "wan",
+                           "ltx", "minimax_h3", "skyreels", "chroma"}
 
 
 def _apply_speedup(nf, model_ref, arch_key, *, fast_mode=False,
@@ -1680,7 +1820,7 @@ _AYS_ARCHES = {"sd15", "sdxl", "illustrious"}
 # target (6-step distillation gains visible micro-detail). SD1/SDXL
 # already have AYS at "max" so DD layering is overkill; Klein has its
 # own enhancer chain and shouldn't double-process.
-_DETAIL_DAEMON_ARCHES = {"zit"}
+_DETAIL_DAEMON_ARCHES = {"zit", "krea2"}
 
 
 def _emit_sampler(nf, *, model_ref, pos_ref, neg_ref, latent_ref,
@@ -1907,14 +2047,14 @@ def build_klein_img2img(image_filename, klein_model_key, prompt_text, seed,
     unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
     clip_id = nf.clip_loader(
         km.get("clip", "qwen_3_8b.safetensors"),
-        clip_type="flux2", device="default", node_id="2",
+        clip_type=km.get("clip_type", "flux2"), device="default", node_id="2",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
 
 
     # Apply LoRA chain
     if loras:
-        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, _ref(unet_id), _ref(clip_id), base_id=100, arch_key="flux2klein")
+        unet_id, clip_id, _trig = inject_lora_chain(nf, loras, _ref(unet_id), _ref(clip_id), base_id=100, arch_key=km.get("arch", "flux2klein"))
         # After LoRA chain, refs are [node_id, slot] lists.
         # Leave them as-is. Use _ref() for all downstream references.
     # Text conditioning
@@ -2059,18 +2199,32 @@ def _faceswap_guard(feature: str) -> None:
     guard_faceswap(feature)
 
 
+# HyperSwap 256 model variants - 2× resolution over InSwapper 128
+# 1a/1b/1c refer to different training variants with same resolution
+HYPERSWAP_256_MODELS = (
+    "hyperswap_1a_256.onnx",
+    "hyperswap_1b_256.onnx",
+    "hyperswap_1c_256.onnx",
+)
+
+
 def build_faceswap(target_filename, source_filename, swap_model="inswapper_128.onnx",
                    face_restore_model="codeformer-v0.1.0.pth",
                    face_restore_vis=1.0, codeformer_weight=0.7,
                    detect_gender_input="no", detect_gender_source="no",
                    input_face_idx="0", source_face_idx="0",
-                   quality_preset=None, quality_presets=None) -> dict:
+                   quality_preset=None, quality_presets=None,
+                   use_restore_advanced=False, restore_advanced_vis=0.8) -> dict:
     _faceswap_guard("faceswap")
     """Face swap using ReActor with optional quality presets and restoration.
 
     Swaps faces from source image into target image using ReActor (a face-swap
     node based on ONNX models). Includes optional CodeFormer post-processing
     to restore swapped face quality, with two-pass capability for high quality.
+
+    HyperSwap 256 is available as an opt-in alternative to InSwapper 128,
+    providing 2× internal swap resolution (256 vs 128) with three training
+    variants (1a/1b/1c).
 
     Pipeline:
       1. Load target and source images
@@ -2084,7 +2238,9 @@ def build_faceswap(target_filename, source_filename, swap_model="inswapper_128.o
         target_filename (str): Image to receive the new face
         source_filename (str): Image with face to swap in
         swap_model (str): ONNX swap model file, e.g. "inswapper_128.onnx",
-                         "inswapper_128_fp16.onnx" (default "inswapper_128.onnx")
+                         "inswapper_128_fp16.onnx", "reswapper_256.onnx",
+                         "hyperswap_1a_256.onnx", "hyperswap_1b_256.onnx",
+                         "hyperswap_1c_256.onnx" (default "inswapper_128.onnx")
         face_restore_model (str): CodeFormer or GFPGan model for post-processing
                                 (default "codeformer-v0.1.0.pth")
         face_restore_vis (float): CodeFormer restoration blend, 0.0-1.0
@@ -2099,6 +2255,11 @@ def build_faceswap(target_filename, source_filename, swap_model="inswapper_128.o
                             Overrides swap_model and restore_model if provided
         quality_presets (dict, optional): Maps preset names to
             {"pass1_model": "...", "pass1_restore": "...", "pass1_vis": ..., "pass1_cf": ...}
+        use_restore_advanced (bool): Use ReActorRestoreFace (Advanced) node instead of
+                                   CodeFormer in post-pass for HyperSwap quality pipeline
+                                   (default False - uses CodeFormer)
+        restore_advanced_vis (float): RestoreFace visibility when use_restore_advanced=True
+                                    (0.0-1.0, default 0.8)
 
     Returns:
         dict: ComfyUI workflow with face swap and optional restoration.
@@ -2129,7 +2290,8 @@ def build_faceswap(target_filename, source_filename, swap_model="inswapper_128.o
       - Gender mismatch can cause detection to fail; set to "no" if having issues
       - CodeFormer restoration adds time but significantly improves quality
       - codeformer_weight 0.5-0.7 recommended (too high = over-processing)
-      - Models must be ONNX format (inswapper_*.onnx), not PyTorch
+      - Models must be ONNX format (inswapper_*.onnx, hyperswap_*.onnx), not PyTorch
+      - ReActorRestoreFace ("Restore Face Advanced") requires ReActor ≥ May 12 2026
     """
     if quality_presets and quality_preset and quality_preset in quality_presets:
         qp = quality_presets[quality_preset]
@@ -2166,6 +2328,18 @@ def build_faceswap(target_filename, source_filename, swap_model="inswapper_128.o
     )
 
     result_ref = [swap_id, 0]
+
+    # Restore Face Advanced (ReActorRestoreFace) support for HyperSwap quality pipeline
+    if use_restore_advanced:
+        restore_advanced_id = nf.reactor_restore_face(
+            result_ref,
+            facedetection="retinaface_resnet50",
+            model=face_restore_model,
+            visibility=restore_advanced_vis,
+            codeformer_weight=codeformer_weight,
+            node_id="7",
+        )
+        result_ref = [restore_advanced_id, 0]
 
     # Double-pass: run a second swap with a different model for refinement
     if quality_presets and quality_preset and quality_preset in quality_presets:
@@ -2205,8 +2379,14 @@ def build_faceswap_model(target_filename, face_model_name,
                           face_restore_vis=1.0, codeformer_weight=0.5,
                           detect_gender_input="no", detect_gender_source="no",
                           input_face_idx="0", source_face_idx="0",
-                          quality_preset=None, quality_presets=None) -> dict:
-    """ReActor face swap using a saved face model. Drop-in for _build_faceswap_model()."""
+                          quality_preset=None, quality_presets=None,
+                          use_restore_advanced=False, restore_advanced_vis=0.8) -> dict:
+    """ReActor face swap using a saved face model. Drop-in for _build_faceswap_model().
+
+    HyperSwap 256 is available as an opt-in alternative to InSwapper 128,
+    providing 2× internal swap resolution (256 vs 128) with three training
+    variants (1a/1b/1c).
+    """
     _faceswap_guard("faceswap_model")
     if quality_presets and quality_preset and quality_preset in quality_presets:
         qp = quality_presets[quality_preset]
@@ -2244,6 +2424,18 @@ def build_faceswap_model(target_filename, face_model_name,
     )
 
     result_ref = [swap_id, 0]
+
+    # Restore Face Advanced (ReActorRestoreFace) support for HyperSwap quality pipeline
+    if use_restore_advanced:
+        restore_advanced_id = nf.reactor_restore_face(
+            result_ref,
+            facedetection="retinaface_resnet50",
+            model=face_restore_model,
+            visibility=restore_advanced_vis,
+            codeformer_weight=codeformer_weight,
+            node_id="7",
+        )
+        result_ref = [restore_advanced_id, 0]
 
     # Double-pass
     if quality_presets and quality_preset and quality_preset in quality_presets:
@@ -2554,7 +2746,7 @@ def build_detail_hallucinate(image_filename, upscale_model, preset,
 
     # VAE encode → sample → decode → save
     enc_id = nf.vae_encode(img_ref, vae_ref, node_id="7")
-    is_klein = arch_key == "flux2klein"
+    is_klein = arch_key in ("flux2klein", "flux3klein", "flux2dev")
     if is_klein:
         ref_pos = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="60")
         ref_neg = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="61")
@@ -2688,7 +2880,7 @@ def build_colorize(image_filename, preset, prompt_text, negative_text, seed,
 
     # VAE encode → sample → decode → save
     enc_id = nf.vae_encode(img_ref, vae_ref, node_id="8")
-    is_klein = arch_key == "flux2klein"
+    is_klein = arch_key in ("flux2klein", "flux3klein", "flux2dev")
     if is_klein:
         ref_pos = nf.reference_latent([cn_apply_id, 0], [enc_id, 0], node_id="60")
         ref_neg = nf.reference_latent([cn_apply_id, 1], [enc_id, 0], node_id="61")
@@ -2842,7 +3034,7 @@ def build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
     # unconditionally when we have a loaded VAE is safe — matches the
     # pattern in composites.inject_controlnet.
     cn_vae_ref = (vae_ref
-                  if arch_key in ("flux1dev", "flux2klein", "flux_kontext")
+                  if arch_key in ("flux1dev", "flux2klein", "flux3klein", "flux2dev", "flux_kontext")
                   else None)
     cn_apply_id = nf.controlnet_apply_advanced(
         [pos_id, 0], [neg_id, 0],
@@ -2852,8 +3044,13 @@ def build_controlnet_gen(image_filename, preprocessor_type, controlnet_model,
         node_id="7",
     )
 
-    empty_id = nf.empty_latent_image(width, height, 1, node_id="8")
-    is_klein = preset.get("arch") == "flux2klein"
+    is_klein = preset.get("arch") in ("flux2klein", "flux3klein", "flux2dev")
+    if is_klein:
+        empty_id = nf.empty_flux2_latent_image(width, height, 1, node_id="8")
+    elif arch_key in ("krea2", "qwen_image") or (arch_key == "zit" and nf.has_node("3b")):
+        empty_id = nf.empty_sd3_latent_image(width, height, 1, node_id="8")
+    else:
+        empty_id = nf.empty_latent_image(width, height, 1, node_id="8")
     if is_klein:
         guider_model = (_klein_enhance_model(nf, model_ref, [pos_id, 0],
                                               node_base_id=800)
@@ -3406,7 +3603,7 @@ def build_inpaint(image_filename, mask_filename, preset, prompt_text,
     enc_id = nf.vae_encode([scaled_img_id, 0], vae_ref, node_id="6")
     masked_id = nf.set_latent_noise_mask([enc_id, 0], scaled_mask_ref, node_id="7")
 
-    is_klein = arch_key == "flux2klein"
+    is_klein = arch_key in ("flux2klein", "flux3klein", "flux2dev")
     if is_klein:
         ref_pos = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="60")
         ref_neg = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="61")
@@ -3721,7 +3918,7 @@ def build_outpaint(image_filename, preset, prompt_text, negative_text, seed,
     _assert_method_for_preset(preset, "outpaint")
     nf = NodeFactory()
     arch_key = preset.get("arch", "sdxl")
-    is_klein = arch_key == "flux2klein"
+    is_klein = arch_key in ("flux2klein", "flux3klein", "flux2dev")
 
     # Model loading
     model_ref, clip_ref, vae_ref = load_model_stack(nf, preset, "1")
@@ -3856,7 +4053,7 @@ def build_faceid_img2img(target_filename, face_ref_filename, preset,
     # Target image → VAE encode → sample → decode → save
     target_id = nf.load_image(target_filename, node_id="7")
     enc_id = nf.vae_encode([target_id, 0], vae_ref, node_id="8")
-    is_klein = arch_key == "flux2klein"
+    is_klein = arch_key in ("flux2klein", "flux3klein", "flux2dev")
     if is_klein:
         ref_pos = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="60")
         ref_neg = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="61")
@@ -3904,7 +4101,7 @@ def build_faceid_img2img(target_filename, face_ref_filename, preset,
 def build_pulid_flux(target_filename, face_ref_filename,
                       prompt_text, negative_text, seed,
                       flux_model="Flux\\FLUX1 Dev fp8.safetensors",
-                      pulid_model="pulid_flux_v0.9.1.safetensors",
+                      pulid_model="pulid_flux2_klein_v2.safetensors",
                       strength=0.9, steps=20, guidance=3.5,
                       denoise=0.65, width=1024, height=1024,
                       loras=None, enhance=True) -> dict:
@@ -4034,7 +4231,7 @@ def build_klein_img2img_ref(image_filename, ref_filename, klein_model_key,
     unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
     clip_id = nf.clip_loader(
         km.get("clip", "qwen_3_8b.safetensors"),
-        clip_type="flux2", device="default", node_id="2",
+        clip_type=km.get("clip_type", "flux2"), device="default", node_id="2",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
 
@@ -4240,7 +4437,7 @@ def build_klein_headswap(target_filename, source_filename, klein_model_key,
         unet_id = nf.unet_loader(km["unet"], "default", node_id="20")
         clip_id = nf.clip_loader(
             km.get("clip", "qwen_3_8b.safetensors"),
-            clip_type="flux2", device="default", node_id="21",
+            clip_type=km.get("clip_type", "flux2"), device="default", node_id="21",
         )
         vae_id = nf.vae_loader(FLUX2_VAE, node_id="22")
 
@@ -4352,7 +4549,7 @@ def build_klein_headswap(target_filename, source_filename, klein_model_key,
     unet_id = nf.unet_loader(km["unet"], "default", node_id="20")
     clip_id = nf.clip_loader(
         km.get("clip", "qwen_3_8b.safetensors"),
-        clip_type="flux2", device="default", node_id="21",
+        clip_type=km.get("clip_type", "flux2"), device="default", node_id="21",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="22")
 
@@ -5437,7 +5634,16 @@ def build_framepack_video(image_filename, prompt_text, negative_text, seed,
         "image": [img_id, 0],
         "base_resolution": int(base_resolution),
     }, node_id="6")
-    aligned_image = [bucket_id, 0]
+    # Lane6 2026-10-05: FramePackFindNearestBucket returns (width, height)
+    # INTs, NOT an image. The old code wired its INT output into
+    # CLIPVisionEncode/VAEEncode image inputs (type mismatch -> /prompt
+    # validation failure). Resize the start image to the bucket instead.
+    scaled_id = nf._add("ImageScale", {
+        "image": [img_id, 0], "upscale_method": "lanczos",
+        "width": [bucket_id, 0], "height": [bucket_id, 1],
+        "crop": "center",
+    }, node_id="6s")
+    aligned_image = [scaled_id, 0]
 
     # 6. CLIP-vision encode the aligned start
     cv_enc_id = nf.clip_vision_encode([cv_id, 0], aligned_image, node_id="7")
@@ -5455,10 +5661,15 @@ def build_framepack_video(image_filename, prompt_text, negative_text, seed,
             "image": [end_img_id, 0],
             "base_resolution": int(base_resolution),
         }, node_id="11")
+        end_scaled_id = nf._add("ImageScale", {
+            "image": [end_img_id, 0], "upscale_method": "lanczos",
+            "width": [end_bucket_id, 0], "height": [end_bucket_id, 1],
+            "crop": "center",
+        }, node_id="11s")
         end_cv_enc_id = nf.clip_vision_encode([cv_id, 0],
-                                                [end_bucket_id, 0],
+                                                [end_scaled_id, 0],
                                                 node_id="12")
-        end_enc_id = nf.vae_encode([end_bucket_id, 0], [vae_id, 0],
+        end_enc_id = nf.vae_encode([end_scaled_id, 0], [vae_id, 0],
                                      node_id="13")
         end_latent_ref = [end_enc_id, 0]
         end_embeds_ref = [end_cv_enc_id, 0]
@@ -5537,7 +5748,7 @@ def build_seedvr2_video_upscale(video_name, seed=-1,
                          "decode_tiled": vae_tiled, "decode_tile_size": 256,
                          "decode_tile_overlap": 64,
                          "tile_debug": "false", "offload_device": "cpu",
-                         "cache_model": True, "torch_compile_args": ""}},
+                         "cache_model": True}},
         "3": {"class_type": "SeedVR2VideoUpscaler",
               "inputs": {"image": ["1", 0], "dit": ["2d", 0],
                          "vae": ["2", 0], "seed": seed,
@@ -5627,7 +5838,7 @@ def build_style_transfer(target_filename, style_ref_filename, preset,
     enc_id = nf.vae_encode(target_ref, vae_ref, node_id="8")
 
     # 5. Sample
-    is_klein = arch_key == "flux2klein"
+    is_klein = arch_key in ("flux2klein", "flux3klein", "flux2dev")
     if is_klein:
         ref_pos = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="60")
         ref_neg = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="61")
@@ -5753,7 +5964,7 @@ def build_seedv2r(image_filename, upscale_model, preset, prompt_text="", negativ
 
     # 6. VAE encode + sample + decode
     enc_id = nf.vae_encode(img_ref, vae_ref, node_id="7")
-    is_klein = arch_key == "flux2klein"
+    is_klein = arch_key in ("flux2klein", "flux3klein", "flux2dev")
     if is_klein:
         ref_pos = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="60")
         ref_neg = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="61")
@@ -5875,7 +6086,7 @@ def build_photobooth(ref_filename, prompt_text, seed,
     unet_id = nf.unet_loader(km["unet"], "default", node_id="10")
     clip_id = nf.clip_loader(
         km.get("clip", "qwen_3_8b.safetensors"),
-        clip_type="flux2", device="default", node_id="11",
+        clip_type=km.get("clip_type", "flux2"), device="default", node_id="11",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="12")
 
@@ -5993,7 +6204,7 @@ def build_klein_repose(image_filename, klein_model_key, prompt_text, seed,
     unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
     clip_id = nf.clip_loader(
         km.get("clip", "qwen_3_8b.safetensors"),
-        clip_type="flux2", device="default", node_id="2",
+        clip_type=km.get("clip_type", "flux2"), device="default", node_id="2",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
 
@@ -6097,7 +6308,7 @@ def build_klein_blend(fg_filename, bg_filename, prompt_text, seed,
     unet_id = nf.unet_loader(km["unet"], "default", node_id="10")
     clip_id = nf.clip_loader(
         km.get("clip", "qwen_3_8b.safetensors"),
-        clip_type="flux2", device="default", node_id="11",
+        clip_type=km.get("clip_type", "flux2"), device="default", node_id="11",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="12")
 
@@ -6210,7 +6421,7 @@ def build_klein_batch_variations(image_filename, klein_model_key, prompt_text,
     unet_id = nf.unet_loader(km["unet"], "default", node_id="10")
     clip_id = nf.clip_loader(
         km.get("clip", "qwen_3_8b.safetensors"),
-        clip_type="flux2", device="default", node_id="11",
+        clip_type=km.get("clip_type", "flux2"), device="default", node_id="11",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="12")
 
@@ -6320,7 +6531,7 @@ def build_klein_inpaint(image_filename, mask_filename=None, prompt_text="", seed
     unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
     clip_id = nf.clip_loader(
         km.get("clip", "qwen_3_8b.safetensors"),
-        clip_type="flux2", device="default", node_id="2",
+        clip_type=km.get("clip_type", "flux2"), device="default", node_id="2",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
 
@@ -6491,7 +6702,7 @@ def build_klein_virtual_tryon(face_filename, outfit_filename, prompt_text, seed,
     unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
     clip_id = nf.clip_loader(
         km.get("clip", "qwen_3_8b.safetensors"),
-        clip_type="flux2", device="default", node_id="2",
+        clip_type=km.get("clip_type", "flux2"), device="default", node_id="2",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
 
@@ -6616,7 +6827,7 @@ def build_klein_scene_img2img(image_filename, prompt_text, seed,
     unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
     clip_id = nf.clip_loader(
         km.get("clip", "qwen_3_8b.safetensors"),
-        clip_type="flux2", device="default", node_id="2",
+        clip_type=km.get("clip_type", "flux2"), device="default", node_id="2",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
 
@@ -6736,7 +6947,7 @@ def build_klein_refine(image_filename, klein_model_key, prompt_text, seed,
     unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
     clip_id = nf.clip_loader(
         km.get("clip", "qwen_3_8b.safetensors"),
-        clip_type="flux2", device="default", node_id="2",
+        clip_type=km.get("clip_type", "flux2"), device="default", node_id="2",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
 
@@ -6872,7 +7083,7 @@ def build_klein_auto_inpaint(image_filename, mask_prompt, inpaint_prompt, seed,
     unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
     clip_id = nf.clip_loader(
         km.get("clip", "qwen_3_8b.safetensors"),
-        clip_type="flux2", device="default", node_id="2",
+        clip_type=km.get("clip_type", "flux2"), device="default", node_id="2",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
 
@@ -7314,7 +7525,7 @@ def build_klein_sam3_inpaint(image_filename, segment_prompt, inpaint_prompt, see
     unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
     clip_id = nf.clip_loader(
         km.get("clip", "qwen_3_8b.safetensors"),
-        clip_type="flux2", device="default", node_id="2",
+        clip_type=km.get("clip_type", "flux2"), device="default", node_id="2",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
 
@@ -7555,7 +7766,7 @@ def build_klein_face_detail(image_filename, prompt_text, seed,
     unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
     clip_id = nf.clip_loader(
         km.get("clip", "qwen_3_8b.safetensors"),
-        clip_type="flux2", device="default", node_id="2",
+        clip_type=km.get("clip_type", "flux2"), device="default", node_id="2",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
 
@@ -7684,7 +7895,7 @@ def build_klein_generate_object(scene_filename, prompt_text, seed,
     unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
     clip_id = nf.clip_loader(
         km.get("clip", "qwen_3_8b.safetensors"),
-        clip_type="flux2", device="default", node_id="2",
+        clip_type=km.get("clip_type", "flux2"), device="default", node_id="2",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
 
@@ -7908,7 +8119,7 @@ def build_klein_detail(image_filename, preset_key, prompt_text, seed,
     unet_id = nf.unet_loader(km["unet"], "default", node_id="1")
     clip_id = nf.clip_loader(
         km.get("clip", "qwen_3_8b.safetensors"),
-        clip_type="flux2", device="default", node_id="2",
+        clip_type=km.get("clip_type", "flux2"), device="default", node_id="2",
     )
     vae_id = nf.vae_loader(FLUX2_VAE, node_id="3")
 
@@ -8414,7 +8625,7 @@ def build_wan_video_blockswap(image_filename, wan_model, t5_model, vae_model,
         "12": {"class_type": "VHS_VideoCombine",
                "inputs": {"images": [decode_id, 0],
                           "frame_rate": int(fps),
-                          "loop_count": 0,
+                          "loop_count": 0, "pingpong": False,
                           "filename_prefix": "spellcaster_wan_blockswap",
                           "format": "video/h264-mp4",
                           "save_output": True,
@@ -8641,7 +8852,7 @@ def build_hunyuan_video(prompt_text, seed, *,
         "10": {"class_type": "VHS_VideoCombine",
                "inputs": {"images": [dec_id, 0],
                           "frame_rate": int(fps),
-                          "loop_count": 0,
+                          "loop_count": 0, "pingpong": False,
                           "filename_prefix": filename_prefix,
                           "format": "video/h264-mp4",
                           "save_output": True,
@@ -8824,7 +9035,7 @@ def build_cogvideo_video(prompt_text, negative_text, seed, *,
         "11": {"class_type": "VHS_VideoCombine",
                "inputs": {"images": [dec_id, 0],
                           "frame_rate": int(fps),
-                          "loop_count": 0,
+                          "loop_count": 0, "pingpong": False,
                           "filename_prefix": filename_prefix,
                           "format": "video/h264-mp4",
                           "save_output": True,
@@ -9001,7 +9212,7 @@ def build_mochi_video(prompt_text, negative_text, seed, *,
         "9": {"class_type": "VHS_VideoCombine",
               "inputs": {"images": ["8", 0],
                          "frame_rate": int(fps),
-                         "loop_count": 0,
+                         "loop_count": 0, "pingpong": False,
                          "filename_prefix": filename_prefix,
                          "format": "video/h264-mp4",
                          "save_output": True,
@@ -9636,7 +9847,7 @@ def build_wan_animate_video(prompt_text, negative_text, seed, *,
         "11": {"class_type": "VHS_VideoCombine",
                "inputs": {"images": [dec_id, 0],
                           "frame_rate": int(fps),
-                          "loop_count": 0,
+                          "loop_count": 0, "pingpong": False,
                           "filename_prefix": filename_prefix,
                           "format": "video/h264-mp4",
                           "save_output": True,
@@ -9801,7 +10012,7 @@ def build_wan_video_blockswap_t2v(wan_model, t5_model, vae_model,
         "9": {"class_type": "VHS_VideoCombine",
               "inputs": {"images": [decode_id, 0],
                          "frame_rate": int(fps),
-                         "loop_count": 0,
+                         "loop_count": 0, "pingpong": False,
                          "filename_prefix": filename_prefix,
                          "format": "video/h264-mp4",
                          "save_output": True,
@@ -10099,11 +10310,19 @@ def build_ltx_video(preset, prompt_text, seed,
     gen_height = height // 2 if two_stage else height
 
     # ── Model loading ─────────────────────────────────────────────
-    unet_id = nf.unet_loader_gguf(unet_name, node_id="1")
+    # Lane6 2026-10-05: unet_loader() auto-dispatches .gguf -> UnetLoaderGGUF
+    # and everything else (full safetensors checkpoints, e.g. spark2's
+    # ltx-2.3-22b-distilled.safetensors) -> UNETLoader (or CheckpointLoaderSimple
+    # when the unified LTX 2.3 checkpoint lives in checkpoints/).
+    if preset.get("unet_in_checkpoints"):
+        unet_id = nf.checkpoint_loader(unet_name, node_id="1")
+    else:
+        unet_id = nf.unet_loader(unet_name, node_id="1")
 
-    # Distilled LoRA (applied before chunking)
+    # Distilled LoRA (applied before chunking). Skipped when the loaded
+    # checkpoint is already the distilled model (preset["distilled_baked"]).
     model_ref = _ref(unet_id)
-    if distilled:
+    if distilled and not preset.get("distilled_baked"):
         lora_id = nf.lora_loader_model_only(model_ref, distilled_lora, 1.0,
                                              node_id="1b")
         model_ref = [lora_id, 0]
@@ -10260,3 +10479,356 @@ def build_ltx_video(preset, prompt_text, seed,
                           pingpong=pingpong, node_id="50")
 
     return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  HiDream-O1-Image — high-fidelity pixel-native image generation (SOL) via ComfyUI
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_hidream_o1(prompt, seed, *, width=1024, height=1024, steps=25, cfg=5.0,
+                     denoise=1.0, saganaki22_nodes=None, vae_name=None,
+                     loras=None, lora_name=None, lora_strength=1.0,
+                     filename_prefix="hidream-o1/spellcaster") -> dict:
+    """HiDream-O1-Image builder — generate high-fidelity pixel-native images
+    using the HiDream-O1-Transformer (8B, FP8 ~10GB, MIT license) via ComfyUI.
+
+    HiDream-O1 is a pixel-native diffusion model integrated into ComfyUI core.
+    It uses QuadrupleCLIPLoader with clip-l, clip-g, t5xxl, and llama_8b_3.1_instruct
+    text encoders. The builder leverages the Saganaki22 custom nodes for advanced
+    reference image handling and seam smoothing.
+
+    ARCHITECTURE:
+      1. Load HiDreamO1 model via ComfyUI core's hidream_o1 loader
+      2. Load QuadrupleCLIP text encoder (clip-l, clip-g, t5xxl, llama_8b)
+      3. Load VAE (default: hifidelity_vae.safetensors)
+      4. Create empty latent via EmptyHiDreamO1LatentImage
+      5. Apply reference images via HiDreamO1ReferenceImages (if saganaki22_nodes provided)
+      6. Sample via KSampler with custom scheduler
+      7. Decode via VAE
+      8. Apply HiDreamO1PatchSeamSmoothing (optional, for enhanced seam handling)
+
+    Args:
+        prompt: Generation prompt text
+        seed: Random seed for reproducibility
+        width: Output image width (default 1024)
+        height: Output image height (default 1024)
+        steps: Number of sampling steps (default 25)
+        cfg: Classifier-free guidance scale (default 5.0)
+        denoise: Denoise strength (default 1.0)
+        saganaki22_nodes: Dict of Saganaki22 node paths for reference/patch nodes.
+                         If None, uses standard ComfyUI core nodes.
+        vae_name: Custom VAE filename (default: hifidelity_vae.safetensors)
+        loras, lora_name, lora_strength: Optional LoRA chain parameters
+        filename_prefix: Output filename prefix (default "hidream-o1/spellcaster")
+
+    Returns:
+        dict: ComfyUI workflow JSON-serializable dict
+
+    Requires: ComfyUI core with hidream_o1 model loader and QuadrupleCLIPLoader
+              (in recent ComfyUI builds), plus optional Saganaki22 custom nodes
+              for reference image handling and seam smoothing.
+    """
+    nf = NodeFactory()
+
+    # ── Model loading ─────────────────────────────────────────────
+    # HiDreamO1Transformer via ComfyUI core's hidream_o1 loader
+    model_id = nf._add("LoadHiDreamO1Model", {
+        "model_name": "hidream_o1_fp8.safetensors",
+    }, node_id="1")
+
+    # QuadrupleCLIP text encoder (clip-l, clip-g, t5xxl, llama_8b_3.1_instruct)
+    clip_id = nf._add("QuadrupleCLIPLoader", {
+        "clip_name1": "clip_l.safetensors",
+        "clip_name2": "clip_g.safetensors",
+        "clip_name3": "t5xxl_fp16.safetensors",
+        "clip_name4": "llama_8b_3.1_instruct.safetensors",
+    }, node_id="2")
+
+    # VAE loader
+    vae_id = nf.vae_loader(vae_name or "hifidelity_vae.safetensors", node_id="3")
+
+    # ── LoRA chain (optional) ─────────────────────────────────────
+    model_ref = [model_id, 0]
+    if lora_name and not loras:
+        loras = [{"name": lora_name, "strength": lora_strength}]
+
+    if loras:
+        clip_ref = [clip_id, 0]
+        for i, lora in enumerate(loras):
+            lora_id = nf.lora_loader_model_only(model_ref, lora["name"],
+                                                lora.get("strength", 1.0),
+                                                node_id=f"100_{i}")
+            model_ref = [lora_id, 0]
+
+    # ── Text encoding (QuadrupleCLIP → positive/negative) ─────────
+    pos_id = nf.clip_encode([clip_id, 0], prompt, node_id="4")
+    neg_id = nf.clip_encode([clip_id, 0], "", node_id="5")  # Empty negative
+
+    # ── Latent creation (EmptyHiDreamO1LatentImage) ───────────────
+    latent_id = nf._add("EmptyHiDreamO1LatentImage", {
+        "width": width,
+        "height": height,
+        "batch_size": 1,
+    }, node_id="10")
+
+    # ── Reference image handling (Saganaki22 optional) ────────────
+    # If saganaki22_nodes provided, use HiDreamO1ReferenceImages for conditioning
+    if saganaki22_nodes and saganaki22_nodes.get("reference_image"):
+        ref_img_id = nf.load_image(saganaki22_nodes["reference_image"], node_id="11")
+        ref_id = nf._add("HiDreamO1ReferenceImages", {
+            "model": model_ref,
+            "images": [ref_img_id, 0],
+            "strength": saganaki22_nodes.get("reference_strength", 1.0),
+        }, node_id="12")
+        model_ref = [ref_id, 0]  # Update model with reference conditioning
+
+    # ── Sampling (KSampler with custom scheduler) ─────────────────
+    scheduler = "simple"  # Standard scheduler for HiDream-O1
+    sampler = "euler"     # Euler is the canonical sampler for HiDream-O1
+
+    guider_id = nf.cfg_guider(model_ref, [pos_id, 0], [neg_id, 0],
+                               cfg, node_id="20")
+    sampler_id = nf.ksampler_select(sampler, node_id="21")
+    sched_id = nf.basic_scheduler(model_ref, steps, denoise,
+                                   scheduler=scheduler, node_id="22")
+    noise_id = nf.random_noise(seed, node_id="23")
+
+    sample_id = nf.ksampler(
+        [noise_id, 0], [guider_id, 0], [sampler_id, 0],
+        [sched_id, 0], [latent_id, 0], node_id="30",
+    )
+
+    # ── VAE decode ────────────────────────────────────────────────
+    dec_id = nf.vae_decode([sample_id, 0], [vae_id, 0], node_id="40")
+
+    # ── Optional seam smoothing (Saganaki22) ──────────────────────
+    # Apply HiDreamO1PatchSeamSmoothing if requested
+    if saganaki22_nodes and saganaki22_nodes.get("seam_smoothing"):
+        seam_id = nf._add("HiDreamO1PatchSeamSmoothing", {
+            "image": [dec_id, 0],
+            "strength": saganaki22_nodes.get("seam_strength", 0.5),
+        }, node_id="45")
+        out_ref = [seam_id, 0]
+    else:
+        out_ref = [dec_id, 0]
+
+    # ── Output ────────────────────────────────────────────────────
+    nf.save_image_websocket(out_ref, node_id="50")
+
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Krea 2 Turbo — instruction-driven image edit & generation (Spark2 NVFP4)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_krea2_edit(image_filename, prompt_text, seed, *,
+                     unet_name="nvfp4/krea2-turbo-nvfp4.safetensors",
+                     clip_name="nvfp4/qwen_3_4b_fp4_mixed.safetensors",
+                     vae_name="qwen_image_vae.safetensors",
+                     negative_text="",
+                     steps=8, cfg=1.5,
+                     sampler="euler", scheduler="simple",
+                     denoise=0.75, shift=3.0,
+                     use_edit_patch=True,
+                     preset=None) -> dict:
+    """Krea 2 Turbo instruction-driven image editing & generation on Spark2.
+
+    Uses Krea2EditModelPatch + ReferenceLatent + ModelSamplingAuraFlow(shift=3.0)
+    with Qwen 3 4B text encoder (type="krea2") and qwen_image_vae.safetensors.
+    """
+    if preset:
+        _assert_method_for_preset(preset, "img2img")
+        unet_name = preset.get("ckpt", unet_name)
+        steps = preset.get("steps", steps)
+        cfg = preset.get("cfg", cfg)
+        sampler = preset.get("sampler", sampler)
+        scheduler = preset.get("scheduler", scheduler)
+        denoise = preset.get("denoise", denoise)
+
+    nf = NodeFactory()
+    unet_id = nf.unet_loader(unet_name, "default", node_id="1")
+    model_ref = [unet_id, 0]
+
+    if use_edit_patch:
+        patch_id = nf._add("Krea2EditModelPatch", {"model": model_ref}, node_id="1p")
+        model_ref = [patch_id, 0]
+
+    shift_id = nf._add("ModelSamplingAuraFlow", {
+        "model": model_ref,
+        "shift": float(shift),
+    }, node_id="1s")
+    model_ref = [shift_id, 0]
+
+    clip_id = nf.clip_loader(clip_name, clip_type="krea2", device="default", node_id="2")
+    vae_id = nf.vae_loader(vae_name, node_id="3")
+
+    pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="4")
+    neg_id = nf.clip_encode([clip_id, 0], negative_text or "", node_id="5")
+
+    img_id = nf.load_image(image_filename, node_id="6")
+    scaled_id = nf.image_scale_to_total_pixels([img_id, 0], megapixels=1.0, node_id="7")
+    enc_id = nf.vae_encode([scaled_id, 0], [vae_id, 0], node_id="8")
+
+    ref_pos_id = nf.reference_latent([pos_id, 0], [enc_id, 0], node_id="9")
+    ref_neg_id = nf.reference_latent([neg_id, 0], [enc_id, 0], node_id="10")
+
+    samp_id = nf.ksampler(
+        model_ref, [ref_pos_id, 0], [ref_neg_id, 0], [enc_id, 0],
+        seed, steps, cfg, sampler, scheduler, denoise, node_id="11",
+    )
+    dec_id = nf.vae_decode([samp_id, 0], [vae_id, 0], node_id="12")
+    nf.save_image_websocket([dec_id, 0], node_id="13")
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  MiniMax Hailuo H3 — video generation (I2V / T2V on Spark2)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_minimax_h3_video(preset, prompt_text, seed, *,
+                           image_filename=None,
+                           negative_text="",
+                           width=832, height=480, length=49,
+                           steps=None, cfg=None, shift=None,
+                           fps=24, pingpong=False) -> dict:
+    """MiniMax Hailuo H3 video generation (I2V or T2V) via MiniMaxH3ImageToVideo.
+
+    Compatible with `nvfp4/minimax-hailuo-h3-fp4_mixed.safetensors` and
+    `minimax-hailuo-h3_fp8_mixed.safetensors` on Spark2.
+    """
+    _assert_method_for_preset(preset, "video_gen")
+    nf = NodeFactory()
+
+    unet_name = preset.get("unet") or preset.get("ckpt") or "nvfp4/minimax-hailuo-h3-fp4_mixed.safetensors"
+    clip_name = preset.get("clip") or "nvfp4/umt5_xxl_fp4_mixed.safetensors"
+    vae_name = preset.get("vae") or "wan2.2_vae.safetensors"
+    steps = int(steps if steps is not None else preset.get("steps", 20))
+    cfg = float(cfg if cfg is not None else preset.get("cfg", 3.5))
+    shift = float(shift if shift is not None else preset.get("shift", 5.0))
+    fps = int(fps or preset.get("fps", 24))
+
+    unet_id = nf.unet_loader(unet_name, "default", node_id="1")
+    shift_id = nf._add("ModelSamplingSD3", {
+        "model": [unet_id, 0],
+        "shift": shift,
+    }, node_id="1s")
+    clip_id = nf.clip_loader(clip_name, clip_type="wan", device="default", node_id="2")
+    vae_id = nf.vae_loader(vae_name, node_id="3")
+
+    pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="4")
+    neg_id = nf.clip_encode([clip_id, 0], negative_text or "blurry, static, low quality, watermark", node_id="5")
+
+    h3_inputs = {
+        "positive": [pos_id, 0],
+        "negative": [neg_id, 0],
+        "vae": [vae_id, 0],
+        "width": int(width),
+        "height": int(height),
+        "length": int(length),
+        "batch_size": 1,
+    }
+    if image_filename:
+        img_id = nf.load_image(image_filename, node_id="6")
+        h3_inputs["start_image"] = [img_id, 0]
+
+    cond_id = nf._add("MiniMaxH3ImageToVideo", h3_inputs, node_id="7")
+
+    samp_id = nf.ksampler(
+        [shift_id, 0], [cond_id, 0], [cond_id, 1], [cond_id, 2],
+        seed, steps, cfg, "euler", "simple", 1.0, node_id="8",
+    )
+    dec_id = nf.vae_decode([samp_id, 0], [vae_id, 0], node_id="9")
+    nf.vhs_video_combine([dec_id, 0], frame_rate=fps,
+                         filename_prefix="MiniMaxH3", pingpong=pingpong,
+                         node_id="10")
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  SkyReels V2 — WAN-based I2V / DF video generation on Spark2
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_skyreels_video(preset, prompt_text, seed, *,
+                         image_filename=None,
+                         negative_text="",
+                         width=832, height=480, length=49,
+                         steps=None, cfg=None, shift=None,
+                         fps=24, pingpong=False) -> dict:
+    """SkyReels V2 14B 720p I2V / DF video generation on Spark2."""
+    _assert_method_for_preset(preset, "video_gen")
+    nf = NodeFactory()
+
+    unet_name = preset.get("unet") or preset.get("ckpt") or "skyreels_v2_i2v_14B_720p_fp8_e4m3fn.safetensors"
+    clip_name = preset.get("clip") or "nvfp4/umt5_xxl_fp4_mixed.safetensors"
+    vae_name = preset.get("vae") or "wan_2.1_vae.safetensors"
+    steps = int(steps if steps is not None else preset.get("steps", 20))
+    cfg = float(cfg if cfg is not None else preset.get("cfg", 3.5))
+    shift = float(shift if shift is not None else preset.get("shift", 5.0))
+    fps = int(fps or preset.get("fps", 24))
+
+    unet_id = nf.unet_loader(unet_name, "default", node_id="1")
+    shift_id = nf._add("ModelSamplingSD3", {
+        "model": [unet_id, 0],
+        "shift": shift,
+    }, node_id="1s")
+    clip_id = nf.clip_loader(clip_name, clip_type="wan", device="default", node_id="2")
+    vae_id = nf.vae_loader(vae_name, node_id="3")
+
+    pos_id = nf.clip_encode([clip_id, 0], prompt_text, node_id="4")
+    neg_id = nf.clip_encode([clip_id, 0], negative_text or "blurry, static, low quality, watermark", node_id="5")
+
+    if image_filename:
+        img_id = nf.load_image(image_filename, node_id="6")
+        cond_id = nf._add("WanImageToVideo", {
+            "positive": [pos_id, 0],
+            "negative": [neg_id, 0],
+            "vae": [vae_id, 0],
+            "width": int(width),
+            "height": int(height),
+            "length": int(length),
+            "batch_size": 1,
+            "start_image": [img_id, 0],
+        }, node_id="7")
+        pos_ref, neg_ref, lat_ref = [cond_id, 0], [cond_id, 1], [cond_id, 2]
+    else:
+        lat_id = nf._add("EmptyHunyuanLatentVideo", {
+            "width": int(width),
+            "height": int(height),
+            "length": int(length),
+            "batch_size": 1,
+        }, node_id="7")
+        pos_ref, neg_ref, lat_ref = [pos_id, 0], [neg_id, 0], [lat_id, 0]
+
+    samp_id = nf.ksampler(
+        [shift_id, 0], pos_ref, neg_ref, lat_ref,
+        seed, steps, cfg, "euler", "simple", 1.0, node_id="8",
+    )
+    dec_id = nf.vae_decode([samp_id, 0], [vae_id, 0], node_id="9")
+    nf.vhs_video_combine([dec_id, 0], frame_rate=fps,
+                         filename_prefix="SkyReelsV2", pingpong=pingpong,
+                         node_id="10")
+    return nf.build()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  AuraSR — 4x GAN super-resolution upscaler (Spark2 LoadAuraSR)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_aurasr_upscale(image_filename,
+                         model_name="aurasr_v2.safetensors",
+                         overlapped=True,
+                         reapply_transparency=True) -> dict:
+    """AuraSR v2 4x GAN super-resolution upscaling via LoadAuraSR + RunAuraSR."""
+    nf = NodeFactory()
+    img_id = nf.load_image(image_filename, node_id="1")
+    loader_id = nf._add("LoadAuraSR", {
+        "model": model_name,
+    }, node_id="2")
+    up_id = nf._add("RunAuraSR", {
+        "AURASR_MODEL": [loader_id, 0],
+        "IMAGE": [img_id, 0],
+        "avoid_seams": bool(overlapped),
+    }, node_id="3")
+    nf.save_image_websocket([up_id, 0], node_id="4")
+    return nf.build()

@@ -92,8 +92,10 @@ GUIDE_MODES = _load_controlnet_guide_modes()
 
 ALL_ARCHES = (
     "sd15", "sdxl", "illustrious", "pony", "playground",
-    "flux1dev", "flux2klein", "flux_kontext", "chroma",
-    "zit", "wan", "ltx", "seedvr",
+    "flux1dev", "flux2klein", "flux3klein", "flux2dev", "flux_kontext",
+    "chroma", "krea2", "qwen_image",
+    "zit", "wan", "ltx", "hunyuan_video", "minimax_h3", "skyreels", "longcat",
+    "seedvr", "aurasr",
     "sd3", "sd3_turbo", "hunyuan_dit", "pixart", "auraflow", "kolors",
     "sdxl_turbo",
 )

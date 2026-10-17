@@ -1,0 +1,59 @@
+{
+  "generated_at": "2026-09-29T17:42:20-0700",
+  "server": "http://127.0.0.1:8188",
+  "method_notes": {
+    "depth_accuracy": "No ground-truth depth exists for this test image; this is a structural-validity check (dynamic range / gradient smoothness), not error-vs-ground-truth.",
+    "normal_consistency": "Mean deviation of decoded per-pixel normal-vector length from 1.0 (unit normal). Lower is better; this is a standard ground-truth-free normal-map QA check.",
+    "glb_fidelity": "Mesh validity (loads, non-degenerate vertex/face counts, sane bounding box) via trimesh."
+  },
+  "baseline_normalcrafter": {
+    "error": null,
+    "normal": {
+      "width": 768,
+      "height": 512,
+      "kb": 57,
+      "mean": 166.9705047607422,
+      "std": 60.32223892211914,
+      "blank_or_corrupt": false,
+      "mean_unit_length_deviation": 0.020765643566846848,
+      "p95_unit_length_deviation": 0.0311661958694458
+    }
+  },
+  "candidate_moge2": {
+    "error": null,
+    "normal": {
+      "width": 768,
+      "height": 512,
+      "kb": 140,
+      "mean": 170.16693115234375,
+      "std": 59.668243408203125,
+      "blank_or_corrupt": false,
+      "mean_unit_length_deviation": 0.003515450982376933,
+      "p95_unit_length_deviation": 0.0067122578620910645
+    },
+    "depth": {
+      "width": 768,
+      "height": 512,
+      "kb": 72,
+      "mean": 110.41917419433594,
+      "std": 55.404903411865234,
+      "blank_or_corrupt": false,
+      "dynamic_range": 255.0,
+      "mean_grad_magnitude": 0.35121890902519226
+    },
+    "glb": {
+      "valid": true,
+      "vertex_count": 393216,
+      "face_count": 783874,
+      "bbox_extents": [
+        1.3174726366996765,
+        0.8897953033447266,
+        0.1592940092086792
+      ],
+      "degenerate": false,
+      "kb": 16871
+    }
+  },
+  "pass": true,
+  "fail_reasons": []
+}

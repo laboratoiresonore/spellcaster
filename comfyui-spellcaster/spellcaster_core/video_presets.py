@@ -217,24 +217,38 @@ def detect_wan_preset(comfy_url: str) -> Optional[dict]:
         accel_strength    1.5 — calibrated default for the above LoRAs.
     """
     # ── Enumerate UNETs from both loaders ────────────────────────────
-    unet_models = probe_object_info_choices(comfy_url, "UNETLoader", "unet_name")
-    gguf_models = probe_object_info_choices(comfy_url, "UnetLoaderGGUF", "unet_name")
+    from .model_detect import is_usable_model
+    unet_models = [m for m in probe_object_info_choices(comfy_url, "UNETLoader", "unet_name")
+                   if is_usable_model(m, "unet")]
+    gguf_models = [m for m in probe_object_info_choices(comfy_url, "UnetLoaderGGUF", "unet_name")
+                   if is_usable_model(m, "unet")]
     all_models = unet_models + gguf_models
     if not all_models:
         return None
 
+    # Sort NVFP4 models first when running on Blackwell / Spark2 so fast native
+    # FP4 Tensor Core weights win over generic FP8 / BF16 copies.
+    all_models.sort(key=lambda m: (0 if "nvfp4" in m.lower() or "fp4" in m.lower() else 1))
+
     # ── Partition by family and pick I2V-only ────────────────────────
-    i2v_high = i2v_low = None
+    # Prefer explicit dual-stage 14B I2V (high + low) over single-stage 5B TI2V,
+    # and never mix a 5B TI2V high model with a 14B low model (channel mismatch).
+    i2v_high = i2v_low = i2v_single = None
     t2v_high = generic_high = None
     for m in all_models:
-        if "wan" not in m.lower():
+        ml = m.lower()
+        if "wan" not in ml:
             continue
         cls = _classify_wan_model(m)
         if cls["is_i2v"]:
-            if cls["is_high"] and not i2v_high:
-                i2v_high = m
-            elif cls["is_low"] and not i2v_low:
-                i2v_low = m
+            if "high" in ml and "ti2v" not in ml:
+                if not i2v_high:
+                    i2v_high = m
+            elif cls["is_low"] and "ti2v" not in ml:
+                if not i2v_low:
+                    i2v_low = m
+            elif not i2v_single:
+                i2v_single = m
         elif cls["is_t2v"] and not t2v_high and cls["is_high"]:
             t2v_high = m
         elif cls["is_generic"] and not generic_high and cls["is_high"]:
@@ -242,8 +256,15 @@ def detect_wan_preset(comfy_url: str) -> Optional[dict]:
 
     # STRICT: no T2V / generic fallback. Channel mismatch would crash
     # mid-sampling with an opaque error that's very hard to diagnose.
-    wan_high = i2v_high
-    wan_low = i2v_low
+    if i2v_high:
+        wan_high = i2v_high
+        wan_low = i2v_low or i2v_high
+    elif i2v_single:
+        wan_high = i2v_single
+        wan_low = i2v_single
+    else:
+        wan_high = None
+        wan_low = None
     if wan_high:
         print(f"  [video_presets] WAN model selection: high={wan_high} (i2v)")
     else:
@@ -297,14 +318,16 @@ def detect_wan_preset(comfy_url: str) -> Optional[dict]:
               f"(rank={_gguf_quant_rank(wan_clip)}; available: "
               f"{[c for c in gguf_candidates]})")
     if not wan_clip:
-        std_clips = probe_object_info_choices(comfy_url, "CLIPLoader", "clip_name")
+        std_clips = [c for c in probe_object_info_choices(comfy_url, "CLIPLoader", "clip_name")
+                     if is_usable_model(c, "clip")]
         # fp8/safetensors fallback — prefer umt5 over t5xxl, full-
         # precision over fp8 when both are present.
         std_candidates = [c for c in std_clips
                           if "umt5" in c.lower() or "t5xxl" in c.lower()]
         def _std_rank(name: str) -> int:
             n = name.lower()
-            if "umt5" in n and ("fp16" in n or ".safetensors" in n and "fp8" not in n): return 900
+            if "umt5" in n and ("fp16" in n or (".safetensors" in n and "fp8" not in n and "fp4" not in n)): return 950
+            if "umt5" in n and ("nvfp4" in n or "fp4" in n): return 900
             if "umt5" in n: return 800
             if "t5xxl" in n and "fp16" in n: return 700
             if "t5xxl" in n: return 600
@@ -428,22 +451,42 @@ def detect_ltx_preset(comfy_url: str) -> Optional[dict]:
         steps, cfg, stg, rescale    Tuned for full-step (30 / 4.0 / 1.0 / 0.7)
         distilled_lora          Optional LTX distilled LoRA (enables 8-step mode)
     """
+    from .model_detect import is_usable_model
     # ── UNET (prefer GGUF, then safetensors, prefer versioned) ────────
-    gguf_models = probe_object_info_choices(comfy_url, "UnetLoaderGGUF", "unet_name")
-    unet_models = probe_object_info_choices(comfy_url, "UNETLoader", "unet_name")
-    all_models = gguf_models + unet_models
+    gguf_models = [m for m in probe_object_info_choices(comfy_url, "UnetLoaderGGUF", "unet_name")
+                   if is_usable_model(m, "unet") and m.lower().endswith(".gguf")]
+    unet_models = [m for m in probe_object_info_choices(comfy_url, "UNETLoader", "unet_name")
+                   if is_usable_model(m, "unet")]
+    ckpt_models = [m for m in probe_object_info_choices(comfy_url, "CheckpointLoaderSimple", "ckpt_name")
+                   if is_usable_model(m, "ckpt") and "ltx" in m.lower()
+                   and ("2.3" in m.lower() or "22b" in m.lower())
+                   and m not in unet_models]
+    # Sort NVFP4 + 22B safetensors ahead of older/smaller LTX checkpoints
+    def _ltx_unet_rank(m: str) -> tuple:
+        ml = m.lower()
+        base = ml.replace("\\", "/").split("/")[-1]
+        is_fp4 = 0 if ("nvfp4" in ml or "fp4" in ml) else 1
+        is_22b = 0 if "22b" in base else (1 if "13b" in base else 2)
+        is_23_base = 0 if ("2.3" in base or "2_3" in base) else 1
+        return (is_fp4, is_22b, is_23_base)
+    safetensor_models = unet_models + ckpt_models
+    safetensor_models.sort(key=_ltx_unet_rank)
+    all_models = gguf_models + safetensor_models
 
     ltx_unet = None
     ltx_unet_fallback = None
     ltx_is_gguf = False
     for m in all_models:
         ml = m.lower()
+        base = ml.replace("\\", "/").split("/")[-1]
         if "ltx" not in ml:
             continue
+        if any(skip in ml for skip in ("lora", "upscaler", "connector", "embeddings", "vae")):
+            continue
         is_gguf = m.endswith(".gguf")
-        # Prefer VERSIONED builds so the user's extra LTX1 checkpoints
-        # don't steal the slot.
-        if "2.3" in ml or "22b" in ml or "13b" in ml:
+        # Prefer VERSIONED builds (check basename so folder name 'ltx-video-2.3/'
+        # doesn't make 'ltx-video-2b-v0.9.5.safetensors' look like 2.3).
+        if "2.3" in base or "22b" in base or "13b" in base:
             ltx_unet = m
             ltx_is_gguf = is_gguf
             break
@@ -457,6 +500,7 @@ def detect_ltx_preset(comfy_url: str) -> Optional[dict]:
     if not ltx_unet:
         print("  [video_presets] LTX: no LTX UNET found")
         return None
+    ltx_in_checkpoints = (not ltx_is_gguf and ltx_unet not in unet_models and ltx_unet in ckpt_models)
 
     # ── Text encoder (Gemma) + embeddings connector ──────────────────
     # LTXAVTextEncoderLoader's real input names are `text_encoder`
@@ -468,32 +512,52 @@ def detect_ltx_preset(comfy_url: str) -> Optional[dict]:
     # at validation time.
     text_encoder = None
     embeddings_connector = None
-    te_choices = probe_object_info_choices(comfy_url,
-                                           "LTXAVTextEncoderLoader",
-                                           "text_encoder")
-    for c in te_choices:
-        if "gemma" in c.lower():
-            text_encoder = c
-            break
+    te_choices = [c for c in probe_object_info_choices(comfy_url,
+                                                       "LTXAVTextEncoderLoader",
+                                                       "text_encoder")
+                  if is_usable_model(c, "clip")]
+    def _gemma_rank(c: str) -> tuple:
+        cl = c.lower()
+        return (
+            0 if ("gemma_3" in cl or "gemma-3" in cl or "12b" in cl) else 1,
+            0 if ("nvfp4" in cl or "fp4" in cl) else 1,
+        )
+    gemma_cands = [c for c in te_choices if "gemma" in c.lower()]
+    if gemma_cands:
+        gemma_cands.sort(key=_gemma_rank)
+        text_encoder = gemma_cands[0]
     # Connector lives under `ckpt_name` (Checkpoints folder). Pick the
     # LTX-tagged *connector*.safetensors file; avoid picking the LTX
     # video VAE or the audio VAE by matching on "connector" explicitly.
-    ec_choices = probe_object_info_choices(comfy_url,
-                                           "LTXAVTextEncoderLoader",
-                                           "ckpt_name")
+    ec_choices = [c for c in probe_object_info_choices(comfy_url,
+                                                       "LTXAVTextEncoderLoader",
+                                                       "ckpt_name")
+                  if is_usable_model(c, "checkpoint")]
     for c in ec_choices:
         cl = c.lower()
         if "ltx" in cl and "connector" in cl:
             embeddings_connector = c
             break
+    if not embeddings_connector and not ltx_is_gguf:
+        # On Spark2 / unified LTX-2.3 setups, the UNET safetensors contains
+        # the connector weights directly and is listed in LTXAVTextEncoderLoader.ckpt_name.
+        if ltx_unet in ec_choices:
+            embeddings_connector = ltx_unet
+        else:
+            for c in ec_choices:
+                cl = c.lower()
+                if "ltx" in cl and ("2.3" in cl or "22b" in cl) and "vae" not in cl and "lora" not in cl and "upscaler" not in cl:
+                    embeddings_connector = c
+                    break
 
     # Fallback: probe standard CLIP loaders for Gemma when the Kijai
     # LTXAV node isn't installed. The connector path still needs the
     # checkpoints-folder file — without LTXAV we can't build a workflow
     # at all, so returning None is the right failure mode.
     if not text_encoder:
-        clip_pool = (probe_object_info_choices(comfy_url, "CLIPLoader", "clip_name")
-                     + probe_object_info_choices(comfy_url, "CLIPLoaderGGUF", "clip_name"))
+        clip_pool = [c for c in (probe_object_info_choices(comfy_url, "CLIPLoader", "clip_name")
+                                 + probe_object_info_choices(comfy_url, "CLIPLoaderGGUF", "clip_name"))
+                     if is_usable_model(c, "clip")]
         for c in clip_pool:
             if "gemma" in c.lower():
                 text_encoder = c
@@ -522,12 +586,21 @@ def detect_ltx_preset(comfy_url: str) -> Optional[dict]:
             distilled_lora = l
             break
 
+    # ── Latent Upscaler (for two_stage mode) ─────────────────────────
+    latent_upscaler = None
+    for u in probe_object_info_choices(comfy_url, "LatentUpscaleModelLoader", "model_name"):
+        if "ltx" in u.lower() and "upscale" in u.lower():
+            latent_upscaler = u
+            break
+
     preset: dict[str, Any] = {
         "unet": ltx_unet,
         "unet_is_gguf": ltx_is_gguf,
+        "unet_in_checkpoints": ltx_in_checkpoints,
         "text_encoder": text_encoder,
         "embeddings_connector": embeddings_connector or "",
         "vae": ltx_vae,
+        "distilled_baked": "distilled" in ltx_unet.lower(),
         # Canonical FULL-STEP defaults. Distilled mode overrides inside
         # build_ltx_video when distilled=True.
         "steps": 30,
@@ -537,6 +610,8 @@ def detect_ltx_preset(comfy_url: str) -> Optional[dict]:
     }
     if distilled_lora:
         preset["distilled_lora"] = distilled_lora
+    if latent_upscaler:
+        preset["latent_upscaler"] = latent_upscaler
 
     print(f"  [video_presets] LTX preset built: unet={ltx_unet}")
     return preset
@@ -597,15 +672,18 @@ def detect_hunyuan_video_preset(comfy_url: str) -> Optional[dict]:
         tell from the filename, so the safer-on-low-VRAM choice is the
         default).
     """
-    hy_models = probe_object_info_choices(comfy_url, "HyVideoModelLoader",
-                                          "model")
+    from .model_detect import is_usable_model
+    hy_models = [m for m in probe_object_info_choices(comfy_url, "HyVideoModelLoader",
+                                                      "model")
+                 if is_usable_model(m, "unet")]
     if not hy_models:
         return None
 
     t2v = i2v = None
     for m in hy_models:
         ml = m.lower()
-        if "hunyuan_video" not in ml and "hunyuan-video" not in ml:
+        if ("hunyuan_video" not in ml and "hunyuan-video" not in ml
+                and "hunyuanvideo" not in ml):
             continue
         if "i2v" in ml or "image_to_video" in ml or "image-to-video" in ml:
             i2v = i2v or m
@@ -618,6 +696,8 @@ def detect_hunyuan_video_preset(comfy_url: str) -> Optional[dict]:
 
     vae_choices = probe_object_info_choices(comfy_url, "HyVideoVAELoader",
                                             "model_name")
+    if not vae_choices:
+        vae_choices = probe_object_info_choices(comfy_url, "VAELoader", "vae_name")
     hy_vae = None
     # Must explicitly mention BOTH `hunyuan` AND `video` — the user may
     # also have hunyuan3d-vae-*.ckpt in the same folder, and that's the
@@ -788,3 +868,139 @@ def detect_mochi_preset(comfy_url: str) -> Optional[dict]:
         "cfg":            4.5,
         "fps":            24,
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  MiniMax Hailuo H3 — preset detection (Spark2 MiniMaxH3ImageToVideo)
+# ══════════════════════════════════════════════════════════════════════════
+
+def detect_minimax_h3_preset(comfy_url: str) -> Optional[dict]:
+    """Auto-detect MiniMax Hailuo H3 video models on ComfyUI (Spark2).
+
+    Returns a dict compatible with `workflows.build_minimax_h3_video(...)`,
+    or None if MiniMax H3 UNET / CLIP / VAE are not installed.
+    """
+    from .model_detect import is_usable_model
+    unet_models = [m for m in probe_object_info_choices(comfy_url, "UNETLoader", "unet_name")
+                   if is_usable_model(m, "unet")]
+    h3_unet = None
+    for m in unet_models:
+        ml = m.lower()
+        if "minimax" in ml or "hailuo" in ml:
+            h3_unet = m
+            if "nvfp4" in ml or "fp4" in ml:
+                break
+    if not h3_unet:
+        return None
+
+    clip_choices = [c for c in probe_object_info_choices(comfy_url, "CLIPLoader", "clip_name")
+                    if is_usable_model(c, "clip")]
+    clip_choices.sort(key=lambda c: (0 if "nvfp4" in c.lower() or "fp4" in c.lower() else 1,
+                                     0 if c.lower().endswith(".safetensors") else 1))
+    h3_clip = None
+    for c in clip_choices:
+        cl = c.lower()
+        if "umt5" in cl:
+            h3_clip = c
+            break
+
+    vae_choices = probe_object_info_choices(comfy_url, "VAELoader", "vae_name")
+    h3_vae = pick_wan_vae(h3_unet, vae_choices)
+    if not h3_clip or not h3_vae:
+        return None
+
+    return {
+        "arch": "minimax_h3",
+        "unet": h3_unet,
+        "clip": h3_clip,
+        "vae": h3_vae,
+        "steps": 20,
+        "cfg": 3.5,
+        "shift": 5.0,
+        "fps": 24,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  SkyReels V2 — preset detection (Spark2 WAN-compatible I2V/DF)
+# ══════════════════════════════════════════════════════════════════════════
+
+def detect_skyreels_preset(comfy_url: str) -> Optional[dict]:
+    """Auto-detect SkyReels V2 models on ComfyUI (Spark2)."""
+    from .model_detect import is_usable_model
+    unet_models = [m for m in probe_object_info_choices(comfy_url, "UNETLoader", "unet_name")
+                   if is_usable_model(m, "unet")]
+    unet_models.sort(key=lambda m: (0 if "nvfp4" in m.lower() or "fp4" in m.lower() else 1,
+                                    0 if m.lower().endswith(".safetensors") else 1))
+    sr_i2v = sr_df = None
+    for m in unet_models:
+        ml = m.lower()
+        if "skyreels" not in ml:
+            continue
+        if "i2v" in ml:
+            sr_i2v = sr_i2v or m
+        elif "df" in ml:
+            sr_df = sr_df or m
+        else:
+            sr_i2v = sr_i2v or m
+    sr_unet = sr_i2v or sr_df
+    if not sr_unet:
+        return None
+
+    clip_choices = [c for c in probe_object_info_choices(comfy_url, "CLIPLoader", "clip_name")
+                    if is_usable_model(c, "clip")]
+    clip_choices.sort(key=lambda c: (0 if "nvfp4" in c.lower() or "fp4" in c.lower() else 1,
+                                     0 if c.lower().endswith(".safetensors") else 1))
+    sr_clip = None
+    for c in clip_choices:
+        cl = c.lower()
+        if "umt5" in cl:
+            sr_clip = c
+            break
+
+    vae_choices = probe_object_info_choices(comfy_url, "VAELoader", "vae_name")
+    sr_vae = None
+    for v in vae_choices:
+        if "wan_2.1_vae" in v.lower():
+            sr_vae = v
+            break
+    if not sr_vae:
+        sr_vae = pick_wan_vae(sr_unet, vae_choices)
+    if not sr_clip or not sr_vae:
+        return None
+
+    return {
+        "arch": "skyreels",
+        "unet": sr_unet,
+        "df_unet": sr_df,
+        "clip": sr_clip,
+        "vae": sr_vae,
+        "steps": 20,
+        "cfg": 3.5,
+        "shift": 5.0,
+        "fps": 24,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  SeedVR2 — preset detection (video/image upscaler)
+# ══════════════════════════════════════════════════════════════════════════
+
+def detect_seedvr2_preset(comfy_url: str) -> Optional[dict]:
+    """Auto-detect SeedVR2 DiT + VAE models on ComfyUI (Spark2)."""
+    dit_choices = probe_object_info_choices(comfy_url, "SeedVR2LoadDiTModel", "model")
+    vae_choices = probe_object_info_choices(comfy_url, "SeedVR2LoadVAEModel", "model")
+    if not dit_choices or not vae_choices:
+        return None
+    # Prefer 3B FP8 for fast/reliable execution, fall back to first available
+    dit_model = dit_choices[0]
+    for m in dit_choices:
+        if "3b" in m.lower() and "fp8" in m.lower():
+            dit_model = m
+            break
+    return {
+        "arch": "seedvr2",
+        "dit_model": dit_model,
+        "vae_model": vae_choices[0],
+    }
+

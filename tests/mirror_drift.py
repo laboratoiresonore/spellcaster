@@ -100,6 +100,9 @@ MIRROR_FILES = [
     # this module; a drifted copy would mean one path enforces the
     # allowlist and the other doesn't.
     "auto_updater.py",
+    "optimizer.py",
+    "plugin_base.py",
+    "recommend.py",
 ]
 
 

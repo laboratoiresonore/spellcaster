@@ -289,6 +289,79 @@ async function _logDispatchTelemetry({ handler, buildFn, arch, elapsed, failed, 
     }
 }
 
+let _cachedLoaderLists = null;
+let _cachedLoaderListsUrl = null;
+let _cachedLoaderListsTs = 0;
+
+async function _healWorkflowForServer(workflow) {
+    if (!workflow || typeof workflow !== 'object') return;
+    try {
+        const now = Date.now();
+        if (!_cachedLoaderLists || _cachedLoaderListsUrl !== COMFYUI_URL || (now - _cachedLoaderListsTs) > 300000) {
+            const [uRes, cRes, vRes] = await Promise.all([
+                fetchJSON(`${COMFYUI_URL}/object_info/UNETLoader`).catch(() => null),
+                fetchJSON(`${COMFYUI_URL}/object_info/CLIPLoader`).catch(() => null),
+                fetchJSON(`${COMFYUI_URL}/object_info/VAELoader`).catch(() => null),
+            ]);
+            const extract = (res, cls, field) => {
+                const req = res?.data?.[cls]?.input?.required?.[field];
+                if (!Array.isArray(req)) return [];
+                if (Array.isArray(req[0])) return req[0];
+                if (req[1] && Array.isArray(req[1].options)) return req[1].options;
+                return [];
+            };
+            const unets = extract(uRes, 'UNETLoader', 'unet_name');
+            const clips = extract(cRes, 'CLIPLoader', 'clip_name');
+            const vaes  = extract(vRes, 'VAELoader', 'vae_name');
+            if (unets.length || clips.length || vaes.length) {
+                _cachedLoaderLists = { unets, clips, vaes };
+                _cachedLoaderListsUrl = COMFYUI_URL;
+                _cachedLoaderListsTs = now;
+            }
+        }
+        if (!_cachedLoaderLists) return;
+        const { unets, clips, vaes } = _cachedLoaderLists;
+        for (const node of Object.values(workflow)) {
+            if (!node || typeof node !== 'object' || !node.inputs) continue;
+            if (node.class_type === 'UNETLoader' && unets.length > 0) {
+                const cur = node.inputs.unet_name || '';
+                if (cur && !unets.includes(cur)) {
+                    const low = cur.toLowerCase();
+                    let match = null;
+                    if (low.includes('flux-2-klein-9b')) {
+                        match = unets.find(u => u.toLowerCase().includes('flux-2-klein-9b'))
+                             || unets.find(u => u.toLowerCase().includes('flux-3-klein-sd'))
+                             || unets.find(u => u.toLowerCase().includes('krea2'));
+                    } else if (low.includes('flux-2-klein-4b')) {
+                        match = unets.find(u => u.toLowerCase().includes('flux-2-klein-4b'))
+                             || unets.find(u => u.toLowerCase().includes('flux-3-klein'));
+                    }
+                    if (match) node.inputs.unet_name = match;
+                }
+            } else if (node.class_type === 'CLIPLoader' && clips.length > 0) {
+                const cur = node.inputs.clip_name || '';
+                if (cur && !clips.includes(cur)) {
+                    const low = cur.toLowerCase();
+                    let match = null;
+                    if (low.includes('qwen_3_8b')) {
+                        match = clips.find(c => c.toLowerCase().includes('qwen_3_8b'));
+                    } else if (low.includes('qwen_3_4b')) {
+                        match = clips.find(c => c.toLowerCase().includes('qwen_3_4b'));
+                    }
+                    if (match) node.inputs.clip_name = match;
+                }
+            } else if (node.class_type === 'VAELoader' && vaes.length > 0) {
+                const cur = node.inputs.vae_name || '';
+                if (cur && !vaes.includes(cur)) {
+                    if (cur.toLowerCase().includes('flux2-vae') && vaes.includes('ae.safetensors')) {
+                        node.inputs.vae_name = 'ae.safetensors';
+                    }
+                }
+            }
+        }
+    } catch (_e) { /* best-effort */ }
+}
+
 async function dispatchWorkflow(workflow, timeoutMs = 180000, {
     stashMeta = null,
     telemetryHandler = 'sillytavern_dispatch',
@@ -307,6 +380,7 @@ async function dispatchWorkflow(workflow, timeoutMs = 180000, {
         }
     } catch (_e) { /* ignore */ }
     try {
+    await _healWorkflowForServer(workflow);
     // Submit
     const submitRes = await fetchJSON(`${COMFYUI_URL}/prompt`, {
         method: 'POST',
@@ -632,19 +706,38 @@ function init(router) {
         // comfyui-spellcaster arch registry so a wizard round-trip
         // survives unchanged through the workflow builders.
         const groups = {
-            klein9b: [], klein4b: [], fluxkontext: [],
-            flux1dev: [], sdxl: [], illustrious: [], sd15: [],
-            zit: [], chroma: [],
+            flux3klein: [], klein9b: [], klein4b: [], flux2dev: [],
+            fluxkontext: [], flux1dev: [], krea2: [], qwen_image: [],
+            sdxl: [], illustrious: [], sd15: [], zit: [], chroma: [],
         };
+        const badModels = new Set([
+            'flux1-dev-fp8.safetensors',
+            'hidream_i1_full_fp8.safetensors',
+            'hy_motion_1.0_bf16.safetensors',
+            'ltx-video-2.3-nvfp4/model.safetensors',
+            'wan2.2_t2v_high_noise_14b_fp8_scaled.safetensors',
+            'wan2.2_t2v_low_noise_14b_fp8_scaled.safetensors',
+            'realvisxl_v5.0_fp16.safetensors',
+            'sd_xl_base_1.0.safetensors',
+        ]);
+        const nonDiffusionRe = /(?:embeddings_connector|spatial-upscaler|temporal-upscaler|lora|taesd|aurasr)/i;
         const bucket = (name, isUnet) => {
-            const n = String(name).toLowerCase();
+            const norm = String(name).replace(/\\/g, '/').toLowerCase();
+            const base = norm.split('/').pop();
+            if (badModels.has(norm) || badModels.has(base)) return null;
+            if (isUnet && nonDiffusionRe.test(norm)) return null;
+            const n = norm;
+            if (n.includes('flux-3-klein') || n.includes('flux3-klein') || n.includes('flux3')) return 'flux3klein';
             if (n.includes('klein')) {
                 if (n.includes('9b')) return 'klein9b';
                 if (n.includes('4b')) return 'klein4b';
                 return 'klein9b';
             }
+            if (n.includes('flux2-dev') || n.includes('flux_2_dev')) return 'flux2dev';
             if (n.includes('kontext')) return 'fluxkontext';
-            if (isUnet && (n.includes('flux') || n.includes('flux1'))) return 'flux1dev';
+            if (n.includes('krea2') || n.includes('krea-2') || n.includes('krea_2')) return 'krea2';
+            if (n.includes('qwen_image') || n.includes('qwen-image')) return 'qwen_image';
+            if (isUnet && (n.includes('flux1') || n.includes('flux-1') || n.includes('flux_1'))) return 'flux1dev';
             if (n.includes('chroma')) return 'chroma';
             if (n.includes('z-image') || n.includes('z_image') || n.includes('zimage')
                 || n.includes('turbo-z') || n.includes('zit')) return 'zit';
@@ -652,10 +745,9 @@ function init(router) {
             if (n.includes('sdxl') || n.includes('xl') || n.includes('jugger')
                 || n.includes('realistic') || n.includes('zavy')) return 'sdxl';
             if (n.includes('sd15') || n.includes('sd-15') || n.includes('1.5')) return 'sd15';
-            // Default: treat as SDXL checkpoint (most common untagged case).
-            // UNETs without identifying markers go uncategorized rather than
-            // dumped into sdxl — UNETs are arch-specific and misfiling is
-            // louder there.
+            if (isUnet && (n.includes('wan') || n.includes('ltx') || n.includes('hunyuan')
+                || n.includes('minimax') || n.includes('skyreels') || n.includes('seedvr')
+                || n.includes('longcat'))) return null;
             return isUnet ? null : 'sdxl';
         };
         for (const c of ckpts) {
@@ -674,6 +766,10 @@ function init(router) {
         const video = {
             wan: nodes.has('WanImageToVideo') || nodes.has('LoadWanVideoModel'),
             ltx: nodes.has('LTXVImgToVideo'),
+            hunyuan_video: nodes.has('EmptyHunyuanLatentVideo') || nodes.has('HunyuanVideoModelLoader'),
+            minimax_h3: unets.some(u => String(u).toLowerCase().includes('minimax')),
+            skyreels: unets.some(u => String(u).toLowerCase().includes('skyreels')),
+            seedvr2: nodes.has('SeedVR2VideoUpscaler') || nodes.has('LoadSeedVR2Models'),
         };
         res.json({ comfyui: COMFYUI_URL, image, video });
     });
@@ -1870,7 +1966,14 @@ async function detectBestModel() {
     if (fresh) return _cachedModel;
     try {
         const res = await fetchJSON(`${COMFYUI_URL}/object_info/CheckpointLoaderSimple`);
-        const ckpts = res.data?.CheckpointLoaderSimple?.input?.required?.ckpt_name?.[0] || [];
+        const rawCkpts = res.data?.CheckpointLoaderSimple?.input?.required?.ckpt_name?.[0] || [];
+        const badExact = new Set(['flux1-dev.safetensors', 'flux1-dev-fp8.safetensors']);
+        const badSubstr = ['audio_vae', 'video_vae', 'ltx-2', 'ltx2', 'wan_', 'wan2', 'umt5', 't5xxl', 'qwen_', 'gemma', 'mistral'];
+        const ckpts = rawCkpts.filter(c => {
+            const base = c.replace(/\\/g, '/').split('/').pop().toLowerCase();
+            if (badExact.has(base)) return false;
+            return !badSubstr.some(sub => base.includes(sub));
+        });
         const pick = (m) => {
             _cachedModel = m;
             _cachedModelUrl = COMFYUI_URL;
@@ -2519,9 +2622,10 @@ async function detectEditEngine() {
         const all = [...names, ...names2];
         const haveKlein9 = all.some(n => n.toLowerCase().includes("flux-2-klein-9b"));
         const haveKlein4 = all.some(n => n.toLowerCase().includes("flux-2-klein-4b") || n.toLowerCase().includes("flux-2-klein-base-4b"));
+        const haveFlux3OrKrea2 = all.some(n => n.toLowerCase().includes("flux-3-klein") || n.toLowerCase().includes("krea2"));
         const haveKontext = all.some(n => n.toLowerCase().includes("kontext"));
         let engine = "sdxl";
-        if (haveKlein9 || haveKlein4) engine = "klein";
+        if (haveKlein9 || haveKlein4 || haveFlux3OrKrea2) engine = "klein";
         else if (haveKontext) engine = "kontext";
         _cachedEditEngine = engine;
         _cachedEditEngineUrl = COMFYUI_URL;

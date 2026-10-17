@@ -29,6 +29,7 @@ import sys
 import time
 import urllib.request
 import urllib.error
+import urllib.parse
 from typing import Any, Dict, List, Optional, Tuple
 
 log = logging.getLogger("spellcaster.video_dispatch")
@@ -52,17 +53,22 @@ def probe_comfyui_models(base_url: str, *, force: bool = False) -> dict:
     if cached and not force and (now - cached[0]) < _CACHE_TTL_S:
         return cached[1]
     out: Dict[str, List[str]] = {
-        "unet_gguf": [], "unet": [],
+        "unet_gguf": [], "unet": [], "ckpt": [],
         "clip_gguf": [], "clip": [],
-        "vae": [], "lora": [],
+        "vae": [], "lora": [], "latent_upscaler": [],
+        "seedvr2_dit": [], "seedvr2_vae": [],
     }
     queries = [
         ("UnetLoaderGGUF",      "unet_name",  "unet_gguf"),
         ("UNETLoader",          "unet_name",  "unet"),
+        ("CheckpointLoaderSimple", "ckpt_name", "ckpt"),
         ("CLIPLoaderGGUF",      "clip_name",  "clip_gguf"),
         ("CLIPLoader",          "clip_name",  "clip"),
         ("VAELoader",           "vae_name",   "vae"),
         ("LoraLoader",          "lora_name",  "lora"),
+        ("LatentUpscaleModelLoader", "model_name", "latent_upscaler"),
+        ("SeedVR2LoadDiTModel", "model",      "seedvr2_dit"),
+        ("SeedVR2LoadVAEModel", "model",      "seedvr2_vae"),
     ]
     for node_class, input_key, out_key in queries:
         try:
@@ -75,6 +81,10 @@ def probe_comfyui_models(base_url: str, *, force: bool = False) -> dict:
             field = inputs.get(input_key)
             if field and isinstance(field, list) and isinstance(field[0], list):
                 out[out_key] = list(field[0])
+            elif (field and isinstance(field, list) and field[0] == "COMBO"
+                  and len(field) > 1 and isinstance(field[1], dict)):
+                # newer V3-style combo: ["COMBO", {"options": [...]}]
+                out[out_key] = list(field[1].get("options", []))
         except (urllib.error.URLError, json.JSONDecodeError, TimeoutError) as e:
             log.debug("probe %s failed: %s", node_class, e)
         except Exception as e:  # noqa: BLE001 — never raise out of probe
@@ -192,16 +202,39 @@ def resolve_ltx2_preset(preset_key: str, models: dict) -> Optional[dict]:
     if not hint:
         return None
 
-    # UNET — ltx-2.3-22b GGUF or fp8 safetensors.
-    unet_pool = models.get("unet_gguf", []) + models.get("unet", [])
-    unet = (_pick(unet_pool, {"ltx", "2", "3", "22b", "dev"},
-                   {"q4", "gguf", "k"})
-            or _pick(unet_pool, {"ltx", "22b"}, {"q4", "q8", "gguf"})
+    # UNET — ltx-2.3-22b GGUF or full safetensors checkpoint.
+    # Lane6 2026-10-05: the unet pools on some servers (spark2) alias EVERY
+    # model folder, so they also list LoRAs, spatial/temporal upscalers and
+    # connector files whose names contain "ltx"/"22b". Those are not
+    # diffusion models; picking one (it was the shortest name) produced
+    # "UnetLoaderGGUF.unet_name not in list" validation failures.
+    _not_unet = {"lora", "upscaler", "embeddings", "connectors", "connector"}
+    raw_unets = models.get("unet_gguf", []) + models.get("unet", [])
+    raw_ckpts = [c for c in models.get("ckpt", []) if c not in raw_unets]
+    unet_pool = [u for u in (raw_unets + raw_ckpts)
+                 if not (_tokens(u) & _not_unet)
+                 and not u.replace("\\", "/").endswith("ltx-video-2.3-nvfp4/model.safetensors")]
+    try:
+        from spellcaster_core.model_detect import is_usable_model
+        unet_pool = [u for u in unet_pool if is_usable_model(u, "unet")]
+    except ImportError:
+        pass
+    unet = (_pick(unet_pool, {"ltx", "2", "3", "22b", "distilled"},
+                   {"fp4", "nvfp4", "1"})
+            or _pick(unet_pool, {"ltx", "2", "3", "22b", "dev"},
+                   {"q4", "gguf", "k", "nvfp4", "fp4"})
+            or _pick(unet_pool, {"ltx", "22b"}, {"q4", "q8", "gguf", "nvfp4", "fp4"})
             or _pick(unet_pool, {"ltx", "2", "3"})
             or _pick(unet_pool, {"ltx"}))
     if not unet:
         log.info("resolve_ltx2_preset(%s): no LTX-2 UNET found", preset_key)
         return None
+    unet_in_checkpoints = (unet in raw_ckpts and unet not in raw_unets)
+    # A non-GGUF "distilled" file is the full distilled checkpoint (the
+    # distilled LoRA is already baked in; it also carries the embeddings
+    # connector). Builder loads it with UNETLoader.
+    baked_distilled = ("distilled" in _tokens(unet)
+                       and not unet.lower().endswith(".gguf"))
 
     # Text encoder — LTX-2 uses Gemma 3 12B (fp4 or fp8 scaled).
     te_pool = models.get("clip", []) + models.get("clip_gguf", [])
@@ -231,6 +264,9 @@ def resolve_ltx2_preset(preset_key: str, models: dict) -> Optional[dict]:
         if cand:
             connector = cand
             break
+    if not connector and not unet.lower().endswith(".gguf"):
+        # Full safetensors checkpoint carries its own connectors.
+        connector = unet
     if not connector:
         # Known LTX-2.3 embedding connector filename — fall back to the
         # literal name if the probe didn't surface it. LTX-2 users
@@ -260,7 +296,7 @@ def resolve_ltx2_preset(preset_key: str, models: dict) -> Optional[dict]:
     # Per-preset sampler tuning. Canonical LTX-2 defaults:
     #   - Standard: steps=30, cfg=4.0, stg=1.0, rescale=0.7
     #   - Distilled: steps=8, cfg=1.0, stg=0.0, rescale=0.0
-    if hint.get("distilled"):
+    if hint.get("distilled") or baked_distilled:
         tuning = {"steps": 8, "cfg": 1.0, "stg": 0.0, "rescale": 0.0}
     else:
         tuning = {"steps": 30, "cfg": 4.0, "stg": 1.0, "rescale": 0.7}
@@ -274,6 +310,15 @@ def resolve_ltx2_preset(preset_key: str, models: dict) -> Optional[dict]:
     }
     if distilled_lora:
         out["distilled_lora"] = distilled_lora
+    if baked_distilled:
+        out["distilled_baked"] = True
+    if unet_in_checkpoints:
+        out["unet_in_checkpoints"] = True
+    ups_pool = models.get("latent_upscaler", [])
+    ups = (_pick(ups_pool, {"ltx", "spatial", "upscaler", "x2"}, {"2", "3", "1"})
+           or _pick(ups_pool, {"spatial", "upscaler"}))
+    if ups:
+        out["latent_upscaler"] = ups
     return out
 
 
@@ -286,28 +331,28 @@ _WAN_PRESET_HINTS: Dict[str, Dict[str, Any]] = {
     "wan22_i2v_lightning": {
         "task": "i2v", "family": "wan22",
         "high_must": {"wan2", "2", "i2v", "high"},
-        "high_nice": {"14b", "lightning", "q4"},
+        "high_nice": {"a14b", "14b", "lightning", "nvfp4", "fp4", "q4"},
         "high_bad":  {"t2v"},
         "low_must":  {"wan2", "2", "i2v", "low"},
-        "low_nice":  {"14b", "lightning", "q4"},
+        "low_nice":  {"a14b", "14b", "lightning", "nvfp4", "fp4", "q4"},
         "low_bad":   {"t2v"},
     },
     "wan22_i2v_hq": {
         "task": "i2v", "family": "wan22",
         "high_must": {"wan2", "2", "i2v", "high"},
-        "high_nice": {"14b", "q6", "q8", "fp16", "hq"},
+        "high_nice": {"a14b", "14b", "nvfp4", "fp4", "q6", "q8", "fp16", "hq"},
         "high_bad":  {"t2v", "lightning"},
         "low_must":  {"wan2", "2", "i2v", "low"},
-        "low_nice":  {"14b", "q6", "q8", "fp16", "hq"},
+        "low_nice":  {"a14b", "14b", "nvfp4", "fp4", "q6", "q8", "fp16", "hq"},
         "low_bad":   {"t2v", "lightning"},
     },
     "wan22_t2v": {
         "task": "t2v", "family": "wan22",
         "high_must": {"wan2", "2", "t2v", "high"},
-        "high_nice": {"a14b", "14b", "q4", "q6"},
+        "high_nice": {"a14b", "14b", "nvfp4", "fp4", "q4", "q6"},
         "high_bad":  {"i2v"},
         "low_must":  {"wan2", "2", "t2v", "low"},
-        "low_nice":  {"a14b", "14b", "q6", "q8"},
+        "low_nice":  {"a14b", "14b", "nvfp4", "fp4", "q6", "q8"},
         "low_bad":   {"i2v"},
     },
 }
@@ -338,6 +383,11 @@ def resolve_wan_preset(preset_key: str, models: dict) -> Optional[dict]:
         return None
 
     unet_pool = models.get("unet_gguf", []) + models.get("unet", [])
+    try:
+        from spellcaster_core.model_detect import is_usable_model
+        unet_pool = [u for u in unet_pool if is_usable_model(u, "unet")]
+    except ImportError:
+        pass
     high = _pick(unet_pool, hint["high_must"], hint.get("high_nice"),
                   hint.get("high_bad"))
     low  = _pick(unet_pool, hint["low_must"],  hint.get("low_nice"),
@@ -350,7 +400,7 @@ def resolve_wan_preset(preset_key: str, models: dict) -> Optional[dict]:
 
     # CLIP — Wan uses UMT5-XXL. Prefer the fp8 safetensors (canonical
     # ComfyUI reference workflows ship `umt5_xxl_fp8_e4m3fn_scaled`),
-    # then full-precision safetensors, then the Q8 GGUF, and only if
+    # then fp4_mixed / full-precision safetensors, then the Q8 GGUF, and only if
     # nothing else exists fall back to Q6. Q3 and Q4 GGUF are
     # explicitly rejected — live-test on the user's RTX 5060 Ti
     # proved Q3_K_S produces pure-black WAN output (degenerate text
@@ -360,6 +410,8 @@ def resolve_wan_preset(preset_key: str, models: dict) -> Optional[dict]:
     clip_pool = models.get("clip", []) + models.get("clip_gguf", [])
     clip = (_pick(clip_pool, {"umt5"}, {"fp8", "xxl", "scaled", "safetensors"},
                   {"gguf", "nsfw"})
+            or _pick(clip_pool, {"umt5"}, {"fp4", "mixed", "xxl", "safetensors"},
+                     {"gguf", "nsfw"})
             or _pick(clip_pool, {"umt5"}, {"xxl", "fp16", "safetensors"},
                      {"gguf", "nsfw"})
             or _pick(clip_pool, {"umt5"}, {"q8", "xxl"})
@@ -490,7 +542,7 @@ def resolve_wan_preset(preset_key: str, models: dict) -> Optional[dict]:
 
 # ── Workflow builder ─────────────────────────────────────────────────
 
-def build_native_workflow(preset_key: str, *, prompt: str,
+def _build_native_workflow_impl(preset_key: str, *, prompt: str,
                            negative: str = "", seed: int = 0,
                            image_filename: Optional[str] = None,
                            comfyui_base_url: str,
@@ -593,6 +645,7 @@ def build_native_workflow(preset_key: str, *, prompt: str,
         _ensure_spellcaster_core_on_path()
         try:
             from spellcaster_core.workflows import build_seedvr2_video_upscale  # type: ignore
+            from spellcaster_core import video_presets as _vp  # type: ignore
         except ImportError as e:
             return None, f"spellcaster_core.workflows.build_seedvr2_video_upscale missing: {e}"
         if not image_filename:
@@ -607,14 +660,74 @@ def build_native_workflow(preset_key: str, *, prompt: str,
                 w_target = int(target_res.split("x")[0])
             except Exception:
                 w_target = 1920
+            svr_preset = _vp.detect_seedvr2_preset(comfyui_base_url) or {}
+            dit_kwargs = {}
+            if svr_preset.get("dit_model"):
+                dit_kwargs["dit_model"] = svr_preset["dit_model"]
+            if svr_preset.get("vae_model"):
+                dit_kwargs["vae_model"] = svr_preset["vae_model"]
             workflow = build_seedvr2_video_upscale(
                 video_name=image_filename,
                 seed=seed,
                 resolution=w_target,
                 fps=fps,
+                **dit_kwargs,
             )
         except Exception as e:  # noqa: BLE001
             return None, f"build_seedvr2_video_upscale raised: {e}"
+        return workflow, None
+
+    # ── HunyuanVideo 1.5 / MiniMax Hailuo H3 / SkyReels V2 ──────────
+    if family in ("hunyuan_video", "minimax_h3", "skyreels"):
+        _ensure_spellcaster_core_on_path()
+        try:
+            from spellcaster_core import workflows as _wf  # type: ignore
+            from spellcaster_core import video_presets as _vp  # type: ignore
+        except ImportError as e:
+            return None, f"spellcaster_core video modules missing: {e}"
+        task = (spec.get("task") or "").lower()
+        if task in ("i2v",) and not image_filename:
+            return None, "this preset needs a reference image (i2v)"
+        try:
+            if family == "hunyuan_video":
+                preset_dict = _vp.detect_hunyuan_video_preset(comfyui_base_url)
+                if not preset_dict:
+                    return None, "couldn't locate HunyuanVideo models on ComfyUI"
+                workflow = _wf.build_hunyuan_video(
+                    prompt_text=prompt, seed=seed,
+                    hy_model=preset_dict["hy_model"],
+                    vae_name=preset_dict["vae_name"],
+                    width=width, height=height, num_frames=length, fps=fps,
+                    steps=steps or defaults.get("steps", 20),
+                )
+            elif family == "minimax_h3":
+                preset_dict = _vp.detect_minimax_h3_preset(comfyui_base_url)
+                if not preset_dict:
+                    return None, "couldn't locate MiniMax Hailuo H3 models on ComfyUI"
+                workflow = _wf.build_minimax_h3_video(
+                    preset=preset_dict,
+                    prompt_text=prompt, negative_text=negative, seed=seed,
+                    width=width, height=height, length=length, fps=fps,
+                    steps=steps or defaults.get("steps", 20),
+                    cfg=cfg if cfg is not None else defaults.get("guidance", 5.0),
+                    image_filename=image_filename,
+                )
+            else:
+                preset_dict = _vp.detect_skyreels_preset(comfyui_base_url)
+                if not preset_dict:
+                    return None, "couldn't locate SkyReels V2 models on ComfyUI"
+                workflow = _wf.build_skyreels_video(
+                    preset=preset_dict,
+                    prompt_text=prompt, negative_text=negative, seed=seed,
+                    width=width, height=height, length=length, fps=fps,
+                    steps=steps or defaults.get("steps", 20),
+                    cfg=cfg if cfg is not None else defaults.get("guidance", 5.0),
+                    image_filename=image_filename,
+                )
+        except Exception as e:  # noqa: BLE001
+            return None, f"{family} builder raised: {e}"
+        if not isinstance(workflow, dict) or not workflow:
+            return None, f"{family} builder returned empty workflow"
         return workflow, None
 
     # ── LTX-2 family ────────────────────────────────────────────────
@@ -821,6 +934,267 @@ def build_native_workflow(preset_key: str, *, prompt: str,
     if not isinstance(workflow, dict) or not workflow:
         return None, "wan22 builder returned empty workflow"
     return workflow, None
+
+
+# ── Disk-JSON model-name healing (Lane6 2026-10-05) ─────────────────
+#
+# Static workflow templates (scaffold/workflows/*.json) hard-code model
+# filenames from whichever machine they were authored on. On another
+# ComfyUI the names are not in the loader's combo list and /prompt fails
+# validation (value_not_in_list). heal_loader_names() rewrites each
+# loader input that is NOT in the server's list to the best fuzzy match
+# (same token machinery as the builders' resolvers). Values already valid
+# are never touched; with no acceptable match the value is left alone so
+# the server's own error surfaces.
+
+_LOADER_FIELDS = {
+    "UNETLoader": "unet_name", "UnetLoaderGGUF": "unet_name",
+    "CLIPLoader": "clip_name", "CLIPLoaderGGUF": "clip_name",
+    "VAELoader": "vae_name", "LoraLoaderModelOnly": "lora_name",
+    "LoraLoader": "lora_name", "CheckpointLoaderSimple": "ckpt_name",
+    "ReActorFaceSwap": "swap_model", "ReActorFaceSwapOpt": "swap_model",
+}
+# Loader classes safe to fuzzy-heal on ANY video workflow. LoRAs are
+# deliberately excluded: a silently-wrong LoRA is worse than a loud error.
+_VIDEO_HEAL_CLASSES = {"UNETLoader", "UnetLoaderGGUF", "CLIPLoader",
+                       "CLIPLoaderGGUF", "VAELoader",
+                       "ReActorFaceSwap", "ReActorFaceSwapOpt"}
+_SWAP_FALLBACKS = ["inswapper_128.onnx", "inswapper_128_fp16.onnx"]
+_VIDEO_NODE_CLASSES = {"VHS_VideoCombine", "VHS_LoadVideo", "CreateVideo",
+                       "SaveVideo", "SaveWEBM", "SaveAnimatedWEBP"}
+_QUANT_TOKENS = {"q2", "q3", "q4", "q5", "q6", "q8", "k", "m", "s", "l", "0",
+                 "1", "fp8", "fp16", "fp32", "bf16", "e4m3fn", "scaled",
+                 "gguf", "safetensors", "wan", "ltx"}
+
+
+def heal_loader_names(workflow: dict, base_url: str,
+                      only_classes: Optional[set] = None) -> List[str]:
+    """In-place heal of loader model names. Returns a list of change notes."""
+    notes: List[str] = []
+    cache: Dict[str, List[str]] = {}
+
+    def _opts(cls: str, field: str) -> List[str]:
+        if cls in cache:
+            return cache[cls]
+        out: List[str] = []
+        try:
+            with urllib.request.urlopen(
+                    f"{base_url.rstrip('/')}/object_info/{cls}", timeout=15) as r:
+                d = json.loads(r.read()).get(cls) or {}
+            req = (d.get("input") or {}).get("required") or {}
+            f = req.get(field)
+            if f:
+                out = list(f[0]) if isinstance(f[0], list) else list(
+                    (f[1] or {}).get("options", []))
+        except Exception as e:  # noqa: BLE001 — healing must never raise
+            log.debug("heal probe %s failed: %s", cls, e)
+        cache[cls] = out
+        return out
+
+    for nid, node in workflow.items():
+        if not isinstance(node, dict):
+            continue
+        cls = node.get("class_type")
+        field = _LOADER_FIELDS.get(cls)
+        if only_classes is not None and cls not in only_classes:
+            continue
+        inp = node.get("inputs") or {}
+        want = inp.get(field) if field else None
+        if not isinstance(want, str):
+            continue
+        opts = _opts(cls, field)
+        if not opts or want in opts:
+            continue
+        pool = list(opts)
+        # GGUF loader missing the file: try the stock loader's list too.
+        alt_cls = {"UnetLoaderGGUF": "UNETLoader",
+                   "CLIPLoaderGGUF": "CLIPLoader"}.get(cls)
+        alt_pool = _opts(alt_cls, field) if alt_cls else []
+        base = os.path.basename(want.replace("\\", "/"))
+        toks = _tokens(base) - _QUANT_TOKENS
+        pick = None
+        pick_cls = cls
+        if field == "swap_model":
+            pick = next((m for m in _SWAP_FALLBACKS if m in pool), None)
+            toks = set()
+        for must_n in range(len(toks), 0, -1):
+            must = set(sorted(toks, key=len, reverse=True)[:must_n])
+            pick = _pick(pool, must)
+            if pick:
+                break
+            if alt_pool:
+                pick = _pick(alt_pool, must)
+                if pick:
+                    pick_cls = alt_cls
+                    break
+        if pick:
+            inp[field] = pick
+            node["class_type"] = pick_cls
+            if pick_cls != cls and pick_cls == "UNETLoader":
+                inp.setdefault("weight_dtype", "default")
+            notes.append(f"{nid}:{cls}.{field}: {want!r} -> {pick!r}")
+    return notes
+
+
+def drop_unsafe_audio_links(workflow: dict, base_url: str) -> List[str]:
+    """Remove VHS_LoadVideo(audio) -> VHS_VideoCombine(audio) wires when the
+    source clip has NO audio stream.
+
+    Lane6 2026-10-05 root cause of "VHS failed to extract audio from
+    .../ComfyUI_00008_.mp4 ... Output file does not contain any stream":
+    VHS_LoadVideo's AUDIO output is lazy; the moment VHS_VideoCombine pulls
+    it, VHS runs ffmpeg to extract an audio stream that does not exist and
+    raises, failing the whole prompt. Generated (Wan/LTX/ComfyUI) clips are
+    usually silent, so the passthrough wiring is a latent landmine. We probe
+    the clip with ffprobe (via /view) and drop the wire only when it is
+    provably silent; probe failures leave the workflow untouched.
+    """
+    import shutil
+    import subprocess
+    import tempfile
+    notes: List[str] = []
+    ffprobe = shutil.which("ffprobe")
+    ffmpeg = shutil.which("ffmpeg")
+    if not (ffprobe or ffmpeg):
+        return notes
+    flags = 0x08000000 if os.name == "nt" else 0  # CREATE_NO_WINDOW
+    for nid, node in workflow.items():
+        if not (isinstance(node, dict)
+                and node.get("class_type") == "VHS_VideoCombine"):
+            continue
+        a = (node.get("inputs") or {}).get("audio")
+        if not (isinstance(a, list) and len(a) == 2 and a[1] == 2):
+            continue
+        src = workflow.get(a[0]) or {}
+        if src.get("class_type") != "VHS_LoadVideo":
+            continue
+        fname = (src.get("inputs") or {}).get("video")
+        if not isinstance(fname, str) or not fname:
+            continue
+        sub, _, base = fname.replace("\\", "/").rpartition("/")
+        q = urllib.parse.urlencode({"filename": base, "subfolder": sub,
+                                    "type": "input"})
+        tmp = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=os.path.splitext(base)[1] or ".mp4",
+                                             delete=False) as tf:
+                tmp = tf.name
+                with urllib.request.urlopen(
+                        f"{base_url.rstrip('/')}/view?{q}", timeout=60) as r:
+                    total = 0
+                    while True:
+                        chunk = r.read(1 << 20)
+                        if not chunk:
+                            break
+                        total += len(chunk)
+                        if total > 512 * (1 << 20):
+                            raise RuntimeError("clip too large to probe")
+                        tf.write(chunk)
+            if ffprobe:
+                out = subprocess.run(
+                    [ffprobe, "-v", "error", "-select_streams", "a",
+                     "-show_entries", "stream=index", "-of", "csv=p=0", tmp],
+                    capture_output=True, text=True, timeout=60,
+                    creationflags=flags)
+                has_audio = bool(out.stdout.strip())
+                ok = out.returncode == 0
+            else:
+                out = subprocess.run([ffmpeg, "-hide_banner", "-i", tmp],
+                                     capture_output=True, text=True,
+                                     timeout=60, creationflags=flags)
+                has_audio = "Audio:" in out.stderr
+                ok = "Video:" in out.stderr
+            if ok and not has_audio:
+                del node["inputs"]["audio"]
+                notes.append(f"{nid}: dropped audio wire from silent clip {fname!r}")
+        except Exception as e:  # noqa: BLE001 — probing must never block submit
+            log.debug("audio probe for %s failed: %s", fname, e)
+        finally:
+            if tmp:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+    return notes
+
+
+def heal_video_workflow(workflow: dict, base_url: str) -> List[str]:
+    """Universal pre-submit compat pass for VIDEO workflows only (image
+    workflows are left untouched). Used by ComfyUIRunner._queue_prompt."""
+    if not any(isinstance(n, dict) and n.get("class_type") in _VIDEO_NODE_CLASSES
+               for n in workflow.values()):
+        return []
+    notes = adapt_missing_nodes(workflow, base_url)
+    notes += drop_unsafe_audio_links(workflow, base_url)
+    notes += heal_loader_names(workflow, base_url, _VIDEO_HEAL_CLASSES)
+    return notes
+
+
+def adapt_missing_nodes(workflow: dict, base_url: str) -> List[str]:
+    """Swap node classes the target ComfyUI lacks for installed equivalents.
+
+    Lane6 2026-10-05: builders emit ``RIFE VFI`` (ComfyUI-Frame-Interpolation).
+    spark2 does not ship that pack but does ship ComfyUI-GIMM-VFI, so the
+    interpolation presets failed /prompt validation ("missing class").
+    Rewrites RIFE VFI -> DownloadAndLoadGIMMVFIModel + GIMMVFI_interpolate.
+    No-op when RIFE VFI exists or GIMM-VFI is absent. Returns change notes.
+    """
+    notes: List[str] = []
+    if not any(isinstance(n, dict) and n.get("class_type") == "RIFE VFI"
+               for n in workflow.values()):
+        return notes
+
+    def _has(cls: str) -> Optional[dict]:
+        try:
+            with urllib.request.urlopen(
+                    f"{base_url.rstrip('/')}/object_info/{urllib.parse.quote(cls)}",
+                    timeout=15) as r:
+                return json.loads(r.read()).get(cls)
+        except Exception:  # noqa: BLE001
+            return None
+
+    if _has("RIFE VFI"):
+        return notes
+    loader = _has("DownloadAndLoadGIMMVFIModel")
+    interp = _has("GIMMVFI_interpolate")
+    if not (loader and interp):
+        return notes
+    mopts = ((loader.get("input") or {}).get("required") or {}).get("model", [[]])[0]
+    model = next((m for m in mopts if "_r_" in m), mopts[0] if mopts else None)
+    if not model:
+        return notes
+    for nid in [k for k, n in workflow.items()
+                if isinstance(n, dict) and n.get("class_type") == "RIFE VFI"]:
+        node = workflow[nid]
+        mult = int(node["inputs"].get("multiplier", 2))
+        lid = f"{nid}_gimm_model"
+        workflow[lid] = {"class_type": "DownloadAndLoadGIMMVFIModel",
+                         "inputs": {"model": model, "precision": "fp16"}}
+        # GIMMVFI_interpolate outputs [interpolated IMAGE, flow IMAGE]; slot 0
+        # is a drop-in for RIFE VFI's single IMAGE output.
+        workflow[nid] = {"class_type": "GIMMVFI_interpolate",
+                         "inputs": {"gimmvfi_model": [lid, 0],
+                                    "images": node["inputs"]["frames"],
+                                    "ds_factor": 1.0,
+                                    "interpolation_factor": mult,
+                                    "seed": 0}}
+        notes.append(f"{nid}: RIFE VFI -> GIMMVFI_interpolate x{mult} ({model})")
+    return notes
+
+
+def build_native_workflow(*args, **kwargs):
+    """See _build_native_workflow_impl; adds server-compat node adaptation
+    and loader-name healing to every native-built workflow."""
+    workflow, err = _build_native_workflow_impl(*args, **kwargs)
+    if workflow:
+        base = kwargs.get("comfyui_base_url")
+        if base:
+            try:
+                for n in adapt_missing_nodes(workflow, base):
+                    log.info("native workflow adapted: %s", n)
+            except Exception as e:  # noqa: BLE001
+                log.warning("adapt_missing_nodes skipped: %s", e)
+    return workflow, err
 
 
 def _ensure_spellcaster_core_on_path():

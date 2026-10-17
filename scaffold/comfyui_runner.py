@@ -278,6 +278,9 @@ class ComfyUIRunner:
             prompt_id = self._queue_prompt(workflow)
             if not prompt_id:
                 _tel_error = "Failed to queue prompt"
+                _qe = getattr(self, "last_queue_error", "")
+                if _qe:
+                    _tel_error += f" ({_qe[:300]})"
                 return {"status": "error", "message": _tel_error}
 
             result = self._poll_result(prompt_id)
@@ -574,7 +577,26 @@ class ComfyUIRunner:
     # ------------------------------------------------------------------
 
     def _queue_prompt(self, workflow: dict) -> Optional[str]:
-        """POST workflow to /prompt, return prompt_id."""
+        """POST workflow to /prompt, return prompt_id.
+
+        Lane6 2026-10-05: workflow templates carry a top-level ``_meta``
+        (title/notes) block. ComfyUI >= 0.3x rejects ANY top-level key that
+        is not a node (``Node 'ID #_meta' has no class_type``, HTTP 400), so
+        strip non-node keys before posting. Validation errors from the
+        server are logged (they were previously swallowed -> opaque
+        "Failed to queue prompt").
+        """
+        workflow = {k: v for k, v in workflow.items()
+                    if not (str(k).startswith("_")
+                            or not isinstance(v, dict)
+                            or "class_type" not in v)}
+        self.last_queue_error = ""
+        try:
+            from .video_workflow_dispatch import heal_video_workflow
+            for _n in heal_video_workflow(workflow, self.base_url):
+                log.info("video workflow healed: %s", _n)
+        except Exception as _e:  # noqa: BLE001 — never block submission
+            log.debug("heal_video_workflow skipped: %s", _e)
         payload = json.dumps({"prompt": workflow}).encode()
         req = urllib.request.Request(
             f"{self.base_url}/prompt",
@@ -586,7 +608,17 @@ class ComfyUIRunner:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 data = json.loads(resp.read())
                 return data.get("prompt_id")
-        except Exception:
+        except urllib.error.HTTPError as e:
+            try:
+                body = e.read().decode("utf-8", "replace")[:1500]
+            except Exception:  # noqa: BLE001
+                body = ""
+            self.last_queue_error = f"HTTP {e.code}: {body}"
+            log.warning("ComfyUI rejected prompt: %s", self.last_queue_error)
+            return None
+        except Exception as e:  # noqa: BLE001
+            self.last_queue_error = repr(e)
+            log.warning("ComfyUI /prompt failed: %r", e)
             return None
 
     def _poll_result(self, prompt_id: str) -> dict:

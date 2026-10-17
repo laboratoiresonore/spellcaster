@@ -30,7 +30,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-VERSION = "2.3"
+VERSION = "2.4"
 GITHUB_RAW = "https://raw.githubusercontent.com/laboratoiresonore/spellcaster/main"
 GITHUB_API = "https://api.github.com/repos/laboratoiresonore/spellcaster/commits?sha=main&per_page=1"
 GITHUB_TREE = "https://api.github.com/repos/laboratoiresonore/spellcaster/git/trees/main?recursive=1"
@@ -45,6 +45,7 @@ DARKTABLE_PLUGIN_PREFIX = "plugins/darktable/"
 # Static fallback lists (used when Tree API is unavailable)
 GIMP_PLUGIN_FILES = [
     "plugins/gimp/comfyui-connector/comfyui-connector.py",
+    "plugins/gimp/comfyui-connector/_spellcaster_main.py",
     "plugins/gimp/comfyui-connector/_workflows_v2.py",
     "plugins/gimp/comfyui-connector/_composites.py",
     "plugins/gimp/comfyui-connector/_nodes.py",

@@ -36,10 +36,18 @@ ARCH_BASE_VRAM = {
     "pony": 4.5,           # SDXL-derivative, same VRAM profile
     "flux1dev": 8.0,       # Flux 1 Dev single-UNET
     "flux2klein": 6.0,     # Flux 2 Klein 4B/9B (smaller than full Flux)
+    "flux2dev": 8.0,       # Flux 2 Dev NVFP4
+    "flux3klein": 6.0,     # Flux 3 Image Klein SD/Base
+    "krea2": 6.0,          # Krea 2 Turbo / Edit
+    "qwen_image": 7.0,     # Qwen Image Edit 2511
     "chroma": 7.0,         # Chroma v1/v2 (Flux2 family)
     "zit": 5.0,            # ZIT (SiT-based)
-    "wan": 10.0,           # WAN 2.1 — dual-UNET 14B, very VRAM-hungry
+    "wan": 10.0,           # WAN 2.1/2.2 — dual-UNET 14B, very VRAM-hungry
     "ltx": 9.0,            # LTX Video 2.3 — 22B transformer model
+    "minimax_h3": 10.0,    # MiniMax-H3 joint video+audio
+    "skyreels": 6.0,       # SkyReels-V2 1.3B
+    "longcat": 10.0,       # LongCat Video
+    "hunyuan_video": 10.0, # HunyuanVideo 1.5
 }
 
 # Pixels per GB of extra VRAM needed (above the base cost).
@@ -54,9 +62,17 @@ PIXELS_PER_GB = {
     "illustrious": 800_000,
     "flux1dev": 500_000,    # ~0.5M px/GB -> 1024x1024 needs ~2 GB extra
     "flux2klein": 600_000,
+    "flux2dev": 500_000,
+    "flux3klein": 600_000,
+    "krea2": 600_000,
+    "qwen_image": 500_000,
     "chroma": 500_000,
     "wan": 200_000,         # Video: ~0.2M px/GB per frame (very hungry)
     "ltx": 300_000,         # Video: ~0.3M px/GB per frame
+    "minimax_h3": 250_000,
+    "skyreels": 350_000,
+    "longcat": 200_000,
+    "hunyuan_video": 200_000,
 }
 
 # Maximum safe resolution per VRAM tier.
@@ -68,23 +84,29 @@ MAX_RESOLUTION = {
     # (vram_gb_min, vram_gb_max): {arch: (max_width, max_height)}
     (0, 8): {
         "sd15": (768, 768), "sdxl": (768, 768), "illustrious": (768, 768),
-        "flux1dev": (512, 512), "flux2klein": (768, 768), "chroma": (512, 512),
-        "wan": (512, 320), "ltx": (384, 256),
+        "flux1dev": (512, 512), "flux2klein": (768, 768), "flux3klein": (768, 768),
+        "flux2dev": (512, 512), "krea2": (768, 768), "qwen_image": (768, 768),
+        "chroma": (512, 512), "wan": (512, 320), "ltx": (384, 256),
     },
     (8, 12): {
         "sd15": (1024, 1024), "sdxl": (1024, 1024), "illustrious": (1024, 1024),
-        "flux1dev": (768, 768), "flux2klein": (1024, 1024), "chroma": (768, 768),
-        "wan": (576, 320), "ltx": (512, 384),
+        "flux1dev": (768, 768), "flux2klein": (1024, 1024), "flux3klein": (1024, 1024),
+        "flux2dev": (768, 768), "krea2": (1024, 1024), "qwen_image": (1024, 1024),
+        "chroma": (768, 768), "wan": (576, 320), "ltx": (512, 384),
     },
     (12, 16): {
         "sd15": (1536, 1536), "sdxl": (1024, 1024), "illustrious": (1024, 1024),
-        "flux1dev": (1024, 1024), "flux2klein": (1024, 1024), "chroma": (1024, 1024),
-        "wan": (832, 480), "ltx": (768, 512),
+        "flux1dev": (1024, 1024), "flux2klein": (1024, 1024), "flux3klein": (1024, 1024),
+        "flux2dev": (1024, 1024), "krea2": (1024, 1024), "qwen_image": (1024, 1024),
+        "chroma": (1024, 1024), "wan": (832, 480), "ltx": (768, 512),
     },
     (16, 999): {
         "sd15": (2048, 2048), "sdxl": (1536, 1536), "illustrious": (1536, 1536),
-        "flux1dev": (1024, 1024), "flux2klein": (1024, 1024), "chroma": (1024, 1024),
-        "wan": (832, 480), "ltx": (768, 512),
+        "flux1dev": (1024, 1024), "flux2klein": (1024, 1024), "flux3klein": (1536, 1536),
+        "flux2dev": (1536, 1536), "krea2": (1536, 1536), "qwen_image": (1536, 1536),
+        "chroma": (1024, 1024), "wan": (832, 480), "ltx": (768, 512),
+        "minimax_h3": (1280, 720), "skyreels": (960, 544), "longcat": (832, 480),
+        "hunyuan_video": (1280, 720),
     },
 }
 
@@ -120,7 +142,7 @@ def estimate_vram(arch_key, width, height, num_frames=1):
     # so VRAM grows sub-linearly with frame count. The 0.3 multiplier is an
     # empirically-tuned dampening factor from testing 25-81 frame generations
     # on WAN 2.1 with 16GB VRAM.
-    if num_frames > 1 and arch_key in ("wan", "ltx"):
+    if num_frames > 1 and arch_key in ("wan", "ltx", "minimax_h3", "skyreels", "longcat", "hunyuan_video"):
         import math
         temporal = resolution_overhead * math.sqrt(num_frames) * 0.3
         total = base + resolution_overhead + temporal
@@ -170,11 +192,22 @@ def optimize_workflow(workflow, vram_gb=None, comfy_url=None):
     # but we don't want to modify the caller's original workflow dict.
     patched = dict(workflow)
 
+    # Heal cross-machine model filenames & strip unavailable optional nodes
+    # (critical when dispatch_workflow is called with trusted=True).
+    if comfy_url:
+        try:
+            from .preflight import heal_workflow_for_server
+            patched, heal_notes = heal_workflow_for_server(patched, comfy_url)
+            for hn in heal_notes:
+                warnings.append(f"Healed: {hn}")
+        except Exception:
+            pass
+
     # Detect architecture from workflow nodes
-    arch_key = _detect_arch_from_workflow(workflow)
+    arch_key = _detect_arch_from_workflow(patched)
 
     # Detect resolution from workflow
-    width, height, frames = _detect_resolution(workflow)
+    width, height, frames = _detect_resolution(patched)
 
     if width and height:
         # Check if resolution exceeds safe limits
@@ -212,7 +245,7 @@ def optimize_workflow(workflow, vram_gb=None, comfy_url=None):
                 # Check if tiled VAE is already enabled
                 has_tiled = any(
                     n.get("class_type") == "VAEDecodeTiled"
-                    for n in workflow.values() if isinstance(n, dict))
+                    for n in patched.values() if isinstance(n, dict))
                 if not has_tiled:
                     warnings.append(
                         "Recommend: enable Tiled VAE for WAN video on <16GB")
@@ -220,11 +253,19 @@ def optimize_workflow(workflow, vram_gb=None, comfy_url=None):
     # ── TeaCache auto-injection for non-video image workflows ──
     # TeaCache caches intermediate transformer block outputs between diffusion
     # steps, skipping redundant computation when outputs barely change.
-    # Adds ~1.4x speedup with zero quality loss at the default 0.25 threshold.
-    # Only inject if: (1) no TeaCache/FirstBlockCache already in workflow,
-    # (2) not a video workflow (WAN/LTX use WanVideoTeaCache instead),
-    # (3) a KSampler node exists whose model input we can intercept.
-    if frames <= 1:  # image workflow, not video
+    # ONLY inject if the target server actually has ApplyTeaCachePatch installed
+    # AND the architecture is a multi-step model that benefits from TeaCache.
+    teacache_available = False
+    if comfy_url:
+        try:
+            from .preflight import get_available_nodes
+            teacache_available = "ApplyTeaCachePatch" in get_available_nodes(comfy_url)
+        except Exception:
+            teacache_available = False
+
+    if (frames <= 1
+            and teacache_available
+            and arch_key not in ("zit", "krea2", "sdxl_turbo", "flux2klein", "flux3klein", "flux2dev")):
         has_teacache = any(
             n.get("class_type", "") in ("ApplyTeaCachePatch", "ApplyFirstBlockCachePatch")
             for n in patched.values() if isinstance(n, dict))
@@ -236,24 +277,17 @@ def optimize_workflow(workflow, vram_gb=None, comfy_url=None):
                 if ct in ("KSampler", "KSamplerAdvanced"):
                     model_input = node["inputs"].get("model")
                     if model_input:
-                        # Splice TeaCache between the model source and the
-                        # KSampler: model_source -> [TeaCache] -> KSampler.
-                        # The TeaCache node passes through the model with
-                        # a caching hook attached.
                         tc_id = f"_tc_{nid}"
                         patched[tc_id] = {
                             "class_type": "ApplyTeaCachePatch",
                             "inputs": {
                                 "model": model_input,
-                                # 0.25 = conservative threshold; higher values
-                                # (0.4+) give more speedup but risk quality loss.
                                 "rel_l1_thresh": 0.25,
                             },
                         }
-                        # Redirect KSampler's model input to TeaCache output
                         node["inputs"]["model"] = [tc_id, 0]
                         warnings.append("TeaCache auto-injected (1.4x speedup)")
-                        break  # only inject once (first KSampler found)
+                        break
 
     return patched, warnings
 
@@ -302,23 +336,37 @@ def _detect_resolution(workflow):
         ct = node.get("class_type", "")
         inputs = node.get("inputs", {})
 
-        # Standard image generation latent
-        if ct == "EmptyLatentImage":
-            width = inputs.get("width", 0)
-            height = inputs.get("height", 0)
+        # Standard / 16-ch image generation latents
+        if ct in ("EmptyLatentImage", "EmptyFlux2LatentImage", "EmptySD3LatentImage"):
+            w = inputs.get("width", 0)
+            h = inputs.get("height", 0)
+            if isinstance(w, (int, float)) and isinstance(h, (int, float)):
+                width, height = int(w), int(h)
 
-        # WAN video conditioning — overrides EmptyLatentImage if both present.
-        # "length" is frame count (default 81 = ~3.2s at 25fps).
-        if ct in ("WanImageToVideo", "WanFirstLastFrameToVideo"):
-            width = inputs.get("width", width)
-            height = inputs.get("height", height)
-            frames = inputs.get("length", 81)
+        # WAN / MiniMax video conditioning — overrides EmptyLatentImage if both present.
+        if ct in ("WanImageToVideo", "WanFirstLastFrameToVideo",
+                  "WanVaceToVideo", "WanAnimateToVideo", "MiniMaxH3ImageToVideo"):
+            w = inputs.get("width", width)
+            h = inputs.get("height", height)
+            f = inputs.get("length", 81)
+            if isinstance(w, (int, float)):
+                width = int(w)
+            if isinstance(h, (int, float)):
+                height = int(h)
+            if isinstance(f, (int, float)):
+                frames = int(f)
 
         # LTX Video latent — uses "num_frames" instead of "length"
         if ct == "EmptyLTXVLatentVideo":
-            width = inputs.get("width", width)
-            height = inputs.get("height", height)
-            frames = inputs.get("num_frames", 25)
+            w = inputs.get("width", width)
+            h = inputs.get("height", height)
+            f = inputs.get("num_frames", 25)
+            if isinstance(w, (int, float)):
+                width = int(w)
+            if isinstance(h, (int, float)):
+                height = int(h)
+            if isinstance(f, (int, float)):
+                frames = int(f)
 
     return width, height, frames
 
@@ -329,11 +377,13 @@ def _set_resolution(workflow, new_w, new_h):
         if not isinstance(node, dict):
             continue
         ct = node.get("class_type", "")
-        if ct in ("EmptyLatentImage", "WanImageToVideo",
-                  "WanFirstLastFrameToVideo", "EmptyLTXVLatentVideo"):
-            if "width" in node.get("inputs", {}):
+        if ct in ("EmptyLatentImage", "EmptyFlux2LatentImage", "EmptySD3LatentImage",
+                  "WanImageToVideo", "WanFirstLastFrameToVideo",
+                  "WanVaceToVideo", "WanAnimateToVideo", "MiniMaxH3ImageToVideo",
+                  "EmptyLTXVLatentVideo"):
+            if "width" in node.get("inputs", {}) and isinstance(node["inputs"]["width"], (int, float)):
                 node["inputs"]["width"] = new_w
-            if "height" in node.get("inputs", {}):
+            if "height" in node.get("inputs", {}) and isinstance(node["inputs"]["height"], (int, float)):
                 node["inputs"]["height"] = new_h
 
 
@@ -343,7 +393,8 @@ def _set_frames(workflow, new_frames):
         if not isinstance(node, dict):
             continue
         ct = node.get("class_type", "")
-        if ct in ("WanImageToVideo", "WanFirstLastFrameToVideo"):
+        if ct in ("WanImageToVideo", "WanFirstLastFrameToVideo",
+                  "WanVaceToVideo", "WanAnimateToVideo", "MiniMaxH3ImageToVideo"):
             if "length" in node.get("inputs", {}):
                 node["inputs"]["length"] = new_frames
         if ct == "EmptyLTXVLatentVideo":

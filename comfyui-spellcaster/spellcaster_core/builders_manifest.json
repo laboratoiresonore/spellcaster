@@ -2,7 +2,7 @@
   "schema_version": 3,
   "generator": "spellcaster/tools/build_builders_manifest.py",
   "source": "comfyui-spellcaster/spellcaster_core/workflows.py",
-  "method_count": 75,
+  "method_count": 80,
   "methods": [
     {
       "id": "2d_to_sbs",
@@ -106,6 +106,40 @@
         }
       ],
       "short_doc": "MAXED 2D -> SBS using ComfyStereo's StereoImageNode."
+    },
+    {
+      "id": "aurasr_upscale",
+      "builder": "build_aurasr_upscale",
+      "label": "AuraSR v2 4x GAN super-resolution upscaling via LoadAuraSR + RunAuraSR",
+      "kind": "image",
+      "model_family": "generic",
+      "target_class": "RunAuraSR",
+      "input_slots": [
+        "image_filename"
+      ],
+      "params": [
+        {
+          "name": "image_filename",
+          "slot": "image",
+          "required": true
+        },
+        {
+          "name": "model_name",
+          "required": false,
+          "default": "aurasr_v2.safetensors"
+        },
+        {
+          "name": "overlapped",
+          "required": false,
+          "default": true
+        },
+        {
+          "name": "reapply_transparency",
+          "required": false,
+          "default": true
+        }
+      ],
+      "short_doc": "AuraSR v2 4x GAN super-resolution upscaling via LoadAuraSR + RunAuraSR."
     },
     {
       "id": "cogvideo_video",
@@ -872,6 +906,16 @@
           "name": "quality_presets",
           "required": false,
           "default": null
+        },
+        {
+          "name": "use_restore_advanced",
+          "required": false,
+          "default": false
+        },
+        {
+          "name": "restore_advanced_vis",
+          "required": false,
+          "default": 0.8
         }
       ],
       "short_doc": ""
@@ -946,6 +990,16 @@
           "name": "quality_presets",
           "required": false,
           "default": null
+        },
+        {
+          "name": "use_restore_advanced",
+          "required": false,
+          "default": false
+        },
+        {
+          "name": "restore_advanced_vis",
+          "required": false,
+          "default": 0.8
         }
       ],
       "short_doc": "ReActor face swap using a saved face model. Drop-in for _build_faceswap_model()."
@@ -1036,7 +1090,7 @@
       "label": "FramePack image-to-video via Kijai's ComfyUI-FramePackWrapper_Plus",
       "kind": "video",
       "model_family": "framepack",
-      "target_class": "FramePackFindNearestBucket",
+      "target_class": "ImageScale",
       "input_slots": [
         "image_filename",
         "end_image_filename"
@@ -1235,6 +1289,82 @@
         }
       ],
       "short_doc": "Generate any object/person as a transparent layer using ANY model."
+    },
+    {
+      "id": "hidream_o1",
+      "builder": "build_hidream_o1",
+      "label": "HiDream-O1-Image builder — generate high-fidelity pixel-native images",
+      "kind": "other",
+      "model_family": "generic",
+      "target_class": "HiDreamO1PatchSeamSmoothing",
+      "nsfw": true,
+      "input_slots": [],
+      "params": [
+        {
+          "name": "prompt",
+          "required": true
+        },
+        {
+          "name": "seed",
+          "required": true
+        },
+        {
+          "name": "width",
+          "required": false,
+          "default": 1024
+        },
+        {
+          "name": "height",
+          "required": false,
+          "default": 1024
+        },
+        {
+          "name": "steps",
+          "required": false,
+          "default": 25
+        },
+        {
+          "name": "cfg",
+          "required": false,
+          "default": 5.0
+        },
+        {
+          "name": "denoise",
+          "required": false,
+          "default": 1.0
+        },
+        {
+          "name": "saganaki22_nodes",
+          "required": false,
+          "default": null
+        },
+        {
+          "name": "vae_name",
+          "required": false,
+          "default": null
+        },
+        {
+          "name": "loras",
+          "required": false,
+          "default": null
+        },
+        {
+          "name": "lora_name",
+          "required": false,
+          "default": null
+        },
+        {
+          "name": "lora_strength",
+          "required": false,
+          "default": 1.0
+        },
+        {
+          "name": "filename_prefix",
+          "required": false,
+          "default": "hidream-o1/spellcaster"
+        }
+      ],
+      "short_doc": "HiDream-O1-Image builder — generate high-fidelity pixel-native images"
     },
     {
       "id": "hunyuan_3d_mesh",
@@ -3512,6 +3642,93 @@
       "short_doc": "Klein Virtual Try-On — 4-reference photoshoot composition."
     },
     {
+      "id": "krea2_edit",
+      "builder": "build_krea2_edit",
+      "label": "Krea 2 Turbo instruction-driven image editing & generation on Spark2",
+      "kind": "other",
+      "model_family": "generic",
+      "target_class": "Krea2EditModelPatch",
+      "input_slots": [
+        "image_filename"
+      ],
+      "params": [
+        {
+          "name": "image_filename",
+          "slot": "image",
+          "required": true
+        },
+        {
+          "name": "prompt_text",
+          "required": true
+        },
+        {
+          "name": "seed",
+          "required": true
+        },
+        {
+          "name": "unet_name",
+          "required": false,
+          "default": "nvfp4/krea2-turbo-nvfp4.safetensors"
+        },
+        {
+          "name": "clip_name",
+          "required": false,
+          "default": "nvfp4/qwen_3_4b_fp4_mixed.safetensors"
+        },
+        {
+          "name": "vae_name",
+          "required": false,
+          "default": "qwen_image_vae.safetensors"
+        },
+        {
+          "name": "negative_text",
+          "required": false,
+          "default": ""
+        },
+        {
+          "name": "steps",
+          "required": false,
+          "default": 8
+        },
+        {
+          "name": "cfg",
+          "required": false,
+          "default": 1.5
+        },
+        {
+          "name": "sampler",
+          "required": false,
+          "default": "euler"
+        },
+        {
+          "name": "scheduler",
+          "required": false,
+          "default": "simple"
+        },
+        {
+          "name": "denoise",
+          "required": false,
+          "default": 0.75
+        },
+        {
+          "name": "shift",
+          "required": false,
+          "default": 3.0
+        },
+        {
+          "name": "use_edit_patch",
+          "required": false,
+          "default": true
+        },
+        {
+          "name": "preset",
+          "required": false,
+          "default": null
+        }
+      ],
+      "short_doc": "Krea 2 Turbo instruction-driven image editing & generation on Spark2."
+    },
+    {
       "id": "lama_remove",
       "builder": "build_lama_remove",
       "label": "Object removal via LaMa inpainting (no diffusion)",
@@ -3942,6 +4159,83 @@
       "short_doc": "Magic Eraser — SAM3 detect + LaMa inpaint."
     },
     {
+      "id": "minimax_h3_video",
+      "builder": "build_minimax_h3_video",
+      "label": "MiniMax Hailuo H3 video generation (I2V or T2V) via MiniMaxH3ImageToVideo",
+      "kind": "video",
+      "model_family": "generic",
+      "target_class": "MiniMaxH3ImageToVideo",
+      "input_slots": [
+        "image_filename"
+      ],
+      "params": [
+        {
+          "name": "preset",
+          "required": true
+        },
+        {
+          "name": "prompt_text",
+          "required": true
+        },
+        {
+          "name": "seed",
+          "required": true
+        },
+        {
+          "name": "image_filename",
+          "slot": "image",
+          "required": false,
+          "default": null
+        },
+        {
+          "name": "negative_text",
+          "required": false,
+          "default": ""
+        },
+        {
+          "name": "width",
+          "required": false,
+          "default": 832
+        },
+        {
+          "name": "height",
+          "required": false,
+          "default": 480
+        },
+        {
+          "name": "length",
+          "required": false,
+          "default": 49
+        },
+        {
+          "name": "steps",
+          "required": false,
+          "default": null
+        },
+        {
+          "name": "cfg",
+          "required": false,
+          "default": null
+        },
+        {
+          "name": "shift",
+          "required": false,
+          "default": null
+        },
+        {
+          "name": "fps",
+          "required": false,
+          "default": 24
+        },
+        {
+          "name": "pingpong",
+          "required": false,
+          "default": false
+        }
+      ],
+      "short_doc": "MiniMax Hailuo H3 video generation (I2V or T2V) via MiniMaxH3ImageToVideo."
+    },
+    {
       "id": "mochi_video",
       "builder": "build_mochi_video",
       "label": "Mochi-1 (Genmo, Oct 2024) text-to-video via Kijai's ComfyUI-MochiWrapper",
@@ -4080,10 +4374,10 @@
     {
       "id": "normal_map",
       "builder": "build_normal_map",
-      "label": "Generate 3D surface normal map using NormalCrafter",
+      "label": "Generate a 3D surface normal map using ComfyUI-core native MoGe",
       "kind": "image",
       "model_family": "detect",
-      "target_class": "NormalCrafterNode",
+      "target_class": "LoadMoGeModel",
       "input_slots": [
         "image_filename"
       ],
@@ -4127,9 +4421,39 @@
           "name": "sam3_blur",
           "required": false,
           "default": 4
+        },
+        {
+          "name": "use_moge",
+          "required": false,
+          "default": true
+        },
+        {
+          "name": "moge_model_name",
+          "required": false,
+          "default": "moge_2_vitl_normal_fp16.safetensors"
+        },
+        {
+          "name": "moge_normal_space",
+          "required": false,
+          "default": "normal_opengl"
+        },
+        {
+          "name": "moge_resolution_level",
+          "required": false,
+          "default": 9
+        },
+        {
+          "name": "include_depth",
+          "required": false,
+          "default": false
+        },
+        {
+          "name": "include_glb",
+          "required": false,
+          "default": false
         }
       ],
-      "short_doc": "Generate 3D surface normal map using NormalCrafter."
+      "short_doc": "Generate a 3D surface normal map using ComfyUI-core native MoGe"
     },
     {
       "id": "outpaint",
@@ -4390,7 +4714,7 @@
         {
           "name": "pulid_model",
           "required": false,
-          "default": "pulid_flux_v0.9.1.safetensors"
+          "default": "pulid_flux2_klein_v2.safetensors"
         },
         {
           "name": "strength",
@@ -4994,6 +5318,83 @@
         }
       ],
       "short_doc": "SeedVR2 AI video upscaler. Drop-in for _build_seedvr2_video_upscale()."
+    },
+    {
+      "id": "skyreels_video",
+      "builder": "build_skyreels_video",
+      "label": "SkyReels V2 14B 720p I2V / DF video generation on Spark2",
+      "kind": "video",
+      "model_family": "generic",
+      "target_class": "EmptyHunyuanLatentVideo",
+      "input_slots": [
+        "image_filename"
+      ],
+      "params": [
+        {
+          "name": "preset",
+          "required": true
+        },
+        {
+          "name": "prompt_text",
+          "required": true
+        },
+        {
+          "name": "seed",
+          "required": true
+        },
+        {
+          "name": "image_filename",
+          "slot": "image",
+          "required": false,
+          "default": null
+        },
+        {
+          "name": "negative_text",
+          "required": false,
+          "default": ""
+        },
+        {
+          "name": "width",
+          "required": false,
+          "default": 832
+        },
+        {
+          "name": "height",
+          "required": false,
+          "default": 480
+        },
+        {
+          "name": "length",
+          "required": false,
+          "default": 49
+        },
+        {
+          "name": "steps",
+          "required": false,
+          "default": null
+        },
+        {
+          "name": "cfg",
+          "required": false,
+          "default": null
+        },
+        {
+          "name": "shift",
+          "required": false,
+          "default": null
+        },
+        {
+          "name": "fps",
+          "required": false,
+          "default": 24
+        },
+        {
+          "name": "pingpong",
+          "required": false,
+          "default": false
+        }
+      ],
+      "short_doc": "SkyReels V2 14B 720p I2V / DF video generation on Spark2."
     },
     {
       "id": "style_transfer",

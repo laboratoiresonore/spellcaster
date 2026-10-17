@@ -34,35 +34,142 @@ USAGE:
 #
 # Order within each list matters for priority: first match wins.
 
+# Known corrupt / zero-header or aborted model files on Spark2 / fleet hosts
+KNOWN_BAD_MODELS = frozenset({
+    "ltx-video-2.3-nvfp4/model.safetensors",
+    "flux1-schnell-bf16/model.safetensors",
+    "flux1-schnell-bf16/diffusion_pytorch_model.safetensors",
+    "flux1-schnell-bf16/ae.safetensors",
+    "sd35-large/clip_l.safetensors",
+    "sd35-large/diffusion_pytorch_model.safetensors",
+    "flux1-dev-bf16/model.safetensors",
+    "flux2-dev-bf16/ae.safetensors",
+})
+
+# Non-diffusion auxiliary weights that share directories with UNETLoader /
+# CheckpointLoaderSimple on Spark2 (detectors, segmentation, upscalers, LoRAs)
+NON_DIFFUSION_MODEL_PATTERNS = (
+    "sam3",
+    "rt_detr",
+    "rtdetr",
+    "spatial-upscaler",
+    "temporal-upscaler",
+    "distilled-lora",
+    "pos_emb.pt",
+    "neg_emb.pt",
+    "ema_vae",
+    "models_clip",
+    "open-clip",
+    "text_encoder",
+    "-of-000",
+)
+
+
+def is_usable_model(name, pool="unet"):
+    """Return True if ``name`` is a valid diffusion model (not corrupt or auxiliary)."""
+    if not isinstance(name, str) or not name:
+        return False
+    norm = name.replace("\\", "/").strip()
+    norm_lower = norm.lower()
+    base_lower = norm_lower.split("/")[-1]
+    for bad in KNOWN_BAD_MODELS:
+        bl = bad.lower()
+        if norm_lower == bl or norm_lower.endswith("/" + bl):
+            return False
+    for pat in NON_DIFFUSION_MODEL_PATTERNS:
+        if pat in norm_lower:
+            return False
+    if pool in ("unet", "ckpt"):
+        if "lora" in base_lower:
+            return False
+    if pool == "unet":
+        if any(x in base_lower for x in ("_vae.", "wan2.1_vae", "wan_2.1_vae", "wan2_1_vae", "wan2.2_vae", "models_t5_", "umt5", "embeddings_connector")):
+            return False
+        # Spark2 extra_model_paths.yaml symlinks loras/ subdirectories into UNETLoader
+        if norm_lower.startswith((
+            "illustrious/", "pony/", "sdxl/", "sd-1.5/",
+            "flux-1-dev/", "flux-2-klein/", "wan-2.2/",
+            "z-image-turbo/", "auraflow/",
+        )):
+            return False
+    return True
+
+
 # UNET model-name keywords → arch key
 UNET_ARCH_RULES = [
     # (substring, arch_key)  — order = priority, first match wins
-    ("klein",     "flux2klein"),
-    ("kontext",   "flux_kontext"),
-    ("kaleidoscope", "flux2klein"),  # chroma2_kaleidoscope is a Klein 4B finetune
-    ("chromaxl",  "sdxl"),          # Zavy Chroma XL and similar — SDXL finetunes with "chroma" in name
-    ("chroma",    "chroma"),        # Chroma v1/v2 — single CLIPLoader type="chroma"
-    ("z_image",   "zit"),           # Z-Image-Turbo (z_image_turbo, z_image_de_turbo)
-    ("z-image",   "zit"),
-    ("flux",      "flux1dev"),
-    ("wan",       "wan"),
-    ("ltx",       "ltx"),
-    ("seedvr",    "seedvr"),
-    ("pixart",    "pixart"),
-    ("auraflow",  "auraflow"),
-    ("aura_flow", "auraflow"),
-    ("hunyuan_dit", "hunyuan_dit"),
-    ("hunyuandit",  "hunyuan_dit"),
+    ("flux3",         "flux3klein"),
+    ("flux-3",        "flux3klein"),
+    ("flux_3",        "flux3klein"),
+    ("flux2-dev",     "flux2dev"),
+    ("flux2_dev",     "flux2dev"),
+    ("flux-2-dev",    "flux2dev"),
+    ("flux_2_dev",    "flux2dev"),
+    ("klein",         "flux2klein"),
+    ("kontext",       "flux_kontext"),
+    ("krea2",         "krea2"),
+    ("krea-2",        "krea2"),
+    ("krea_2",        "krea2"),
+    ("kreaedit",      "krea2"),
+    ("krea-edit",     "krea2"),
+    ("krea_edit",     "krea2"),
+    ("qwen_image",    "qwen_image"),
+    ("qwen-image",    "qwen_image"),
+    ("qwenimage",     "qwen_image"),
+    ("kaleidoscope",  "flux2klein"),  # chroma2_kaleidoscope is a Klein 4B finetune
+    ("chromaxl",      "sdxl"),        # Zavy Chroma XL and similar — SDXL finetunes with "chroma" in name
+    ("chroma",        "chroma"),      # Chroma v1/v2 — single CLIPLoader type="chroma"
+    ("z_image",       "zit"),         # Z-Image-Turbo (z_image_turbo, z_image_de_turbo)
+    ("z-image",       "zit"),
+    ("zit\\",         "zit"),
+    ("zit/",          "zit"),
+    ("minimax_h3",    "minimax_h3"),
+    ("minimax-h3",    "minimax_h3"),
+    ("skyreels",      "skyreels"),
+    ("longcat",       "longcat"),
+    ("hunyuan_video", "hunyuan_video"),
+    ("hunyuan-video", "hunyuan_video"),
+    ("hunyuanvideo",  "hunyuan_video"),
+    ("cogvideo",      "cogvideo"),
+    ("framepack",     "framepack"),
+    ("mochi",         "mochi"),
+    ("flux",          "flux1dev"),
+    ("wan",           "wan"),
+    ("ltx",           "ltx"),
+    ("seedvr",        "seedvr"),
+    ("aurasr",        "aurasr"),
+    ("pixart",        "pixart"),
+    ("auraflow",      "auraflow"),
+    ("aura_flow",     "auraflow"),
+    ("hunyuan_dit",   "hunyuan_dit"),
+    ("hunyuandit",    "hunyuan_dit"),
     ("sd3.5_large_turbo", "sd3_turbo"),
-    ("sd3_turbo",   "sd3_turbo"),
-    ("sd3.5",       "sd3"),
-    ("sd3_",        "sd3"),
-    ("sd3medium",   "sd3"),
+    ("sd3_turbo",     "sd3_turbo"),
+    ("sd3.5",         "sd3"),
+    ("sd35",          "sd3"),
+    ("sd3_",          "sd3"),
+    ("sd3medium",     "sd3"),
 ]
 
 # Checkpoint model-name keywords → arch key   (order = priority)
 CKPT_ARCH_RULES = [
     ("playground",  "playground"),
+    ("flux3",       "flux3klein"),
+    ("flux-3",      "flux3klein"),
+    ("flux_3",      "flux3klein"),
+    ("flux2-dev",   "flux2dev"),
+    ("flux2_dev",   "flux2dev"),
+    ("flux-2-dev",  "flux2dev"),
+    ("flux_2_dev",  "flux2dev"),
+    ("krea2",       "krea2"),
+    ("krea-2",      "krea2"),
+    ("krea_2",      "krea2"),
+    ("kreaedit",    "krea2"),
+    ("krea-edit",   "krea2"),
+    ("krea_edit",   "krea2"),
+    ("qwen_image",  "qwen_image"),
+    ("qwen-image",  "qwen_image"),
+    ("qwenimage",   "qwen_image"),
     # Z-Image-Turbo AIO checkpoints (gonzalomoZpop, etc.) MUST come before
     # the generic "turbo" → sdxl_turbo rule below or they get misclassified
     # as SDXL Turbo and load with the wrong sampler / steps / native res.
@@ -80,6 +187,7 @@ CKPT_ARCH_RULES = [
     ("sd3.5_large_turbo", "sd3_turbo"),
     ("sd3_turbo",   "sd3_turbo"),
     ("sd3.5",       "sd3"),
+    ("sd35",        "sd3"),
     ("sd3_",        "sd3"),
     ("sd3medium",   "sd3"),
     ("hunyuan_dit", "hunyuan_dit"),
@@ -96,6 +204,10 @@ CKPT_ARCH_RULES = [
     # and broke the diagnostic with "clip input is invalid: None" when
     # tested as an SD-1.5 txt2img workflow (LTX / Lumina / SUPIR /
     # Wan checkpoints don't embed the standard SD-1.5 CLIP).
+    ("minimax_h3",  "minimax_h3"),
+    ("minimax-h3",  "minimax_h3"),
+    ("skyreels",    "skyreels"),
+    ("longcat",     "longcat"),
     ("ltx",         "ltx"),
     ("ltx-",        "ltx"),
     ("lumina",      "lumina2"),
@@ -107,8 +219,10 @@ CKPT_ARCH_RULES = [
     ("cogvideo",    "cogvideo"),
     ("framepack",   "framepack"),
     ("hunyuan_video", "hunyuan_video"),
+    ("hunyuan-video", "hunyuan_video"),
     ("hunyuanvideo", "hunyuan_video"),
     ("mochi",       "mochi"),
+    ("aurasr",      "aurasr"),
     # SD-1.5 explicit catches BEFORE the fallthrough (older naming
     # conventions). Without these, classification still works via the
     # fallthrough; included for symmetry + explicit-is-better.
@@ -124,11 +238,22 @@ CKPT_ARCH_RULES = [
 # Each entry: (match_pool, substring_test, arch_key)
 #   match_pool: "unet" or "ckpt"
 BEST_MODEL_PRIORITY = [
+    ("unet",  lambda ml: "klein" in ml and "9b" in ml and "nvfp4" in ml, "flux2klein"),
     ("unet",  lambda ml: "klein" in ml and "9b" in ml,  "flux2klein"),
+    ("unet",  lambda ml: "flux3" in ml and "nvfp4" in ml, "flux3klein"),
+    ("unet",  lambda ml: "flux3" in ml,                 "flux3klein"),
+    ("unet",  lambda ml: "klein" in ml and "4b" in ml and "nvfp4" in ml, "flux2klein"),
     ("unet",  lambda ml: "klein" in ml and "4b" in ml,  "flux2klein"),
+    ("unet",  lambda ml: ("flux2-dev" in ml or "flux2_dev" in ml) and "nvfp4" in ml, "flux2dev"),
+    ("unet",  lambda ml: "flux2-dev" in ml or "flux2_dev" in ml, "flux2dev"),
     ("unet",  lambda ml: "kaleidoscope" in ml,           "flux2klein"),
+    ("unet",  lambda ml: "krea2" in ml and "nvfp4" in ml, "krea2"),
+    ("unet",  lambda ml: "krea2" in ml or "kreaedit" in ml or "krea-edit" in ml, "krea2"),
     ("unet",  lambda ml: "chroma" in ml and "kaleidoscope" not in ml, "chroma"),
+    ("unet",  lambda ml: ("z_image" in ml or "z-image" in ml) and "nvfp4" in ml, "zit"),
     ("unet",  lambda ml: "z_image" in ml or "z-image" in ml, "zit"),
+    ("unet",  lambda ml: "qwen_image" in ml or "qwen-image" in ml, "qwen_image"),
+    ("unet",  lambda ml: "flux" in ml and "dev" in ml and "nvfp4" in ml, "flux1dev"),
     ("unet",  lambda ml: "flux" in ml and "dev" in ml,  "flux1dev"),
     ("unet",  lambda ml: "flux" in ml,                  "flux1dev"),
     ("unet",  lambda ml: "sd3.5" in ml and "turbo" not in ml, "sd3"),
@@ -172,8 +297,10 @@ def detect_best_model(unet_names, ckpt_names):
         exist, or ``(None, None)`` when the server has neither UNETs
         nor checkpoints.
     """
-    pools = {"unet": list(unet_names or []),
-             "ckpt": list(ckpt_names or [])}
+    pools = {
+        "unet": [m for m in (unet_names or []) if is_usable_model(m, "unet")],
+        "ckpt": [m for m in (ckpt_names or []) if is_usable_model(m, "ckpt")],
+    }
     for pool_key, test_fn, arch_key in BEST_MODEL_PRIORITY:
         for m in pools.get(pool_key, []):
             if test_fn(m.lower()):
@@ -189,8 +316,12 @@ FAMILY_MODEL_KEYWORDS = {
     "ltx2":        ["ltx"],
     "seedvr2":     ["seedvr"],
     "wan":         ["wan"],
+    "minimax_h3":  ["minimax_h3", "minimax-h3"],
+    "skyreels":    ["skyreels"],
+    "hunyuan_video": ["hunyuanvideo", "hunyuan_video", "hunyuan-video"],
     "video_tools": ["wan", "ltx", "seedvr", "svd", "animate", "rife",
-                    "video_upscale", "reactor"],
+                    "video_upscale", "reactor", "minimax_h3", "skyreels",
+                    "hunyuanvideo", "longcat"],
 }
 
 # ── LoRA prefix → arch mapping ──
@@ -201,9 +332,13 @@ LORA_ARCH_PREFIXES = {
     "sdxl":         ["SDXL\\", "Illustrious\\", "Illustrious-Pony\\", "Pony\\", "SDXL/", "Pony/"],
     "illustrious":  ["Illustrious\\", "Illustrious-Pony\\", "Illustrious/"],
     "pony":         ["Pony\\", "Illustrious-Pony\\", "Pony/"],
-    "flux2klein":   ["Flux-2-Klein\\", "Flux2/"],
+    "flux3klein":   ["Flux3\\", "Flux-3\\", "Flux3/", "Flux-3/"],
+    "flux2klein":   ["Flux-2-Klein\\", "Flux2\\", "Flux-2-Klein/", "Flux2/"],
+    "flux2dev":     ["Flux-2-Dev\\", "Flux2\\", "Flux-2-Dev/", "Flux2/"],
     "flux1dev":     ["Flux-1-Dev\\", "Flux\\", "Flux/"],
     "flux_kontext": ["Flux-1-Dev\\", "Flux/"],
+    "krea2":        ["Krea2\\", "Krea\\", "Krea2/", "Krea/"],
+    "qwen_image":   ["Qwen\\", "Qwen-Image\\", "Qwen/", "Qwen-Image/"],
     "zit":          ["Z-Image-Turbo\\", "ZIT\\", "Z-Image-Turbo/", "ZIT/"],
     "ltx":          ["ltxv\\", "LTX\\", "ltxv/", "LTX/"],
     "wan":          ["Wan\\", "WAN\\", "Wan-2.2-I2V\\", "Wan/", "WAN/"],
@@ -255,6 +390,10 @@ LORA_NAME_ARCH_HINTS = [
     ("wan-",       "wan"),
     ("wan_",       "wan"),
     ("seedvr",     "seedvr"),
+    ("minimax_h3", "minimax_h3"),
+    ("minimax-h3", "minimax_h3"),
+    ("skyreels",   "skyreels"),
+    ("longcat",    "longcat"),
     # CogVideoX / FramePack / Mochi — specific keywords first so video LoRAs
     # don't fall through to image archs.
     ("cogvideo",   "cogvideo"),
@@ -273,10 +412,22 @@ LORA_NAME_ARCH_HINTS = [
     ("hy3d",           "hunyuan_3d"),
     ("hunyuan",        "hunyuan_dit"),
     # --- Image models ---
+    ("flux3klein", "flux3klein"),
+    ("flux-3",     "flux3klein"),
+    ("flux_3",     "flux3klein"),
+    ("flux3",      "flux3klein"),
+    ("flux2dev",   "flux2dev"),
+    ("flux-2-dev", "flux2dev"),
+    ("flux_2_dev", "flux2dev"),
     ("flux2klein", "flux2klein"),
     ("flux-2-klein", "flux2klein"),
     ("flux_2_klein", "flux2klein"),
     ("klein",      "flux2klein"),
+    ("krea2",      "krea2"),
+    ("krea-2",     "krea2"),
+    ("krea_2",     "krea2"),
+    ("qwen_image", "qwen_image"),
+    ("qwen-image", "qwen_image"),
     ("flux",       "flux1dev"),
     ("flx",        "flux1dev"),
     ("illustrious", "illustrious"),
@@ -333,6 +484,10 @@ LORA_COMPAT_BUCKETS = {
     "flux1dev":     ("flux1dev", "flux_kontext"),
     "flux_kontext": ("flux1dev", "flux_kontext"),
     "flux2klein":   ("flux2klein",),
+    "flux2dev":     ("flux2dev", "flux2klein"),
+    "flux3klein":   ("flux3klein",),
+    "krea2":        ("krea2",),
+    "qwen_image":   ("qwen_image",),
     "chroma":       ("chroma",),
     "zit":          ("zit",),  # Z-Image-Turbo LoRAs are arch-specific
     "wan":          ("wan",),
@@ -345,6 +500,9 @@ LORA_COMPAT_BUCKETS = {
     "hunyuan_video":("hunyuan_video",),
     "mochi":        ("mochi",),
     "hunyuan_3d":   ("hunyuan_3d",),
+    "minimax_h3":   ("minimax_h3",),
+    "skyreels":     ("skyreels",),
+    "longcat":      ("longcat",),
 }
 
 
@@ -387,7 +545,10 @@ def classify_lora_arch(lora_name):
 # (Klein uses ReferenceLatent + CFGGuider, Kontext is edit-instructions,
 # Chroma rejects CN conditioning) and the user gets a silent failure
 # at sampling. The UI MUST never offer a CN option for these arches.
-CN_FORBIDDEN_ARCHES = frozenset({"flux2klein", "flux_kontext", "chroma"})
+CN_FORBIDDEN_ARCHES = frozenset({
+    "flux2klein", "flux3klein", "flux2dev", "flux_kontext",
+    "chroma", "krea2", "qwen_image",
+})
 
 
 def cn_is_compatible(cn_models, target_arch):

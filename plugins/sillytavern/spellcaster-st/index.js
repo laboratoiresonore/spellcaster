@@ -2047,10 +2047,14 @@ async function _loadModelsAsync(state) {
 
 function _prettyArchLabel(arch) {
     const labels = {
+        flux3klein: 'Flux 3 Klein',
         klein9b:    'Flux 2 Klein 9B',
         klein4b:    'Flux 2 Klein 4B',
+        flux2dev:   'Flux 2 Dev',
         fluxkontext:'Flux Kontext',
         flux1dev:   'Flux 1 Dev',
+        krea2:      'Krea 2 Turbo',
+        qwen_image: 'Qwen Image Edit',
         sdxl:       'SDXL',
         illustrious:'Illustrious / Pony',
         sd15:       'SD 1.5',

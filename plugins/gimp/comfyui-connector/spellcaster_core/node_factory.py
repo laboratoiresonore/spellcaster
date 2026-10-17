@@ -446,6 +446,137 @@ class NodeFactory:
             "use_xformers": "auto",
         }, node_id)
 
+    # -- ComfyUI-core native MoGe (v0.22.0+, comfy_extras/nodes_moge.py) ----
+    # IMPORTANT: MoGe-1 / MoGe-2 / MoGe-3 are NOT separate node classes.
+    # They are all the same LoadMoGeModel -> MoGeInference -> MoGeRender /
+    # MoGePointMapToMesh node family; the generation is selected purely by
+    # which checkpoint `model_name` points at (e.g.
+    # "moge_2_vitl_normal_fp16.safetensors" = MoGe-2 ViT-L, ~660MB FP16,
+    # from the Comfy-Org/MoGe HF repo, folder "geometry_estimation").
+    # Schema below is ground-truth-verified against a live ComfyUI
+    # /object_info on spark2 (python_module comfy_extras.nodes_moge) on
+    # 2026-09-29 -- the prior version of these methods guessed a
+    # two-output (depth, normals) MoGeInference signature that does not
+    # exist; MoGeInference actually returns a single opaque MOGE_GEOMETRY
+    # handle that MoGeRender / MoGePointMapToMesh each consume.
+    def load_moge_model(self, model_name, node_id=None):
+        """LoadMoGeModel -- load a MoGe geometry-estimation checkpoint.
+
+        Args:
+            model_name: filename under ComfyUI's `geometry_estimation`
+                model folder (e.g. "moge_2_vitl_normal_fp16.safetensors").
+                Selects the MoGe generation -- there is no default; pick
+                the enum value for whichever checkpoint is installed.
+            node_id: Optional fixed node ID
+
+        Outputs: [0]=MOGE_MODEL
+        """
+        return self._add("LoadMoGeModel", {
+            "model_name": model_name,
+        }, node_id)
+
+    def mo_ge_inference(self, moge_model_ref, image_ref, *,
+                         resolution_level=9, fov_x_degrees=0.0,
+                         batch_size=1, force_projection=True,
+                         apply_mask=True, refine_steps=3, node_id=None):
+        """MoGeInference -- run MoGe on an image to estimate depth/geometry.
+
+        Args:
+            moge_model_ref: [model_id, 0] from load_moge_model
+            image_ref: [image_id, 0] from load_image
+            resolution_level: 0 (fastest) .. 9 (most detail)
+            fov_x_degrees: source camera horizontal FOV in degrees;
+                0 = auto-recover from the predicted points
+            batch_size: images per inference call (lower on OOM)
+            force_projection: see live node tooltip (advanced)
+            apply_mask: set masked-out/invalid pixels to inf so meshing
+                culls them; disable to keep raw predicted geometry
+            refine_steps: MoGe-3-only volumetric refinement passes
+                (0-8); ignored by MoGe-1/MoGe-2
+            node_id: Optional fixed node ID
+
+        Outputs: [0]=MOGE_GEOMETRY (opaque handle; feed to mo_ge_render
+            and/or mo_ge_point_map_to_mesh -- NOT separate depth/normal
+            image tensors)
+        """
+        return self._add("MoGeInference", {
+            "moge_model": moge_model_ref,
+            "image": image_ref,
+            "resolution_level": int(resolution_level),
+            "fov_x_degrees": float(fov_x_degrees),
+            "batch_size": int(batch_size),
+            "force_projection": bool(force_projection),
+            "apply_mask": bool(apply_mask),
+            "refine_steps": int(refine_steps),
+        }, node_id)
+
+    def mo_ge_render(self, moge_geometry_ref, output="depth", node_id=None):
+        """MoGeRender -- render ONE image view from MOGE_GEOMETRY.
+
+        Call this once per desired output -- it emits a single IMAGE per
+        call, not a depth+normal pair. To get both a depth map and a
+        normal map, call it twice against the same moge_geometry_ref.
+
+        Args:
+            moge_geometry_ref: [geometry_id, 0] from mo_ge_inference
+            output: one of "depth", "depth_colored", "normal_opengl",
+                "normal_directx", "mask". OpenGL = +Y up (Blender,
+                Substance, Unity, glTF); DirectX = -Y down (Unreal).
+            node_id: Optional fixed node ID
+
+        Outputs: [0]=IMAGE
+        """
+        return self._add("MoGeRender", {
+            "moge_geometry": moge_geometry_ref,
+            "output": output,
+        }, node_id)
+
+    def mo_ge_point_map_to_mesh(self, moge_geometry_ref, *, batch_index=0,
+                                  decimation=1, discontinuity_threshold=0.04,
+                                  texture=True, node_id=None):
+        """MoGePointMapToMesh -- convert MOGE_GEOMETRY into a MESH (with
+        UVs/color/texture baked in from the source image), ready for
+        SaveGLB.
+
+        Args:
+            moge_geometry_ref: [geometry_id, 0] from mo_ge_inference
+            batch_index: which image of a batched geometry to mesh
+                (per-image vertex counts differ; batches can't stack)
+            decimation: vertex stride; 1 = full resolution
+            discontinuity_threshold: drop pixels whose 3x3 depth span
+                exceeds this fraction of scale; 0 = off
+            texture: carry the source image through as baseColor texture
+            node_id: Optional fixed node ID
+
+        Outputs: [0]=MESH
+        """
+        return self._add("MoGePointMapToMesh", {
+            "moge_geometry": moge_geometry_ref,
+            "batch_index": int(batch_index),
+            "decimation": int(decimation),
+            "discontinuity_threshold": float(discontinuity_threshold),
+            "texture": bool(texture),
+        }, node_id)
+
+    def save_glb(self, mesh_ref, filename_prefix="3D/spellcaster_mesh",
+                 node_id=None):
+        """SaveGLB -- write a MESH (or FILE_3D_*) to a .glb file on disk
+        (ComfyUI core class, comfy_extras/nodes_save_3d.py).
+
+        Args:
+            mesh_ref: [mesh_id, 0] from mo_ge_point_map_to_mesh (or any
+                other MESH-producing node)
+            filename_prefix: output prefix under ComfyUI's output/ dir;
+                supports subdirs (e.g. "3D/...")
+            node_id: Optional fixed node ID
+
+        Terminal node -- no outputs (output_node=True).
+        """
+        return self._add("SaveGLB", {
+            "mesh": mesh_ref,
+            "filename_prefix": filename_prefix,
+        }, node_id)
+
     # ── Acly inpaint-nodes (LaMa pre-fill + Fooocus head) ──
     def inpaint_load_model(self, model_name="Places_512_FullData_G.pth",
                             node_id=None):
@@ -1218,6 +1349,14 @@ class NodeFactory:
             "batch_size": batch_size,
         }, node_id)
 
+    def empty_sd3_latent_image(self, width, height, batch_size=1, node_id=None):
+        """EmptySD3LatentImage — 16-channel blank latent for SD3/Krea2/Qwen/ZIT-UNET/Wan.
+        Outputs: [0]=LATENT
+        """
+        return self._add("EmptySD3LatentImage", {
+            "width": width, "height": height, "batch_size": batch_size,
+        }, node_id)
+
     def reference_latent(self, conditioning_ref, latent_ref=None, node_id=None):
         """ReferenceLatent — wrap conditioning with reference image latent (Klein).
         latent_ref is optional (backward compatible).
@@ -1986,7 +2125,7 @@ class NodeFactory:
             "embeds_scaling": embeds_scaling,
         }, node_id)
 
-    def pulid_flux_model_loader(self, pulid_file="pulid_flux_v0.9.1.safetensors",
+    def pulid_flux_model_loader(self, pulid_file="pulid_flux2_klein_v2.safetensors",
                                  node_id=None):
         """PulidFluxModelLoader — for Flux1 PuLID."""
         return self._add("PulidFluxModelLoader", {

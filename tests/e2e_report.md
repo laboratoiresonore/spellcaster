@@ -1,6 +1,6 @@
 # Spellcaster E2E Audit
 
-_Ran at_: 2026-05-06 17:32:40
+_Ran at_: 2026-10-17 12:42:31
 _Totals_: **84** pass · **0** fail · **0** warn · **0** skip
 
 ## Error extraction
@@ -57,13 +57,13 @@ _Totals_: **84** pass · **0** fail · **0** warn · **0** skip
 
 | Status | Test | Detail | Time (ms) |
 |---|---|---|---|
-| PASS | spellcaster_core | 44/529 referenced (8%) | 0 |
-| PASS | comfyui_pack | 44/539 referenced (8%) | 0 |
-| PASS | gimp_plugin | 45/622 referenced (7%) | 0 |
+| PASS | spellcaster_core | 45/561 referenced (8%) | 0 |
+| PASS | comfyui_pack | 45/561 referenced (8%) | 0 |
+| PASS | gimp_plugin | 46/656 referenced (7%) | 0 |
 | PASS | resolve_shared | 2/42 referenced (5%) | 0 |
 | PASS | resolve_bridge | 1/16 referenced (6%) | 0 |
 | PASS | guild_tavern | 1/28 referenced (4%) | 0 |
-| PASS | TOTAL across all surfaces | 137/1776 public fns referenced (8%) | 0 |
+| PASS | TOTAL across all surfaces | 140/1864 public fns referenced (8%) | 0 |
 
 ## Upload cache & privacy
 
@@ -71,11 +71,11 @@ _Totals_: **84** pass · **0** fail · **0** warn · **0** skip
 |---|---|---|---|
 | PASS | CACHE_PREFIXES ∩ OWNED_PREFIXES is empty |  | 0 |
 | PASS | cleanup_inputs SKIPS sc_cache_* from workflow | wiped=[] | 0 |
-| PASS | cleanup_inputs WIPES gimp_* from workflow | wiped=['gimp_abc.png', 'gimp_123.png'] | 0 |
+| PASS | cleanup_inputs WIPES gimp_* from workflow | wiped=['gimp_123.png', 'gimp_abc.png'] | 0 |
 | PASS | cleanup_inputs server-scan exempts sc_cache_* | missing=set(), extra=set() | 0 |
 | PASS | purge_cache targets ONLY CACHE_PREFIXES | wiped=['sc_cache_abc.png'] | 0 |
 | PASS | cleanup_outputs wipes all result files | wiped=['result_1.png', 'sc_cache_should_still_go_if_passed_here.png'] | 0 |
-| PASS | section complete |  | 1 |
+| PASS | section complete |  | 4 |
 
 ## Blank/uniform classifiers
 
@@ -92,19 +92,19 @@ _Totals_: **84** pass · **0** fail · **0** warn · **0** skip
 | PASS | uniform: all-white L |  | 0 |
 | PASS | uniform: mixed L |  | 0 |
 | PASS | uniform: empty |  | 0 |
-| PASS | section complete |  | 1419 |
+| PASS | section complete |  | 2106 |
 
 ## IC-Light normal-map routing
 
 | Status | Test | Detail | Time (ms) |
 |---|---|---|---|
 | PASS | normal-map path does NOT load iclight_sd15_fbc |  | 0 |
-| PASS | normal-map path loads ControlNetLoader | classes=['CLIPTextEncode', 'CheckpointLoaderSimple', 'ControlNetApplyAdvanced', 'ControlNetLoader', 'ICLightConditioning', 'KSampler', 'LoadAndApplyICLightUnet', 'LoadImage', 'SaveImageWebsocket', 'VAEDecode', 'VAEEncode'] | 0 |
+| PASS | normal-map path loads ControlNetLoader | classes=['CLIPTextEncode', 'CheckpointLoaderSimple', 'ControlNetApplyAdvanced', 'ControlNetLoader', 'ICLightConditioning', 'KSampler', 'LoadAndApplyICLightUnet', 'LoadImage', 'SaveImage', 'SaveImageWebsocket', 'VAEDecode', 'VAEEncode'] | 0 |
 | PASS | normal-map path applies ControlNetApplyAdvanced |  | 0 |
 | PASS | CN model is normalbae (surface-aware) | cn_names=['control_v11p_sd15_normalbae.pth'] | 0 |
 | PASS | normal map loaded as image (not latent) |  | 0 |
-| PASS | no-normal path does NOT include ControlNet | classes=['CLIPTextEncode', 'CheckpointLoaderSimple', 'ICLightConditioning', 'KSampler', 'LoadAndApplyICLightUnet', 'LoadImage', 'SaveImageWebsocket', 'VAEDecode', 'VAEEncode'] | 0 |
-| PASS | section complete |  | 3 |
+| PASS | no-normal path does NOT include ControlNet | classes=['CLIPTextEncode', 'CheckpointLoaderSimple', 'ICLightConditioning', 'KSampler', 'LoadAndApplyICLightUnet', 'LoadImage', 'SaveImage', 'SaveImageWebsocket', 'VAEDecode', 'VAEEncode'] | 0 |
+| PASS | section complete |  | 5 |
 
 ## Plugin surface (AST)
 
@@ -120,4 +120,4 @@ _Totals_: **84** pass · **0** fail · **0** warn · **0** skip
 | PASS | _download_image results aren't stored as '*_path' |  | 0 |
 | PASS | upload-cache migration (cached=65, legacy=9) | 9 legacy idioms remain (budget 12; helper leaves are expected) | 0 |
 | PASS | sc_cache_* literals use content-hash suffix |  | 0 |
-| PASS | section complete |  | 23251 |
+| PASS | section complete |  | 38012 |

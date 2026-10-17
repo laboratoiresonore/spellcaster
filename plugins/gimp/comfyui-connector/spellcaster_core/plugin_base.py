@@ -43,8 +43,8 @@ try:
         build_ltx_video, build_wan_video,
     )
     from .architectures import get_arch
-    from .model_detect import classify_unet_model, classify_ckpt_model
-    from .preflight import preflight_workflow
+    from .model_detect import classify_unet_model, classify_ckpt_model, is_usable_model
+    from .preflight import preflight_workflow, heal_workflow_for_server
     from .optimizer import optimize_workflow
     from .recommend import recommend
     from .video_presets import (
@@ -61,8 +61,8 @@ except ImportError:
         build_ltx_video, build_wan_video,
     )
     from .architectures import get_arch
-    from .model_detect import classify_unet_model, classify_ckpt_model
-    from .preflight import preflight_workflow
+    from .model_detect import classify_unet_model, classify_ckpt_model, is_usable_model
+    from .preflight import preflight_workflow, heal_workflow_for_server
     from .optimizer import optimize_workflow
     from .recommend import recommend
     from .video_presets import (
@@ -189,8 +189,10 @@ class SpellcasterPlugin:
         if seed < 0:
             seed = random.randint(1, 2**32 - 1)
 
-        a = get_arch(arch)
-        if a and a.quality_positive and arch not in ("flux1dev", "flux2klein", "chroma"):
+        a = get_arch(preset["arch"])
+        if a and a.quality_positive and preset["arch"] not in (
+            "flux1dev", "flux2dev", "flux2klein", "flux3klein", "krea2", "qwen_image", "chroma"
+        ):
             prompt = f"{prompt}, {a.quality_positive}"
         if a and a.supports_negative and a.quality_negative:
             negative = f"{negative}, {a.quality_negative}" if negative else a.quality_negative
@@ -425,8 +427,9 @@ class SpellcasterPlugin:
     def normal_map(self, max_res=1024):
         """Generate a 3D surface-normal map of the active canvas.
 
-        Runs NormalCrafter on the server and inserts the resulting
-        RGB normal-map as a new layer. The layer is named
+        Runs ComfyUI-core native MoGe on the server (NormalCrafter as a
+        fallback -- see build_normal_map) and inserts the resulting RGB
+        normal-map as a new layer. The layer is named
         ``"Normal Map (auto)"`` so subsequent IC-Light / inpaint /
         img2img calls can pick it up via
         :meth:`get_normal_map_png`-aware downstream logic.
@@ -874,36 +877,77 @@ class SpellcasterPlugin:
             headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
         urllib.request.urlopen(req, timeout=30)
 
+    _ARCH_FALLBACK_CHAIN = {
+        "flux1dev": ("flux2dev", "flux3klein", "flux2klein", "zit", "sdxl"),
+        "illustrious": ("pony", "sdxl", "flux3klein", "flux2klein", "zit"),
+        "pony": ("illustrious", "sdxl", "flux3klein", "flux2klein"),
+        "flux2klein": ("flux3klein", "flux2dev", "zit", "sdxl"),
+        "sd15": ("sdxl", "zit", "flux2klein"),
+    }
+
     def _make_preset(self, arch, model="", width=0, height=0, steps=0, cfg=None):
         """Build a generation preset."""
         if not model:
             model = self._find_model(arch)
         if not model:
+            for alt_arch in self._ARCH_FALLBACK_CHAIN.get(arch, ()):
+                alt_model = self._find_model(alt_arch)
+                if alt_model:
+                    arch = alt_arch
+                    model = alt_model
+                    break
+        if not model:
             self.show_error(f"No {arch} model found on server")
             return None
         a = get_arch(arch)
-        _res = {"sd15": (512, 512), "sdxl": (1024, 1024), "illustrious": (1024, 1024),
-                "flux1dev": (1024, 1024), "flux2klein": (1024, 1024), "chroma": (1024, 1024)}
-        dw, dh = _res.get(arch, (512, 512))
-        return {
+        if a and getattr(a, "default_res", None):
+            dw, dh = a.default_res, a.default_res
+        else:
+            _res = {"sd15": (512, 512), "sdxl": (1024, 1024), "illustrious": (1024, 1024),
+                    "flux1dev": (1024, 1024), "flux2dev": (1024, 1024),
+                    "flux2klein": (1024, 1024), "flux3klein": (1024, 1024),
+                    "krea2": (1024, 1024), "qwen_image": (1024, 1024),
+                    "zit": (1024, 1024), "chroma": (1024, 1024)}
+            dw, dh = _res.get(arch, (512, 512))
+        extra = (a.extra if a and getattr(a, "extra", None) else {}) or {}
+        loader = a.loader if a else "checkpoint"
+        model_type = getattr(self, "_last_found_model_type", None)
+        if arch == "zit" and ("nvfp4" in model.lower() or "z_image_turbo" in model.lower() or model_type == "unet"):
+            loader = "unet_clip_vae"
+            model_type = "unet"
+        clip_primary = extra.get("clip_name") or extra.get("clip_name1") or ""
+        vae_primary = extra.get("vae_name") or ""
+        preset = {
             "ckpt": model, "arch": arch,
             "width": width or dw, "height": height or dh,
             "steps": steps or (a.default_steps if a else 20),
             "cfg": cfg if cfg is not None else (a.default_cfg if a else 7.0),
             "sampler": a.default_sampler if a else "euler",
             "scheduler": a.default_scheduler if a else "normal",
-            "loader": a.loader if a else "checkpoint",
-            "clip_name1": "", "clip_name2": "", "vae_name": "",
+            "loader": loader,
+            "clip": clip_primary,
+            "vae": vae_primary,
+            "clip_name1": extra.get("clip_name1", clip_primary),
+            "clip_name2": extra.get("clip_name2", ""),
+            "vae_name": vae_primary,
         }
+        if model_type:
+            preset["model_type"] = model_type
+        if extra.get("clip_type"):
+            preset["clip_type"] = extra["clip_type"]
+        if extra.get("aura_shift") is not None:
+            preset["aura_shift"] = extra["aura_shift"]
+        return preset
 
     def _find_model(self, arch_key):
-        """Find a model for an architecture on the server."""
+        """Find the best model for an architecture on the server."""
         skip = ("vae", "embeddings", "audio", "clip_", "t5xxl", "umt5",
-                "gemma", "qwen", "mistral", "llava", "connector")
-        for node, field, cfn in [
-            ("UnetLoaderGGUF", "unet_name", classify_unet_model),
-            ("UNETLoader", "unet_name", classify_unet_model),
-            ("CheckpointLoaderSimple", "ckpt_name", classify_ckpt_model),
+                "gemma", "mistral", "llava", "connector")
+        candidates = []
+        for node, field, cfn, pool, mtype in [
+            ("UnetLoaderGGUF", "unet_name", classify_unet_model, "unet", "unet"),
+            ("UNETLoader", "unet_name", classify_unet_model, "unet", "unet"),
+            ("CheckpointLoaderSimple", "ckpt_name", classify_ckpt_model, "ckpt", "checkpoint"),
         ]:
             try:
                 r = urllib.request.urlopen(f"{self.server}/object_info/{node}", timeout=5)
@@ -911,12 +955,28 @@ class SpellcasterPlugin:
                 spec = d[node]["input"]["required"][field]
                 opts = spec[0] if isinstance(spec[0], list) else spec[1].get("options", [])
                 for m in opts:
-                    if any(s in m.lower() for s in skip):
+                    if not is_usable_model(m, pool):
+                        continue
+                    ml = m.lower()
+                    if any(s in ml for s in skip):
                         continue
                     if cfn(m) == arch_key:
-                        return m
+                        score = 0
+                        if "nvfp4" in ml:
+                            score += 20
+                        if "9b" in ml or "-sd-" in ml or "2512" in ml or "turbo" in ml:
+                            score += 10
+                        if "kaleidoscope" in ml:
+                            score -= 15
+                        if "edit" in ml or "inpaint" in ml:
+                            score -= 30
+                        candidates.append((score, m, mtype))
             except Exception:
                 pass
+        if candidates:
+            candidates.sort(key=lambda x: x[0], reverse=True)
+            self._last_found_model_type = candidates[0][2]
+            return candidates[0][1]
         return None
 
     def _run_workflow(self, workflow, label="generation"):
@@ -934,8 +994,15 @@ class SpellcasterPlugin:
         err_str = ""
         arch = self._guess_workflow_arch(workflow)
         try:
-            # Preflight
+            # Server-aware healing + Preflight
             self.show_progress(f"Checking nodes...")
+            try:
+                workflow, heal_notes = heal_workflow_for_server(
+                    workflow, self.server)
+                for hn in heal_notes:
+                    self.show_progress(f"Heal: {hn}")
+            except Exception:
+                pass
             try:
                 ok, workflow, report = preflight_workflow(
                     workflow, self.server)

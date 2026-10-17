@@ -54,6 +54,7 @@ from spellcaster_core.model_detect import (
     LORA_NAME_ARCH_HINTS,
     classify_unet_model,
     classify_ckpt_model,
+    is_usable_model,
 )
 
 

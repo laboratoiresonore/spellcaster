@@ -364,11 +364,15 @@ def script_properties():
         obs.OBS_COMBO_TYPE_EDITABLE, obs.OBS_COMBO_FORMAT_STRING)
     for key, label in [
         ("", "(auto-pick via /api/recommend)"),
+        ("flux3klein", "Flux 3 Klein (Spark2 fast)"),
+        ("flux2klein", "Flux 2 Klein (fast, photo-real)"),
+        ("flux2dev", "Flux 2 Dev (Spark2)"),
+        ("zit", "Z-Image Turbo (ultra-fast)"),
+        ("krea2", "Krea 2 Turbo (Spark2)"),
+        ("qwen_image", "Qwen Image Edit (Spark2)"),
+        ("flux1dev", "Flux 1 Dev"),
         ("sdxl", "SDXL"),
         ("illustrious", "Illustrious (anime / illustration)"),
-        ("flux1dev", "Flux 1 Dev"),
-        ("flux2klein", "Flux 2 Klein (fast, photo-real)"),
-        ("zit", "Z-Image Turbo (ultra-fast)"),
         ("sd15", "SD 1.5 (legacy, fast)"),
     ]:
         obs.obs_property_list_add_string(arch_prop, label, key)

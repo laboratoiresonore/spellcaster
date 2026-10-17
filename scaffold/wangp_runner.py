@@ -271,6 +271,76 @@ WANGP_PRESETS: Dict[str, Dict[str, Any]] = {
                   "consistency. Use on rendered Spellcaster clips before "
                   "final delivery.",
     },
+    "hunyuan_video_t2v": {
+        "label": "HunyuanVideo 1.5 Text-to-Video (ComfyUI)",
+        "family": "hunyuan_video",
+        "task": "t2v",
+        "engine": "comfyui",
+        "inputs": ["prompt"],
+        "defaults": {"steps": 20, "guidance": 6.0, "frames": 73, "fps": 24,
+                     "resolution": "848x480"},
+        "vram_min_gb": 12,
+        "notes": "HunyuanVideo 1.5 T2V (720p/480p FP8/NVFP4). Strong motion "
+                  "coherence and multi-subject dynamics.",
+    },
+    "hunyuan_video_i2v": {
+        "label": "HunyuanVideo 1.5 Image-to-Video (ComfyUI)",
+        "family": "hunyuan_video",
+        "task": "i2v",
+        "engine": "comfyui",
+        "inputs": ["image", "prompt"],
+        "defaults": {"steps": 20, "guidance": 6.0, "frames": 73, "fps": 24,
+                     "resolution": "848x480"},
+        "vram_min_gb": 12,
+        "notes": "HunyuanVideo 1.5 I2V — animate a reference image with "
+                  "Hunyuan's dual text encoder (Qwen 2.5 VL + ByT5).",
+    },
+    "minimax_h3_i2v": {
+        "label": "MiniMax Hailuo H3 14B Image-to-Video (ComfyUI)",
+        "family": "minimax_h3",
+        "task": "i2v",
+        "engine": "comfyui",
+        "inputs": ["image", "prompt"],
+        "defaults": {"steps": 20, "guidance": 5.0, "frames": 81, "fps": 16,
+                     "resolution": "832x480"},
+        "vram_min_gb": 12,
+        "notes": "MiniMax Hailuo H3 14B I2V — expressive character motion and "
+                  "cinematic camera movement from a reference frame.",
+    },
+    "minimax_h3_t2v": {
+        "label": "MiniMax Hailuo H3 14B Text-to-Video (ComfyUI)",
+        "family": "minimax_h3",
+        "task": "t2v",
+        "engine": "comfyui",
+        "inputs": ["prompt"],
+        "defaults": {"steps": 20, "guidance": 5.0, "frames": 81, "fps": 16,
+                     "resolution": "832x480"},
+        "vram_min_gb": 12,
+        "notes": "MiniMax Hailuo H3 14B T2V — direct text-to-video generation.",
+    },
+    "skyreels_i2v": {
+        "label": "SkyReels V2 14B Image-to-Video (ComfyUI)",
+        "family": "skyreels",
+        "task": "i2v",
+        "engine": "comfyui",
+        "inputs": ["image", "prompt"],
+        "defaults": {"steps": 20, "guidance": 5.0, "frames": 81, "fps": 16,
+                     "resolution": "832x480"},
+        "vram_min_gb": 12,
+        "notes": "SkyReels V2 14B I2V — human-centric drama and realistic "
+                  "acting motion from a reference image.",
+    },
+    "skyreels_t2v": {
+        "label": "SkyReels V2 14B Text-to-Video (ComfyUI)",
+        "family": "skyreels",
+        "task": "t2v",
+        "engine": "comfyui",
+        "inputs": ["prompt"],
+        "defaults": {"steps": 20, "guidance": 5.0, "frames": 81, "fps": 16,
+                     "resolution": "832x480"},
+        "vram_min_gb": 12,
+        "notes": "SkyReels V2 14B T2V — cinematic text-to-video generation.",
+    },
 }
 
 

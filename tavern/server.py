@@ -169,7 +169,7 @@ from guild_common import (
     is_port_in_use, test_endpoint,
     UNET_ARCH_RULES, CKPT_ARCH_RULES, BEST_MODEL_PRIORITY,
     FAMILY_MODEL_KEYWORDS, LORA_ARCH_PREFIXES, LORA_NAME_ARCH_HINTS,
-    classify_unet_model, classify_ckpt_model,
+    classify_unet_model, classify_ckpt_model, is_usable_model,
 )
 
 # ── Configurable globals (set by launcher before serve) ───────────────
@@ -1170,6 +1170,8 @@ def _fetch_comfyui_models(comfy_url):
                            .get("unet_name", []))
             if choices and isinstance(choices, list) and choices[0]:
                 for m in choices[0]:
+                    if not is_usable_model(m, "unet"):
+                        continue
                     models.append({"name": m, "arch": classify_unet_model(m), "type": "unet"})
     except Exception:
         pass
@@ -1183,6 +1185,8 @@ def _fetch_comfyui_models(comfy_url):
                            .get("ckpt_name", []))
             if choices and isinstance(choices, list) and choices[0]:
                 for m in choices[0]:
+                    if not is_usable_model(m, "checkpoint"):
+                        continue
                     models.append({"name": m, "arch": classify_ckpt_model(m), "type": "checkpoint"})
     except Exception:
         pass
@@ -1236,6 +1240,36 @@ def fetch_all_characters(comfy_url=None):
             "subtext": "WAN Video Generation (Video)",
             "archetype": "a mystic who conjures motion from stillness, swirling ink into life",
             "fn_prefixes": ["wan"],
+        },
+        "hunyuan_video": {
+            "display": "HunyuanVideo",
+            "subtext": "HunyuanVideo Generation (Video)",
+            "archetype": "a celestial weaver of dynamic motion and cinematic vistas",
+            "fn_prefixes": ["hunyuan_video"],
+        },
+        "minimax_h3": {
+            "display": "MiniMax Hailuo H3",
+            "subtext": "MiniMax H3 Video Generation (Video)",
+            "archetype": "a storm-weaver conjuring fluid cinematic motion from still visions",
+            "fn_prefixes": ["minimax_h3"],
+        },
+        "skyreels": {
+            "display": "SkyReels V2",
+            "subtext": "SkyReels V2 Video Generation (Video)",
+            "archetype": "a sky-navigator spinning endless reels of living cinema",
+            "fn_prefixes": ["skyreels"],
+        },
+        "krea2": {
+            "display": "Krea 2 Turbo",
+            "subtext": "Krea 2 Aesthetic Generation & Editing (Image)",
+            "archetype": "a prismatic visionary sculpting hyper-aesthetic imagery",
+            "fn_prefixes": ["krea2"],
+        },
+        "aurasr": {
+            "display": "AuraSR v2",
+            "subtext": "AuraSR Super-Resolution Upscaling (Image)",
+            "archetype": "a radiant artificer sharpening every crystal facet of an image",
+            "fn_prefixes": ["aurasr"],
         },
         "video_tools": {
             "display": "Video Toolkit",
@@ -8729,13 +8763,24 @@ def _preflight_unet_arch(comfy_url, ckpt, arch, arch_key):
     """
     missing = []
 
+    def _has_clip(avail_list, *candidates):
+        avail_set = set(avail_list or [])
+        for c in candidates:
+            if not c:
+                continue
+            if c in avail_set or f"nvfp4/{c}" in avail_set:
+                return True
+            base = c.replace("\\", "/").split("/")[-1]
+            if any(a.replace("\\", "/").endswith(base) for a in avail_set):
+                return True
+        return False
+
     # Check CLIP files
     try:
         if arch.clip_mode == "dual":
             extra = arch.extra
             clip1 = extra.get("clip_name1", "clip_l.safetensors")
             clip2 = extra.get("clip_name2", "t5xxl_fp8_e4m3fn.safetensors")
-            # Query DualCLIPLoader for available CLIP models
             url = f"{comfy_url}/object_info/DualCLIPLoader"
             req = urllib.request.Request(url)
             with urllib.request.urlopen(req, timeout=5) as resp:
@@ -8744,18 +8789,25 @@ def _preflight_unet_arch(comfy_url, ckpt, arch, arch_key):
                              .get("input", {}).get("required", {})
                              .get("clip_name1", []))
                 avail = clips[0] if clips and isinstance(clips, list) else []
-                if clip1 not in avail:
+                if not _has_clip(avail, clip1, "clip_l.safetensors"):
                     missing.append(f"CLIP '{clip1}'")
-                # clip_name2 choices
                 clips2 = (data.get("DualCLIPLoader", {})
                               .get("input", {}).get("required", {})
                               .get("clip_name2", []))
                 avail2 = clips2[0] if clips2 and isinstance(clips2, list) else []
-                if clip2 not in avail2:
+                if not _has_clip(
+                    avail2,
+                    clip2,
+                    "nvfp4/t5xxl_fp4_mixed.safetensors",
+                    "t5xxl_fp8_e4m3fn.safetensors",
+                    "t5xxl_fp8_e4m3fn_scaled.safetensors",
+                    "t5xxl_fp16.safetensors",
+                ):
                     missing.append(f"CLIP '{clip2}'")
-        elif arch.clip_mode == "single_chroma":
-            # Chroma: single CLIPLoader with type="chroma"
-            clip_name = arch.extra.get("clip_name", "t5xxl_fp8_e4m3fn.safetensors")
+        elif arch.clip_mode in (
+            "single_chroma", "single_flux2", "single_flux3",
+            "single_krea2", "single_qwen_image", "single",
+        ):
             url = f"{comfy_url}/object_info/CLIPLoader"
             req = urllib.request.Request(url)
             with urllib.request.urlopen(req, timeout=5) as resp:
@@ -8764,23 +8816,40 @@ def _preflight_unet_arch(comfy_url, ckpt, arch, arch_key):
                              .get("input", {}).get("required", {})
                              .get("clip_name", []))
                 avail = clips[0] if clips and isinstance(clips, list) else []
-                if clip_name not in avail:
-                    missing.append(f"CLIP '{clip_name}'")
-        elif arch.clip_mode == "single_flux2":
-            ckpt_lower = ckpt.lower()
-            clip_name = ("qwen_3_8b_fp8mixed.safetensors"
-                         if "9b" in ckpt_lower
-                         else "qwen_3_4b.safetensors")
-            url = f"{comfy_url}/object_info/CLIPLoader"
-            req = urllib.request.Request(url)
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                clips = (data.get("CLIPLoader", {})
-                             .get("input", {}).get("required", {})
-                             .get("clip_name", []))
-                avail = clips[0] if clips and isinstance(clips, list) else []
-                if clip_name not in avail:
-                    missing.append(f"CLIP '{clip_name}'")
+                if arch.clip_mode == "single_chroma":
+                    clip_name = arch.extra.get("clip_name", "t5xxl_fp8_e4m3fn.safetensors")
+                    if not _has_clip(avail, clip_name, "nvfp4/t5xxl_fp4_mixed.safetensors"):
+                        missing.append(f"CLIP '{clip_name}'")
+                elif arch.clip_mode == "single_flux2":
+                    ckpt_lower = ckpt.lower()
+                    if arch_key == "flux2dev" or "flux2-dev" in ckpt_lower:
+                        cands = (
+                            arch.extra.get("clip_name"),
+                            "nvfp4/mistral_3_small_flux2_fp4_mixed.safetensors",
+                            "nvfp4/qwen_3_8b_fp4_mixed.safetensors",
+                        )
+                    elif "9b" in ckpt_lower:
+                        cands = (
+                            "qwen_3_8b_fp8mixed.safetensors",
+                            "nvfp4/qwen_3_8b_fp4_mixed.safetensors",
+                        )
+                    else:
+                        cands = (
+                            "qwen_3_4b.safetensors",
+                            "nvfp4/qwen_3_4b_fp4_mixed.safetensors",
+                        )
+                    if not _has_clip(avail, *cands):
+                        missing.append(f"CLIP '{cands[0]}'")
+                else:
+                    clip_name = arch.extra.get("clip_name", "nvfp4/qwen_3_4b_fp4_mixed.safetensors")
+                    if not _has_clip(
+                        avail,
+                        clip_name,
+                        "nvfp4/qwen_3_4b_fp4_mixed.safetensors",
+                        "qwen_3_4b.safetensors",
+                        "nvfp4/qwen_2.5_vl_7b_fp4_mixed.safetensors",
+                    ):
+                        missing.append(f"CLIP '{clip_name}'")
     except Exception as e:
         print(f"  [Preflight] Could not check CLIP files: {e}")
 
@@ -8795,7 +8864,7 @@ def _preflight_unet_arch(comfy_url, ckpt, arch, arch_key):
                         .get("input", {}).get("required", {})
                         .get("vae_name", []))
             avail = vaes[0] if vaes and isinstance(vaes, list) else []
-            if vae_name not in avail:
+            if not _has_clip(avail, vae_name, "ae.safetensors", "qwen_image_vae.safetensors"):
                 missing.append(f"VAE '{vae_name}'")
     except Exception as e:
         print(f"  [Preflight] Could not check VAE files: {e}")

@@ -3307,9 +3307,19 @@ end
 -- the text prompt. The Flux2Scheduler computes appropriate sigma values.
 
 local KLEIN_MODELS = {
-  { label = "Klein 9B",        unet = "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",      clip = "qwen_3_8b_fp8mixed.safetensors" },
-  { label = "Klein 4B (fp8)",  unet = "A-Flux\\flux-2-klein-4b-fp8.safetensors",         clip = "qwen_3_4b.safetensors" },
-  { label = "Klein Base 4B",   unet = "A-Flux\\flux-2-klein-base-4b-fp8.safetensors",    clip = "qwen_3_4b.safetensors" },
+  { label = "Klein 9B",        unet = "A-Flux\\Flux2\\flux-2-klein-9b.safetensors",      clip = "qwen_3_8b_fp8mixed.safetensors", clip_type = "flux2", vae = "flux2-vae.safetensors" },
+  { label = "Klein 4B (fp8)",  unet = "A-Flux\\flux-2-klein-4b-fp8.safetensors",         clip = "qwen_3_4b.safetensors", clip_type = "flux2", vae = "flux2-vae.safetensors" },
+  { label = "Klein Base 4B",   unet = "A-Flux\\flux-2-klein-base-4b-fp8.safetensors",    clip = "qwen_3_4b.safetensors", clip_type = "flux2", vae = "flux2-vae.safetensors" },
+  { label = "Klein 9B NVFP4",  unet = "nvfp4/flux-2-klein-9b-nvfp4.safetensors",         clip = "nvfp4/qwen_3_8b_fp4mixed.safetensors", clip_type = "flux2", vae = "ae.safetensors" },
+  { label = "Klein 4B NVFP4",  unet = "nvfp4/flux-2-klein-4b-nvfp4.safetensors",         clip = "qwen_3_4b_fp8.safetensors", clip_type = "flux2", vae = "ae.safetensors" },
+  { label = "Klein Base 4B NVFP4", unet = "nvfp4/flux-2-klein-base-4b-nvfp4.safetensors", clip = "qwen_3_4b_fp8.safetensors", clip_type = "flux2", vae = "ae.safetensors" },
+  { label = "Flux 2 Dev NVFP4", unet = "nvfp4/flux2-dev-nvfp4-mixed.safetensors",        clip = "nvfp4/mistral_3_small_flux2_fp4_mixed.safetensors", clip_type = "flux2", vae = "ae.safetensors" },
+  { label = "Flux 3 Klein SD NVFP4", unet = "nvfp4/flux-3-klein-sd-nvfp4.safetensors",   clip = "qwen_3_4b_fp8.safetensors", clip_type = "flux2", vae = "ae.safetensors" },
+  { label = "Flux 3 Klein Base NVFP4", unet = "nvfp4/flux-3-klein-base-nvfp4.safetensors", clip = "qwen_3_4b_fp8.safetensors", clip_type = "flux2", vae = "ae.safetensors" },
+  { label = "Flux 3 Klein SD INT8", unet = "flux-3-klein-sd-int8.safetensors",           clip = "qwen_3_4b_fp8.safetensors", clip_type = "flux2", vae = "ae.safetensors" },
+  { label = "Flux 3 Klein Base INT8", unet = "flux-3-klein-base-int8.safetensors",       clip = "qwen_3_4b_fp8.safetensors", clip_type = "flux2", vae = "ae.safetensors" },
+  { label = "Krea2 NVFP4",     unet = "nvfp4/krea2_nvfp4.safetensors",                   clip = "nvfp4/qwen_3_8b_fp4mixed.safetensors", clip_type = "flux2", vae = "ae.safetensors" },
+  { label = "Qwen Image 2512 FP8", unet = "qwen_image_2512_fp8_e4m3fn.safetensors",      clip = "qwen_2.5_vl_7b_fp8_scaled.safetensors", clip_type = "qwen_image", vae = "qwen_image_vae.safetensors" },
 }
 
 function build_klein_img2img_json(image_filename, klein_model, prompt, seed,
@@ -3317,12 +3327,14 @@ function build_klein_img2img_json(image_filename, klein_model, prompt, seed,
   local esc_prompt = json_escape(prompt)
   local esc_unet = json_escape(klein_model.unet)
   local esc_clip = json_escape(klein_model.clip or "qwen_3_8b_fp8mixed.safetensors")
+  local esc_clip_type = json_escape(klein_model.clip_type or "flux2")
+  local esc_vae = json_escape(klein_model.vae or "flux2-vae.safetensors")
 
   return string.format([[
 {"prompt":{
   "1":{"class_type":"UNETLoader","inputs":{"unet_name":"%s","weight_dtype":"default"}},
-  "2":{"class_type":"CLIPLoader","inputs":{"clip_name":"%s","type":"flux2","device":"default"}},
-  "3":{"class_type":"VAELoader","inputs":{"vae_name":"flux2-vae.safetensors"}},
+  "2":{"class_type":"CLIPLoader","inputs":{"clip_name":"%s","type":"%s","device":"default"}},
+  "3":{"class_type":"VAELoader","inputs":{"vae_name":"%s"}},
   "4":{"class_type":"CLIPTextEncode","inputs":{"text":"%s","clip":["2",0]}},
   "5":{"class_type":"ConditioningZeroOut","inputs":{"conditioning":["4",0]}},
   "10":{"class_type":"LoadImage","inputs":{"image":"%s"}},
@@ -3344,6 +3356,8 @@ function build_klein_img2img_json(image_filename, klein_model, prompt, seed,
 }}]],
     esc_unet,
     esc_clip,
+    esc_clip_type,
+    esc_vae,
     esc_prompt,
     image_filename,
     scale_w, scale_h,
@@ -3370,7 +3384,7 @@ function build_pulid_flux_json(image_filename, face_filename, prompt, seed,
   return string.format([[
 {"prompt":{
   "1":{"class_type":"UNETLoader","inputs":{"unet_name":"A-Flux\\Flux2\\flux-2-klein-9b.safetensors","weight_dtype":"default"}},
-  "2":{"class_type":"PuLIDModelLoader","inputs":{"pulid_file":"pulid_flux_v0.9.1.safetensors"}},
+  "2":{"class_type":"PuLIDModelLoader","inputs":{"pulid_file":"pulid_flux2_klein_v2.safetensors"}},
   "3":{"class_type":"PuLIDEVACLIPLoader","inputs":{}},
   "4":{"class_type":"PuLIDInsightFaceLoader","inputs":{"provider":"CUDA"}},
   "5":{"class_type":"CLIPLoader","inputs":{"clip_name":"qwen_3_8b_fp8mixed.safetensors","type":"flux2","device":"default"}},
@@ -3509,12 +3523,14 @@ function build_klein_ref_json(image_filename, ref_filename, klein_model,
   local esc_prompt = json_escape(prompt)
   local esc_unet = json_escape(klein_model.unet)
   local esc_clip = json_escape(klein_model.clip or "qwen_3_8b_fp8mixed.safetensors")
+  local esc_clip_type = json_escape(klein_model.clip_type or "flux2")
+  local esc_vae = json_escape(klein_model.vae or "flux2-vae.safetensors")
 
   return string.format([[
 {"prompt":{
   "1":{"class_type":"UNETLoader","inputs":{"unet_name":"%s","weight_dtype":"default"}},
-  "2":{"class_type":"CLIPLoader","inputs":{"clip_name":"%s","type":"flux2","device":"default"}},
-  "3":{"class_type":"VAELoader","inputs":{"vae_name":"flux2-vae.safetensors"}},
+  "2":{"class_type":"CLIPLoader","inputs":{"clip_name":"%s","type":"%s","device":"default"}},
+  "3":{"class_type":"VAELoader","inputs":{"vae_name":"%s"}},
   "4":{"class_type":"CLIPTextEncode","inputs":{"text":"%s","clip":["2",0]}},
   "5":{"class_type":"ConditioningZeroOut","inputs":{"conditioning":["4",0]}},
   "10":{"class_type":"LoadImage","inputs":{"image":"%s"}},
@@ -3539,6 +3555,8 @@ function build_klein_ref_json(image_filename, ref_filename, klein_model,
 }}]],
     esc_unet,
     esc_clip,
+    esc_clip_type,
+    esc_vae,
     esc_prompt,
     image_filename,
     scale_w, scale_h,
@@ -7438,11 +7456,19 @@ ltx_send_i2v_btn = dt.new_widget("button") {
 
 klein_model_selector = dt.new_widget("combobox") {
   label = _("Klein Model"),
-  tooltip = _("Select a Klein Flux2 distilled model"),
+  tooltip = _("Select a Klein Flux2 / Flux3 model"),
   selected = 1,
   KLEIN_MODELS[1].label,
   KLEIN_MODELS[2].label,
   KLEIN_MODELS[3].label,
+  KLEIN_MODELS[4].label,
+  KLEIN_MODELS[5].label,
+  KLEIN_MODELS[6].label,
+  KLEIN_MODELS[7].label,
+  KLEIN_MODELS[8].label,
+  KLEIN_MODELS[9].label,
+  KLEIN_MODELS[10].label,
+  KLEIN_MODELS[11].label,
 }
 
 klein_prompt_entry = dt.new_widget("entry") {
@@ -7735,11 +7761,19 @@ faceid_send_btn = dt.new_widget("button") {
 
 kleinref_model_selector = dt.new_widget("combobox") {
   label = _("Klein Model"),
-  tooltip = _("Select a Klein Flux2 model for reference-guided editing"),
+  tooltip = _("Select a Klein Flux2 / Flux3 model for reference-guided editing"),
   selected = 1,
   KLEIN_MODELS[1].label,
   KLEIN_MODELS[2].label,
   KLEIN_MODELS[3].label,
+  KLEIN_MODELS[4].label,
+  KLEIN_MODELS[5].label,
+  KLEIN_MODELS[6].label,
+  KLEIN_MODELS[7].label,
+  KLEIN_MODELS[8].label,
+  KLEIN_MODELS[9].label,
+  KLEIN_MODELS[10].label,
+  KLEIN_MODELS[11].label,
 }
 
 kleinref_prompt_entry = dt.new_widget("entry") {
@@ -8055,10 +8089,19 @@ lama_send_btn = dt.new_widget("button") {
 
 klein_model_selector = dt.new_widget("combobox") {
   label = _("Klein Model"),
-  tooltip = _("9B = best quality, more VRAM. 4B fp8 = faster, fits 12GB."),
+  tooltip = _("9B = best quality, more VRAM. 4B fp8 = faster, fits 12GB. NVFP4 = Spark2 Blackwell."),
   selected = 1,
   KLEIN_MODELS[1].label,
   KLEIN_MODELS[2].label,
+  KLEIN_MODELS[3].label,
+  KLEIN_MODELS[4].label,
+  KLEIN_MODELS[5].label,
+  KLEIN_MODELS[6].label,
+  KLEIN_MODELS[7].label,
+  KLEIN_MODELS[8].label,
+  KLEIN_MODELS[9].label,
+  KLEIN_MODELS[10].label,
+  KLEIN_MODELS[11].label,
 }
 
 -- Klein Inpaint controls
@@ -9716,12 +9759,17 @@ server_save_btn = dt.new_widget("button") {
 -- combobox. Editors can see which presets will fail and avoid them,
 -- without us doing a heavy dynamic-widget-rebuild pass.
 local _ARCH_SENTINELS = {
-  ["Flux 2 Klein"]     = {"Flux2KleinRefLatentController",
+  ["Flux 2 / 3 Klein"] = {"EmptyFlux2LatentImage",
+                           "Flux2Scheduler",
+                           "Flux2KleinRefLatentController",
                            "Flux2KleinTextRefBalance"},
   ["Flux Kontext"]     = {"FluxKontextImageScale",
-                           "FluxKontextModelLoader"},
+                           "FluxKontextModelLoader",
+                           "ReferenceLatent"},
   ["Flux 1 Dev"]       = {"FluxGuidance",
                            "DualCLIPLoader"},
+  ["Krea 2 / Qwen"]    = {"EmptySD3LatentImage",
+                           "ModelSamplingAuraFlow"},
   ["SDXL"]             = {"KSamplerAdvanced"},   -- universal, sanity
   ["SD 1.5"]           = {"KSampler"},           -- universal, sanity
   ["Wan 2.2 Video"]    = {"WanImageToVideo",
@@ -9730,9 +9778,16 @@ local _ARCH_SENTINELS = {
   ["LTX-2 Video"]      = {"LTXVImgToVideo",
                            "LTXVScheduler",
                            "LTXAVTextEncoderLoader"},
+  ["HunyuanVideo"]     = {"EmptyHunyuanLatentVideo",
+                           "HunyuanVideoModelLoader"},
+  ["MiniMax H3"]       = {"MiniMaxH3Sampler",
+                           "MiniMaxVideoGenerate"},
+  ["SkyReels V2"]      = {"SkyReelsV2I2V",
+                           "SkyReelsSampler"},
   ["SUPIR Upscale"]    = {"SUPIR_sample",
                            "SUPIR_first_stage"},
-  ["SeedVR2 Video"]    = {"SeedVR2VideoUpscaler"},
+  ["SeedVR2 Video"]    = {"SeedVR2VideoUpscaler",
+                           "LoadSeedVR2Models"},
   ["IPAdapter / Style"] = {"IPAdapterAdvanced",
                             "IPAdapterUnifiedLoader"},
   ["Face: ReActor"]    = {"ReActorFaceSwap"},

@@ -106,6 +106,12 @@ MIRROR_FILES = [
     # surfaces 5 + 6 alongside workflows.py — see file header of the
     # generator for the propagation contract.
     "builders_manifest.json",
+    "safe_fetch.py",
+    "__init__.py",
+    "auto_updater.py",
+    "optimizer.py",
+    "plugin_base.py",
+    "recommend.py",
 ]
 
 # Surface-relative paths within each sibling repo. The auto-patch bot

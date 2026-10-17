@@ -3311,9 +3311,10 @@ def _add_normal_map_selector(dialog, box, image):
     dialog._normal_auto_gen.set_active(True)
     dialog._normal_auto_gen.set_tooltip_text(
         "When you click OK, if no normal-map layer is selected, one will\n"
-        "be generated automatically via NormalCrafter before the main\n"
-        "workflow runs. Adds ~10-30 s to the first run; subsequent runs\n"
-        "in the same session reuse the layer. Turn this off if you\n"
+        "be generated automatically (native MoGe, or NormalCrafter as a\n"
+        "fallback) before the main workflow runs. Adds ~10-30 s to the\n"
+        "first run; subsequent runs in the same session reuse the layer.\n"
+        "Turn this off if you\n"
         "explicitly don't want 3D guidance (rare — the map improves\n"
         "almost every result).")
     fbox.pack_start(dialog._normal_auto_gen, False, False, 0)
@@ -3350,10 +3351,17 @@ def _add_normal_map_selector(dialog, box, image):
             srv = (_load_config().get("server_url")
                    or COMFYUI_DEFAULT_URL)
             nodes = _probe_comfyui_nodes(srv)
-            if nodes and "NormalCrafterNode" not in nodes:
+            # build_normal_map's default path (use_moge=True, since the
+            # 2026-09-29 MoGe-2 migration) only needs ComfyUI-core's
+            # native LoadMoGeModel -- NOT the NormalCrafterNode custom
+            # pack. Gate on either being present so this doesn't
+            # falsely block installs that have native MoGe but never
+            # added the NormalCrafter pack (the now-common case).
+            if nodes and not ({"LoadMoGeModel", "NormalCrafterNode"} & nodes):
                 gen_status.set_markup(
-                    '<span color="#c06040">⚠ Install NormalCrafter '
-                    'node on ComfyUI first.</span>')
+                    '<span color="#c06040">Install the MoGe geometry '
+                    'model (ComfyUI v0.22.0+, ships in core) or the '
+                    'NormalCrafter node on ComfyUI first.</span>')
                 return
             gen_btn.set_sensitive(False)
             gen_status.set_text("Exporting canvas…")
@@ -3751,17 +3759,25 @@ def _collect_normal_map_from_dialog(dlg, image, server_url,
 
     # Path 2: auto-generate when nothing is picked + auto-gen is ON.
     if (not idx_id or idx_id == "none") and auto_cb is not None and auto_cb.get_active():
-        # Preflight NormalCrafter before spending time on export/upload.
+        # Preflight before spending time on export/upload. build_normal_map's
+        # default path (use_moge=True, since the 2026-09-29 MoGe-2
+        # migration) only needs ComfyUI-core's native LoadMoGeModel --
+        # NOT the NormalCrafterNode custom pack. Gate on either being
+        # present so installs with only native MoGe (the now-common
+        # case) aren't falsely blocked.
         try:
             nodes = _probe_comfyui_nodes(server_url)
-            if nodes and "NormalCrafterNode" not in nodes:
+            if nodes and not ({"LoadMoGeModel", "NormalCrafterNode"} & nodes):
                 try:
                     Gimp.message(
-                        "3D Normal Map auto-generation needs the "
-                        "NormalCrafter node on your ComfyUI server.\n\n"
-                        "Either install it (ComfyUI Manager → search "
-                        "'NormalCrafter') or untick 'Auto-generate if "
-                        "missing' to skip 3D guidance for this run.")
+                        "3D Normal Map auto-generation needs either the "
+                        "MoGe geometry model (ComfyUI v0.22.0+, ships in "
+                        "core -- just download a geometry_estimation "
+                        "checkpoint) or the NormalCrafter node on your "
+                        "ComfyUI server.\n\n"
+                        "Either install one of them or untick "
+                        "'Auto-generate if missing' to skip 3D guidance "
+                        "for this run.")
                 except Exception:
                     pass
                 return None
@@ -3854,7 +3870,10 @@ def _collect_normal_map_from_dialog(dlg, image, server_url,
 #: (see workflows.py guard `arch_key not in ("flux2klein","flux_kontext",
 #: "chroma")`). Exposed here so the dialog layer can warn the user
 #: BEFORE they submit, instead of silently dropping their normal map.
-_CN_INCOMPATIBLE_ARCHS = frozenset({"flux2klein", "flux_kontext", "chroma"})
+_CN_INCOMPATIBLE_ARCHS = frozenset({
+    "flux2klein", "flux3klein", "flux2dev", "flux_kontext",
+    "chroma", "krea2", "qwen_image",
+})
 
 
 #: Fallback cascade per arch — when the preferred Normal Map CN
@@ -5393,20 +5412,48 @@ ARCH_OPTIMIZATIONS = {
                       "wants_quality_tags": False, "supports_cn": False,
                       "cfg_range": (1.0, 4.0),  "steps_range": (8, 30),
                       "hint": "LTX 2.3 — natural language, distilled 8-step or full 30-step; no quality tags."},
+    "minimax_h3":   {"negative": True,  "prompt_style": "natural",
+                      "wants_quality_tags": False, "supports_cn": False,
+                      "cfg_range": (5.0, 7.0),  "steps_range": (25, 35),
+                      "hint": "MiniMax Hailuo 03 (H3) — cinematic natural language I2V/T2V, cfg 6.0, 30 steps."},
+    "skyreels":     {"negative": True,  "prompt_style": "natural",
+                      "wants_quality_tags": False, "supports_cn": False,
+                      "cfg_range": (5.0, 7.0),  "steps_range": (25, 35),
+                      "hint": "SkyReels V2 14B — natural language I2V/DF, cfg 6.0, 30 steps."},
+    "longcat":      {"negative": True,  "prompt_style": "natural",
+                      "wants_quality_tags": False, "supports_cn": False,
+                      "cfg_range": (4.0, 6.0),  "steps_range": (25, 35),
+                      "hint": "LongCat Video — natural language, cfg 5.0, 30 steps."},
+    "qwen_image":   {"negative": True,  "prompt_style": "natural",
+                      "wants_quality_tags": False, "supports_cn": False,
+                      "cfg_range": (3.5, 4.5),  "steps_range": (24, 32),
+                      "hint": "Qwen Image 2512 — bilingual natural language, cfg 4.0, 28 steps."},
 
     # Arches that DO NOT support negative prompts (CLAUDE.md §9).
     "flux1dev":     {"negative": False, "prompt_style": "natural",
                       "wants_quality_tags": False, "supports_cn": True,
                       "cfg_range": (3.5, 3.5),  "steps_range": (20, 30),
                       "hint": "Flux 1 Dev — natural language, NO negative, cfg 3.5, 20-30 steps. Skip quality tags."},
+    "flux2dev":     {"negative": False, "prompt_style": "natural",
+                      "wants_quality_tags": False, "supports_cn": False,
+                      "cfg_range": (2.5, 3.5),  "steps_range": (20, 28),
+                      "hint": "Flux 2 Dev — natural language, NO negative, cfg 2.5-3.5, 24 steps (Mistral3 24B TE)."},
     "flux_kontext": {"negative": False, "prompt_style": "edit_instruction",
                       "wants_quality_tags": False, "supports_cn": False,
                       "cfg_range": (3.5, 4.5),  "steps_range": (20, 30),
                       "hint": "Flux Kontext — edit instructions ('change the hair to red'), NO negative, NO ControlNet."},
+    "krea2":        {"negative": False, "prompt_style": "edit_instruction",
+                      "wants_quality_tags": False, "supports_cn": False,
+                      "cfg_range": (1.0, 3.5),  "steps_range": (20, 28),
+                      "hint": "Krea 2 Edit (14B) — edit instructions or natural language, NO negative, ReferenceLatent conditioning."},
     "flux2klein":   {"negative": False, "prompt_style": "natural",
                       "wants_quality_tags": False, "supports_cn": False,
                       "cfg_range": (1.0, 1.0),  "steps_range": (4, 8),
                       "hint": "Flux 2 Klein — natural language, NO negative, cfg 1.0, 4-6 steps. Enhancer ON, no CN (ReferenceLatent only)."},
+    "flux3klein":   {"negative": False, "prompt_style": "natural",
+                      "wants_quality_tags": False, "supports_cn": False,
+                      "cfg_range": (1.0, 3.5),  "steps_range": (4, 24),
+                      "hint": "Flux 3 Klein — natural language, NO negative, 4 steps (SD cfg 1.0) or 20 steps (Base cfg 3.5) with Qwen3 4B TE."},
     "chroma":       {"negative": False, "prompt_style": "natural",
                       "wants_quality_tags": False, "supports_cn": False,
                       "cfg_range": (2.5, 3.5),  "steps_range": (25, 35),
@@ -7399,6 +7446,88 @@ MODEL_PRESETS = [
                        "matching existing lighting and color exactly",
         "negative_hint": "",
     },
+    # ── Spark2 NVFP4 / Blackwell Presets ──────────────────────────────────
+    {
+        "label": "Flux 3 Klein SD NVFP4 (Spark2 4-step)",
+        "arch": "flux3klein",
+        "ckpt": "nvfp4/flux-3-klein-sd-nvfp4.safetensors",
+        "width": 1024, "height": 1024,
+        "steps": 4, "cfg": 1.0, "denoise": 0.75,
+        "sampler": "euler", "scheduler": "simple",
+        "prompt_hint": "Natural-language scene or edit description (Flux 3 Klein SD NVFP4)",
+        "negative_hint": "",
+    },
+    {
+        "label": "Flux 3 Klein Base NVFP4 (Spark2 20-step)",
+        "arch": "flux3klein",
+        "ckpt": "nvfp4/flux-3-klein-base-nvfp4.safetensors",
+        "width": 1024, "height": 1024,
+        "steps": 20, "cfg": 3.5, "denoise": 0.75,
+        "sampler": "euler", "scheduler": "simple",
+        "prompt_hint": "Detailed natural-language prompt (Flux 3 Klein Base NVFP4)",
+        "negative_hint": "blurry, low quality, deformed",
+    },
+    {
+        "label": "Flux 2 Klein 9B NVFP4 (Spark2 4-step)",
+        "arch": "flux2klein",
+        "ckpt": "nvfp4/flux-2-klein-9b-nvfp4.safetensors",
+        "width": 1024, "height": 1024,
+        "steps": 4, "cfg": 1.0, "denoise": 0.75,
+        "sampler": "euler", "scheduler": "simple",
+        "prompt_hint": "Natural-language scene or edit description (Flux 2 Klein 9B NVFP4)",
+        "negative_hint": "",
+    },
+    {
+        "label": "Flux 2 Klein 4B NVFP4 (Spark2 4-step)",
+        "arch": "flux2klein",
+        "ckpt": "nvfp4/flux-2-klein-4b-nvfp4.safetensors",
+        "width": 1024, "height": 1024,
+        "steps": 4, "cfg": 1.0, "denoise": 0.75,
+        "sampler": "euler", "scheduler": "simple",
+        "prompt_hint": "Natural-language scene or edit description (Flux 2 Klein 4B NVFP4)",
+        "negative_hint": "",
+    },
+    {
+        "label": "Flux 2 Dev NVFP4 (Spark2 20-step)",
+        "arch": "flux2dev",
+        "ckpt": "nvfp4/flux2-dev-nvfp4-mixed.safetensors",
+        "width": 1024, "height": 1024,
+        "steps": 20, "cfg": 1.0, "denoise": 0.75,
+        "sampler": "euler", "scheduler": "simple",
+        "prompt_hint": "High-detail natural-language prompt (Flux 2 Dev NVFP4)",
+        "negative_hint": "",
+    },
+    {
+        "label": "Z-Image-Turbo NVFP4 (Spark2 4-step)",
+        "arch": "zit",
+        "ckpt": "nvfp4/z_image_turbo_nvfp4.safetensors",
+        "model_type": "unet",
+        "width": 1024, "height": 1024,
+        "steps": 4, "cfg": 1.0, "denoise": 0.75,
+        "sampler": "res_multistep", "scheduler": "simple",
+        "prompt_hint": "Fast photorealistic or stylized prompt (Z-Image-Turbo NVFP4)",
+        "negative_hint": "",
+    },
+    {
+        "label": "Krea 2 Turbo NVFP4 (Spark2 8-step)",
+        "arch": "krea2",
+        "ckpt": "nvfp4/krea2_turbo_fp4_mixed.safetensors",
+        "width": 1024, "height": 1024,
+        "steps": 8, "cfg": 2.5, "denoise": 0.75,
+        "sampler": "euler", "scheduler": "simple",
+        "prompt_hint": "Creative aesthetic prompt or image edit instruction (Krea 2 Turbo NVFP4)",
+        "negative_hint": "low quality, blurry, artifacts",
+    },
+    {
+        "label": "Qwen Image Edit 2511 NVFP4 (Spark2 20-step)",
+        "arch": "qwen_image",
+        "ckpt": "nvfp4/qwen_image_edit_2511_fp4_mixed.safetensors",
+        "width": 1024, "height": 1024,
+        "steps": 20, "cfg": 4.0, "denoise": 0.75,
+        "sampler": "euler", "scheduler": "simple",
+        "prompt_hint": "Instructional image edit or scene description (Qwen Image Edit 2511 NVFP4)",
+        "negative_hint": "low quality, blurry, deformed",
+    },
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -8244,7 +8373,7 @@ def _fetch_pulid_models(server):
         info = _api_get(server, "/object_info/PulidFluxModelLoader")
         return info["PulidFluxModelLoader"]["input"]["required"]["pulid_file"][0]
     except Exception:
-        return ["pulid_flux_v0.9.1.safetensors"]
+        return ["pulid_flux2_klein_v2.safetensors"]
 
 # ── Known ComfyUI error patterns for user-friendly messages ──────────
 _KNOWN_ERRORS = {
@@ -9603,7 +9732,7 @@ def _is_flux2_model(model_name):
 def _build_pulid_flux(target_filename, face_ref_filename,
                       prompt_text, negative_text, seed,
                       flux_model="Flux\\FLUX1 Dev fp8.safetensors",
-                      pulid_model="pulid_flux_v0.9.1.safetensors",
+                      pulid_model="pulid_flux2_klein_v2.safetensors",
                       strength=0.9, steps=20, guidance=3.5,
                       denoise=0.65, width=1024, height=1024,
                       turbo_loras=None, turbo=False):
@@ -29924,7 +30053,10 @@ class Spellcaster(Gimp.PlugIn):
 
         # ControlNet path: high quality, needs diffusion model
         _colorize_arch = preset.get("arch", "sdxl")
-        _NO_CN_ARCHS = ("flux2klein", "flux_kontext", "chroma")
+        _NO_CN_ARCHS = (
+            "flux2klein", "flux3klein", "flux2dev", "flux_kontext",
+            "chroma", "krea2", "qwen_image",
+        )
         if _colorize_arch in _NO_CN_ARCHS:
             Gimp.message(
                 f"ControlNet colorization is not supported by {preset.get('label', _colorize_arch)}.\n\n"

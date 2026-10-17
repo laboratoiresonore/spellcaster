@@ -562,6 +562,13 @@ _reg("zit",
          "txt2img": [],
      },
      scene_group="sdxl",
+     extra={
+         "clip_name": "nvfp4/qwen_3_4b_fp4_mixed.safetensors",
+         "clip_type": "lumina2",
+         "vae_name": "ae.safetensors",
+         "aura_shift": 3.0,
+         "latent_node": "EmptySD3LatentImage",
+     },
      )
 
 
@@ -711,7 +718,7 @@ _reg("flux2klein",
      default_scheduler="simple",
      # Klein owns the klein_* family of methods on top of the base image set.
      supported_methods=ALL_IMAGE_METHODS,
-     lora_prefixes=["Flux-2-Klein\\"],
+     lora_prefixes=["Flux-2-Klein\\", "Flux2/"],
      turbo_config=None,  # Already 4 steps
      prompt_style="natural",
      prompt_guidance=(
@@ -749,8 +756,195 @@ _reg("flux2klein",
      extra={
          "vae_name": "flux2-vae.safetensors",
          "clip_type": "flux2",
+         "clip_9b_spark2": "nvfp4/qwen_3_8b_fp4mixed.safetensors",
+         "clip_4b_spark2": "nvfp4/qwen_3_4b_fp4_flux2.safetensors",
          # CLIP selection is model-dependent: 9B→qwen_3_8b, 4B→qwen_3_4b
          # Handled by load_model_stack() using the preset's "ckpt" field.
+     },
+     )
+
+
+# ── Flux 2 Dev (20-step Mistral-3-Small Flux2 encoder) ───────────────────
+_reg("flux2dev",
+     loader="unet_clip_vae",
+     sampler="custom_advanced",
+     clip_mode="single_flux2",
+     vae_mode="separate",
+     supports_negative=False,
+     default_resolution=(1024, 1024),
+     default_cfg=1.0,
+     default_steps=20,
+     default_denoise=0.65,
+     default_sampler="euler",
+     default_scheduler="simple",
+     supported_methods=ALL_IMAGE_METHODS,
+     lora_prefixes=["Flux-2-Dev\\", "Flux2/"],
+     turbo_config=None,
+     prompt_style="natural",
+     prompt_guidance=(
+         "PROMPT FORMAT: Natural language sentences.\n"
+         "FLUX.2 Dev uses Mistral-3-Small text conditioning with CFG 1.0.\n"
+         "Write clear, detailed visual descriptions without tag spam."
+     ),
+     quality_positive=(
+         "photorealistic, highly detailed, sharp focus, professional photograph, "
+         "natural lighting, depth of field"
+     ),
+     quality_negative="",
+     autoset_prompts=(
+         "Detailed professional photograph, natural light, sharp, realistic",
+         "",
+     ),
+     autoset_denoise={
+         "img2img": 0.55,
+     },
+     autoset_cn={},
+     autoset_loras={},
+     scene_group="flux",
+     extra={
+         "vae_name": "flux2-vae.safetensors",
+         "clip_type": "flux2",
+         "clip_name": "nvfp4/mistral_3_small_flux2_fp4_mixed.safetensors",
+     },
+     )
+
+
+# ── Flux 3 Image Klein (SD & Base — Qwen3VL-4B flux3 encoder) ────────────
+_reg("flux3klein",
+     loader="unet_clip_vae",
+     sampler="custom_advanced",
+     clip_mode="single_flux3",   # CLIPLoader with type="flux3"
+     vae_mode="separate",
+     supports_negative=False,
+     default_resolution=(1024, 1024),
+     default_cfg=1.0,
+     default_steps=16,
+     default_denoise=0.65,
+     default_sampler="euler",
+     default_scheduler="simple",
+     supported_methods=ALL_IMAGE_METHODS,
+     lora_prefixes=["Flux3\\", "Flux3/"],
+     turbo_config=None,
+     prompt_style="natural",
+     prompt_guidance=(
+         "PROMPT FORMAT: Natural language descriptions.\n"
+         "FLUX.3 Image Klein uses Qwen3VL-4B (type=flux3) and 16-channel Flux2 VAE.\n"
+         "Runs cleanly at CFG 1.0 in 8-16 steps (SD) or 20-28 steps (Base)."
+     ),
+     quality_positive=(
+         "photorealistic, highly detailed, sharp focus, professional photograph, "
+         "natural lighting, depth of field"
+     ),
+     quality_negative="",
+     autoset_prompts=(
+         "Detailed professional photograph, natural light, sharp, realistic",
+         "",
+     ),
+     autoset_denoise={
+         "img2img": 0.55,
+     },
+     autoset_cn={},
+     autoset_loras={
+         "img2img": [("Flux3/Max_Detail_2.safetensors", 0.5, 0.5)],
+         "txt2img": [("Flux3/Max_Detail_2.safetensors", 0.5, 0.5)],
+     },
+     scene_group="flux",
+     extra={
+         "vae_name": "flux2-vae.safetensors",
+         "clip_type": "flux3",
+         "clip_name": "qwen3vl_4b_int8_convrot.safetensors",
+         "clip_fallbacks": [
+             "qwen3vl_4b_fp8_scaled.safetensors",
+             "qwen3vl_4b_bf16.safetensors",
+         ],
+     },
+     )
+
+
+# ── Krea 2 Turbo / Krea Edit (Qwen3VL-4B krea2 encoder + Qwen Image VAE) ─
+_reg("krea2",
+     loader="unet_clip_vae",
+     sampler="ksampler",
+     clip_mode="single_krea2",   # CLIPLoader with type="krea2"
+     vae_mode="separate",
+     supports_negative=False,
+     default_resolution=(1024, 1024),
+     default_cfg=1.0,
+     default_steps=8,
+     default_denoise=0.65,
+     default_sampler="euler",
+     default_scheduler="simple",
+     supported_methods=IMAGE_METHODS,
+     lora_prefixes=["Krea2\\", "Krea2/"],
+     turbo_config=None,
+     prompt_style="natural",
+     prompt_guidance=(
+         "PROMPT FORMAT: Natural language sentences.\n"
+         "Krea 2 Turbo uses Qwen3VL-4B (type=krea2) and 16-channel Qwen Image VAE "
+         "at 8 steps, CFG 1.0."
+     ),
+     quality_positive=(
+         "photorealistic, highly detailed, sharp focus, professional photograph, "
+         "natural lighting"
+     ),
+     quality_negative="",
+     autoset_prompts=(
+         "Detailed professional photograph, natural light, sharp, realistic",
+         "",
+     ),
+     autoset_denoise={
+         "img2img": 0.55,
+     },
+     autoset_cn={},
+     autoset_loras={},
+     scene_group="flux",
+     extra={
+         "vae_name": "qwen_image_vae.safetensors",
+         "clip_type": "krea2",
+         "clip_name": "qwen3vl_4b_fp8_scaled.safetensors",
+         "latent_node": "EmptySD3LatentImage",
+     },
+     )
+
+
+# ── Qwen Image Edit 2511 (Qwen 2.5 VL 7B + Qwen Image VAE) ───────────────
+_reg("qwen_image",
+     loader="unet_clip_vae",
+     sampler="ksampler",
+     clip_mode="single_qwen_image",
+     vae_mode="separate",
+     supports_negative=False,
+     default_resolution=(1024, 1024),
+     default_cfg=1.0,
+     default_steps=20,
+     default_denoise=0.65,
+     default_sampler="euler",
+     default_scheduler="simple",
+     supported_methods=IMAGE_METHODS,
+     lora_prefixes=["Qwen\\", "Qwen/"],
+     turbo_config=None,
+     prompt_style="natural",
+     prompt_guidance=(
+         "PROMPT FORMAT: Natural language image or edit descriptions.\n"
+         "Uses Qwen 2.5 VL 7B (type=qwen_image) and Qwen Image VAE."
+     ),
+     quality_positive="",
+     quality_negative="",
+     autoset_prompts=(
+         "Detailed professional photograph, natural light, sharp, realistic",
+         "",
+     ),
+     autoset_denoise={
+         "img2img": 0.55,
+     },
+     autoset_cn={},
+     autoset_loras={},
+     scene_group="flux",
+     extra={
+         "vae_name": "qwen_image_vae.safetensors",
+         "clip_type": "qwen_image",
+         "clip_name": "nvfp4/qwen_2.5_vl_7b_nvfp4.safetensors",
+         "latent_node": "EmptySD3LatentImage",
      },
      )
 
@@ -1135,6 +1329,65 @@ _reg("supir",
      default_cfg=4.0, default_steps=45, default_denoise=0.30,
      default_sampler="dpmpp_2m", default_scheduler="karras",
      supported_methods=("upscale",),   # SUPIR is restoration/upscale-only
+     scene_group="supir",
+     registered=True)
+
+# MiniMax-H3 — joint video + audio generation (NVFP4 on Spark2).
+_reg("minimax_h3",
+     loader="unet_clip_vae", sampler="ksampler",
+     clip_mode="single", vae_mode="separate",
+     supports_negative=True,
+     default_resolution=(1280, 720),
+     default_cfg=1.0, default_steps=8, default_denoise=1.0,
+     default_sampler="euler", default_scheduler="simple",
+     supported_methods=("video_gen", "video_img2video"),
+     scene_group="video",
+     extra={
+         "clip_name": "MiniMax-H3/qwen3vl_32b_heretic_minimax_h3_nvfp4.safetensors",
+         "clip_type": "minimax_h3",
+         "vae_name": "MiniMax-H3/minimax_h3_video_vae_fp16.safetensors",
+         "audio_vae_name": "MiniMax-H3/minimax_h3_audio_vae_fp16.safetensors",
+     },
+     registered=True)
+
+# SkyReels-V2 (1.3B 540p DF / I2V — Wan-compatible conditioning & VAE).
+_reg("skyreels",
+     loader="unet_clip_vae", sampler="ksampler",
+     clip_mode="single", vae_mode="separate",
+     supports_negative=True,
+     default_resolution=(960, 544),
+     default_cfg=6.0, default_steps=30, default_denoise=1.0,
+     default_sampler="uni_pc", default_scheduler="simple",
+     supported_methods=("video_gen", "video_img2video"),
+     scene_group="video",
+     extra={
+         "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+         "clip_type": "wan",
+         "vae_name": "wan_2.1_vae.safetensors",
+     },
+     registered=True)
+
+# LongCat Video — WanVideoWrapper-based long video / avatar extension.
+_reg("longcat",
+     loader="unet_clip_vae", sampler="ksampler",
+     clip_mode="single", vae_mode="separate",
+     supports_negative=True,
+     default_resolution=(832, 480),
+     default_cfg=4.0, default_steps=30, default_denoise=1.0,
+     default_sampler="euler", default_scheduler="simple",
+     supported_methods=VIDEO_METHODS,
+     scene_group="video",
+     registered=True)
+
+# AuraSR v2 — GAN-based 4x image super-resolution (LoadAuraSR + RunAuraSR).
+_reg("aurasr",
+     loader="custom_wrapper", sampler="custom",
+     clip_mode="bundled", vae_mode="bundled",
+     supports_negative=False,
+     default_resolution=(1024, 1024),
+     default_cfg=1.0, default_steps=1, default_denoise=1.0,
+     default_sampler="euler", default_scheduler="simple",
+     supported_methods=("upscale",),
      scene_group="supir",
      registered=True)
 

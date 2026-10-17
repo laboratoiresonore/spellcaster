@@ -422,7 +422,16 @@ _TARGET_CLASS_OVERRIDES: dict[str, str] = {
     # ── Detect-family single-class builders (Wave 4 baseline) ───────────
     "color_match":              "ColorMatch",
     "depth_map_v3":             "DepthAnything_V3",
-    "normal_map":               "NormalCrafterNode",
+    # normal_map's default path (use_moge=True, the intended primary path
+    # since the 2026-09-29 MoGe-2 migration) is gated on ComfyUI-core's
+    # native LoadMoGeModel/MoGeInference/MoGeRender family
+    # (comfy_extras/nodes_moge.py, v0.22.0+), NOT the NormalCrafterNode
+    # custom-pack this used to require. Gating on the stale value here
+    # would wrongly hide the (now default, near-zero-VRAM, core-only)
+    # capability on any host that has native MoGe but never installed
+    # the NormalCrafter custom pack. use_moge=False still falls back to
+    # NormalCrafterNode, but that is the non-default branch now.
+    "normal_map":               "LoadMoGeModel",
     "rembg":                    "Image Rembg (Remove Background)",
     "rembg_birefnet":           "BiRefNetRMBG",
     "rembg_v3":                 "RMBG",

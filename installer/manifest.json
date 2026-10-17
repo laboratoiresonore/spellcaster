@@ -258,6 +258,9 @@
     "ComfyUI-Flux2Klein-Enhancer": {
       "repo": "https://github.com/capitan01R/ComfyUI-Flux2Klein-Enhancer",
       "provides": [
+        "EmptyFlux2LatentImage",
+        "Flux2Scheduler",
+        "Flux2KleinRefLatentController",
         "FLUX.2 Klein Ref Latent Controller",
         "FLUX.2 Klein Text/Ref Balance",
         "FLUX.2 Klein Mask Ref Controller",
@@ -902,7 +905,7 @@
         ],
         "pulid": [
           {
-            "path": "pulid/pulid_flux_v0.9.1.safetensors",
+            "path": "pulid/pulid_flux2_klein_v2.safetensors",
             "url": null,
             "page_url": "https://huggingface.co/guozinan/PuLID",
             "note": "PuLID Flux model v0.9.1",
@@ -1087,9 +1090,7 @@
       },
       "custom_nodes": [
         "ComfyUI-GGUF",
-        "ComfyUI-VideoHelperSuite",
-        "ComfyUI-RIFE",
-        "ComfyUI-RTX-Remix"
+        "ComfyUI-VideoHelperSuite"
       ]
     },
     "rembg": {

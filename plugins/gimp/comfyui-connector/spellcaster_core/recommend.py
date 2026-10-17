@@ -17,10 +17,10 @@ import re
 import urllib.request
 
 try:
-    from .model_detect import classify_unet_model, classify_ckpt_model
+    from .model_detect import classify_unet_model, classify_ckpt_model, is_usable_model
     from .architectures import get_arch, ARCHITECTURES
 except ImportError:
-    from .model_detect import classify_unet_model, classify_ckpt_model
+    from .model_detect import classify_unet_model, classify_ckpt_model, is_usable_model
     from .architectures import get_arch, ARCHITECTURES
 
 
@@ -57,17 +57,17 @@ INTENT_PATTERNS = [
 
 # Intent → preferred architecture priority (first available wins)
 INTENT_TO_ARCH = {
-    "anime":          ["illustrious", "pony", "sdxl", "sd15"],
-    "cartoon":        ["sdxl", "sd15"],
-    "photorealistic": ["flux2klein", "flux1dev", "sdxl", "sd15"],
-    "video":          ["wan", "ltx"],
-    "video_t2v":      ["ltx", "wan"],
+    "anime":          ["illustrious", "pony", "qwen_image", "flux3klein", "flux2klein", "sdxl", "sd15"],
+    "cartoon":        ["flux3klein", "flux2klein", "qwen_image", "sdxl", "sd15"],
+    "photorealistic": ["flux3klein", "flux2dev", "flux2klein", "krea2", "qwen_image", "flux1dev", "zit", "sdxl", "sd15"],
+    "video":          ["wan", "ltx", "minimax_h3", "skyreels", "hunyuan_video"],
+    "video_t2v":      ["ltx", "wan", "hunyuan_video", "minimax_h3", "skyreels"],
     "upscale":        ["sdxl", "sd15"],  # doesn't need a gen model
-    "face":           ["flux2klein", "flux1dev", "sdxl"],
-    "edit":           ["flux2klein", "sdxl", "sd15"],
-    "fast":           ["zit", "flux2klein", "sd15"],
-    "nsfw":           ["flux2klein", "flux1dev", "illustrious", "sdxl"],
-    "general":        ["flux2klein", "sdxl", "flux1dev", "illustrious", "sd15"],
+    "face":           ["flux3klein", "flux2klein", "flux2dev", "flux1dev", "sdxl"],
+    "edit":           ["krea2", "flux3klein", "flux2klein", "qwen_image", "sdxl", "sd15"],
+    "fast":           ["zit", "flux3klein", "flux2klein", "sd15"],
+    "nsfw":           ["flux3klein", "flux2klein", "flux2dev", "flux1dev", "illustrious", "sdxl"],
+    "general":        ["flux3klein", "flux2klein", "flux2dev", "krea2", "qwen_image", "zit", "sdxl", "flux1dev", "illustrious", "sd15"],
 }
 
 
@@ -90,10 +90,10 @@ def _get_server_models(server):
     """Get all models from a ComfyUI server."""
     models = {}  # arch_key -> [model_names]
 
-    for node, field, classify_fn in [
-        ("UnetLoaderGGUF", "unet_name", classify_unet_model),
-        ("UNETLoader", "unet_name", classify_unet_model),
-        ("CheckpointLoaderSimple", "ckpt_name", classify_ckpt_model),
+    for node, field, classify_fn, pool in [
+        ("UnetLoaderGGUF", "unet_name", classify_unet_model, "unet"),
+        ("UNETLoader", "unet_name", classify_unet_model, "unet"),
+        ("CheckpointLoaderSimple", "ckpt_name", classify_ckpt_model, "ckpt"),
     ]:
         try:
             r = urllib.request.urlopen(f"{server}/object_info/{node}", timeout=5)
@@ -101,8 +101,10 @@ def _get_server_models(server):
             spec = d[node]["input"]["required"][field]
             opts = spec[0] if isinstance(spec[0], list) else spec[1].get("options", [])
             skip = ("vae", "embeddings", "audio", "clip_", "t5xxl", "umt5",
-                    "gemma", "qwen", "mistral", "llava", "connector")
+                    "gemma", "mistral", "llava", "connector")
             for m in opts:
+                if not is_usable_model(m, pool):
+                    continue
                 if any(s in m.lower() for s in skip):
                     continue
                 arch = classify_fn(m)
@@ -110,6 +112,22 @@ def _get_server_models(server):
                     models.setdefault(arch, []).append(m)
         except Exception:
             pass
+
+    def _model_rank(m):
+        ml = m.lower()
+        score = 0
+        if "nvfp4" in ml:
+            score += 20
+        if "9b" in ml or "-sd-" in ml or "2512" in ml or "turbo" in ml:
+            score += 10
+        if "kaleidoscope" in ml:
+            score -= 15
+        if "edit" in ml or "inpaint" in ml:
+            score -= 30
+        return score
+
+    for arch_k, mlist in models.items():
+        mlist.sort(key=_model_rank, reverse=True)
 
     return models
 
@@ -166,9 +184,15 @@ def recommend(prompt, server=None, available_archs=None):
 
     # Build recommended settings
     arch = get_arch(best_arch)
+    default_res = getattr(arch, "default_res", None) or (
+        1024 if best_arch in (
+            "sdxl", "illustrious", "flux1dev", "flux2dev",
+            "flux2klein", "flux3klein", "krea2", "qwen_image", "zit"
+        ) else 512
+    )
     settings = {
-        "width": 1024 if best_arch in ("sdxl", "illustrious", "flux1dev", "flux2klein") else 512,
-        "height": 1024 if best_arch in ("sdxl", "illustrious", "flux1dev", "flux2klein") else 512,
+        "width": default_res,
+        "height": default_res,
         "steps": arch.default_steps if arch else 20,
         "cfg": arch.default_cfg if arch else 7.0,
     }

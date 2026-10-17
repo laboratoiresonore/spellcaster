@@ -96,61 +96,123 @@ def load_model_stack(nf, preset, node_id="1") -> tuple[list, list, list]:
     # The preset's "model_type" field (set by the model detection layer) tells us.
     actual_loader = arch.loader
     model_type = preset.get("model_type")
+    ckpt_str = preset.get("ckpt", "")
+    ckpt_lower = ckpt_str.lower()
     if model_type == "checkpoint" and actual_loader == "unet_clip_vae":
         actual_loader = "checkpoint"
+    elif (model_type == "unet" or
+          (arch_key == "zit" and (
+              "nvfp4" in ckpt_lower or
+              "z_image_turbo" in ckpt_lower or
+              "z_image_de_turbo" in ckpt_lower or
+              "z-image-turbo" in ckpt_lower
+          ))) and actual_loader == "checkpoint":
+        actual_loader = "unet_clip_vae"
 
     if actual_loader == "unet_clip_vae":
-        # Flux / Klein / Chroma — three separate loader nodes required.
+        # Flux / Klein / Chroma / Krea2 / Qwen / ZIT-UNET — three separate loader nodes.
         # Each loader outputs exactly one thing (MODEL, CLIP, or VAE),
         # unlike CheckpointLoaderSimple which outputs all three from slot 0/1/2.
         unet_id = nf.unet_loader(preset["ckpt"], "default", node_id=node_id)
+        model_out = [unet_id, 0]
 
+        if arch_key == "zit":
+            shift_val = float(preset.get("aura_shift", arch.extra.get("aura_shift", 3.0)))
+            aura_id = nf._add(
+                "ModelSamplingAuraFlow",
+                {"model": model_out, "shift": shift_val},
+                node_id=f"{node_id}d",
+            )
+            model_out = [aura_id, 0]
+
+        extra = arch.extra
         if arch.clip_mode == "single_chroma":
             # Chroma v1/v2: single CLIPLoader with type="chroma"
-            extra = arch.extra
-            clip_name = extra.get("clip_name", "t5xxl_fp8_e4m3fn.safetensors")
-            clip_id = nf.clip_loader(clip_name, clip_type="chroma",
+            clip_name = preset.get("clip") or extra.get("clip_name", "t5xxl_fp8_e4m3fn.safetensors")
+            clip_id = nf.clip_loader(clip_name, clip_type=preset.get("clip_type", "chroma"),
                                      device="default",
                                      node_id=f"{node_id}b")
         elif arch.clip_mode == "single_flux2":
-            # Klein CLIP selection: the CLIP model MUST match the UNET size.
-            # Using qwen_3_8b with a 4B UNET silently produces garbage output;
-            # using qwen_3_4b with a 9B UNET throws an explicit shape mismatch error.
-            # We prefer defaulting to 9B because the failure mode is louder (better UX).
-            extra = arch.extra
-            ckpt_lower = preset["ckpt"].lower()
-            is_9b = ("9b" in ckpt_lower or
-                     ("dev" in ckpt_lower and "4b" not in ckpt_lower))
-            is_4b = ("4b" in ckpt_lower or "schnell" in ckpt_lower
-                     or "lite" in ckpt_lower or "kaleidoscope" in ckpt_lower)
-            if is_9b:
-                clip_name = extra.get("clip_name_9b", "qwen_3_8b.safetensors")
+            # Klein / Flux2 Dev CLIP selection
+            if preset.get("clip"):
+                clip_name = preset["clip"]
+            elif arch_key == "flux2dev" or "flux2-dev" in ckpt_lower or "flux2_dev" in ckpt_lower:
+                clip_name = extra.get("clip_name", "nvfp4/mistral_3_small_flux2_fp4_mixed.safetensors")
             else:
-                clip_name = "qwen_3_4b.safetensors" if is_4b else "qwen_3_8b.safetensors"
-                clip_name = extra.get("clip_name_4b", clip_name)
+                is_9b = ("9b" in ckpt_lower or
+                         ("dev" in ckpt_lower and "4b" not in ckpt_lower))
+                is_4b = ("4b" in ckpt_lower or "schnell" in ckpt_lower
+                         or "lite" in ckpt_lower or "kaleidoscope" in ckpt_lower)
+                is_nvfp4 = "nvfp4" in ckpt_lower
+                if is_9b:
+                    clip_name = (
+                        extra.get("clip_9b_spark2", "nvfp4/qwen_3_8b_fp4mixed.safetensors")
+                        if is_nvfp4
+                        else extra.get("clip_name_9b", "qwen_3_8b.safetensors")
+                    )
+                else:
+                    default_4b = (
+                        extra.get("clip_4b_spark2", "nvfp4/qwen_3_4b_fp4_flux2.safetensors")
+                        if is_nvfp4
+                        else "qwen_3_4b.safetensors"
+                    )
+                    clip_name = default_4b if is_4b else (
+                        extra.get("clip_9b_spark2", "nvfp4/qwen_3_8b_fp4mixed.safetensors")
+                        if is_nvfp4
+                        else "qwen_3_8b.safetensors"
+                    )
+                    clip_name = extra.get("clip_name_4b", clip_name)
 
-            print(f"  [Klein CLIP] ckpt={preset['ckpt']} is_9b={is_9b} is_4b={is_4b} -> clip={clip_name}")
-            clip_id = nf.clip_loader(clip_name, clip_type="flux2",
+            print(f"  [Flux2 CLIP] ckpt={preset['ckpt']} -> clip={clip_name}")
+            clip_id = nf.clip_loader(clip_name, clip_type=preset.get("clip_type", "flux2"),
+                                     device="default",
+                                     node_id=f"{node_id}b")
+        elif arch.clip_mode == "single_flux3":
+            clip_name = preset.get("clip") or extra.get("clip_name", "qwen3vl_4b_int8_convrot.safetensors")
+            clip_id = nf.clip_loader(clip_name, clip_type=preset.get("clip_type", "flux3"),
+                                     device="default",
+                                     node_id=f"{node_id}b")
+        elif arch.clip_mode == "single_krea2":
+            clip_name = preset.get("clip") or extra.get("clip_name", "qwen3vl_4b_fp8_scaled.safetensors")
+            clip_id = nf.clip_loader(clip_name, clip_type=preset.get("clip_type", "krea2"),
+                                     device="default",
+                                     node_id=f"{node_id}b")
+        elif arch.clip_mode == "single_qwen_image":
+            clip_name = preset.get("clip") or extra.get("clip_name", "nvfp4/qwen_2.5_vl_7b_nvfp4.safetensors")
+            clip_id = nf.clip_loader(clip_name, clip_type=preset.get("clip_type", "qwen_image"),
+                                     device="default",
+                                     node_id=f"{node_id}b")
+        elif arch_key == "zit":
+            clip_name = preset.get("clip") or extra.get("clip_name", "nvfp4/qwen_3_4b_fp4_mixed.safetensors")
+            clip_type = preset.get("clip_type") or extra.get("clip_type", "lumina2")
+            clip_id = nf.clip_loader(clip_name, clip_type=clip_type,
                                      device="default",
                                      node_id=f"{node_id}b")
         elif arch.clip_mode == "dual":
             # Flux Dev / Kontext: DualCLIPLoader
-            extra = arch.extra
+            clip1 = preset.get("clip_name1") or extra.get("clip_name1", "clip_l.safetensors")
+            clip2 = preset.get("clip_name2") or (
+                "nvfp4/t5xxl_fp4_mixed.safetensors"
+                if "nvfp4" in ckpt_lower
+                else extra.get("clip_name2", "t5xxl_fp8_e4m3fn.safetensors")
+            )
             clip_id = nf.dual_clip_loader(
-                extra.get("clip_name1", "clip_l.safetensors"),
-                extra.get("clip_name2", "t5xxl_fp8_e4m3fn.safetensors"),
-                clip_type=extra.get("clip_type", "flux"),
+                clip1,
+                clip2,
+                clip_type=preset.get("clip_type") or extra.get("clip_type", "flux"),
                 node_id=f"{node_id}b",
             )
         else:
-            clip_id = nf.clip_loader(preset.get("clip", ""),
+            clip_name = preset.get("clip") or extra.get("clip_name", "")
+            clip_type = preset.get("clip_type") or extra.get("clip_type", "stable_diffusion")
+            clip_id = nf.clip_loader(clip_name, clip_type=clip_type,
                                      node_id=f"{node_id}b")
 
-        vae_name = arch.extra.get("vae_name", "ae.safetensors")
+        vae_name = preset.get("vae") or extra.get("vae_name", "ae.safetensors")
         vae_id = nf.vae_loader(vae_name, node_id=f"{node_id}c")
 
         # Each separate loader has exactly one output at slot 0
-        return [unet_id, 0], [clip_id, 0], [vae_id, 0]
+        return model_out, [clip_id, 0], [vae_id, 0]
 
     else:
         # Checkpoint-based (sd15, sdxl, zit, illustrious, or forced-checkpoint).
@@ -468,7 +530,7 @@ def apply_model_patches(nf, model_ref, *,
         Possibly-patched model_ref (a [node_id, 0] list).
     """
     arch = (arch_key or "").lower()
-    pag_unsafe = arch in ("flux2klein", "flux_kontext")
+    pag_unsafe = arch in ("flux2klein", "flux3klein", "flux2dev", "flux_kontext", "krea2", "qwen_image")
     if enable_sage:
         sid = nf.patch_sage_attention_kj(
             model_ref, node_id=f"{node_id_prefix}_sage")
