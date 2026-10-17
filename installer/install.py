@@ -1423,6 +1423,45 @@ def install_node_requirements(node_dir: Path, comfyui_path: Path, dry_run: bool 
         return False
 
 
+def _safe_replace_tree(src: Path, dest: Path) -> None:
+    """Replace directory *dest* with *src* safely on Windows.
+
+    Clears read-only flags during rmtree (e.g. .pytest_cache or git objects),
+    ignores locked subdirectories if GIMP is running, and uses
+    dirs_exist_ok=True with a per-file fallback so a single locked file
+    never aborts the entire plugin installation.
+    """
+    import stat as _stat
+
+    def _on_rm_error(func, path, _exc_info):
+        try:
+            os.chmod(path, _stat.S_IWRITE)
+            func(path)
+        except OSError:
+            pass
+
+    if dest.exists():
+        try:
+            shutil.rmtree(dest, onerror=_on_rm_error)
+        except OSError:
+            pass
+    try:
+        shutil.copytree(src, dest, dirs_exist_ok=True)
+    except OSError:
+        dest.mkdir(parents=True, exist_ok=True)
+        for item in src.rglob("*"):
+            rel = item.relative_to(src)
+            target = dest / rel
+            if item.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+            elif item.is_file():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    shutil.copy2(item, target)
+                except OSError:
+                    pass
+
+
 def copy_plugin(src: Path, dest: Path, dry_run: bool = False) -> bool:
     """Copy a plugin file or directory to the target location.
 
@@ -1435,9 +1474,7 @@ def copy_plugin(src: Path, dest: Path, dry_run: bool = False) -> bool:
     dest.parent.mkdir(parents=True, exist_ok=True)
     try:
         if src.is_dir():
-            if dest.exists():
-                shutil.rmtree(dest)
-            shutil.copytree(src, dest)
+            _safe_replace_tree(src, dest)
         else:
             shutil.copy2(src, dest)
         print(f"  {C_GREEN}✓ Installed: {dest}{C_RESET}")

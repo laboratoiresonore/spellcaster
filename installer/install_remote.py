@@ -48,7 +48,7 @@ if getattr(sys, 'frozen', False):
 else:
     SCRIPT_DIR = Path(__file__).resolve().parent
 MANIFEST_PATH = SCRIPT_DIR / "manifest.json"
-VERSION = "1.0"
+VERSION = "2.4"
 _BOX_LINE = "═" * 50
 
 # ─── SFW / NSFW detection ────────────────────────────────────────────────────
@@ -534,10 +534,9 @@ def install_gimp_plugin(gimp_path: Path, server_url: str, dry_run: bool = False)
                 "re-run." % (boot_sz // 1024)
             )
 
-    # Full copy (rmtree + copytree to replace stale files)
-    if dest.exists():
-        shutil.rmtree(dest)
-    shutil.copytree(gimp_src, dest)
+    # Full copy (safe rmtree + copytree to replace stale files without
+    # crashing on Windows read-only/locked .pytest_cache or running GIMP)
+    install._safe_replace_tree(gimp_src, dest)
 
     # Bundle the spellcaster_core package alongside the plugin. The
     # _spellcaster_main.py + _nodes/_workflows_v2/_architectures shims
@@ -552,9 +551,7 @@ def install_gimp_plugin(gimp_path: Path, server_url: str, dry_run: bool = False)
     _core_src = install._find_spellcaster_core()
     if _core_src and _core_src.is_dir():
         core_dest = dest / "spellcaster_core"
-        if core_dest.exists():
-            shutil.rmtree(core_dest)
-        shutil.copytree(_core_src, core_dest)
+        install._safe_replace_tree(_core_src, core_dest)
         log_ok(f"spellcaster_core → {core_dest}")
     else:
         log_warn(
