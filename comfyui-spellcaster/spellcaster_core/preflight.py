@@ -300,30 +300,28 @@ _MODEL_ALIAS_CANDIDATES = {
         ]),
         (lambda s: "klein" in s and "9b" in s, [
             "nvfp4/flux-2-klein-9b-nvfp4.safetensors",
-            "flux-2-klein-9b-fp8.safetensors",
+            "flux2-klein-9b-fp8/flux-2-klein-9b-fp8.safetensors",
             "flux-2-klein-9b.safetensors",
         ]),
         (lambda s: "klein" in s and "base" in s and "4b" in s, [
             "nvfp4/flux-2-klein-base-4b-nvfp4.safetensors",
-            "flux-2-klein-base-4b-fp8.safetensors",
             "nvfp4/flux-2-klein-4b-nvfp4.safetensors",
         ]),
         (lambda s: "klein" in s and "4b" in s, [
             "nvfp4/flux-2-klein-4b-nvfp4.safetensors",
-            "flux-2-klein-4b-fp8.safetensors",
-            "flux-2-klein-4b.safetensors",
+            "nvfp4/flux-2-klein-base-4b-nvfp4.safetensors",
         ]),
         (lambda s: "flux2-dev" in s or "flux2_dev" in s or "flux-2-dev" in s, [
             "nvfp4/flux2-dev-nvfp4-mixed.safetensors",
-            "flux2_dev_fp8mixed.safetensors",
+            "flux2-dev-bf16/transformer/diffusion_pytorch_model_MERGED.safetensors",
         ]),
         (lambda s: "kontext" in s, [
-            "nvfp4/flux1-kontext-dev-fp4.safetensors",
-            "flux1-dev-kontext_fp8_scaled.safetensors",
+            "nvfp4/flux1-kontext-dev-nvfp4.safetensors",
+            "flux1-kontext-dev-bf16/flux1-kontext-dev.safetensors",
         ]),
         (lambda s: "krea2" in s or "krea-2" in s or "krea_2" in s, [
             "nvfp4/krea2_turbo_nvfp4.safetensors",
-            "krea2_turbo_fp8_scaled.safetensors",
+            "nvfp4/flux1-krea-dev-nvfp4.safetensors",
         ]),
         (lambda s: "kreaedit" in s or "krea-edit" in s, [
             "krea-edit/bigLove_kreaedit1.safetensors",
@@ -337,12 +335,12 @@ _MODEL_ALIAS_CANDIDATES = {
             "ZIT/z_image_de_turbo_v1_bf16.safetensors",
         ]),
         (lambda s: "chroma" in s and "kaleidoscope" not in s, [
-            "Chroma1-HD-fp8_scaled_rev2.safetensors",
-            "chroma-unlocked-v50.safetensors",
+            "Chroma/Chroma1-HD-fp8_scaled_defaultloader_hybrid_large_rev2.safetensors",
+            "chroma-1-hd-bf16/chroma-unlocked-v50-flash-heun.safetensors",
         ]),
         (lambda s: "flux" in s and "schnell" in s, [
-            "nvfp4/flux1-schnell-nvfp4.safetensors",
-            "flux1-schnell-fp8.safetensors",
+            "flux1-schnell.safetensors",
+            "flux1-schnell-bf16/flux1-schnell.safetensors",
         ]),
         (lambda s: "flux" in s, [
             "nvfp4/flux1-dev-nvfp4.safetensors",
@@ -353,7 +351,7 @@ _MODEL_ALIAS_CANDIDATES = {
     "clip_name": [
         (lambda s: "qwen_3_8b" in s or "qwen3_8b" in s, [
             "nvfp4/qwen_3_8b_fp4mixed.safetensors",
-            "qwen_3_8b_fp8_mixed.safetensors",
+            "qwen_3_8b_fp8mixed.safetensors",
             "qwen_3_8b.safetensors",
         ]),
         (lambda s: "qwen_3_4b" in s and "flux2" in s, [
@@ -377,19 +375,19 @@ _MODEL_ALIAS_CANDIDATES = {
         ]),
         (lambda s: "mistral_3_small" in s, [
             "nvfp4/mistral_3_small_flux2_fp4_mixed.safetensors",
-            "mistral_3_small_flux2_fp8.safetensors",
+            "flux2-dev-bf16/text_encoder/model_MERGED.safetensors",
         ]),
         (lambda s: "umt5" in s, [
             "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
-            "umt5_xxl_fp16.safetensors",
+            "umt5-xxl-enc-bf16.safetensors",
         ]),
         (lambda s: "t5xxl" in s, [
             "t5xxl_fp8_e4m3fn.safetensors",
             "t5xxl_fp8_e4m3fn_scaled.safetensors",
         ]),
         (lambda s: "gemma_3_12b" in s, [
-            "gemma_3_12B_it_fp8_scaled.safetensors",
-            "split_files/text_encoders/gemma_3_12B_it_fp4_mixed.safetensors",
+            "nvfp4/gemma_3_12B_it_fp4_mixed.safetensors",
+            "gemma_2_2b_fp16.safetensors",
         ]),
     ],
     "clip_name2": [

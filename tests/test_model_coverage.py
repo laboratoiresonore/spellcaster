@@ -266,8 +266,10 @@ def case_guard_ignores_missing_inputs():
 
 def case_spark2_default_filenames_match_live_snapshot():
     """Guard against invented or drifted default filenames for Spark2 models
-    in KLEIN_MODELS, ARCHITECTURES, and workflow builders."""
+    in KLEIN_MODELS, ARCHITECTURES, workflow builders, GIMP presets, and darktable."""
     import inspect
+    import re
+    from pathlib import Path
     from spellcaster_core.workflows import KLEIN_MODELS, build_krea2_edit, build_skyreels_video
 
     spark2_unets = {
@@ -278,21 +280,29 @@ def case_spark2_default_filenames_match_live_snapshot():
         "nvfp4/flux3_image_klein_sd_nvfp4.safetensors",
         "nvfp4/flux3_image_klein_base_nvfp4.safetensors",
         "flux3_image_klein_sd_int8_convrot.safetensors",
+        "flux3-image-klein-int8-convrot.safetensors",
         "flux3_image_klein_base_bf16.safetensors",
         "nvfp4/krea2_turbo_nvfp4.safetensors",
+        "nvfp4/flux1-krea-dev-nvfp4.safetensors",
+        "nvfp4/qwen_image_edit_2511_nvfp4.safetensors",
+        "nvfp4/z_image_turbo_nvfp4.safetensors",
+        "nvfp4/flux1-dev-nvfp4.safetensors",
+        "nvfp4/flux1-kontext-dev-nvfp4.safetensors",
         "skyreels-v2-i2v-1.3b-540p/model.safetensors",
         "skyreels-v2-df-1.3b-540p/model.safetensors",
     }
     spark2_clips = {
         "nvfp4/qwen_3_8b_fp4mixed.safetensors",
         "nvfp4/qwen_3_4b_fp4_mixed.safetensors",
+        "nvfp4/qwen_3_4b_fp4_flux2.safetensors",
         "nvfp4/mistral_3_small_flux2_fp4_mixed.safetensors",
+        "nvfp4/gemma_3_12B_it_fp4_mixed.safetensors",
         "qwen3vl_4b_int8_convrot.safetensors",
         "qwen3vl_4b_fp8_scaled.safetensors",
         "qwen3vl_4b_bf16.safetensors",
         "nvfp4/qwen_2.5_vl_7b_nvfp4.safetensors",
         "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
-        "umt5_xxl_fp16.safetensors",
+        "umt5-xxl-enc-bf16.safetensors",
         "t5xxl_fp8_e4m3fn.safetensors",
         "t5xxl_fp8_e4m3fn_scaled.safetensors",
         "MiniMax-H3/qwen3vl_32b_heretic_minimax_h3_nvfp4.safetensors",
@@ -302,6 +312,7 @@ def case_spark2_default_filenames_match_live_snapshot():
         "flux3_klein/photo_aesthetics/flux3_klein_photo_aesthetics_sd_1024.safetensors",
         "flux3_klein/anything_2_real/flux3_klein_anything_2_real_a2r_sd_v1.safetensors",
     }
+    spark2_all = spark2_unets | spark2_clips | spark2_loras
 
     for label, entry in KLEIN_MODELS.items():
         if "NVFP4" in label or "Flux 3" in label:
@@ -320,6 +331,14 @@ def case_spark2_default_filenames_match_live_snapshot():
     h3_extra = ARCHITECTURES["minimax_h3"].extra
     assert h3_extra["clip_type"] == "minimax"
     assert h3_extra["audio_vae_name"] == "MiniMax-H3/minimax_h3_audio_vae_fp32.safetensors"
+
+    repo_root = Path(__file__).resolve().parent.parent
+    for rel in ("plugins/gimp/comfyui-connector/_spellcaster_main.py", "plugins/darktable/comfyui_connector.lua"):
+        p = repo_root / rel
+        if p.exists():
+            txt = p.read_text("utf-8", errors="replace")
+            for m in re.findall(r"[\"'](nvfp4/[A-Za-z0-9_.\-/]+\.safetensors)[\"']", txt):
+                assert m in spark2_all, f"{rel}: nvfp4 literal {m!r} not in Spark2 snapshot"
 
 
 CASES = [

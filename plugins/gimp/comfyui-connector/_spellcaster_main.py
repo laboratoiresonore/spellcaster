@@ -7450,7 +7450,7 @@ MODEL_PRESETS = [
     {
         "label": "Flux 3 Klein SD NVFP4 (Spark2 4-step)",
         "arch": "flux3klein",
-        "ckpt": "nvfp4/flux-3-klein-sd-nvfp4.safetensors",
+        "ckpt": "nvfp4/flux3_image_klein_sd_nvfp4.safetensors",
         "width": 1024, "height": 1024,
         "steps": 4, "cfg": 1.0, "denoise": 0.75,
         "sampler": "euler", "scheduler": "simple",
@@ -7460,7 +7460,7 @@ MODEL_PRESETS = [
     {
         "label": "Flux 3 Klein Base NVFP4 (Spark2 20-step)",
         "arch": "flux3klein",
-        "ckpt": "nvfp4/flux-3-klein-base-nvfp4.safetensors",
+        "ckpt": "nvfp4/flux3_image_klein_base_nvfp4.safetensors",
         "width": 1024, "height": 1024,
         "steps": 20, "cfg": 3.5, "denoise": 0.75,
         "sampler": "euler", "scheduler": "simple",
@@ -7511,7 +7511,7 @@ MODEL_PRESETS = [
     {
         "label": "Krea 2 Turbo NVFP4 (Spark2 8-step)",
         "arch": "krea2",
-        "ckpt": "nvfp4/krea2_turbo_fp4_mixed.safetensors",
+        "ckpt": "nvfp4/krea2_turbo_nvfp4.safetensors",
         "width": 1024, "height": 1024,
         "steps": 8, "cfg": 2.5, "denoise": 0.75,
         "sampler": "euler", "scheduler": "simple",
@@ -7521,7 +7521,7 @@ MODEL_PRESETS = [
     {
         "label": "Qwen Image Edit 2511 NVFP4 (Spark2 20-step)",
         "arch": "qwen_image",
-        "ckpt": "nvfp4/qwen_image_edit_2511_fp4_mixed.safetensors",
+        "ckpt": "nvfp4/qwen_image_edit_2511_nvfp4.safetensors",
         "width": 1024, "height": 1024,
         "steps": 20, "cfg": 4.0, "denoise": 0.75,
         "sampler": "euler", "scheduler": "simple",
