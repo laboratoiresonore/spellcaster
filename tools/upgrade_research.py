@@ -5,7 +5,7 @@ of all methods in the app ecosystem").
 Built to satisfy the 2026-05-13 user directive. Companion to the saved
 memory `project_spellcaster_upgrades_2026-05-08.md` (25 shipped
 upgrades to spellcaster's `build_*` methods — 70 at the time of that
-pass, 75 as of 2026-10-16) — that pass was ad-hoc; this tool makes the
+pass, 78 as of 2026-10-28) — that pass was ad-hoc; this tool makes the
 same pass REPEATABLE so it runs monthly without a human convening it
 each time.
 
@@ -244,9 +244,13 @@ _HF_ARCH_QUERIES: dict[str, list[str]] = {
     "playground": ["playground-v2.5", "playground-v25"],
     "flux1dev": ["flux.1-dev", "flux-1-dev", "flux"],
     "flux2klein": ["flux.2-klein", "flux2-klein"],
+    "flux2dev": ["flux.2-dev", "flux2-dev"],
+    "flux3klein": ["flux.3-klein", "flux3-klein", "flux-3-image-klein"],
     "flux_kontext": ["flux-kontext", "flux.1-kontext"],
-    "wan": ["wan-2.1", "wan2-i2v", "wan2.2"],
-    "ltx": ["ltx-video", "ltxv", "ltx-2"],
+    "krea2": ["krea-2", "krea2"],
+    "qwen_image": ["qwen-image-2.1", "qwen-image", "qwen-image-2.1-turbo"],
+    "wan": ["wan-2.1", "wan2-i2v", "wan2.2", "wan-2.5"],
+    "ltx": ["ltx-video", "ltxv", "ltx-2", "ltx-2.5"],
     "seedvr": ["seedvr", "seed-vr"],
     "cogvideo": ["cogvideox", "cogvideo"],
     "framepack": ["framepack", "frame-pack"],
@@ -263,6 +267,10 @@ _HF_ARCH_QUERIES: dict[str, list[str]] = {
     "pixart": ["pixart-sigma", "pixart-alpha", "pixart"],
     "supir": ["supir", "sup-ir"],
     "zit": ["z-image-turbo", "z-image"],
+    "minimax_h3": ["minimax-h3", "minimax_h3", "minimax-h"],
+    "skyreels": ["skyreels-v2", "skyreels"],
+    "longcat": ["longcat-video", "longcat"],
+    "aurasr": ["aurasr", "aura-sr"],
 }
 
 _HF_API = "https://huggingface.co/api/models"
