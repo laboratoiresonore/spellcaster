@@ -1,0 +1,19 @@
+{
+  "source_url": "https://huggingface.co/RunningHubAI/rh-sdxl-lora-2017628422318596098",
+  "source_repo": "RunningHubAI/rh-sdxl-lora-2017628422318596098",
+  "download_count": 0,
+  "last_modified": "2026-10-28T10:44:02.000Z",
+  "license": "author copyright (RunningHub)",
+  "summary": {
+    "training_objective": "Fine-tune SDXL 1.0 for anime-style illustrations with melancholic/indifferent aesthetic (SDXL\u51b7\u6de1\u5fe7\u90c1\u4e28\u6f20\u5317)",
+    "architecture": {
+      "model_type": "LoRA",
+      "base_model": "SDXL 1.0",
+      "rank": "Unknown (safetensors file size: 435 MiB)",
+      "target_modules": "Standard LoRA target modules for text encoder and UNet"
+    },
+    "trigger_word": "lendan",
+    "file": "SDXL\u51b7\u6de1\u5fe7\u90c1\u4e28\u6f20\u5317_modified.safetensors",
+    "file_size": "435 MiB"
+  }
+}
