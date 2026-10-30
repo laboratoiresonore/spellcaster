@@ -5,7 +5,7 @@ of all methods in the app ecosystem").
 Built to satisfy the 2026-05-13 user directive. Companion to the saved
 memory `project_spellcaster_upgrades_2026-05-08.md` (25 shipped
 upgrades to spellcaster's `build_*` methods — 70 at the time of that
-pass, 75 as of 2026-10-16) — that pass was ad-hoc; this tool makes the
+pass, 78 as of 2026-10-30) — that pass was ad-hoc; this tool makes the
 same pass REPEATABLE so it runs monthly without a human convening it
 each time.
 
@@ -263,6 +263,14 @@ _HF_ARCH_QUERIES: dict[str, list[str]] = {
     "pixart": ["pixart-sigma", "pixart-alpha", "pixart"],
     "supir": ["supir", "sup-ir"],
     "zit": ["z-image-turbo", "z-image"],
+    "flux2dev": ["flux.2-dev", "flux2-dev", "flux-2-dev"],
+    "flux3klein": ["flux.3-image-klein", "flux-3-klein", "flux3-klein"],
+    "krea2": ["krea-2", "krea2-turbo", "krea-edit"],
+    "qwen_image": ["qwen-image-2.1", "qwen-image-edit", "qwen-image"],
+    "minimax_h3": ["minimax-h3", "minimax-hailuo-3", "hailuo-3"],
+    "skyreels": ["skyreels-v2", "skyreels-v1", "skyreels"],
+    "longcat": ["longcat-video", "longcat"],
+    "aurasr": ["aura-sr-v2", "aurasr", "aura-sr"],
 }
 
 _HF_API = "https://huggingface.co/api/models"
