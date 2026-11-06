@@ -19,7 +19,7 @@ Now, each architecture is ONE ArchConfig entry that centralises all behaviour.
 Adding a new model = adding one registration via _reg().
 
 SUPPORTED ARCHITECTURES (as of October 2026):
-  Image (fully-registered):
+  Image (fully-registered — 15):
     - sd15: Stable Diffusion 1.5 (512x512, checkpoint-based)
     - sdxl: Stable Diffusion XL (1024x1024, checkpoint-based)
     - sdxl_turbo: SDXL-Turbo (1-4 steps, checkpoint-based)
@@ -30,8 +30,12 @@ SUPPORTED ARCHITECTURES (as of October 2026):
     - chroma: Chroma (Flux-shape, separate loaders)
     - flux1dev: Flux Development (1024x1024, separate loaders, dual CLIP)
     - flux2klein: Flux 2 Klein (distilled, 4 steps, separate loaders, custom sampler)
+    - flux2dev: Flux 2 Dev (20-step full-size, Mistral-3-Small encoder, separate loaders)
+    - flux3klein: Flux 3 Image Klein (SD/Base, Qwen3VL-4B encoder, 8-16 steps, separate loaders)
+    - krea2: Krea 2 Turbo / Edit (Qwen3VL-4B krea2 encoder + Qwen Image VAE, 8 steps)
+    - qwen_image: Qwen Image Edit 2511 (Qwen 2.5 VL 7B encoder + Qwen Image VAE)
     - flux_kontext: Flux with edit instructions (experimental, separate loaders)
-  Video (fully-registered):
+  Video (fully-registered — 10):
     - wan: Wan 2.x i2v/t2v/animate (separate loaders)
     - ltx: Lightricks LTX video (separate loaders)
     - seedvr: SeedVR video restoration (separate loaders)
@@ -39,10 +43,14 @@ SUPPORTED ARCHITECTURES (as of October 2026):
     - framepack: FramePack long-video stitching (separate loaders)
     - hunyuan_video: Tencent HunyuanVideo (separate loaders)
     - mochi: Mochi 1 (separate loaders)
-  Other (fully-registered):
-    - lumina2: Lumina 2 (separate loaders)
+    - minimax_h3: MiniMax-H3 joint video+audio (NVFP4 on Spark2, separate loaders)
+    - skyreels: SkyReels-V2 (1.3B 540p DF / I2V — Wan-compatible)
+    - longcat: LongCat Video (WanVideoWrapper long-video / avatar extension)
+  Other (fully-registered — 4):
+    - lumina2: Lumina 2 (separate loaders, image gen)
     - hunyuan_3d: Hunyuan3D image-to-3D (separate loaders)
     - supir: SUPIR upscaler/restorer (separate loaders)
+    - aurasr: AuraSR v2 GAN-based 4x image super-resolution (custom wrapper)
 
   Also registered as stubs (``registered=False`` — detected but not yet
   wired for workflows): ``sd3``, ``sd3_turbo``, ``hunyuan_dit``,

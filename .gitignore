@@ -111,6 +111,10 @@ tests/*
 !tests/test_llm_preflight.py
 !tests/gimp_batch.py
 audit_*.py
+# ...except the shipped tool from the 2026-10-18 ecosystem digest
+# (named in the 2026-09-22 + 2026-10-16 Tier-3 queues; a safe,
+# read-only diagnostic — see its module docstring).
+!tools/audit_disk_vs_registry.py
 
 # Spell icons (user-generated during install, not source)
 assets/spells/
