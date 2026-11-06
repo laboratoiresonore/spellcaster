@@ -891,7 +891,7 @@ class InstallerApp(MagicalEffects, ctk.CTk):
                      font=ctk.CTkFont(family="Inter", size=30, weight="bold"),
                      text_color=self.accent_hover).pack(anchor="w", padx=30, pady=(15, 5))
         ctk.CTkLabel(f_welcome, text="Dynamic middleware between ComfyUI and GIMP/Darktable.\n"
-                     "69 AI tools — generate images, fix photos, swap faces, remove\n"
+                     "75 AI tools — generate images, fix photos, swap faces, remove\n"
                      "backgrounds, change lighting, create videos — all with one click.\n"
                      "Everything is automated. No AI experience needed.",
                      font=ctk.CTkFont(family="Inter", size=15), text_color=self.text_muted,

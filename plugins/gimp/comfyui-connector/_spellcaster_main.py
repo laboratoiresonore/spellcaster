@@ -1171,7 +1171,7 @@ def _maybe_show_bundle_welcome():
         sub = Gtk.Label()
         sub.set_markup(
             '<span size="11000" color="#c4b8e3">'
-            'GIMP + ComfyUI + 69 AI tools, pre-configured and ready.'
+            'GIMP + ComfyUI + 75 AI tools, pre-configured and ready.'
             '</span>')
         sub.set_xalign(0.0)
         bx.pack_start(sub, False, False, 0)
