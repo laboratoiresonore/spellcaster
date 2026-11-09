@@ -5,7 +5,7 @@ of all methods in the app ecosystem").
 Built to satisfy the 2026-05-13 user directive. Companion to the saved
 memory `project_spellcaster_upgrades_2026-05-08.md` (25 shipped
 upgrades to spellcaster's `build_*` methods — 70 at the time of that
-pass, 75 as of 2026-10-16) — that pass was ad-hoc; this tool makes the
+pass, 78 as of 2026-10-20) — that pass was ad-hoc; this tool makes the
 same pass REPEATABLE so it runs monthly without a human convening it
 each time.
 
@@ -244,6 +244,10 @@ _HF_ARCH_QUERIES: dict[str, list[str]] = {
     "playground": ["playground-v2.5", "playground-v25"],
     "flux1dev": ["flux.1-dev", "flux-1-dev", "flux"],
     "flux2klein": ["flux.2-klein", "flux2-klein"],
+    "flux2dev": ["flux.2-dev", "flux2-dev"],
+    "flux3klein": ["flux.3-klein", "flux-3-klein", "flux3-klein", "flux-3-image-klein"],
+    "krea2": ["krea-2", "krea2-turbo", "krea-2-turbo", "krea-edit"],
+    "qwen_image": ["qwen-image", "qwen-image-2", "qwen-image-edit"],
     "flux_kontext": ["flux-kontext", "flux.1-kontext"],
     "wan": ["wan-2.1", "wan2-i2v", "wan2.2"],
     "ltx": ["ltx-video", "ltxv", "ltx-2"],
@@ -254,7 +258,11 @@ _HF_ARCH_QUERIES: dict[str, list[str]] = {
     "hunyuan_video": ["hunyuanvideo", "hunyuan-video"],
     "hunyuan_3d": ["hunyuan3d", "hunyuan-3d"],
     "mochi": ["mochi-1", "mochi"],
+    "minimax_h3": ["minimax-h3", "minimax", "minimax-video"],
+    "skyreels": ["skyreels", "skyreels-v2"],
+    "longcat": ["longcat", "longcat-video"],
     "auraflow": ["auraflow"],
+    "aurasr": ["aurasr", "aura-sr"],
     "chroma": ["chroma"],
     "kolors": ["kolors"],
     "lumina2": ["lumina-image-2", "lumina2", "lumina"],

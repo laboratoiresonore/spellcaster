@@ -111,6 +111,9 @@ tests/*
 !tests/test_llm_preflight.py
 !tests/gimp_batch.py
 audit_*.py
+# carve-out: canonical repo audit tool (committed, not a dev scratch
+# script despite the `audit_` prefix the blanket pattern above catches)
+!tools/audit_disk_vs_registry.py
 
 # Spell icons (user-generated during install, not source)
 assets/spells/
