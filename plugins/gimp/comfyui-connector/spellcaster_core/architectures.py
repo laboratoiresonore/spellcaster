@@ -30,7 +30,11 @@ SUPPORTED ARCHITECTURES (as of October 2026):
     - chroma: Chroma (Flux-shape, separate loaders)
     - flux1dev: Flux Development (1024x1024, separate loaders, dual CLIP)
     - flux2klein: Flux 2 Klein (distilled, 4 steps, separate loaders, custom sampler)
+    - flux2dev: Flux 2 Dev (20 steps, Mistral-3-Small Flux2 encoder, separate loaders)
+    - flux3klein: Flux 3 Image Klein (Qwen3VL-4B flux3 encoder, separate loaders)
     - flux_kontext: Flux with edit instructions (experimental, separate loaders)
+    - krea2: Krea 2 Turbo / Krea Edit (Qwen3VL-4B krea2 encoder + Qwen Image VAE, 8 steps)
+    - qwen_image: Qwen Image Edit 2511 (Qwen 2.5 VL 7B + Qwen Image VAE)
   Video (fully-registered):
     - wan: Wan 2.x i2v/t2v/animate (separate loaders)
     - ltx: Lightricks LTX video (separate loaders)
@@ -39,10 +43,14 @@ SUPPORTED ARCHITECTURES (as of October 2026):
     - framepack: FramePack long-video stitching (separate loaders)
     - hunyuan_video: Tencent HunyuanVideo (separate loaders)
     - mochi: Mochi 1 (separate loaders)
+    - minimax_h3: MiniMax-H3 joint video + audio generation (NVFP4 on Spark2)
+    - skyreels: SkyReels-V2 1.3B 540p DF / I2V (Wan-compatible conditioning & VAE)
+    - longcat: LongCat Video (WanVideoWrapper-based long video / avatar extension)
   Other (fully-registered):
     - lumina2: Lumina 2 (separate loaders)
     - hunyuan_3d: Hunyuan3D image-to-3D (separate loaders)
     - supir: SUPIR upscaler/restorer (separate loaders)
+    - aurasr: AuraSR v2 GAN-based 4x image super-resolution (custom wrapper)
 
   Also registered as stubs (``registered=False`` — detected but not yet
   wired for workflows): ``sd3``, ``sd3_turbo``, ``hunyuan_dit``,
