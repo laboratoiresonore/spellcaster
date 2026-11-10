@@ -18,8 +18,8 @@ Before this registry, these properties were scattered across:
 Now, each architecture is ONE ArchConfig entry that centralises all behaviour.
 Adding a new model = adding one registration via _reg().
 
-SUPPORTED ARCHITECTURES (as of October 2026):
-  Image (fully-registered):
+SUPPORTED ARCHITECTURES (as of November 2026):
+  Image (fully-registered — 15):
     - sd15: Stable Diffusion 1.5 (512x512, checkpoint-based)
     - sdxl: Stable Diffusion XL (1024x1024, checkpoint-based)
     - sdxl_turbo: SDXL-Turbo (1-4 steps, checkpoint-based)
@@ -30,8 +30,12 @@ SUPPORTED ARCHITECTURES (as of October 2026):
     - chroma: Chroma (Flux-shape, separate loaders)
     - flux1dev: Flux Development (1024x1024, separate loaders, dual CLIP)
     - flux2klein: Flux 2 Klein (distilled, 4 steps, separate loaders, custom sampler)
+    - flux2dev: Flux 2 Dev (non-distilled, full-size, separate loaders)
+    - flux3klein: Flux 3 Klein (distilled successor to flux2klein, separate loaders)
     - flux_kontext: Flux with edit instructions (experimental, separate loaders)
-  Video (fully-registered):
+    - krea2: Krea-2 image edit (Flux-shape, separate loaders)
+    - qwen_image: Qwen-Image 2.1 (separate loaders)
+  Video (fully-registered — 9):
     - wan: Wan 2.x i2v/t2v/animate (separate loaders)
     - ltx: Lightricks LTX video (separate loaders)
     - seedvr: SeedVR video restoration (separate loaders)
@@ -39,10 +43,14 @@ SUPPORTED ARCHITECTURES (as of October 2026):
     - framepack: FramePack long-video stitching (separate loaders)
     - hunyuan_video: Tencent HunyuanVideo (separate loaders)
     - mochi: Mochi 1 (separate loaders)
-  Other (fully-registered):
+    - minimax_h3: MiniMax Hailuo-3 image-to-video (separate loaders)
+    - skyreels: SkyReels video generation (separate loaders)
+  Other (fully-registered — 5):
     - lumina2: Lumina 2 (separate loaders)
     - hunyuan_3d: Hunyuan3D image-to-3D (separate loaders)
     - supir: SUPIR upscaler/restorer (separate loaders)
+    - longcat: LongCat long-form generation (separate loaders)
+    - aurasr: AuraSR custom-wrapper upscaler
 
   Also registered as stubs (``registered=False`` — detected but not yet
   wired for workflows): ``sd3``, ``sd3_turbo``, ``hunyuan_dit``,
