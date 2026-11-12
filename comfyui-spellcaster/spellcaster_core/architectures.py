@@ -18,7 +18,7 @@ Before this registry, these properties were scattered across:
 Now, each architecture is ONE ArchConfig entry that centralises all behaviour.
 Adding a new model = adding one registration via _reg().
 
-SUPPORTED ARCHITECTURES (as of October 2026):
+SUPPORTED ARCHITECTURES (as of November 2026):
   Image (fully-registered):
     - sd15: Stable Diffusion 1.5 (512x512, checkpoint-based)
     - sdxl: Stable Diffusion XL (1024x1024, checkpoint-based)
@@ -30,6 +30,10 @@ SUPPORTED ARCHITECTURES (as of October 2026):
     - chroma: Chroma (Flux-shape, separate loaders)
     - flux1dev: Flux Development (1024x1024, separate loaders, dual CLIP)
     - flux2klein: Flux 2 Klein (distilled, 4 steps, separate loaders, custom sampler)
+    - flux2dev: Flux 2 Dev (non-distilled, standard sampler, separate loaders)
+    - flux3klein: Flux 3 Klein (distilled successor to flux2klein)
+    - krea2: Krea 2 (SDXL-shape, checkpoint-based)
+    - qwen_image: Qwen-Image / Qwen-Image-2.1 (separate loaders)
     - flux_kontext: Flux with edit instructions (experimental, separate loaders)
   Video (fully-registered):
     - wan: Wan 2.x i2v/t2v/animate (separate loaders)
@@ -39,10 +43,14 @@ SUPPORTED ARCHITECTURES (as of October 2026):
     - framepack: FramePack long-video stitching (separate loaders)
     - hunyuan_video: Tencent HunyuanVideo (separate loaders)
     - mochi: Mochi 1 (separate loaders)
+    - minimax_h3: MiniMax Hailuo 3 (video, separate loaders)
+    - skyreels: SkyReels video generation (separate loaders)
+    - longcat: LongCat WanVideoWrapper long-video / avatar (separate loaders)
   Other (fully-registered):
     - lumina2: Lumina 2 (separate loaders)
     - hunyuan_3d: Hunyuan3D image-to-3D (separate loaders)
     - supir: SUPIR upscaler/restorer (separate loaders)
+    - aurasr: AuraSR v2 GAN-based 4x super-resolution (custom wrapper)
 
   Also registered as stubs (``registered=False`` — detected but not yet
   wired for workflows): ``sd3``, ``sd3_turbo``, ``hunyuan_dit``,
