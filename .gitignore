@@ -109,8 +109,10 @@ tests/*
 !tests/test_phase9_ws.py
 !tests/test_safe_fetch.py
 !tests/test_llm_preflight.py
+!tests/test_audit_disk_vs_registry.py
 !tests/gimp_batch.py
 audit_*.py
+!tools/audit_disk_vs_registry.py
 
 # Spell icons (user-generated during install, not source)
 assets/spells/
