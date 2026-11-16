@@ -111,6 +111,7 @@ tests/*
 !tests/test_llm_preflight.py
 !tests/gimp_batch.py
 audit_*.py
+!tools/audit_disk_vs_registry.py
 
 # Spell icons (user-generated during install, not source)
 assets/spells/
