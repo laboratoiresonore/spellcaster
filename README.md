@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Type "hair" in GIMP. It selects the hair. Perfectly. In one second.</strong><br/>
-  <em>75 AI tools, one menu. GIMP · DaVinci Resolve · Darktable · chat UI · 100% local · zero config.</em>
+  <em>78 AI tools, one menu. GIMP · DaVinci Resolve · Darktable · chat UI · 100% local · zero config.</em>
 </p>
 
 <p align="center">
@@ -43,7 +43,7 @@
 
 <div align="center">
 
-<strong>📣 Status — October 2026</strong>
+<strong>📣 Status — November 2026</strong>
 
 <table>
 <tr><td><strong>🆕 News</strong></td><td>Self-healing installer + honest diagnostic validator landed. Local-LLM (LM Studio) prompt-enhancement promoted to canon, optional bearer-token auth across the HTTP surfaces, automated 6-surface mirror sync. DaVinci Resolve plugin is still in test — bug reports welcome.</td></tr>
