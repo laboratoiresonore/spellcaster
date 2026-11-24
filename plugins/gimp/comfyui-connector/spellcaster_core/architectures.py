@@ -18,7 +18,7 @@ Before this registry, these properties were scattered across:
 Now, each architecture is ONE ArchConfig entry that centralises all behaviour.
 Adding a new model = adding one registration via _reg().
 
-SUPPORTED ARCHITECTURES (as of October 2026):
+SUPPORTED ARCHITECTURES (as of November 2026):
   Image (fully-registered):
     - sd15: Stable Diffusion 1.5 (512x512, checkpoint-based)
     - sdxl: Stable Diffusion XL (1024x1024, checkpoint-based)
@@ -30,7 +30,10 @@ SUPPORTED ARCHITECTURES (as of October 2026):
     - chroma: Chroma (Flux-shape, separate loaders)
     - flux1dev: Flux Development (1024x1024, separate loaders, dual CLIP)
     - flux2klein: Flux 2 Klein (distilled, 4 steps, separate loaders, custom sampler)
-    - flux_kontext: Flux with edit instructions (experimental, separate loaders)
+    - flux2dev: Flux 2 Dev (non-distilled, 20 steps, separate loaders)
+    - flux3klein: Flux 3 Klein (distilled, 16 steps, separate loaders, type="flux3")
+    - krea2: Krea 2 Turbo (Qwen3VL-4B encoder + Qwen Image VAE, 8 steps)
+    - qwen_image: Qwen-Image (Qwen3VL-4B encoder + Qwen Image VAE, 20 steps)
   Video (fully-registered):
     - wan: Wan 2.x i2v/t2v/animate (separate loaders)
     - ltx: Lightricks LTX video (separate loaders)
@@ -39,14 +42,18 @@ SUPPORTED ARCHITECTURES (as of October 2026):
     - framepack: FramePack long-video stitching (separate loaders)
     - hunyuan_video: Tencent HunyuanVideo (separate loaders)
     - mochi: Mochi 1 (separate loaders)
+    - minimax_h3: MiniMax-H3 joint video+audio generation (NVFP4 on Spark2)
+    - skyreels: SkyReels video generation (umt5 clip + wan VAE)
+    - longcat: LongCat video generation (separate loaders)
   Other (fully-registered):
     - lumina2: Lumina 2 (separate loaders)
     - hunyuan_3d: Hunyuan3D image-to-3D (separate loaders)
     - supir: SUPIR upscaler/restorer (separate loaders)
+    - aurasr: AuraSR v2 GAN-based 4x upscaler (custom wrapper)
 
   Also registered as stubs (``registered=False`` — detected but not yet
-  wired for workflows): ``sd3``, ``sd3_turbo``, ``hunyuan_dit``,
-  ``pixart``, ``auraflow``, ``kolors``.
+  wired for workflows): ``flux_kontext``, ``sd3``, ``sd3_turbo``,
+  ``hunyuan_dit``, ``pixart``, ``auraflow``, ``kolors``.
 
 TYPICAL USAGE:
     from _architectures import ARCHITECTURES, get_arch
