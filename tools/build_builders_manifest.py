@@ -187,6 +187,9 @@ _MODEL_FAMILY_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"^hunyuan_video", "hunyuan_video"),
     (r"^hunyuan_3d_", "hunyuan_3d"),
     (r"^lumina2_", "lumina2"),
+    (r"^skyreels", "skyreels"),
+    (r"^krea2", "krea2"),
+    (r"^aurasr", "aurasr"),
     # SDXL-coupled methods (Fooocus head, SUPIR, IClight, etc are all
     # SDXL by construction).
     (r"^inpaint_fooocus", "sdxl"),

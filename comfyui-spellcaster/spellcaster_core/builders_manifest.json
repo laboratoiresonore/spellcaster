@@ -112,7 +112,7 @@
       "builder": "build_aurasr_upscale",
       "label": "AuraSR v2 4x GAN super-resolution upscaling via LoadAuraSR + RunAuraSR",
       "kind": "image",
-      "model_family": "generic",
+      "model_family": "aurasr",
       "target_class": "RunAuraSR",
       "input_slots": [
         "image_filename"
@@ -3570,7 +3570,7 @@
       "builder": "build_krea2_edit",
       "label": "Krea 2 Turbo instruction-driven image editing & generation on Spark2",
       "kind": "other",
-      "model_family": "generic",
+      "model_family": "krea2",
       "target_class": "Krea2EditModelPatch",
       "input_slots": [
         "image_filename"
@@ -5171,7 +5171,7 @@
       "builder": "build_skyreels_video",
       "label": "SkyReels V2 1.3B 540p I2V / DF video generation on Spark2",
       "kind": "video",
-      "model_family": "generic",
+      "model_family": "skyreels",
       "target_class": "EmptyHunyuanLatentVideo",
       "input_slots": [
         "image_filename"
